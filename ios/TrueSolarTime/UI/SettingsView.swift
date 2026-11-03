@@ -1,0 +1,169 @@
+import SwiftUI
+
+struct SettingsView: View {
+
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var latitudeText = ""
+    @State private var longitudeText = ""
+    @State private var errorText: String?
+
+    private let chipColumns = [GridItem(.adaptive(minimum: 84), spacing: 8)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    section(title: "当前位置") {
+                        Text("\(model.place.label)　\(TimeFormat.coordinates(latitude: model.place.latitude, longitude: model.place.longitude))")
+                            .font(.system(size: 15))
+
+                        Button {
+                            dismiss()
+                            model.startGpsTracking()
+                        } label: {
+                            HStack {
+                                if model.trackingGps {
+                                    ProgressView()
+                                }
+                                Text(model.trackingGps ? "重新开始跟随 GPS" : "使用 GPS 自动定位")
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.top, 4)
+                    }
+
+                    section(title: "手动设置经纬度") {
+                        HStack(spacing: 12) {
+                            TextField("纬度", text: $latitudeText)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("经度", text: $longitudeText)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        if let errorText {
+                            Text(errorText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.red)
+                        }
+
+                        Button("应用坐标") { applyManual() }
+                            .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity)
+
+                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                            ForEach(Place.presets, id: \.label) { preset in
+                                Button(preset.label) {
+                                    model.usePreset(preset)
+                                    dismiss()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    section(title: "地图底图") {
+                        Text("自动：境内用高德，境外用 OpenStreetMap")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                            ForEach(MapStyle.allCases) { style in
+                                Button(style.label) { model.setMapStyle(style) }
+                                    .buttonStyle(.bordered)
+                                    .tint(style == model.mapStyle ? Color.orange : Color.gray)
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+
+                    section(title: "提醒") {
+                        Toggle(isOn: remindersBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("时辰交接提醒")
+                                    .font(.system(size: 15))
+                                Text("进入下一个时辰前 5 分钟发送通知")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    section(title: "关于计算") {
+                        Text("真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("位置与提醒")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            .onAppear {
+                latitudeText = String(format: "%.4f", model.place.latitude)
+                longitudeText = String(format: "%.4f", model.place.longitude)
+            }
+        }
+    }
+
+    private var remindersBinding: Binding<Bool> {
+        Binding(
+            get: { model.remindersEnabled },
+            set: { enabled in
+                guard enabled else {
+                    model.setRemindersEnabled(false)
+                    return
+                }
+                Task {
+                    let granted = await ShichenReminder.shared.requestAuthorization()
+                    model.setRemindersEnabled(granted)
+                    if !granted {
+                        model.message = "未授予通知权限，提醒可能无法显示"
+                    }
+                }
+            }
+        )
+    }
+
+    private func applyManual() {
+        guard let latitude = Double(latitudeText.trimmingCharacters(in: .whitespaces)),
+              let longitude = Double(longitudeText.trimmingCharacters(in: .whitespaces)) else {
+            errorText = "请输入有效的经纬度数值"
+            return
+        }
+        guard (Place.minLatitude...Place.maxLatitude).contains(latitude) else {
+            errorText = "纬度需为 -90 至 90 之间的数值"
+            return
+        }
+        guard (Place.minLongitude...Place.maxLongitude).contains(longitude) else {
+            errorText = "经度需为 -180 至 180 之间的数值"
+            return
+        }
+        errorText = nil
+        model.applyManualPlace(latitude: latitude, longitude: longitude, label: "手动设置")
+        dismiss()
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.orange)
+            content()
+        }
+    }
+}

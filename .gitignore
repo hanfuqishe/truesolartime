@@ -14,3 +14,12 @@ keystore.properties
 release.jks
 *.jks
 *.keystore
+
+# iOS
+ios/*.xcodeproj
+ios/*.xcworkspace
+ios/build/
+ios/DerivedData/
+**/xcuserdata/
+*.ipa
+*.dSYM.zip

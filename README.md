@@ -1,6 +1,6 @@
 # 真太阳时
 
-一个显示**真太阳时**（真太阳时 / 视太阳时）的 Android 应用。
+一个显示**真太阳时**（真太阳时 / 视太阳时）的跨平台应用，Android 与 iPhone 双端实现。
 
 真太阳时的定义很简单：**太阳经过观测者所在子午线（正南或正北）的那一刻，记为 12:00**。它与钟表时间（北京时间）的差异来自两项修正：
 
@@ -35,7 +35,6 @@
 ## 构建
 
 需要 JDK 17+ 与 Android SDK（compileSdk 35、build-tools 35.0.0）。
-
 ```bash
 ./gradlew assembleDebug        # 产出 app/build/outputs/apk/debug/app-debug.apk
 ./gradlew testDebugUnitTest    # 太阳时／时辰计算单元测试
@@ -56,6 +55,12 @@ keyPassword=***
 
 ## 项目结构
 
+仓库同时包含两个平台：
+
+```
+app/                     Android（Kotlin + Compose）
+ios/                     iPhone（SwiftUI），构建说明见 ios/README.md
+```
 ```
 app/src/main/java/com/realsuntime/solartime/
 ├── MainActivity.kt              入口
