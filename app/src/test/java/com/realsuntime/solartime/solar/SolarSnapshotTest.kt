@@ -56,6 +56,27 @@ class SolarSnapshotTest {
         kotlin.math.abs(time.hour * 60 + time.minute - 6 * 60)
 
     @Test
+    fun solarNoonInBeijingTimeDependsOnLongitude() {
+        // 成都偏西约 16°，正午要在北京时间 12:47 左右才到来。
+        val chengdu = SolarTimeSnapshot.compute(
+            instant = Instant.parse("2026-11-03T04:00:00Z"),
+            latitude = 30.5728,
+            longitude = 104.0668,
+        )
+        assertEquals(LocalTime.of(12, 0), chengdu.solarNoonTrueSolar)
+        assertTrue(chengdu.solarNoonBeijing!! in LocalTime.of(12, 40)..LocalTime.of(12, 55))
+
+        // 北京几乎就在东八区中央经线附近，正午接近北京时间 12:00。
+        val beijing = SolarTimeSnapshot.compute(
+            instant = Instant.parse("2026-11-03T04:00:00Z"),
+            latitude = 39.9042,
+            longitude = 116.4074,
+        )
+        assertEquals(LocalTime.of(12, 0), beijing.solarNoonTrueSolar)
+        assertTrue(beijing.solarNoonBeijing!! in LocalTime.of(11, 50)..LocalTime.of(12, 5))
+    }
+
+    @Test
     fun longitudesEastOf120RunAheadAndWestOf120RunBehind() {
         val instant = Instant.parse("2026-06-01T00:00:00Z")
         val sydney = SolarTimeSnapshot.compute(instant, -33.8688, 151.2093)

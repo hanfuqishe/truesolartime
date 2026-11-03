@@ -9,7 +9,9 @@ import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
+import com.realsuntime.solartime.solar.TimeFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
+import kotlin.math.abs
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -29,17 +32,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _place = MutableStateFlow(settings.place)
     val place: StateFlow<Place> = _place.asStateFlow()
 
-    private val _locating = MutableStateFlow(false)
-    val locating: StateFlow<Boolean> = _locating.asStateFlow()
+    /** 正在跟随 GPS（每分钟采样一次）。 */
+    private val _trackingGps = MutableStateFlow(false)
+    val trackingGps: StateFlow<Boolean> = _trackingGps.asStateFlow()
+
+    /** 已开始跟随但还没收到任何定位结果。 */
+    private val _waitingForFix = MutableStateFlow(false)
+    val waitingForFix: StateFlow<Boolean> = _waitingForFix.asStateFlow()
 
     private val _remindersEnabled = MutableStateFlow(settings.remindersEnabled)
     val remindersEnabled: StateFlow<Boolean> = _remindersEnabled.asStateFlow()
 
+    private val _mapStyle = MutableStateFlow(settings.mapStyle)
+    val mapStyle: StateFlow<MapStyle> = _mapStyle.asStateFlow()
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private var stopLocation: (() -> Unit)? = null
-    private var gpsAttempt = 0
+    private var stopTracking: (() -> Unit)? = null
+    private var announcedFirstFix = false
 
     init {
         viewModelScope.launch {
@@ -51,56 +62,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (settings.remindersEnabled) {
             ShiChenReminder.schedule(application, settings.place)
         }
+        // 默认跟随 GPS；用户手动指定过位置时保持手动。
+        if (locationTracker.hasPermission() && settings.place.source != PlaceSource.MANUAL) {
+            startGpsTracking(announce = false)
+        }
+    }
+
+    fun shouldRequestLocationPermission(): Boolean =
+        !locationTracker.hasPermission() && !settings.locationPermissionRequested
+
+    fun markLocationPermissionRequested() {
+        settings.locationPermissionRequested = true
     }
 
     @SuppressLint("MissingPermission")
-    fun startGps() {
+    fun startGpsTracking(announce: Boolean = true) {
         if (!locationTracker.hasPermission()) {
             _message.value = "没有定位权限，请授予权限或手动输入经纬度"
             return
         }
-        if (_locating.value) return
 
-        val attempt = ++gpsAttempt
-        val lastKnown = locationTracker.lastKnownLocation()
-        if (lastKnown != null) {
-            applyGpsFix(lastKnown)
-            return
-        }
+        stopTracking?.invoke()
+        stopTracking = null
+        announcedFirstFix = !announce
 
-        _locating.value = true
-        stopLocation = locationTracker.start { location ->
-            if (attempt == gpsAttempt) {
-                applyGpsFix(location)
-            }
-        }
+        locationTracker.lastKnownLocation()?.let { applyFix(it) }
+        _waitingForFix.value = _place.value.source != PlaceSource.GPS
+        _trackingGps.value = true
+
+        stopTracking = locationTracker.startTracking(GPS_INTERVAL_MILLIS) { location -> applyFix(location) }
 
         viewModelScope.launch {
-            delay(LOCATION_TIMEOUT_MILLIS)
-            if (attempt == gpsAttempt && _locating.value) {
-                stopLocation?.invoke()
-                stopLocation = null
-                _locating.value = false
-                _message.value = "定位超时，请到空旷处重试或手动输入经纬度"
+            delay(FIX_TIMEOUT_MILLIS)
+            if (_waitingForFix.value && _trackingGps.value) {
+                _message.value = "尚未收到 GPS 信号，可能需要在空旷处等待；也可手动设置经纬度"
             }
         }
     }
 
-    private fun applyGpsFix(location: Location) {
-        stopLocation?.invoke()
-        stopLocation = null
-        _locating.value = false
+    fun stopGpsTracking() {
+        stopTracking?.invoke()
+        stopTracking = null
+        _trackingGps.value = false
+        _waitingForFix.value = false
+    }
 
-        val accuracyText = if (location.hasAccuracy()) "GPS 定位 · 精度 ${location.accuracy.toInt()} 米" else "GPS 定位"
-        updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, accuracyText))
-        _message.value = "已定位到当前位置（${accuracyText}）"
+    private fun applyFix(location: Location) {
+        val accuracy = if (location.hasAccuracy()) "精度 ${location.accuracy.toInt()} 米" else "精度未知"
+        _waitingForFix.value = false
+        updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, "GPS · $accuracy"))
+
+        if (!announcedFirstFix) {
+            announcedFirstFix = true
+            val place = _place.value
+            _message.value = "已跟随 GPS 定位（${TimeFormat.coordinates(place.latitude, place.longitude)}），每分钟更新"
+        }
     }
 
     fun applyManualPlace(latitude: Double, longitude: Double, label: String) {
-        gpsAttempt++
-        stopLocation?.invoke()
-        stopLocation = null
-        _locating.value = false
+        stopGpsTracking()
         updatePlace(Place(latitude, longitude, PlaceSource.MANUAL, label))
     }
 
@@ -119,6 +139,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setMapStyle(style: MapStyle) {
+        settings.mapStyle = style
+        _mapStyle.value = style
+    }
+
     fun postMessage(text: String) {
         _message.value = text
     }
@@ -128,20 +153,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updatePlace(place: Place) {
+        val previous = _place.value
         settings.place = place
         _place.value = place
-        if (_remindersEnabled.value) {
+
+        val moved = abs(place.longitude - previous.longitude) > REMINDER_RESCHEDULE_DEGREES ||
+            abs(place.latitude - previous.latitude) > REMINDER_RESCHEDULE_DEGREES
+        if (_remindersEnabled.value && (moved || previous.source != place.source)) {
             ShiChenReminder.schedule(getApplication(), place)
         }
     }
 
     override fun onCleared() {
-        stopLocation?.invoke()
-        stopLocation = null
+        stopGpsTracking()
         super.onCleared()
     }
 
     private companion object {
-        const val LOCATION_TIMEOUT_MILLIS = 20_000L
+        /** GPS 采样间隔：每分钟一次。 */
+        const val GPS_INTERVAL_MILLIS = 60_000L
+        const val FIX_TIMEOUT_MILLIS = 20_000L
+
+        /** 位置变化超过该幅度才重排提醒，避免每分钟都重设闹钟。 */
+        const val REMINDER_RESCHEDULE_DEGREES = 0.01
     }
 }

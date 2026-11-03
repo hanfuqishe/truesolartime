@@ -29,16 +29,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realsuntime.solartime.data.MapConfig
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.map.MapStyle
+import com.realsuntime.solartime.map.MapTileSources
 import com.realsuntime.solartime.solar.TimeFormat
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 
 @Composable
-fun MapCard(place: Place, modifier: Modifier = Modifier) {
+fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
     var mapView by remember { mutableStateOf<MapView?>(null) }
+    val style = mapStyle.effective(place.latitude, place.longitude)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -69,22 +71,23 @@ fun MapCard(place: Place, modifier: Modifier = Modifier) {
             ) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { context -> createMapView(context, place).also { mapView = it } },
-                    update = { view -> syncMarker(view, place) },
+                    factory = { context -> createMapView(context, place, style).also { mapView = it } },
+                    update = { view -> syncMap(view, place, style) },
                 )
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "地图数据 © OpenStreetMap 贡献者 · 加载瓦片需要网络",
+                text = attributionText(mapStyle = mapStyle, resolved = style),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 
-    LaunchedEffect(place, mapView) {
+    LaunchedEffect(place, style, mapView) {
         val view = mapView ?: return@LaunchedEffect
-        view.controller.animateTo(GeoPoint(place.latitude, place.longitude))
+        val (latitude, longitude) = markerPointOf(place, style)
+        view.controller.animateTo(GeoPoint(latitude, longitude))
     }
 
     DisposableEffect(Unit) {
@@ -96,16 +99,24 @@ fun MapCard(place: Place, modifier: Modifier = Modifier) {
     }
 }
 
-private fun createMapView(context: Context, place: Place): MapView {
+private fun attributionText(mapStyle: MapStyle, resolved: MapStyle): String =
+    if (mapStyle == MapStyle.AUTO) "${resolved.attribution} · 按所在地区自动选择" else resolved.attribution
+
+/** 高德底图为 GCJ-02，需把 WGS-84 坐标偏移后再标点。 */
+private fun markerPointOf(place: Place, style: MapStyle): Pair<Double, Double> =
+    MapTileSources.toMapCoordinates(style, place.latitude, place.longitude)
+
+private fun createMapView(context: Context, place: Place, style: MapStyle): MapView {
     MapConfig.init(context)
-    val center = GeoPoint(place.latitude, place.longitude)
+    val (latitude, longitude) = markerPointOf(place, style)
+    val center = GeoPoint(latitude, longitude)
     return MapView(context).apply {
-        setTileSource(TileSourceFactory.MAPNIK)
+        setTileSource(MapTileSources.tileSourceOf(style))
         setMultiTouchControls(true)
         setUseDataConnection(true)
         zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-        minZoomLevel = 2.0
-        maxZoomLevel = 19.0
+        minZoomLevel = 3.0
+        maxZoomLevel = 18.0
         controller.setZoom(12.0)
         controller.setCenter(center)
         overlays.add(
@@ -129,11 +140,15 @@ private fun createMapView(context: Context, place: Place): MapView {
     }
 }
 
-private fun syncMarker(view: MapView, place: Place) {
+private fun syncMap(view: MapView, place: Place, style: MapStyle) {
+    val tileSource = MapTileSources.tileSourceOf(style)
+    if (view.tileProvider.tileSource.name() != tileSource.name()) {
+        view.setTileSource(tileSource)
+    }
     val marker = view.overlays.filterIsInstance<Marker>().firstOrNull() ?: return
-    val position = marker.position
-    if (position.latitude != place.latitude || position.longitude != place.longitude) {
-        marker.position = GeoPoint(place.latitude, place.longitude)
+    val (latitude, longitude) = markerPointOf(place, style)
+    if (marker.position.latitude != latitude || marker.position.longitude != longitude) {
+        marker.position = GeoPoint(latitude, longitude)
         marker.title = place.label
         view.invalidate()
     }

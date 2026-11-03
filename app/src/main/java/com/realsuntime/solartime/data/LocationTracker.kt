@@ -29,9 +29,13 @@ class LocationTracker(context: Context) {
             .maxByOrNull { it.time }
     }
 
-    /** 开始监听定位，返回取消函数。 */
+    /**
+     * 持续监听定位，按 [intervalMillis] 间隔回调，返回取消函数。
+     *
+     * minTime 只是下限，实际回调频率由系统决定；信号变化时可能更频繁。
+     */
     @SuppressLint("MissingPermission")
-    fun start(onLocation: (Location) -> Unit): () -> Unit {
+    fun startTracking(intervalMillis: Long, onLocation: (Location) -> Unit): () -> Unit {
         if (!hasPermission()) return {}
 
         val listener = object : LocationListener {
@@ -39,7 +43,9 @@ class LocationTracker(context: Context) {
         }
         val providers = activeProviders()
         providers.forEach { provider ->
-            runCatching { manager.requestLocationUpdates(provider, 1_000L, 0f, listener, Looper.getMainLooper()) }
+            runCatching {
+                manager.requestLocationUpdates(provider, intervalMillis, 0f, listener, Looper.getMainLooper())
+            }
         }
 
         return {

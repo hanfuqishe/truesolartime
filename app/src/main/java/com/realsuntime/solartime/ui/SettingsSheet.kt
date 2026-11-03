@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -36,18 +37,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsSheet(
     place: Place,
-    locating: Boolean,
+    trackingGps: Boolean,
     remindersEnabled: Boolean,
+    mapStyle: MapStyle,
     onDismiss: () -> Unit,
     onRequestGps: () -> Unit,
     onApplyManual: (Double, Double, String) -> Unit,
     onToggleReminders: (Boolean) -> Unit,
+    onSelectMapStyle: (MapStyle) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var latitudeText by remember(place) { mutableStateOf("%.4f".format(place.latitude)) }
@@ -78,13 +82,12 @@ fun SettingsSheet(
             Spacer(Modifier.height(12.dp))
             FilledTonalButton(
                 onClick = onRequestGps,
-                enabled = !locating,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (locating) {
+                if (trackingGps) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("定位中…")
+                    Text("重新开始跟随 GPS")
                 } else {
                     Text("使用 GPS 自动定位")
                 }
@@ -159,6 +162,29 @@ fun SettingsSheet(
                             onDismiss()
                         },
                         label = { Text(preset.label) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = "地图底图",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "自动：境内用高德，境外用 OpenStreetMap",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapStyle.entries.forEach { style ->
+                    FilterChip(
+                        selected = style == mapStyle,
+                        onClick = { onSelectMapStyle(style) },
+                        label = { Text(style.label) },
                     )
                 }
             }
