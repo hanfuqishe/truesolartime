@@ -29,3 +29,6 @@ ios/DerivedData/
 *.dSYM.zip
 # 图标草稿
 design/drafts/
+
+# 发布产物（assembleRelease 自动生成的改名副本）
+dist/

@@ -58,6 +58,9 @@ cd android
 ./gradlew assembleRelease      # 产出 android/app/build/outputs/apk/release/app-release.apk
 ```
 
+`assembleRelease` 结束后会自动把产物另存为 `android/dist/真太阳时-<版本号>.apk`（如 `真太阳时-1.4.5.apk`），
+可直接分发；`dist/` 不参与版本控制，也不受 `clean` 影响。
+
 发行版签名读取 `android/keystore.properties`（**不入库**），格式：
 
 ```properties

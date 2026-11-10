@@ -97,3 +97,22 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+/**
+ * 每次 assembleRelease 之后，把 APK 另存一份为「真太阳时-<版本号>.apk」放到仓库根的 dist/，
+ * 免去手工改名；dist/ 不入库（.gitignore 已忽略 *.apk）。
+ */
+val releaseApkName = "真太阳时-${android.defaultConfig.versionName}.apk"
+
+tasks.register<Copy>("renameReleaseApk") {
+    group = "build"
+    description = "把 release APK 复制为「真太阳时-<版本号>.apk」"
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist"))
+    rename { releaseApkName }
+    onlyIf { layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile.exists() }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy("renameReleaseApk")
+}
