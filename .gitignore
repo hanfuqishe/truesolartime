@@ -26,3 +26,5 @@ ios/DerivedData/
 **/xcuserdata/
 *.ipa
 *.dSYM.zip
+# 图标草稿
+design/drafts/

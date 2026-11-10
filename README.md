@@ -99,7 +99,19 @@ android/app/src/main/java/com/realsuntime/solartime/
 
 ## 图标
 
-自适应图标为「太阳 + 倾斜椭圆轨道 + 12 个时间刻度」，矢量绘制于 `android/app/src/main/res/drawable/ic_launcher_foreground.xml`。
+图标是一只**倾斜 45° 的椭圆表盘**（圆盘按 41° 视角投影），指针枢轴位于椭圆偏下方的焦点处，刻度沿盘缘排布且每一根都指向枢轴。表圈、指针、中心轴帽均为解析式 3D 着色（Lambert + Blinn-Phong 高光、接触阴影、指针棱线）。
+
+图标由脚本生成，不要手改 PNG：
+
+```bash
+python design/render_icon.py all       # 生成全部尺寸（Android mipmap/自适应图层、商店图标、iOS AppIcon）
+python design/render_icon.py preview   # 生成 design/drafts/ 下的草稿便于调参
+```
+
+- `design/render_icon.py`：渲染器，参数集中在 `DEFAULTS`（倾角 `tilt_deg`、枢轴位置 `pivot_frac`、指针角度等）
+- `design/icon-1024.png`、`design/icon-512.png`：母版与商店上传图
+- 自适应图标：`mipmap-anydpi-v26/ic_launcher.xml` 引用 `ic_launcher_background.png` + `ic_launcher_foreground.png`（前景按 66dp 安全区缩放）
+- 主题图标（Android 13+ 单色）：`drawable/ic_launcher_monochrome.xml`
 
 ## 多语言
 

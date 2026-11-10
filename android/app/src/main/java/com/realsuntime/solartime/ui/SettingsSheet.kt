@@ -1,6 +1,7 @@
 package com.realsuntime.solartime.ui
 
 import android.appwidget.AppWidgetManager
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -237,8 +238,9 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(8.dp))
             val canPin = remember {
-                context.getSystemService(AppWidgetManager::class.java)
-                    ?.isRequestPinAppWidgetSupported == true
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                    context.getSystemService(AppWidgetManager::class.java)
+                        ?.isRequestPinAppWidgetSupported == true
             }
             FilledTonalButton(
                 onClick = { WidgetUpdater.requestPin(context) },
