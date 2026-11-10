@@ -18,7 +18,9 @@
 - **定位方式**：默认持续跟随 GPS，每分钟采样一次；也可手动输入经纬度、从常用城市快速选择。位置会被记住。
 - **位置地图**：内嵌地图，标注当前坐标，支持缩放拖动。境内自动使用高德底图（中文地名、路网更细），境外自动使用 OpenStreetMap；三种底图均无需 API Key。
 - **时辰交接提醒**：可开启通知，在进入下一个时辰前 5 分钟提醒（开机后自动重新排程）。
-- **桌面小组件**：5×2 布局，左侧显示所在国标准时间、日期与星期，右侧显示当地真太阳时、时辰与经纬度；每分钟刷新，按昼夜切换底色。
+- **桌面小组件**：5×2 布局，左侧显示所在城市、所在国标准时间、日期与星期，右侧显示当地真太阳时、时辰与经纬度；时间精确到秒、秒数为半高小字（由 `ViewFlipper` 逐秒翻页），日期等其余内容在「整分」与「真太阳时整分」各刷新一次（两个分钟边界相差不到一分钟），按昼夜切换底色。
+- **所在城市／区县**：配置高德 Android 平台 Key 后用 `GeocodeSearch` 反查行政区划（精确到区县）；结果按位置缓存，**新坐标与上次反查坐标相距超过 5 km 才重新查询**，否则一直沿用上次的结果（缓存超过 30 天也会刷新）。未配置 Key、离线或查询失败时回退到内置城市表（省会、常见地级市与各国主要城市取最近）。
+- **当前天气**：小组件在日期后显示当天最低/最高气温（例如「11月10日 周二 · 7° ~ 13°」），底部还有一条**未来 5 小时的小时预报**（每格 1 小时，格内为时刻、天气图标与天气名称：晴／多云／阴／雾／小雨／中雨／大雨／阵雨／雪／大雪／雷雨，夜间图标用倾斜的月牙区分晴与多云）；数据来自 Open-Meteo（无需 Key），缓存 30 分钟，位置移动超过 5 km 才重新取数。
 - **整点报时**：可开关，每到真太阳时整点发一条带提示音的通知。
 - **多语言**：跟随系统语言自动切换简体中文、繁体中文或英文（`values-zh` / `values-b+zh+Hant` / `values`）。
 - **主题**：跟随系统深色／浅色模式；主卡片另按白天／夜晚切换配色。
@@ -65,6 +67,22 @@ keyPassword=***
 
 缺少该文件时 `assembleRelease` 会产出未签名 APK。
 
+可选：`android/amap.properties`（同样**不入库**）配置高德 **Android 平台 Key**，用于小组件显示区县名：
+
+```properties
+apiKey=你的高德Android平台Key
+```
+
+申请时填写的应用信息：
+
+| 项 | 值 |
+| --- | --- |
+| PackageName | `com.realsuntime.solartime` |
+| 发布版安全码 SHA1 | 见 `keytool -list -v -keystore android/release.jks -alias solartime` |
+| 调试版安全码 SHA1 | 见 `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android` |
+
+Key 会作为 `com.amap.api.v2.apikey` 元数据打进 Manifest，只在逆地理编码时使用；不配置时小组件用内置城市表。配置后，只有新坐标与上次反查坐标相距 **超过 5 km**（或缓存超过 30 天）时才查询一次高德——市中心日常移动基本不会触发，配额压力极小（Android 平台 Key 与包名、签名绑定，他人反编译也无法使用）。
+
 ## 项目结构
 
 ```
@@ -91,7 +109,7 @@ android/app/src/main/java/com/realsuntime/solartime/
 │   ├── SolarSnapshot.kt         供 UI 消费的聚合快照
 │   └── TimeFormat.kt            时间／时长格式化
 ├── map/                         WGS-84 ↔ GCJ-02、底图选择
-├── data/                        位置模型、SharedPreferences、LocationManager 封装、地图配置
+├── data/                        位置模型、SharedPreferences、LocationManager 封装、地图配置、离线城市索引
 ├── notify/                      时辰交接提醒（AlarmManager + 通知）
 ├── widget/                      桌面小组件、真太阳时整点报时
 └── ui/                          Compose 界面、地图卡片与主题
@@ -136,3 +154,5 @@ python design/render_icon.py preview   # 生成 design/drafts/ 下的草稿便�
 ## 第三方资源
 
 地图瓦片来自 OpenStreetMap（© OpenStreetMap contributors，ODbL 协议），由 [osmdroid](https://github.com/osmdroid/osmdroid) 渲染。
+
+天气数据来自 [Open-Meteo](https://open-meteo.com/)（© Open-Meteo.com，CC BY 4.0），无需 API Key。

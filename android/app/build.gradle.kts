@@ -12,6 +12,13 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// 高德逆地理编码用的 key（Android 平台 Key，绑定包名 + 签名 SHA1），同样放在仓库外。
+val amapProperties = Properties().apply {
+    val file = rootProject.file("amap.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val amapApiKey = amapProperties.getProperty("apiKey", amapProperties.getProperty("webKey", ""))
+
 android {
     namespace = "com.realsuntime.solartime"
     compileSdk = 35
@@ -20,8 +27,10 @@ android {
         applicationId = "com.realsuntime.solartime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.3"
+        versionCode = 7
+        versionName = "1.4"
+        buildConfigField("String", "AMAP_API_KEY", "\"$amapApiKey\"")
+        manifestPlaceholders["amapApiKey"] = amapApiKey
     }
 
     signingConfigs {
@@ -80,9 +89,11 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("com.amap.api:search:9.7.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

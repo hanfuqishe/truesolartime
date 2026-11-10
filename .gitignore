@@ -17,6 +17,7 @@ keystore.properties
 release.jks
 *.jks
 *.keystore
+amap.properties
 
 # iOS
 ios/*.xcodeproj

@@ -3,6 +3,7 @@ package com.realsuntime.solartime.ui
 import android.content.Context
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapStyle
 import java.time.LocalDate
 import kotlin.math.abs
@@ -47,6 +48,31 @@ object TimeText {
         val weekday = weekdays[date.dayOfWeek.value % 7]
         return context.getString(R.string.date_weekday, date.monthValue, date.dayOfMonth, weekday)
     }
+
+    /** 小组件用的紧凑日期，例如「11月10日 周二」。 */
+    fun dateShortWithWeekday(context: Context, date: LocalDate): String {
+        val weekdays = context.resources.getStringArray(R.array.weekdays_short)
+        val weekday = weekdays[date.dayOfWeek.value % 7]
+        return context.getString(R.string.date_weekday_short, date.monthValue, date.dayOfMonth, weekday)
+    }
+
+    /** 天气分类的本地化名称，例如「多云」。 */
+    fun conditionLabel(context: Context, condition: WeatherRepository.Condition): String =
+        context.getString(
+            when (condition) {
+                WeatherRepository.Condition.CLEAR -> R.string.weather_clear
+                WeatherRepository.Condition.PARTLY_CLOUDY -> R.string.weather_partly_cloudy
+                WeatherRepository.Condition.OVERCAST -> R.string.weather_cloudy
+                WeatherRepository.Condition.FOG -> R.string.weather_fog
+                WeatherRepository.Condition.DRIZZLE -> R.string.weather_drizzle
+                WeatherRepository.Condition.RAIN -> R.string.weather_rain
+                WeatherRepository.Condition.HEAVY_RAIN -> R.string.weather_heavy_rain
+                WeatherRepository.Condition.SHOWERS -> R.string.weather_showers
+                WeatherRepository.Condition.SNOW -> R.string.weather_snow
+                WeatherRepository.Condition.HEAVY_SNOW -> R.string.weather_heavy_snow
+                WeatherRepository.Condition.THUNDER -> R.string.weather_thunder
+            },
+        )
 
     fun shichenName(context: Context, index: Int): String {
         val names = context.resources.getStringArray(R.array.shichen_names)

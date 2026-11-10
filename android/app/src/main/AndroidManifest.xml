@@ -67,6 +67,11 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- 高德 SDK 的 key：由 amap.properties 注入，缺省为空（此时不调用 SDK）。 -->
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="${amapApiKey}" />
     </application>
 
 </manifest>

@@ -110,6 +110,17 @@ class SolarTimeMathTest {
         }
     }
 
+    @Test
+    fun trueSolarOffsetRebuildsTrueSolarTimeFromEpoch() {
+        // 小组件即用「系统时刻 + 该偏移」读出真太阳时，两者必须等价。
+        val instant = Instant.parse("2026-11-02T04:03:00Z")
+        val longitude = 87.6168
+        val utcSecondsOfDay = instant.epochSecond % 86_400
+        val expected = SolarTimeMath.trueSolarSecondsOfDay(instant, longitude)
+        val rebuilt = ((utcSecondsOfDay + SolarTimeMath.trueSolarOffsetSeconds(instant, longitude)) % 86_400.0 + 86_400.0) % 86_400.0
+        assertEquals(expected, rebuilt, 1e-6)
+    }
+
     private fun assertWithinMinutes(expected: LocalTime, actual: LocalTime, toleranceMinutes: Double) {
         val diff = abs(expected.toSecondOfDay() - actual.toSecondOfDay()).toDouble() / 60.0
         assertTrue("expected $expected but was $actual", diff <= toleranceMinutes)

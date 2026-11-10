@@ -128,4 +128,32 @@
         <item>亥</item>
     </string-array>
     <string name="channel_shichen_desc">在進入下一個時辰前 5 分鐘提醒</string>
-    <string name="channel_chime_desc">每到真太陽時整點提醒一次</string></resources>
+    <string name="channel_chime_desc">每到真太陽時整點提醒一次</string>
+
+    <string name="date_weekday_short">%1$d月%2$d日 %3$s</string>
+    <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>
+    <string name="weather_clear">晴</string>
+    <string name="weather_partly_cloudy">多雲</string>
+    <string name="weather_cloudy">陰</string>
+    <string name="weather_fog">霧</string>
+    <string name="weather_drizzle">小雨</string>
+    <string name="weather_rain">中雨</string>
+    <string name="weather_heavy_rain">大雨</string>
+    <string name="weather_showers">陣雨</string>
+    <string name="weather_snow">雪</string>
+    <string name="weather_heavy_snow">大雪</string>
+    <string name="weather_thunder">雷雨</string>
+    <string name="weather_temp">%1$d°</string>
+    <string name="weather_hour">%1$d時</string>
+    <string name="weather_now">現在</string>
+    <string name="weather_attribution">天氣資料 © Open-Meteo.com（CC BY 4.0）</string>
+    <string-array name="weekdays_short">
+        <item>週日</item>
+        <item>週一</item>
+        <item>週二</item>
+        <item>週三</item>
+        <item>週四</item>
+        <item>週五</item>
+        <item>週六</item>
+    </string-array>
+</resources>

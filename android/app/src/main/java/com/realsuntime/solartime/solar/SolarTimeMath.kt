@@ -114,6 +114,13 @@ object SolarTimeMath {
     fun longitudeOffsetSeconds(longitude: Double): Double =
         (longitude - BEIJING_LONGITUDE) * 240.0
 
+    /**
+     * 当地真太阳时相对 **UTC** 的偏移，单位秒 = 经度 × 4 分/度 + 均时差。
+     * 「系统时刻 + 该偏移」即以真太阳时读出的时刻（小组件时钟用它逐秒显示）。
+     */
+    fun trueSolarOffsetSeconds(instant: Instant, longitude: Double): Double =
+        longitude * 240.0 + solarPosition(instant).equationOfTimeSeconds
+
     /** 太阳高度角，单位度（不含大气折射修正）。 */
     fun solarAltitudeDegrees(instant: Instant, latitude: Double, longitude: Double): Double {
         val position = solarPosition(instant)
