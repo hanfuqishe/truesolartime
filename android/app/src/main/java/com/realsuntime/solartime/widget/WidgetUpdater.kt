@@ -45,8 +45,14 @@ object WidgetUpdater {
 
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
     private const val REQUEST_TICK = 7301
+    private const val REQUEST_APP = 7302
+    private const val REQUEST_ALARM = 7303
+    private const val REQUEST_WEATHER = 7304
     private const val MINUTE_MILLIS = 60_000L
     private const val TICK_MARGIN_MILLIS = 150L
+
+    /** 外部应用（闹钟/天气）的解析结果缓存时长。 */
+    private const val RESOLVE_TTL_MILLIS = 10L * 60 * 1000
 
     /**
      * 桌面回报的高度（OPTION_APPWIDGET_MIN_HEIGHT）普遍小于实际可用的单元格高度
@@ -149,8 +155,65 @@ object WidgetUpdater {
                 TimeText.coordinates(context, place.latitude, place.longitude),
             )
             bindHourly(context, now, zone, showHourly, this)
-            setOnClickPendingIntent(R.id.widget_root, openApp(context))
+            bindClicks(context, place, this)
         }
+    }
+
+    /** 三个区域各自的点击目标：标准时间→闹钟，天气行→天气，真太阳时→本 App。 */
+    private fun bindClicks(context: Context, place: Place, views: RemoteViews) {
+        val appPending = activityIntent(context, REQUEST_APP, openApp(context))
+        views.setOnClickPendingIntent(R.id.widget_root, appPending)
+        views.setOnClickPendingIntent(R.id.widget_solar_column, appPending)
+        views.setOnClickPendingIntent(
+            R.id.widget_civil_column,
+            activityIntent(context, REQUEST_ALARM, alarmIntent(context)),
+        )
+        weatherPendingIntent(context, place)?.let {
+            views.setOnClickPendingIntent(R.id.widget_hour_row, it)
+        }
+        logClicks(context, place)
+    }
+
+    private fun activityIntent(context: Context, requestCode: Int, intent: Intent): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    /** 天气应用的解析结果缓存在进程内，避免每次刷新都查一遍 PackageManager。 */
+    private var weatherTarget: Intent? = null
+    private var weatherResolvedAt = 0L
+    private var alarmTarget: Intent? = null
+    private var alarmResolvedAt = 0L
+
+    private fun weatherPendingIntent(context: Context, place: Place): PendingIntent? {
+        val now = System.currentTimeMillis()
+        if (now - weatherResolvedAt > RESOLVE_TTL_MILLIS) {
+            weatherTarget = WidgetIntents.weather(context, place.latitude, place.longitude)
+            weatherResolvedAt = now
+        }
+        val intent = weatherTarget ?: return null
+        return activityIntent(context, REQUEST_WEATHER, intent)
+    }
+
+    /** 设备上没有闹钟应用时退回本 App，避免点击无反应。 */
+    private fun alarmIntent(context: Context): Intent {
+        val now = System.currentTimeMillis()
+        if (now - alarmResolvedAt > RESOLVE_TTL_MILLIS) {
+            alarmTarget = WidgetIntents.alarm(context)
+            alarmResolvedAt = now
+        }
+        return alarmTarget ?: openApp(context)
+    }
+
+    /** 临时诊断：记录三个区域解析到的目标。 */
+    private fun logClicks(context: Context, place: Place) {
+        val alarm = WidgetIntents.alarm(context)?.let { "${it.action}/${it.component?.flattenToShortString()}" }
+        val weather = WidgetIntents.weather(context, place.latitude, place.longitude)
+            ?.let { "${it.action}/${it.component?.flattenToShortString()}/${it.data}" }
+        android.util.Log.i("WidgetClicks", "alarm=$alarm weather=$weather")
     }
 
     /** 底部小时预报：从当前时刻起每格 1 小时，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
@@ -400,17 +463,10 @@ object WidgetUpdater {
         return AppSettings(context).place
     }
 
-    private fun openApp(context: Context): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
+    private fun openApp(context: Context): Intent =
+        Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        return PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
 
     private fun dateText(context: Context, civil: ZonedDateTime, place: Place): String {
         val date = TimeText.dateShortWithWeekday(context, civil.toLocalDate())

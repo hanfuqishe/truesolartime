@@ -113,15 +113,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    val chimePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        viewModel.setHourlyChimeEnabled(true)
-        if (!granted) {
-            viewModel.postMessage(context.getString(R.string.msg_notification_chime))
-        }
-    }
-
     val requestGps: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(
             context,
@@ -166,17 +157,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     val toggleHourlyChime: (Boolean) -> Unit = { enabled ->
-        when {
-            !enabled -> viewModel.setHourlyChimeEnabled(false)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED -> chimePermissionLauncher.launch(
-                Manifest.permission.POST_NOTIFICATIONS,
-            )
-            else -> viewModel.setHourlyChimeEnabled(true)
-        }
+        // 报时只播提示音，不需要通知权限。
+        viewModel.setHourlyChimeEnabled(enabled)
     }
 
     LaunchedEffect(message) {

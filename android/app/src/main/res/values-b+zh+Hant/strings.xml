@@ -44,7 +44,7 @@
     <string name="reminder_title">時辰交接提醒</string>
     <string name="reminder_desc">進入下一個時辰前 5 分鐘傳送通知</string>
     <string name="chime_title">整點報時</string>
-    <string name="chime_desc">每到真太陽時整點提醒一次（需保留通知權限）</string>
+    <string name="chime_desc">每到真太陽時整點「嗶」一聲</string>
     <string name="section_widget">桌面小工具</string>
     <string name="widget_desc">左側為所在國標準時間與日期，右側為當地真太陽時與經緯度</string>
     <string name="action_add_to_home">加入主畫面</string>
@@ -76,17 +76,13 @@
     <string name="widget_description">左側顯示所在國標準時間與日期，右側顯示當地真太陽時與經緯度</string>
 
     <string name="channel_shichen">時辰交接提醒</string>
-    <string name="channel_chime">真太陽時整點報時</string>
     <string name="notif_upcoming_title">即將進入%1$s</string>
     <string name="notif_started_title">%1$s已開始</string>
     <string name="notif_upcoming_body">約 %1$d 分鐘後（真太陽時 %2$s）</string>
     <string name="notif_started_body">真太陽時 %1$s 進入%2$s</string>
-    <string name="chime_title_notif">整點報時</string>
-    <string name="chime_body">真太陽時 %1$s　%2$s</string>
 
     <string name="msg_location_permission">沒有定位權限，請在系統設定中允許，或手動輸入經緯度</string>
     <string name="msg_notification_reminder">未授予通知權限，提醒可能無法顯示</string>
-    <string name="msg_notification_chime">未授予通知權限，整點報時可能無法顯示</string>
     <string name="msg_gps_timeout">尚未收到定位結果，可能需要在空曠處等待；也可手動設定經緯度</string>
     <string name="msg_following_gps">已跟隨 GPS 定位（%1$s），每分鐘更新</string>
     <string name="gps_label">GPS</string>
@@ -128,7 +124,6 @@
         <item>亥</item>
     </string-array>
     <string name="channel_shichen_desc">在進入下一個時辰前 5 分鐘提醒</string>
-    <string name="channel_chime_desc">每到真太陽時整點提醒一次</string>
 
     <string name="date_weekday_short">%1$d月%2$d日 %3$s</string>
     <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>

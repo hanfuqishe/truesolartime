@@ -1,35 +1,34 @@
 package com.realsuntime.solartime.widget
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.Ringtone
+import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
-import com.realsuntime.solartime.MainActivity
-import com.realsuntime.solartime.R
+import android.os.Handler
+import android.os.Looper
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.Place
-import com.realsuntime.solartime.ui.TimeText
-import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
 import java.time.Instant
 import kotlin.math.roundToLong
 
-/** 真太阳时整点报时：每到真太阳时的整点发一条带提示音的通知。 */
+/**
+ * 真太阳时整点报时：每到真太阳时整点「嘀」一声。
+ *
+ * 只播提示音，不发通知 —— 报时是瞬时提醒，不该在通知栏留下条目。
+ */
 object HourlyChime {
 
-    const val CHANNEL_ID = "hourly_chime"
     private const val REQUEST_CODE = 7302
-    private const val NOTIFICATION_ID = 7302
+    private const val BEEP_MILLIS = 150
+    private const val TONE_VOLUME = 90
 
     /** 下一个真太阳时整点。 */
     fun nextBoundary(place: Place, now: Instant): Instant {
@@ -68,59 +67,38 @@ object HourlyChime {
         )
     }
 
-    @SuppressLint("MissingPermission")
-    fun chime(context: Context, place: Place, boundary: Instant) {
-        if (!hasNotificationPermission(context)) return
-        ensureChannel(context)
+    /** 播一声短促的「嘀」。 */
+    fun chime(context: Context) {
+        val tone = runCatching {
+            ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME).also {
+                it.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MILLIS)
+            }
+        }.getOrNull()
+        if (tone != null) {
+            // ToneGenerator 持有音频资源，播完必须释放，否则会一直占着音频通道。
+            Handler(Looper.getMainLooper()).postDelayed({ tone.release() }, BEEP_MILLIS + 200L)
+            return
+        }
+        playNotificationRingtone(context)
+    }
 
-        val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(boundary, place.longitude)
-        val total = trueSolarSeconds.toLong().coerceIn(0, 86_399)
-        val hour = total / 3600
-        val shichenName = TimeText.shichenName(context, Shichen.indexOf(trueSolarSeconds))
-        val body = context.getString(R.string.chime_body, "%02d:00".format(hour), shichenName)
-
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_sun)
-            .setContentTitle(context.getString(R.string.chime_title_notif))
-            .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(contentIntent)
+    /** 少数机型上 ToneGenerator 不可用，退回系统通知音（只响一次）。 */
+    private fun playNotificationRingtone(context: Context) {
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return
+        val ringtone = runCatching { RingtoneManager.getRingtone(context, uri) }.getOrNull() ?: return
+        ringtone.audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
+        runCatching { ringtone.play() }.onSuccess { stopLater(ringtone) }
+    }
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+    private fun stopLater(ringtone: Ringtone) {
+        Handler(Looper.getMainLooper()).postDelayed({ runCatching { ringtone.stop() } }, BEEP_MILLIS + 800L)
     }
 
     private fun canScheduleExact(manager: AlarmManager): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || manager.canScheduleExactAlarms()
-
-    private fun hasNotificationPermission(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS,
-            ) == PackageManager.PERMISSION_GRANTED
-
-    private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_chime), NotificationManager.IMPORTANCE_HIGH).apply {
-                description = context.getString(R.string.channel_chime_desc)
-            },
-        )
-    }
 }
 
 class HourlyChimeReceiver : BroadcastReceiver() {
@@ -130,10 +108,7 @@ class HourlyChimeReceiver : BroadcastReceiver() {
         if (!settings.hourlyChimeEnabled) return
 
         val place = settings.place
-        val boundaryMillis = intent.getLongExtra(EXTRA_BOUNDARY_MILLIS, 0L)
-        val boundary = if (boundaryMillis > 0L) Instant.ofEpochMilli(boundaryMillis) else Instant.now()
-
-        HourlyChime.chime(context, place, boundary)
+        HourlyChime.chime(context)
         HourlyChime.schedule(context, place)
     }
 

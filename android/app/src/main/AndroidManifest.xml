@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 小组件点「标准时间」要打开系统闹钟，SHOW_ALARMS 需要这个权限。 -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <uses-feature
         android:name="android.hardware.location"
@@ -15,6 +17,32 @@
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="false" />
+
+    <!-- 小组件点击要跳到系统闹钟与系统天气，Android 11+ 需声明可见性才能解析到目标。 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SHOW_ALARMS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.APP_WEATHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.huawei.android.totemweather" />
+        <package android:name="com.miui.weather2" />
+        <package android:name="com.coloros.weather2" />
+        <package android:name="com.oplus.weather" />
+        <package android:name="com.samsung.android.weather" />
+        <package android:name="com.google.android.apps.weather" />
+        <package android:name="com.weather.Weather" />
+        <package android:name="com.accuweather.android" />
+    </queries>
 
     <application
         android:allowBackup="true"
