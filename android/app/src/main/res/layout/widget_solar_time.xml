@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 由脚本生成：两栏时钟 + 底部逐时天气。改结构后请整份重新生成。 -->
+<!-- 由脚本生成：常规尺寸（3 行及以上）。改结构后请整份重新生成。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_root"
@@ -152,66 +152,66 @@
                     android:layout_marginBottom="5dp"
                     android:autoStart="true"
                     android:flipInterval="1000">
-                <TextView style="@style/WidgetClockSecondSolar" android:text="00" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="01" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="02" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="03" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="04" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="05" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="06" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="07" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="08" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="09" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="10" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="11" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="12" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="13" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="14" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="15" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="16" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="17" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="18" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="19" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="20" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="21" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="22" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="23" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="24" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="25" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="26" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="27" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="28" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="29" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="30" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="31" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="32" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="33" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="34" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="35" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="36" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="37" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="38" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="39" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="40" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="41" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="42" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="43" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="44" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="45" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="46" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="47" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="48" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="49" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="50" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="51" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="52" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="53" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="54" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="55" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="56" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="57" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="58" />
-                <TextView style="@style/WidgetClockSecondSolar" android:text="59" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="00" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="01" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="02" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="03" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="04" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="05" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="06" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="07" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="08" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="09" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="10" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="11" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="12" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="13" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="14" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="15" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="16" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="17" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="18" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="19" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="20" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="21" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="22" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="23" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="24" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="25" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="26" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="27" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="28" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="29" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="30" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="31" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="32" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="33" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="34" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="35" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="36" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="37" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="38" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="39" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="40" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="41" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="42" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="43" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="44" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="45" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="46" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="47" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="48" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="49" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="50" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="51" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="52" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="53" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="54" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="55" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="56" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="57" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="58" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="59" />
                 </ViewFlipper>
             </LinearLayout>
 

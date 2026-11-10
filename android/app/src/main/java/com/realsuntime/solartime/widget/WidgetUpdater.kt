@@ -37,8 +37,8 @@ import kotlin.math.roundToLong
  * 桌面小组件：左侧为所在国标准时间（跟随设备时区）、日期与星期，
  * 右侧为当地真太阳时与时辰。
  *
- * 时间由 Chronometer 自行逐秒走时（时数写成文字、分秒交给 Chronometer），
- * 这里按分钟对齐刷新其余内容（日期、时辰、坐标、昼夜底色）并校正时间；
+ * 标准时间由布局里的 TextClock 自走（含秒），真太阳时由刷新写入时分、ViewFlipper 自走秒数；
+ * 这里按「整分」与「真太阳时整分」刷新日期、时辰、坐标、天气与昼夜底色。
  * 定位优先取系统最近一次定位，没有权限或没有定位记录时退回 App 保存的位置。
  */
 object WidgetUpdater {
@@ -48,18 +48,35 @@ object WidgetUpdater {
     private const val MINUTE_MILLIS = 60_000L
     private const val TICK_MARGIN_MILLIS = 150L
 
-    /** 桌面没给出宽度时按默认 4x3 小组件的宽度（dp）估算字号。 */
-    private const val DEFAULT_WIDGET_WIDTH_DP = 250f
+    /**
+     * 桌面回报的高度（OPTION_APPWIDGET_MIN_HEIGHT）普遍小于实际可用的单元格高度
+     * （实测 2 行回报 131dp、实际约 165dp；3 行回报 180dp、实际约 224dp），
+     * 按这个系数折算后再决定用哪套布局。
+     */
+    private const val HEIGHT_SCALE = 1.25f
 
-    /** 根布局左右内边距（14+14dp）加上中间分隔线与其两侧外边距（12+1+12dp）。 */
+    /** 折算后低于这个高度就用紧凑间距布局（常规内容约 170dp）。 */
+    private const val REGULAR_MIN_CONTENT_DP = 170f
+
+    /** 折算后低于这个高度时连逐时行都放不下，先隐藏它把空间留给时钟。 */
+    private const val MIN_HEIGHT_WITH_HOURLY_DP = 145f
+
+    /** 桌面没给出宽度时按默认 5x2 小组件的宽度（dp）估算字号。 */
+    private const val DEFAULT_WIDGET_WIDTH_DP = 320f
+
+    /** 两栏之间的分隔线（1dp）与内边距/外边距：常规版 14+14+12+1+12，紧凑版 10+10+8+1+8。 */
     private const val COLUMN_CHROME_DP = 53f
-    private const val TEXT_GAP_DP = 4f
+    private const val COMPACT_COLUMN_CHROME_DP = 37f
+
+    private const val TEXT_GAP_DP = 2f
     private const val MAIN_TEXT_SAMPLE = "00:00"
-    private const val MAIN_TEXT_SP = 42f
+    private const val SECOND_SAMPLE = "00"
+    private const val MAX_MAIN_TEXT_SP = 48f
+    private const val MIN_MAIN_TEXT_SP = 20f
     private const val SECOND_TEXT_SP = 23f
-    private const val MIN_MAIN_TEXT_SP = 22f
     private const val DATE_TEXT_SP = 11f
     private const val MIN_DATE_TEXT_SP = 8f
+
 
     fun refreshAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
@@ -69,11 +86,12 @@ object WidgetUpdater {
             return
         }
         val place = resolvePlace(context)
-        // 各机型/桌面给到的宽度不同，逐个实例按可用宽度换算字号，避免时钟被裁切。
+        // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
         ids.forEach { id ->
-            val widthDp = manager.getAppWidgetOptions(id)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-            manager.updateAppWidget(id, buildViews(context, place, widthDp))
+            val options = manager.getAppWidgetOptions(id)
+            val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+            val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+            manager.updateAppWidget(id, buildViews(context, place, widthDp, heightDp))
         }
         scheduleNextTick(context, place)
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
@@ -81,7 +99,12 @@ object WidgetUpdater {
         WeatherRepository.requestRefresh(context, place)
     }
 
-    fun buildViews(context: Context, place: Place = resolvePlace(context), widthDp: Int = 0): RemoteViews {
+    fun buildViews(
+        context: Context,
+        place: Place = resolvePlace(context),
+        widthDp: Int = 0,
+        heightDp: Int = 0,
+    ): RemoteViews {
         val now = Instant.now()
         val zone = civilZoneOf(place)
         val civil = now.atZone(zone)
@@ -94,15 +117,22 @@ object WidgetUpdater {
         // 标准时间改由布局里的 TextClock 自走（含秒），不再依赖刷新。
         val solarSeconds = secondsOfDay(now, solarOffset)
         val date = dateText(context, civil, place)
+        // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
+        val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
+        // 折算后放不下常规布局的内容（如默认 5x2）时，改用只压缩留白的紧凑间距布局。
+        val compact = effectiveHeightDp > 0f && effectiveHeightDp < REGULAR_MIN_CONTENT_DP
+        // 再矮就连逐时行都放不下，先让位给时钟。
+        val showHourly = effectiveHeightDp <= 0f || effectiveHeightDp >= MIN_HEIGHT_WITH_HOURLY_DP
+        val layout = if (compact) R.layout.widget_solar_time_compact else R.layout.widget_solar_time
 
-        return RemoteViews(context.packageName, R.layout.widget_solar_time).apply {
+        return RemoteViews(context.packageName, layout).apply {
             setInt(
                 R.id.widget_root,
                 "setBackgroundResource",
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
-            applyClockSizing(context, widthDp, date, this)
-            // 中国境内统一东八区，其余地区跟随设备时区。
+            // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
+            applyClockSizing(context, widthDp, date, compact, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
@@ -118,16 +148,22 @@ object WidgetUpdater {
                 R.id.widget_coordinates,
                 TimeText.coordinates(context, place.latitude, place.longitude),
             )
-            bindHourly(context, now, zone, this)
+            bindHourly(context, now, zone, showHourly, this)
             setOnClickPendingIntent(R.id.widget_root, openApp(context))
         }
     }
 
-    /** 底部小时预报：从当前三小时块起，每格显示时刻与天气状况；没有数据时整行隐藏。 */
-    private fun bindHourly(context: Context, now: Instant, zone: ZoneId, views: RemoteViews) {
+    /** 底部小时预报：从当前时刻起每格 1 小时，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
+    private fun bindHourly(
+        context: Context,
+        now: Instant,
+        zone: ZoneId,
+        show: Boolean,
+        views: RemoteViews,
+    ) {
         val hourly = WeatherRepository.hourly(context).associateBy { it.epochSeconds }
-        views.setViewVisibility(R.id.widget_hour_row, if (hourly.isEmpty()) View.GONE else View.VISIBLE)
-        if (hourly.isEmpty()) return
+        views.setViewVisibility(R.id.widget_hour_row, if (show && hourly.isNotEmpty()) View.VISIBLE else View.GONE)
+        if (!show || hourly.isEmpty()) return
 
         val slots = WeatherRepository.slots(
             nowEpochSeconds = now.epochSecond,
@@ -196,30 +232,31 @@ object WidgetUpdater {
         "%02d:%02d".format(Locale.ROOT, secondsOfDay / 3600, secondsOfDay / 60 % 60)
 
     /**
-     * 按小组件可用宽度换算主时间字号，避免窄屏或大字体下时钟被裁切。
+     * 按栏宽换算主时间字号：桌面回报的宽度与实际一致，取「栏宽 － 秒数 － 冒号 － 间隙」，
+     * 除以实测的「文本宽/字号」比例得到字号，既填满栏宽又不会被裁切。
      *
-     * 宽度取桌面给的当前最小宽度（dp），减去两栏之间的分隔线与内边距后均分给左右两栏；
-     * 再扣掉秒数与冒号的固定占位，剩下的才是 "HH:MM" 可用宽度。
+     * 高度只用于选择布局（桌面回报的高度并不可靠），不参与字号计算，
+     * 免得把字缩得过小、留下大片空白。
      */
-    private fun applyClockSizing(context: Context, widthDp: Int, date: String, views: RemoteViews) {
+    private fun applyClockSizing(context: Context, widthDp: Int, date: String, compact: Boolean, views: RemoteViews) {
         val metrics = context.resources.displayMetrics
         val density = metrics.density
         val totalWidthPx = (if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP) * density
-        val columnWidthPx = (totalWidthPx - COLUMN_CHROME_DP * density) / 2f
+        val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
+        val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
 
-        val secondPx = spToPx(SECOND_TEXT_SP, metrics)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
-            textSize = secondPx
+            textSize = spToPx(SECOND_TEXT_SP, metrics)
         }
-        val secondsBlockPx = paint.measureText(MAIN_TEXT_SAMPLE.take(2))
+        val secondsBlockPx = paint.measureText(SECOND_SAMPLE)
         val colonPx = paint.measureText(":")
         val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
 
-        paint.textSize = spToPx(MAIN_TEXT_SP, metrics)
+        paint.textSize = spToPx(MAX_MAIN_TEXT_SP, metrics)
         val widthRatio = paint.measureText(MAIN_TEXT_SAMPLE) / paint.textSize
-        val mainPx = WidgetSizing.fitTextSizePx(
+        val mainPx = fitTextSizePx(
             availableWidthPx = availablePx,
             widthRatio = widthRatio,
             minPx = spToPx(MIN_MAIN_TEXT_SP, metrics),
@@ -235,13 +272,24 @@ object WidgetUpdater {
         views.setTextViewTextSize(
             R.id.widget_civil_date,
             TypedValue.COMPLEX_UNIT_PX,
-            WidgetSizing.fitTextSizePx(
+            fitTextSizePx(
                 availableWidthPx = columnWidthPx,
                 widthRatio = dateRatio,
                 minPx = spToPx(MIN_DATE_TEXT_SP, metrics),
                 maxPx = datePx,
             ),
         )
+    }
+
+    /** 文本宽度约等于 widthRatio × 字号，按可用宽度反推字号并夹在上下限内。 */
+    private fun fitTextSizePx(
+        availableWidthPx: Float,
+        widthRatio: Float,
+        minPx: Float,
+        maxPx: Float,
+    ): Float {
+        if (availableWidthPx <= 0f || widthRatio <= 0f) return minPx
+        return (availableWidthPx / widthRatio).coerceIn(minPx, maxPx)
     }
 
     private fun spToPx(sp: Float, metrics: DisplayMetrics): Float =

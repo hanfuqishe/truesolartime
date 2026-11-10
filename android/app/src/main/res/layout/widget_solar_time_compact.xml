@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由脚本生成：紧凑间距（2 行高，5x2 默认布局）：字号相同，留白压缩、逐时行放大以填满单元。改结构后请整份重新生成。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_night"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:paddingStart="10dp"
+    android:paddingTop="9dp"
+    android:paddingEnd="10dp"
+    android:paddingBottom="9dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/widget_label_civil"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/widget_city"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:gravity="end"
+                    android:maxLines="1"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <!-- 标准时间交给 TextClock：宿主进程按整分/整秒自行走时，
+                     既不依赖本 App 的刷新闹钟，也保证秒与分在同一时刻进位。 -->
+                <TextClock
+                    android:id="@+id/widget_civil_time"
+                    style="@style/WidgetClockMain"
+                    android:format12Hour="HH:mm"
+                    android:format24Hour="HH:mm"
+                    android:text="00:00"
+                    android:textColor="#FFFFFFFF"
+                    tools:ignore="HardcodedText" />
+
+                <TextView
+                    style="@style/WidgetClockColon"
+                    android:text=":"
+                    tools:ignore="HardcodedText" />
+
+                <TextClock
+                    android:id="@+id/widget_civil_sec"
+                    style="@style/WidgetClockSecondTicked"
+                    android:format12Hour="ss"
+                    android:format24Hour="ss"
+                    android:text="00"
+                    tools:ignore="HardcodedText" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_civil_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:maxLines="1"
+                android:textColor="#B3FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="6dp"
+            android:background="#33FFFFFF"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/widget_label_solar"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/widget_solar_shichen"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_solar_time"
+                    style="@style/WidgetClockMain"
+                    android:text="00:00"
+                    android:textColor="#FFFFC65C"
+                    tools:ignore="HardcodedText" />
+
+                <TextView
+                    style="@style/WidgetClockColonSolar"
+                    android:text=":"
+                    tools:ignore="HardcodedText" />
+
+                <!-- 真太阳时含秒级偏移，TextClock 无法表示，秒仍由翻页器逐秒自走。 -->
+                <ViewFlipper
+                    android:id="@+id/widget_solar_sec"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="5dp"
+                    android:autoStart="true"
+                    android:flipInterval="1000">
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="00" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="01" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="02" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="03" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="04" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="05" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="06" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="07" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="08" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="09" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="10" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="11" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="12" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="13" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="14" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="15" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="16" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="17" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="18" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="19" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="20" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="21" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="22" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="23" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="24" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="25" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="26" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="27" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="28" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="29" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="30" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="31" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="32" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="33" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="34" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="35" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="36" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="37" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="38" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="39" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="40" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="41" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="42" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="43" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="44" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="45" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="46" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="47" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="48" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="49" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="50" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="51" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="52" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="53" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="54" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="55" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="56" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="57" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="58" />
+                    <TextView style="@style/WidgetClockSecondSolar" android:text="59" />
+                </ViewFlipper>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_coordinates"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:maxLines="1"
+                android:textColor="#B3FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="7dp"
+        android:background="#22FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/widget_hour_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_0"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_0"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_0"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_1"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_1"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_1"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_2"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_2"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_2"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_3"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_3"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_3"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_4"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_4"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_4"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour_label_5"
+                style="@style/WidgetHourLabelCompact" />
+            <ImageView
+                android:id="@+id/widget_hour_icon_5"
+                style="@style/WidgetHourIconCompact" />
+            <TextView
+                android:id="@+id/widget_hour_cond_5"
+                style="@style/WidgetHourCondCompact" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
