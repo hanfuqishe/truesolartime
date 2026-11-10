@@ -83,6 +83,27 @@ object WidgetUpdater {
     private const val DATE_TEXT_SP = 11f
     private const val MIN_DATE_TEXT_SP = 8f
 
+    /** 还没有有效 GPS 定位时真太阳时的占位符。 */
+    private const val SOLAR_PLACEHOLDER = "--:--"
+
+    /**
+     * 小组件用的定位结果。
+     *
+     * [hasFix] 为 false 表示「跟随 GPS 但还没拿到过有效定位」，此时真太阳时无从计算，
+     * 只能显示占位，不能拿默认坐标或旧坐标冒充。
+     */
+    data class LocationState(val place: Place, val hasFix: Boolean)
+
+    /**
+     * 决定能否显示真太阳时。
+     *
+     * @param followingGps 是否处于 GPS 跟随模式（手动指定位置时为 false）
+     * @param hadFix 此前是否真的拿到过 GPS 定位（设置里保存的位置来自 GPS）
+     * @param fixNow 当前是否能取到系统最近一次定位
+     */
+    internal fun hasValidFix(followingGps: Boolean, hadFix: Boolean, fixNow: Boolean): Boolean =
+        fixNow || !followingGps || hadFix
+
 
     fun refreshAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
@@ -91,13 +112,14 @@ object WidgetUpdater {
             cancelTick(context)
             return
         }
-        val place = resolvePlace(context)
+        val location = resolveLocation(context)
+        val place = location.place
         // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
         ids.forEach { id ->
             val options = manager.getAppWidgetOptions(id)
             val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
             val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-            manager.updateAppWidget(id, buildViews(context, place, widthDp, heightDp))
+            manager.updateAppWidget(id, buildViews(context, location, widthDp, heightDp))
         }
         scheduleNextTick(context, place)
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
@@ -107,10 +129,11 @@ object WidgetUpdater {
 
     fun buildViews(
         context: Context,
-        place: Place = resolvePlace(context),
+        location: LocationState = resolveLocation(context),
         widthDp: Int = 0,
         heightDp: Int = 0,
     ): RemoteViews {
+        val place = location.place
         val now = Instant.now()
         val zone = civilZoneOf(place)
         val civil = now.atZone(zone)
@@ -122,7 +145,7 @@ object WidgetUpdater {
         // 每次刷新把显示位置对齐到当前秒，消除累积误差。
         // 标准时间改由布局里的 TextClock 自走（含秒），不再依赖刷新。
         val solarSeconds = secondsOfDay(now, solarOffset)
-        val date = dateText(context, civil, place)
+        val date = dateText(context, civil, place, location.hasFix)
         // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
         // 折算后放不下常规布局的内容（如默认 5x2）时，改用只压缩留白的紧凑间距布局。
@@ -144,17 +167,32 @@ object WidgetUpdater {
             setTextViewText(R.id.widget_civil_date, date)
             setTextViewText(
                 R.id.widget_city,
-                DistrictResolver.cachedName(context)
-                    ?: CityIndex.nearest(place.latitude, place.longitude, Locale.getDefault().language)?.name.orEmpty(),
+                if (!location.hasFix) {
+                    ""
+                } else {
+                    DistrictResolver.cachedName(context)
+                        ?: CityIndex.nearest(place.latitude, place.longitude, Locale.getDefault().language)?.name.orEmpty()
+                },
             )
-            setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
-            setInt(R.id.widget_solar_sec, "setDisplayedChild", (solarSeconds % 60).toInt())
-            setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
-            setTextViewText(
-                R.id.widget_coordinates,
-                TimeText.coordinates(context, place.latitude, place.longitude),
-            )
-            bindHourly(context, now, zone, showHourly, this)
+            if (location.hasFix) {
+                setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
+                setInt(R.id.widget_solar_sec, "setDisplayedChild", (solarSeconds % 60).toInt())
+                setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
+                setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
+                setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
+                setTextViewText(
+                    R.id.widget_coordinates,
+                    TimeText.coordinates(context, place.latitude, place.longitude),
+                )
+            } else {
+                // 跟随 GPS 但还没有有效定位：真太阳时无从计算，显示占位而不是拿旧位置冒充。
+                setTextViewText(R.id.widget_solar_time, SOLAR_PLACEHOLDER)
+                setViewVisibility(R.id.widget_solar_colon, View.GONE)
+                setViewVisibility(R.id.widget_solar_sec, View.GONE)
+                setTextViewText(R.id.widget_solar_shichen, "")
+                setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
+            }
+            bindHourly(context, now, zone, showHourly && location.hasFix, this)
             bindClicks(context, place, this)
         }
     }
@@ -171,7 +209,6 @@ object WidgetUpdater {
         weatherPendingIntent(context, place)?.let {
             views.setOnClickPendingIntent(R.id.widget_hour_row, it)
         }
-        logClicks(context, place)
     }
 
     private fun activityIntent(context: Context, requestCode: Int, intent: Intent): PendingIntent =
@@ -209,13 +246,6 @@ object WidgetUpdater {
     }
 
     /** 临时诊断：记录三个区域解析到的目标。 */
-    private fun logClicks(context: Context, place: Place) {
-        val alarm = WidgetIntents.alarm(context)?.let { "${it.action}/${it.component?.flattenToShortString()}" }
-        val weather = WidgetIntents.weather(context, place.latitude, place.longitude)
-            ?.let { "${it.action}/${it.component?.flattenToShortString()}/${it.data}" }
-        android.util.Log.i("WidgetClicks", "alarm=$alarm weather=$weather")
-    }
-
     /** 底部小时预报：从当前时刻起每格 1 小时，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
     private fun bindHourly(
         context: Context,
@@ -364,7 +394,7 @@ object WidgetUpdater {
      * 标准时间由 TextClock 自行走时，这里只负责刷新真太阳时的分钟、日期、时辰与天气；
      * 两个时钟的分钟边界相差 0~59 秒，两者各自的边界都要刷新一次（约每 30 秒一次）。
      */
-    fun scheduleNextTick(context: Context, place: Place = resolvePlace(context)) {
+    fun scheduleNextTick(context: Context, place: Place = resolveLocation(context).place) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val nowMillis = System.currentTimeMillis()
         val now = Instant.ofEpochMilli(nowMillis)
@@ -422,14 +452,21 @@ object WidgetUpdater {
         manager.cancel(tickIntent(context))
     }
 
-    /** 请求把小组件固定到桌面（Android 8.0+ 且启动器支持时）。 */
-    fun requestPin(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(AppWidgetManager::class.java) ?: return
-        if (!manager.isRequestPinAppWidgetSupported) return
+    /** 请求把小组件固定到桌面；返回请求是否已发出。 */
+    fun requestPin(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val manager = context.getSystemService(AppWidgetManager::class.java) ?: return false
+        if (!manager.isRequestPinAppWidgetSupported) return false
         val provider = ComponentName(context, SolarWidgetProvider::class.java)
-        manager.requestPinAppWidget(provider, null, null)
+        // 部分启动器（如华为桌面）不会回调成功事件，是否真的加上去由调用方比对实例数判断。
+        return runCatching { manager.requestPinAppWidget(provider, null, null) }.getOrDefault(false)
     }
+
+    /** 当前已固定到桌面的实例数，供「添加到桌面」判断是否成功。 */
+    fun pinnedCount(context: Context): Int = runCatching {
+        val manager = context.getSystemService(AppWidgetManager::class.java) ?: return 0
+        manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
+    }.getOrDefault(0)
 
     private fun tickIntent(context: Context): PendingIntent {
         val intent = Intent(context, SolarWidgetProvider::class.java).setAction(ACTION_TICK)
@@ -455,12 +492,18 @@ object WidgetUpdater {
             ZoneId.systemDefault()
         }
 
-    private fun resolvePlace(context: Context): Place {
+    private fun resolveLocation(context: Context): LocationState {
+        val saved = AppSettings(context).place
+        // 手动指定过位置就一直用它；否则跟随 GPS（与 App 内判定一致）。
+        val followingGps = saved.source != PlaceSource.MANUAL
         val fix = LocationTracker(context).lastKnownLocation()
         if (fix != null) {
-            return Place(fix.latitude, fix.longitude, PlaceSource.GPS, context.getString(R.string.gps_label))
+            val place = Place(fix.latitude, fix.longitude, PlaceSource.GPS, context.getString(R.string.gps_label))
+            return LocationState(place, hasFix = hasValidFix(followingGps, hadFix = true, fixNow = true))
         }
-        return AppSettings(context).place
+        // 没有实时定位时，只有「历史上确实拿到过 GPS 定位」才继续用它；默认坐标不算有效定位。
+        val hasFix = hasValidFix(followingGps, hadFix = saved.source == PlaceSource.GPS, fixNow = false)
+        return LocationState(saved, hasFix)
     }
 
     private fun openApp(context: Context): Intent =
@@ -468,8 +511,10 @@ object WidgetUpdater {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
-    private fun dateText(context: Context, civil: ZonedDateTime, place: Place): String {
+    /** 日期行；还没有有效定位时不带气温（那份气温属于别的城市）。 */
+    private fun dateText(context: Context, civil: ZonedDateTime, place: Place, hasFix: Boolean): String {
         val date = TimeText.dateShortWithWeekday(context, civil.toLocalDate())
+        if (!hasFix) return date
         val range = WeatherRepository.temperatureRange(
             WeatherRepository.hourly(context),
             civil.toLocalDate(),

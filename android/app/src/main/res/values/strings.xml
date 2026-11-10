@@ -48,7 +48,9 @@
     <string name="section_widget">Home screen widget</string>
     <string name="widget_desc">Standard time and date on the left, true solar time and coordinates on the right</string>
     <string name="action_add_to_home">Add to home screen</string>
-    <string name="widget_pin_unsupported">Long-press the home screen to add it</string>
+    <string name="widget_pin_no_space">The current home page is full. Swipe to a page with free space (or long-press an empty area to add a page), then tap Add to home again.</string>
+    <string name="widget_pin_unsupported">This launcher does not support pinning widgets. Add it from the home screen: long-press → Widgets → True Solar Time.</string>
+    <string name="widget_pin_hint">The widget is added to the current home page. If that page is full, swipe to an empty page (or long-press an empty spot to add one) first.</string>
     <string name="section_about">About the calculation</string>
     <string name="about_body">True solar time follows the actual position of the sun: first correct for the longitude offset from 120°E (4 minutes per degree), then add the equation of time caused by Earth orbital eccentricity and obliquity. The twelve shichen follow true solar time, starting with Zi at 23:00, two hours each.</string>
 
@@ -72,6 +74,7 @@
 
     <string name="widget_label">True Solar Time</string>
     <string name="widget_label_civil">Standard time</string>
+    <string name="widget_waiting_gps">Waiting for GPS fix…</string>
     <string name="widget_label_solar">True solar</string>
     <string name="widget_description">Left: local standard time and date. Right: true solar time and coordinates.</string>
 

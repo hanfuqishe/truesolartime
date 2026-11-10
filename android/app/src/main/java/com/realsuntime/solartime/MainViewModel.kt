@@ -169,6 +169,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _message.value = text
     }
 
+    /**
+     * 请求把小组件固定到桌面，返回请求是否已发出。
+     *
+     * 桌面已满时启动器只会自己弹一句提示，既没有失败回调，也不允许 App 新建桌面页，
+     * 所以「是否真的加上去了」由调用方结合 [WidgetPinTracker] 判断后给用户反馈。
+     */
+    fun requestPinWidget(): Boolean = WidgetUpdater.requestPin(app)
+
     fun consumeMessage() {
         _message.value = null
     }

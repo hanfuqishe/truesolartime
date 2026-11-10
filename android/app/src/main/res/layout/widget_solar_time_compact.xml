@@ -142,6 +142,7 @@
                     tools:ignore="HardcodedText" />
 
                 <TextView
+                    android:id="@+id/widget_solar_colon"
                     style="@style/WidgetClockColonSolar"
                     android:text=":"
                     tools:ignore="HardcodedText" />

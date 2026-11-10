@@ -226,6 +226,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             onToggleReminders = toggleReminders,
             onToggleHourlyChime = toggleHourlyChime,
             onSelectMapStyle = viewModel::setMapStyle,
+            onAddWidget = viewModel::requestPinWidget,
         )
     }
 }
@@ -309,7 +310,12 @@ private fun HeroCard(
 
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                    // 跟随 GPS 但还没有有效定位时，真太阳时无从计算，先显示占位。
+                    text = if (waitingForFix) {
+                        "--:--"
+                    } else {
+                        "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute)
+                    },
                     style = TextStyle(
                         fontSize = 72.sp,
                         fontWeight = FontWeight.Light,
@@ -318,57 +324,67 @@ private fun HeroCard(
                     ),
                     color = onHero,
                 )
-                Text(
-                    text = "%02d".format(snapshot.trueSolarTime.second),
-                    style = TextStyle(
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFeatureSettings = "tnum",
-                    ),
-                    color = onHero.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(start = 6.dp, bottom = 12.dp),
-                )
+                if (!waitingForFix) {
+                    Text(
+                        text = "%02d".format(snapshot.trueSolarTime.second),
+                        style = TextStyle(
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFeatureSettings = "tnum",
+                        ),
+                        color = onHero.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(start = 6.dp, bottom = 12.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(onHero.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = snapshot.shichenName.take(1),
-                        style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Medium),
-                        color = onHero,
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = stringResource(
-                            R.string.shichen_summary,
-                            TimeText.shichenName(LocalContext.current, snapshot.shichenIndex),
-                            TimeText.shichenHalf(LocalContext.current, snapshot.secondHalf),
-                            quarterText,
-                        ),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = onHero,
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.shichen_countdown,
-                            snapshot.shichenRange,
-                            TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12),
-                            TimeFormat.countdown(snapshot.secondsToNextShichen),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = onHero.copy(alpha = 0.8f),
-                    )
+            if (waitingForFix) {
+                Text(
+                    text = stringResource(R.string.widget_waiting_gps),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onHero.copy(alpha = 0.85f),
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(onHero.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = snapshot.shichenName.take(1),
+                            style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Medium),
+                            color = onHero,
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            text = stringResource(
+                                R.string.shichen_summary,
+                                TimeText.shichenName(LocalContext.current, snapshot.shichenIndex),
+                                TimeText.shichenHalf(LocalContext.current, snapshot.secondHalf),
+                                quarterText,
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = onHero,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.shichen_countdown,
+                                snapshot.shichenRange,
+                                TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12),
+                                TimeFormat.countdown(snapshot.secondsToNextShichen),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = onHero.copy(alpha = 0.8f),
+                        )
+                    }
                 }
             }
         }

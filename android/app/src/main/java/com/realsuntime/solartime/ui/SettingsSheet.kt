@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,12 @@ import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.WidgetUpdater
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** 等待启动器新增小组件实例的最长时间（用户还要在系统弹窗里确认）。 */
+private const val PIN_RESULT_TIMEOUT_MILLIS = 10_000L
+private const val PIN_POLL_INTERVAL_MILLIS = 300L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -60,6 +67,7 @@ fun SettingsSheet(
     onToggleReminders: (Boolean) -> Unit,
     onToggleHourlyChime: (Boolean) -> Unit,
     onSelectMapStyle: (MapStyle) -> Unit,
+    onAddWidget: () -> Boolean,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -242,13 +250,46 @@ fun SettingsSheet(
                     context.getSystemService(AppWidgetManager::class.java)
                         ?.isRequestPinAppWidgetSupported == true
             }
+            var pinHint by remember { mutableStateOf<String?>(null) }
+            val scope = rememberCoroutineScope()
             FilledTonalButton(
-                onClick = { WidgetUpdater.requestPin(context) },
+                onClick = {
+                    pinHint = null
+                    val before = WidgetUpdater.pinnedCount(context)
+                    if (!onAddWidget()) {
+                        pinHint = context.getString(R.string.widget_pin_unsupported)
+                        return@FilledTonalButton
+                    }
+                    // 启动器只在真的加上去时才新增实例；用户还要在系统弹窗里点「添加」，
+                    // 因此轮询一段时间，始终没有新实例才认为这次没加上（多半是桌面没空间）。
+                    scope.launch {
+                        val deadline = System.currentTimeMillis() + PIN_RESULT_TIMEOUT_MILLIS
+                        while (System.currentTimeMillis() < deadline) {
+                            delay(PIN_POLL_INTERVAL_MILLIS)
+                            if (WidgetUpdater.pinnedCount(context) > before) return@launch
+                        }
+                        pinHint = context.getString(R.string.widget_pin_no_space)
+                    }
+                },
                 enabled = canPin,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (canPin) stringResource(R.string.action_add_to_home) else stringResource(R.string.widget_pin_unsupported))
             }
+            pinHint?.let { hint ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.widget_pin_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
