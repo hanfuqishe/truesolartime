@@ -1,15 +1,18 @@
-*.iml
-.gradle/
-local.properties
-.idea/
+# 通用
 .DS_Store
+.idea/
+*.iml
+
+# Android：构建产物与本地配置
+.gradle/
+.kotlin/
 build/
 captures/
 .externalNativeBuild/
 .cxx/
+local.properties
 *.apk
 *.aab
-.kotlin/
 keystore.properties
 release.jks
 *.jks

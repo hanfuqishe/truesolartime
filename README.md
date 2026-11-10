@@ -18,6 +18,8 @@
 - **定位方式**：默认持续跟随 GPS，每分钟采样一次；也可手动输入经纬度、从常用城市快速选择。位置会被记住。
 - **位置地图**：内嵌地图，标注当前坐标，支持缩放拖动。境内自动使用高德底图（中文地名、路网更细），境外自动使用 OpenStreetMap；三种底图均无需 API Key。
 - **时辰交接提醒**：可开启通知，在进入下一个时辰前 5 分钟提醒（开机后自动重新排程）。
+- **桌面小组件**：左侧显示所在国标准时间、日期与星期，右侧显示当地真太阳时与时辰；每分钟刷新，按昼夜切换配色。
+- **整点报时**：可开关，每到真太阳时整点发一条带提示音的通知。
 - **主题**：跟随系统深色／浅色模式；主卡片另按白天／夜晚切换配色。
 
 ## 计算原理
@@ -34,15 +36,24 @@
 
 ## 构建
 
-需要 JDK 17+ 与 Android SDK（compileSdk 35、build-tools 35.0.0）。
-```bash
-./gradlew assembleDebug        # 产出 app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # 太阳时／时辰计算单元测试
-./gradlew lintDebug
-./gradlew assembleRelease      # 产出签名发行版 app/build/outputs/apk/release/app-release.apk
+仓库按目标平台分目录，Android 部分在 `android/`：
+
+```
+android/   Android 工程（Kotlin + Compose，Gradle 根目录）
+ios/       iPhone 工程（SwiftUI），见 ios/README.md
 ```
 
-发行版签名读取仓库根目录的 `keystore.properties`（**不入库**），格式：
+Android 侧需要 JDK 17+ 与 Android SDK（compileSdk 35、build-tools 35.0.0）。
+
+```bash
+cd android
+./gradlew assembleDebug        # 产出 android/app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest    # 太阳时／时辰计算单元测试
+./gradlew lintDebug
+./gradlew assembleRelease      # 产出 android/app/build/outputs/apk/release/app-release.apk
+```
+
+发行版签名读取 `android/keystore.properties`（**不入库**），格式：
 
 ```properties
 storeFile=release.jks
@@ -55,14 +66,22 @@ keyPassword=***
 
 ## 项目结构
 
-仓库同时包含两个平台：
+```
+android/                          Android（Kotlin + Compose，Gradle 根目录）
+├── app/                          应用模块
+├── gradle/  gradlew  *.gradle.kts
+└── keystore.properties  local.properties     本地配置，不入库
+
+ios/                              iPhone（SwiftUI），构建说明见 ios/README.md
+├── TrueSolarTime/                源码（Core / UI / 平台层）
+├── Scripts/                      数值自检与构建脚本
+└── project.yml                   XcodeGen 工程定义
+```
+
+Android 源码结构：
 
 ```
-app/                     Android（Kotlin + Compose）
-ios/                     iPhone（SwiftUI），构建说明见 ios/README.md
-```
-```
-app/src/main/java/com/realsuntime/solartime/
+android/app/src/main/java/com/realsuntime/solartime/
 ├── MainActivity.kt              入口
 ├── MainViewModel.kt             每秒时钟、定位状态、位置与提醒设置
 ├── solar/                       纯 Kotlin 天文与时辰计算（可单测）
@@ -70,14 +89,16 @@ app/src/main/java/com/realsuntime/solartime/
 │   ├── Shichen.kt               十二时辰划分与交接时刻
 │   ├── SolarSnapshot.kt         供 UI 消费的聚合快照
 │   └── TimeFormat.kt            时间／时长格式化
+├── map/                         WGS-84 ↔ GCJ-02、底图选择
 ├── data/                        位置模型、SharedPreferences、LocationManager 封装、地图配置
 ├── notify/                      时辰交接提醒（AlarmManager + 通知）
+├── widget/                      桌面小组件、真太阳时整点报时
 └── ui/                          Compose 界面、地图卡片与主题
 ```
 
 ## 图标
 
-自适应图标为「太阳 + 倾斜椭圆轨道 + 12 个时间刻度」，矢量绘制于 `res/drawable/ic_launcher_foreground.xml`。
+自适应图标为「太阳 + 倾斜椭圆轨道 + 12 个时间刻度」，矢量绘制于 `android/app/src/main/res/drawable/ic_launcher_foreground.xml`。
 
 ## 权限
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">真太阳时</string>
+    <string name="widget_label">真太阳时</string>
+    <string name="widget_label_civil">标准时间</string>
+    <string name="widget_label_solar">真太阳时</string>
+    <string name="widget_description">左侧显示所在国标准时间与日期，右侧显示当地真太阳时</string>
+</resources>
