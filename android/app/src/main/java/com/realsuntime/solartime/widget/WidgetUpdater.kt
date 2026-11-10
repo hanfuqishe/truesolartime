@@ -6,7 +6,12 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Build
+import android.text.TextPaint
+import android.util.DisplayMetrics
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import com.realsuntime.solartime.MainActivity
@@ -41,7 +46,20 @@ object WidgetUpdater {
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
     private const val REQUEST_TICK = 7301
     private const val MINUTE_MILLIS = 60_000L
-    private const val TICK_MARGIN_MILLIS = 250L
+    private const val TICK_MARGIN_MILLIS = 150L
+
+    /** 桌面没给出宽度时按默认 4x3 小组件的宽度（dp）估算字号。 */
+    private const val DEFAULT_WIDGET_WIDTH_DP = 250f
+
+    /** 根布局左右内边距（14+14dp）加上中间分隔线与其两侧外边距（12+1+12dp）。 */
+    private const val COLUMN_CHROME_DP = 53f
+    private const val TEXT_GAP_DP = 4f
+    private const val MAIN_TEXT_SAMPLE = "00:00"
+    private const val MAIN_TEXT_SP = 42f
+    private const val SECOND_TEXT_SP = 23f
+    private const val MIN_MAIN_TEXT_SP = 22f
+    private const val DATE_TEXT_SP = 11f
+    private const val MIN_DATE_TEXT_SP = 8f
 
     fun refreshAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
@@ -51,27 +69,31 @@ object WidgetUpdater {
             return
         }
         val place = resolvePlace(context)
-        val views = buildViews(context, place)
-        ids.forEach { manager.updateAppWidget(it, views) }
+        // 各机型/桌面给到的宽度不同，逐个实例按可用宽度换算字号，避免时钟被裁切。
+        ids.forEach { id ->
+            val widthDp = manager.getAppWidgetOptions(id)
+                .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+            manager.updateAppWidget(id, buildViews(context, place, widthDp))
+        }
         scheduleNextTick(context, place)
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
         DistrictResolver.requestRefresh(context, place)
         WeatherRepository.requestRefresh(context, place)
     }
 
-    fun buildViews(context: Context, place: Place = resolvePlace(context)): RemoteViews {
+    fun buildViews(context: Context, place: Place = resolvePlace(context), widthDp: Int = 0): RemoteViews {
         val now = Instant.now()
         val zone = civilZoneOf(place)
         val civil = now.atZone(zone)
-        val civilOffset = civilOffsetMillis(now, zone)
         val solarOffset = solarOffsetMillis(now, place)
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(now, place.longitude)
         val shichenIndex = Shichen.indexOf(trueSolarSeconds)
         val isDay = SolarTimeMath.solarAltitudeDegrees(now, place.latitude, place.longitude) > -0.833
         // 时:分由刷新写入；秒交给 ViewFlipper 每秒自动翻页（60 个孩子循环），
         // 每次刷新把显示位置对齐到当前秒，消除累积误差。
-        val civilSeconds = secondsOfDay(now, civilOffset)
+        // 标准时间改由布局里的 TextClock 自走（含秒），不再依赖刷新。
         val solarSeconds = secondsOfDay(now, solarOffset)
+        val date = dateText(context, civil, place)
 
         return RemoteViews(context.packageName, R.layout.widget_solar_time).apply {
             setInt(
@@ -79,9 +101,11 @@ object WidgetUpdater {
                 "setBackgroundResource",
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
-            setTextViewText(R.id.widget_civil_time, clockText(civilSeconds))
-            setInt(R.id.widget_civil_sec, "setDisplayedChild", (civilSeconds % 60).toInt())
-            setTextViewText(R.id.widget_civil_date, dateText(context, civil, place))
+            applyClockSizing(context, widthDp, date, this)
+            // 中国境内统一东八区，其余地区跟随设备时区。
+            setString(R.id.widget_civil_time, "setTimeZone", zone.id)
+            setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
+            setTextViewText(R.id.widget_civil_date, date)
             setTextViewText(
                 R.id.widget_city,
                 DistrictResolver.cachedName(context)
@@ -172,10 +196,62 @@ object WidgetUpdater {
         "%02d:%02d".format(Locale.ROOT, secondsOfDay / 3600, secondsOfDay / 60 % 60)
 
     /**
-     * 对齐到下一次「整分」或「真太阳时整分」，取更早的那个再多留 0.25 秒。
+     * 按小组件可用宽度换算主时间字号，避免窄屏或大字体下时钟被裁切。
      *
-     * 两个时钟的分钟边界相差 0~59 秒，只按整分刷新会让真太阳时的分钟最多滞后近一分钟，
-     * 所以两者各自的边界都要刷新一次（一小时里两者交替，约每 30 秒一次）。
+     * 宽度取桌面给的当前最小宽度（dp），减去两栏之间的分隔线与内边距后均分给左右两栏；
+     * 再扣掉秒数与冒号的固定占位，剩下的才是 "HH:MM" 可用宽度。
+     */
+    private fun applyClockSizing(context: Context, widthDp: Int, date: String, views: RemoteViews) {
+        val metrics = context.resources.displayMetrics
+        val density = metrics.density
+        val totalWidthPx = (if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP) * density
+        val columnWidthPx = (totalWidthPx - COLUMN_CHROME_DP * density) / 2f
+
+        val secondPx = spToPx(SECOND_TEXT_SP, metrics)
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            fontFeatureSettings = "tnum"
+            textSize = secondPx
+        }
+        val secondsBlockPx = paint.measureText(MAIN_TEXT_SAMPLE.take(2))
+        val colonPx = paint.measureText(":")
+        val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
+
+        paint.textSize = spToPx(MAIN_TEXT_SP, metrics)
+        val widthRatio = paint.measureText(MAIN_TEXT_SAMPLE) / paint.textSize
+        val mainPx = WidgetSizing.fitTextSizePx(
+            availableWidthPx = availablePx,
+            widthRatio = widthRatio,
+            minPx = spToPx(MIN_MAIN_TEXT_SP, metrics),
+            maxPx = paint.textSize,
+        )
+        views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
+        views.setTextViewTextSize(R.id.widget_solar_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
+
+        // 日期行（含最高/最低气温）同样按宽度收缩，免得窄尺寸时被截成半截。
+        val datePx = spToPx(DATE_TEXT_SP, metrics)
+        paint.textSize = datePx
+        val dateRatio = paint.measureText(date) / datePx
+        views.setTextViewTextSize(
+            R.id.widget_civil_date,
+            TypedValue.COMPLEX_UNIT_PX,
+            WidgetSizing.fitTextSizePx(
+                availableWidthPx = columnWidthPx,
+                widthRatio = dateRatio,
+                minPx = spToPx(MIN_DATE_TEXT_SP, metrics),
+                maxPx = datePx,
+            ),
+        )
+    }
+
+    private fun spToPx(sp: Float, metrics: DisplayMetrics): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, metrics)
+
+    /**
+     * 对齐到下一次「整分」或「真太阳时整分」，取更早的那个再多留 0.15 秒。
+     *
+     * 标准时间由 TextClock 自行走时，这里只负责刷新真太阳时的分钟、日期、时辰与天气；
+     * 两个时钟的分钟边界相差 0~59 秒，两者各自的边界都要刷新一次（约每 30 秒一次）。
      */
     fun scheduleNextTick(context: Context, place: Place = resolvePlace(context)) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -185,11 +261,14 @@ object WidgetUpdater {
         val toSolar = millisToNextMinute(nowMillis, solarOffsetMillis(now, place))
         val next = nowMillis + minOf(toCivil, toSolar) + TICK_MARGIN_MILLIS
         val pendingIntent = tickIntent(context)
-        // 用 RTC（不唤醒），熄屏时不刷新也无妨，亮屏后系统会补发。
-        if (canScheduleExact(manager)) {
-            manager.setExact(AlarmManager.RTC, next, pendingIntent)
-        } else {
+        // RTC：熄屏时不唤醒 CPU。Doze 下 setExact 会被推迟到维护窗口（可能十几分钟），
+        // 因此优先用 *AndAllowWhileIdle，保证每分钟的刷新仍能落地。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             manager.set(AlarmManager.RTC, next, pendingIntent)
+        } else if (canScheduleExact(manager)) {
+            manager.setExactAndAllowWhileIdle(AlarmManager.RTC, next, pendingIntent)
+        } else {
+            manager.setAndAllowWhileIdle(AlarmManager.RTC, next, pendingIntent)
         }
     }
 

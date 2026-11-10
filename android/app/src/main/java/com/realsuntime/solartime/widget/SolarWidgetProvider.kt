@@ -4,11 +4,22 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import com.realsuntime.solartime.data.AppSettings
 
 class SolarWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        WidgetUpdater.refreshAll(context)
+    }
+
+    /** 桌面拖拽改变尺寸后立刻按新宽度重排，避免时钟与日期被裁切。 */
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle,
+    ) {
         WidgetUpdater.refreshAll(context)
     }
 

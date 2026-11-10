@@ -12,18 +12,6 @@
         <item name="android:textSize">42sp</item>
     </style>
 
-    <!-- ???????????????? -->
-    <style name="WidgetClockSecond">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">sans-serif-light</item>
-        <item name="android:fontFeatureSettings">tnum</item>
-        <item name="android:includeFontPadding">false</item>
-        <item name="android:maxLines">1</item>
-        <item name="android:textSize">23sp</item>
-        <item name="android:textColor">#FFFFFFFF</item>
-    </style>
-
     <style name="WidgetClockSecondSolar">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
@@ -33,6 +21,42 @@
         <item name="android:maxLines">1</item>
         <item name="android:textSize">23sp</item>
         <item name="android:textColor">#FFFFC65C</item>
+    </style>
+
+    <!-- 标准时间与冒号：冒号与秒同样半高，底部留 5dp 与主时间对齐 -->
+    <style name="WidgetClockColon">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">5dp</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">23sp</item>
+        <item name="android:textColor">#FFFFFFFF</item>
+    </style>
+
+    <style name="WidgetClockColonSolar">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">5dp</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">23sp</item>
+        <item name="android:textColor">#FFFFC65C</item>
+    </style>
+
+    <!-- 由 TextClock 逐秒自走的秒数，垂直位置需与冒号一致 -->
+    <style name="WidgetClockSecondTicked">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">5dp</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">23sp</item>
+        <item name="android:textColor">#FFFFFFFF</item>
     </style>
 
     <!-- ????????????????????? -->
