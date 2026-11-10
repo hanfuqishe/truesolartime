@@ -18,6 +18,7 @@ import com.realsuntime.solartime.MainActivity
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
 import java.time.Instant
@@ -75,8 +76,8 @@ object HourlyChime {
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(boundary, place.longitude)
         val total = trueSolarSeconds.toLong().coerceIn(0, 86_399)
         val hour = total / 3600
-        val shichenName = Shichen.name(Shichen.indexOf(trueSolarSeconds))
-        val body = "真太阳时 %02d:00　%s".format(hour, shichenName)
+        val shichenName = TimeText.shichenName(context, Shichen.indexOf(trueSolarSeconds))
+        val body = context.getString(R.string.chime_body, "%02d:00".format(hour), shichenName)
 
         val contentIntent = PendingIntent.getActivity(
             context,
@@ -89,7 +90,7 @@ object HourlyChime {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_sun)
-            .setContentTitle("整点报时")
+            .setContentTitle(context.getString(R.string.chime_title_notif))
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -115,8 +116,8 @@ object HourlyChime {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "真太阳时整点报时", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "每到真太阳时整点提醒一次"
+            NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_chime), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = context.getString(R.string.channel_chime_desc)
             },
         )
     }

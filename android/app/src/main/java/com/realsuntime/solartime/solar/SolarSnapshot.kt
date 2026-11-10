@@ -20,6 +20,9 @@ data class SolarSnapshot(
     val shichenName: String,
     val shichenRange: String,
     val shichenHalf: String,
+
+    /** 时正（后一小时）为 true，时初为 false。 */
+    val secondHalf: Boolean,
     val shichenQuarter: Int,
     val secondsToNextShichen: Long,
     val sunriseTrueSolar: LocalTime?,
@@ -70,6 +73,7 @@ object SolarTimeSnapshot {
             shichenName = Shichen.name(shichenIndex),
             shichenRange = Shichen.rangeText(shichenIndex),
             shichenHalf = Shichen.halfLabel(trueSolarSeconds),
+            secondHalf = Shichen.halfLabel(trueSolarSeconds) == "正",
             shichenQuarter = Shichen.quarterOfHalf(trueSolarSeconds),
             secondsToNextShichen = Shichen.secondsToNextShichen(trueSolarSeconds).roundToLong(),
             sunriseTrueSolar = toTrueSolarTime(sunTimes.sunrise),

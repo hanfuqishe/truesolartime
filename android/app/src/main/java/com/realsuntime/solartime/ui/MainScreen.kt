@@ -53,9 +53,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -63,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.realsuntime.solartime.BuildConfig
 import com.realsuntime.solartime.MainViewModel
+import com.realsuntime.solartime.R
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -97,7 +100,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         if (result.values.any { it }) {
             viewModel.startGpsTracking()
         } else {
-            viewModel.postMessage("未获得定位权限，可手动输入经纬度")
+            viewModel.postMessage(context.getString(R.string.msg_location_permission))
         }
     }
 
@@ -106,7 +109,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     ) { granted ->
         viewModel.setRemindersEnabled(true)
         if (!granted) {
-            viewModel.postMessage("未授予通知权限，提醒可能无法显示")
+            viewModel.postMessage(context.getString(R.string.msg_notification_reminder))
         }
     }
 
@@ -115,7 +118,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     ) { granted ->
         viewModel.setHourlyChimeEnabled(true)
         if (!granted) {
-            viewModel.postMessage("未授予通知权限，整点报时可能无法显示")
+            viewModel.postMessage(context.getString(R.string.msg_notification_chime))
         }
     }
 
@@ -215,7 +218,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             Spacer(Modifier.height(14.dp))
 
             Text(
-                text = versionLabel(),
+                text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -255,18 +258,18 @@ private fun Header(onOpenSettings: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = "真太阳时",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "以太阳经过当地子午线的时刻为正午",
+                text = stringResource(R.string.screen_subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Filled.Settings, contentDescription = "设置")
+            Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
         }
     }
 }
@@ -284,9 +287,9 @@ private fun HeroCard(
         listOf(Color(0xFF2A3B5C), Color(0xFF151B2E))
     }
     val onHero = Color.White
-    val nextShichen = Shichen.name((snapshot.shichenIndex + 1) % 12)
-    val quarterText = chineseNumber(snapshot.shichenQuarter)
-    val statusLabel = if (waitingForFix) "GPS 定位中…" else placeLabel
+    val nextShichen = TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12)
+    val quarterText = TimeText.shichenQuarter(LocalContext.current, snapshot.shichenQuarter)
+    val statusLabel = if (waitingForFix) stringResource(R.string.gps_waiting) else placeLabel
 
     Box(
         modifier = Modifier
@@ -298,9 +301,12 @@ private fun HeroCard(
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (trackingGps) "当地真太阳时 · 每分钟更新" else "当地真太阳时",
+                    text = if (trackingGps) stringResource(R.string.hero_title_tracking) else stringResource(R.string.hero_title),
                     style = MaterialTheme.typography.labelLarge,
                     color = onHero.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 Spacer(Modifier.weight(1f))
                 Surface(
@@ -361,13 +367,23 @@ private fun HeroCard(
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(
-                        text = "${snapshot.shichenName} · ${snapshot.shichenHalf}${quarterText}刻",
+                        text = stringResource(
+                            R.string.shichen_summary,
+                            TimeText.shichenName(LocalContext.current, snapshot.shichenIndex),
+                            TimeText.shichenHalf(LocalContext.current, snapshot.secondHalf),
+                            quarterText,
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = onHero,
                     )
                     Text(
-                        text = "${snapshot.shichenRange}　距$nextShichen ${TimeFormat.countdown(snapshot.secondsToNextShichen)}",
+                        text = stringResource(
+                            R.string.shichen_countdown,
+                            snapshot.shichenRange,
+                            TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12),
+                            TimeFormat.countdown(snapshot.secondsToNextShichen),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = onHero.copy(alpha = 0.8f),
                     )
@@ -379,6 +395,7 @@ private fun HeroCard(
 
 @Composable
 private fun BeijingCard(snapshot: SolarSnapshot) {
+    val context = LocalContext.current
     val faster = snapshot.offsetSeconds >= 0
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -389,13 +406,13 @@ private fun BeijingCard(snapshot: SolarSnapshot) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "北京时间",
+                    text = stringResource(R.string.beijing_time_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = TimeFormat.dateWithWeekday(snapshot.beijingDate),
+                    text = TimeText.dateWithWeekday(context, snapshot.beijingDate),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -414,14 +431,22 @@ private fun BeijingCard(snapshot: SolarSnapshot) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "真太阳时比北京时间${if (faster) "快" else "慢"} ${TimeFormat.minutesSeconds(snapshot.offsetSeconds)}",
+                text = stringResource(
+                    if (faster) R.string.offset_faster else R.string.offset_slower,
+                    TimeText.minutesSeconds(context, snapshot.offsetSeconds),
+                ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "经度修正 ${TimeFormat.signedDuration(snapshot.longitudeOffsetSeconds)}" +
-                    "　均时差 ${TimeFormat.signedDuration(snapshot.equationOfTimeSeconds)}",
+                text = stringResource(
+                    R.string.longitude_correction,
+                    TimeText.signedDuration(context, snapshot.longitudeOffsetSeconds),
+                ) + "　" + stringResource(
+                    R.string.equation_of_time,
+                    TimeText.signedDuration(context, snapshot.equationOfTimeSeconds),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -431,6 +456,7 @@ private fun BeijingCard(snapshot: SolarSnapshot) {
 
 @Composable
 private fun SunCard(snapshot: SolarSnapshot) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -440,13 +466,13 @@ private fun SunCard(snapshot: SolarSnapshot) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "太阳位置 · 北京时间",
+                    text = stringResource(R.string.sun_section_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = "高度角 %.1f°".format(snapshot.altitudeDegrees),
+                    text = stringResource(R.string.altitude, snapshot.altitudeDegrees),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -466,24 +492,33 @@ private fun SunCard(snapshot: SolarSnapshot) {
 
             if (snapshot.polar == SolarTimeMath.PolarState.NORMAL) {
                 Row(Modifier.fillMaxWidth()) {
-                    SunTimeItem("日出", snapshot.sunriseBeijing, Modifier.weight(1f))
-                    SunTimeItem("正午", snapshot.solarNoonBeijing, Modifier.weight(1f))
-                    SunTimeItem("日落", snapshot.sunsetBeijing, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.sunrise), snapshot.sunriseBeijing, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.solar_noon), snapshot.solarNoonBeijing, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.sunset), snapshot.sunsetBeijing, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "白昼 ${TimeFormat.duration(snapshot.daylightSeconds)}　" +
-                        "真太阳时 日出 ${TimeFormat.clock(snapshot.sunriseTrueSolar)} " +
-                        "日落 ${TimeFormat.clock(snapshot.sunsetTrueSolar)}",
+                    text = stringResource(
+                        R.string.daylight_line,
+                        TimeText.duration(context, snapshot.daylightSeconds),
+                        TimeFormat.clock(snapshot.sunriseTrueSolar),
+                        TimeFormat.clock(snapshot.sunsetTrueSolar),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Text(
                     text = if (snapshot.polar == SolarTimeMath.PolarState.MIDNIGHT_SUN) {
-                        "极昼：太阳整日不落，正午（北京时间）${TimeFormat.clock(snapshot.solarNoonBeijing)}"
+                        stringResource(
+                            R.string.polar_day,
+                            TimeFormat.clock(snapshot.solarNoonBeijing),
+                        )
                     } else {
-                        "极夜：太阳整日不出，正午（北京时间）${TimeFormat.clock(snapshot.solarNoonBeijing)}"
+                        stringResource(
+                            R.string.polar_night,
+                            TimeFormat.clock(snapshot.solarNoonBeijing),
+                        )
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -555,13 +590,3 @@ private fun daylightProgress(snapshot: SolarSnapshot): Float {
     if (current < start) current += 86_400f
     return ((current - start) / (end - start)).coerceIn(0f, 1f)
 }
-
-private fun chineseNumber(value: Int): String = when (value) {
-    1 -> "一"
-    2 -> "二"
-    3 -> "三"
-    4 -> "四"
-    else -> value.toString()
-}
-
-private fun versionLabel(): String = "版本 ${BuildConfig.VERSION_NAME}"

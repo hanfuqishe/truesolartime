@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.realsuntime.solartime.MainActivity
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.TimeFormat
@@ -77,13 +78,13 @@ object ShiChenReminder {
         ensureChannel(context)
 
         val boundarySeconds = SolarTimeMath.trueSolarSecondsOfDay(boundary, place.longitude)
-        val shichenName = Shichen.name(Shichen.indexOf(boundarySeconds))
+        val shichenName = TimeText.shichenName(context, Shichen.indexOf(boundarySeconds))
         val minutesLeft = ((boundary.toEpochMilli() - System.currentTimeMillis()) / 60_000.0).roundToInt()
-        val title = if (minutesLeft in 1..10) "即将进入$shichenName" else "${shichenName}已开始"
+        val title = if (minutesLeft in 1..10) context.getString(R.string.notif_upcoming_title, shichenName) else context.getString(R.string.notif_started_title, shichenName)
         val body = if (minutesLeft in 1..10) {
-            "约 $minutesLeft 分钟后（真太阳时 ${TimeFormat.clockWithSeconds(toLocalTime(boundarySeconds))}）"
+            context.getString(R.string.notif_upcoming_body, minutesLeft, TimeFormat.clockWithSeconds(toLocalTime(boundarySeconds)))
         } else {
-            "真太阳时 ${TimeFormat.clockWithSeconds(toLocalTime(boundarySeconds))} 进入$shichenName"
+            context.getString(R.string.notif_started_body, TimeFormat.clockWithSeconds(toLocalTime(boundarySeconds)), shichenName)
         }
 
         val contentIntent = PendingIntent.getActivity(
@@ -125,8 +126,8 @@ object ShiChenReminder {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "时辰交接提醒", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "在进入下一个时辰前 5 分钟提醒"
+            NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_shichen), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = context.getString(R.string.channel_shichen_desc)
             },
         )
     }

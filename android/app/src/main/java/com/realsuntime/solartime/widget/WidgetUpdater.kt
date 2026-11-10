@@ -13,6 +13,8 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.map.CoordinateTransform
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -60,11 +62,12 @@ object WidgetUpdater {
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
             setTextViewText(R.id.widget_civil_time, "%02d:%02d".format(civil.hour, civil.minute))
-            setTextViewText(R.id.widget_civil_date, dateText(civil))
+            setTextViewText(R.id.widget_civil_date, dateText(context, civil))
             setTextViewText(R.id.widget_solar_time, clockText(trueSolarSeconds))
+            setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
             setTextViewText(
-                R.id.widget_solar_sub,
-                "${Shichen.name(shichenIndex)} · ${Shichen.halfLabel(trueSolarSeconds)}${chineseNumber(Shichen.quarterOfHalf(trueSolarSeconds))}刻",
+                R.id.widget_coordinates,
+                TimeText.coordinates(context, place.latitude, place.longitude),
             )
             setOnClickPendingIntent(R.id.widget_root, openApp(context))
         }
@@ -125,7 +128,7 @@ object WidgetUpdater {
     private fun resolvePlace(context: Context): Place {
         val fix = LocationTracker(context).lastKnownLocation()
         if (fix != null) {
-            return Place(fix.latitude, fix.longitude, com.realsuntime.solartime.data.PlaceSource.GPS, "GPS")
+            return Place(fix.latitude, fix.longitude, PlaceSource.GPS, context.getString(R.string.gps_label))
         }
         return AppSettings(context).place
     }
@@ -147,16 +150,6 @@ object WidgetUpdater {
         return "%02d:%02d".format(total / 3600, (total % 3600) / 60)
     }
 
-    private fun dateText(civil: ZonedDateTime): String {
-        val weekdays = arrayOf("星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六")
-        return "${civil.monthValue}月${civil.dayOfMonth}日 · ${weekdays[civil.dayOfWeek.value % 7]}"
-    }
-
-    private fun chineseNumber(value: Int): String = when (value) {
-        1 -> "一"
-        2 -> "二"
-        3 -> "三"
-        4 -> "四"
-        else -> value.toString()
-    }
+    private fun dateText(context: Context, civil: ZonedDateTime): String =
+        TimeText.dateWithWeekday(context, civil.toLocalDate())
 }

@@ -1,8 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">真太阳时</string>
-    <string name="widget_label">真太阳时</string>
-    <string name="widget_label_civil">标准时间</string>
-    <string name="widget_label_solar">真太阳时</string>
-    <string name="widget_description">左侧显示所在国标准时间与日期，右侧显示当地真太阳时</string>
-</resources>
+    <string name="app_name">True Solar Time</string>
+
+    <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
+    <string name="action_settings">Settings</string>
+    <string name="gps_waiting">Locating…</string>
+    <string name="hero_title_tracking">Local true solar time · updated every minute</string>
+    <string name="hero_title">Local true solar time</string>
+    <string name="beijing_time_title">Beijing time</string>
+    <string name="offset_faster">True solar time runs %1$s ahead of Beijing time</string>
+    <string name="offset_slower">True solar time runs %1$s behind Beijing time</string>
+    <string name="longitude_correction">Longitude %1$s</string>
+    <string name="equation_of_time">Equation of time %1$s</string>
+    <string name="sun_section_title">Sun position · Beijing time</string>
+    <string name="altitude">Altitude %1$.1f°</string>
+    <string name="sunrise">Sunrise</string>
+    <string name="solar_noon">Noon</string>
+    <string name="sunset">Sunset</string>
+    <string name="daylight_line">Daylight %1$s　true solar %2$s – %3$s</string>
+    <string name="polar_day">Midnight sun: the sun never sets. Noon (Beijing time) %1$s</string>
+    <string name="polar_night">Polar night: the sun never rises. Noon (Beijing time) %1$s</string>
+    <string name="shichen_summary">%1$s · %2$s (quarter %3$s)</string>
+    <string name="shichen_countdown">%1$s　%2$s in %3$s</string>
+    <string name="version_label">Version %1$s</string>
+    <string name="location_map_title">Location map</string>
+    <string name="map_auto_selected">auto-selected by region</string>
+
+    <string name="settings_title">Location &amp; alerts</string>
+    <string name="settings_current_location">Current location</string>
+    <string name="action_restart_gps">Restart GPS tracking</string>
+    <string name="action_use_gps">Use GPS location</string>
+    <string name="section_manual">Manual coordinates</string>
+    <string name="label_latitude">Latitude</string>
+    <string name="label_longitude">Longitude</string>
+    <string name="error_latitude">Latitude must be between -90 and 90</string>
+    <string name="error_longitude">Longitude must be between -180 and 180</string>
+    <string name="error_invalid_number">Enter a valid number</string>
+    <string name="label_manual_place">Manual</string>
+    <string name="action_apply">Apply coordinates</string>
+    <string name="section_cities">Common cities</string>
+    <string name="section_map">Map tiles</string>
+    <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
+    <string name="reminder_title">Shichen change alert</string>
+    <string name="reminder_desc">Notify 5 minutes before the next shichen begins</string>
+    <string name="chime_title">Hourly chime</string>
+    <string name="chime_desc">Notify at every true solar hour (needs notification permission)</string>
+    <string name="section_widget">Home screen widget</string>
+    <string name="widget_desc">Standard time and date on the left, true solar time and coordinates on the right</string>
+    <string name="action_add_to_home">Add to home screen</string>
+    <string name="widget_pin_unsupported">Long-press the home screen to add it</string>
+    <string name="section_about">About the calculation</string>
+    <string name="about_body">True solar time follows the actual position of the sun: first correct for the longitude offset from 120°E (4 minutes per degree), then add the equation of time caused by Earth orbital eccentricity and obliquity. The twelve shichen follow true solar time, starting with Zi at 23:00, two hours each.</string>
+
+    <string name="city_beijing">Beijing</string>
+    <string name="city_shanghai">Shanghai</string>
+    <string name="city_guangzhou">Guangzhou</string>
+    <string name="city_shenzhen">Shenzhen</string>
+    <string name="city_chengdu">Chengdu</string>
+    <string name="city_xian">Xi\u2019an</string>
+    <string name="city_harbin">Harbin</string>
+    <string name="city_urumqi">Urumqi</string>
+    <string name="city_lhasa">Lhasa</string>
+    <string name="city_hongkong">Hong Kong</string>
+
+    <string name="map_style_auto">Auto</string>
+    <string name="map_style_osm">OpenStreetMap</string>
+    <string name="map_style_amap_vector">AMap</string>
+    <string name="map_style_amap_satellite">AMap satellite</string>
+    <string name="map_attribution_osm">Map data © OpenStreetMap contributors</string>
+    <string name="map_attribution_amap">Tiles © AMap</string>
+
+    <string name="widget_label">True Solar Time</string>
+    <string name="widget_label_civil">Standard time</string>
+    <string name="widget_label_solar">True solar</string>
+    <string name="widget_description">Left: local standard time and date. Right: true solar time and coordinates.</string>
+
+    <string name="channel_shichen">Shichen alerts</string>
+    <string name="channel_chime">Hourly chime</string>
+    <string name="notif_upcoming_title">Entering %1$s soon</string>
+    <string name="notif_started_title">%1$s has begun</string>
+    <string name="notif_upcoming_body">In about %1$d minutes (true solar %2$s)</string>
+    <string name="notif_started_body">%2$s begins at true solar %1$s</string>
+    <string name="chime_title_notif">Hourly chime</string>
+    <string name="chime_body">True solar %1$s　%2$s</string>
+
+    <string name="msg_location_permission">No location permission. Allow it in system settings, or enter coordinates manually.</string>
+    <string name="msg_notification_reminder">Notification permission not granted; alerts may not appear.</string>
+    <string name="msg_notification_chime">Notification permission not granted; the chime may not appear.</string>
+    <string name="msg_gps_timeout">No GPS fix yet. Try open sky, or set coordinates manually.</string>
+    <string name="msg_following_gps">Following GPS (%1$s), updated every minute</string>
+    <string name="gps_label">GPS</string>
+    <string name="gps_label_accuracy">Accuracy %1$d m</string>
+
+    <string name="duration_hours_minutes">%1$d h %2$02d min</string>
+    <string name="duration_minutes_seconds">%1$d min %2$02d s</string>
+    <string name="duration_seconds">%1$d s</string>
+    <string name="coordinates">%1$.4f°%2$s  %3$.4f°%4$s</string>
+    <string name="date_weekday">%1$d/%2$d · %3$s</string>
+
+    <string name="shichen_name_format">%1$s hour</string>
+    <string name="shichen_half_first">early</string>
+    <string name="shichen_half_second">late</string>
+    <string name="shichen_quarter_format">%1$s</string>
+
+    <string-array name="weekdays">
+        <item>Sunday</item>
+        <item>Monday</item>
+        <item>Tuesday</item>
+        <item>Wednesday</item>
+        <item>Thursday</item>
+        <item>Friday</item>
+        <item>Saturday</item>
+    </string-array>
+
+    <string-array name="shichen_names">
+        <item>Zi</item>
+        <item>Chou</item>
+        <item>Yin</item>
+        <item>Mao</item>
+        <item>Chen</item>
+        <item>Si</item>
+        <item>Wu</item>
+        <item>Wei</item>
+        <item>Shen</item>
+        <item>You</item>
+        <item>Xu</item>
+        <item>Hai</item>
+    </string-array>
+    <string name="channel_shichen_desc">Notify 5 minutes before the next shichen</string>
+    <string name="channel_chime_desc">Notify at every true solar hour</string></resources>

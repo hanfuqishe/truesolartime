@@ -32,6 +32,7 @@ class SolarWidgetProvider : AppWidgetProvider() {
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_DATE_CHANGED,
+            Intent.ACTION_LOCALE_CHANGED,
             -> WidgetUpdater.refreshAll(context)
         }
     }

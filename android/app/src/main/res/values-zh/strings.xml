@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">真太阳时</string>
+
+    <string name="screen_subtitle">以太阳经过当地子午线的时刻为正午</string>
+    <string name="action_settings">设置</string>
+    <string name="gps_waiting">GPS 定位中…</string>
+    <string name="hero_title_tracking">当地真太阳时 · 每分钟更新</string>
+    <string name="hero_title">当地真太阳时</string>
+    <string name="beijing_time_title">北京时间</string>
+    <string name="offset_faster">真太阳时比北京时间快 %1$s</string>
+    <string name="offset_slower">真太阳时比北京时间慢 %1$s</string>
+    <string name="longitude_correction">经度修正 %1$s</string>
+    <string name="equation_of_time">均时差 %1$s</string>
+    <string name="sun_section_title">太阳位置 · 北京时间</string>
+    <string name="altitude">高度角 %1$.1f°</string>
+    <string name="sunrise">日出</string>
+    <string name="solar_noon">正午</string>
+    <string name="sunset">日落</string>
+    <string name="daylight_line">白昼 %1$s　真太阳时 %2$s – %3$s</string>
+    <string name="polar_day">极昼：太阳整日不落，正午（北京时间）%1$s</string>
+    <string name="polar_night">极夜：太阳整日不出，正午（北京时间）%1$s</string>
+    <string name="shichen_summary">%1$s · %2$s%3$s刻</string>
+    <string name="shichen_countdown">%1$s　距%2$s %3$s</string>
+    <string name="version_label">版本 %1$s</string>
+    <string name="location_map_title">位置地图</string>
+    <string name="map_auto_selected">按所在地区自动选择</string>
+
+    <string name="settings_title">位置与提醒</string>
+    <string name="settings_current_location">当前位置</string>
+    <string name="action_restart_gps">重新开始跟随 GPS</string>
+    <string name="action_use_gps">使用 GPS 自动定位</string>
+    <string name="section_manual">手动设置经纬度</string>
+    <string name="label_latitude">纬度</string>
+    <string name="label_longitude">经度</string>
+    <string name="error_latitude">纬度需为 -90 至 90 之间的数值</string>
+    <string name="error_longitude">经度需为 -180 至 180 之间的数值</string>
+    <string name="error_invalid_number">请输入有效的数值</string>
+    <string name="label_manual_place">手动设置</string>
+    <string name="action_apply">应用坐标</string>
+    <string name="section_cities">常用城市</string>
+    <string name="section_map">地图底图</string>
+    <string name="map_auto_hint">自动：境内用高德，境外用 OpenStreetMap</string>
+    <string name="reminder_title">时辰交接提醒</string>
+    <string name="reminder_desc">进入下一个时辰前 5 分钟发送通知</string>
+    <string name="chime_title">整点报时</string>
+    <string name="chime_desc">每到真太阳时整点提醒一次（需保留通知权限）</string>
+    <string name="section_widget">桌面小组件</string>
+    <string name="widget_desc">左侧为所在国标准时间与日期，右侧为当地真太阳时与经纬度</string>
+    <string name="action_add_to_home">添加到桌面</string>
+    <string name="widget_pin_unsupported">请长按桌面空白处添加</string>
+    <string name="section_about">关于计算</string>
+    <string name="about_body">真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。</string>
+
+    <string name="city_beijing">北京</string>
+    <string name="city_shanghai">上海</string>
+    <string name="city_guangzhou">广州</string>
+    <string name="city_shenzhen">深圳</string>
+    <string name="city_chengdu">成都</string>
+    <string name="city_xian">西安</string>
+    <string name="city_harbin">哈尔滨</string>
+    <string name="city_urumqi">乌鲁木齐</string>
+    <string name="city_lhasa">拉萨</string>
+    <string name="city_hongkong">香港</string>
+
+    <string name="map_style_auto">自动</string>
+    <string name="map_style_osm">OpenStreetMap</string>
+    <string name="map_style_amap_vector">高德矢量</string>
+    <string name="map_style_amap_satellite">高德卫星</string>
+    <string name="map_attribution_osm">地图数据 © OpenStreetMap 贡献者</string>
+    <string name="map_attribution_amap">底图 © 高德地图</string>
+
+    <string name="widget_label">真太阳时</string>
+    <string name="widget_label_civil">标准时间</string>
+    <string name="widget_label_solar">真太阳时</string>
+    <string name="widget_description">左侧显示所在国标准时间与日期，右侧显示当地真太阳时与经纬度</string>
+
+    <string name="channel_shichen">时辰交接提醒</string>
+    <string name="channel_chime">真太阳时整点报时</string>
+    <string name="notif_upcoming_title">即将进入%1$s</string>
+    <string name="notif_started_title">%1$s已开始</string>
+    <string name="notif_upcoming_body">约 %1$d 分钟后（真太阳时 %2$s）</string>
+    <string name="notif_started_body">真太阳时 %1$s 进入%2$s</string>
+    <string name="chime_title_notif">整点报时</string>
+    <string name="chime_body">真太阳时 %1$s　%2$s</string>
+
+    <string name="msg_location_permission">没有定位权限，请在系统设置中允许，或手动输入经纬度</string>
+    <string name="msg_notification_reminder">未授予通知权限，提醒可能无法显示</string>
+    <string name="msg_notification_chime">未授予通知权限，整点报时可能无法显示</string>
+    <string name="msg_gps_timeout">尚未收到定位结果，可能需要在空旷处等待；也可手动设置经纬度</string>
+    <string name="msg_following_gps">已跟随 GPS 定位（%1$s），每分钟更新</string>
+    <string name="gps_label">GPS</string>
+    <string name="gps_label_accuracy">精度 %1$d 米</string>
+
+    <string name="duration_hours_minutes">%1$d 小时 %2$02d 分</string>
+    <string name="duration_minutes_seconds">%1$d 分 %2$02d 秒</string>
+    <string name="duration_seconds">%1$d 秒</string>
+    <string name="coordinates">%1$.4f°%2$s  %3$.4f°%4$s</string>
+    <string name="date_weekday">%1$d 月 %2$d 日 · %3$s</string>
+
+    <string name="shichen_name_format">%1$s时</string>
+    <string name="shichen_half_first">初</string>
+    <string name="shichen_half_second">正</string>
+    <string name="shichen_quarter_format">%1$s</string>
+
+    <string-array name="weekdays">
+        <item>星期日</item>
+        <item>星期一</item>
+        <item>星期二</item>
+        <item>星期三</item>
+        <item>星期四</item>
+        <item>星期五</item>
+        <item>星期六</item>
+    </string-array>
+
+    <string-array name="shichen_names">
+        <item>子</item>
+        <item>丑</item>
+        <item>寅</item>
+        <item>卯</item>
+        <item>辰</item>
+        <item>巳</item>
+        <item>午</item>
+        <item>未</item>
+        <item>申</item>
+        <item>酉</item>
+        <item>戌</item>
+        <item>亥</item>
+    </string-array>
+    <string name="channel_shichen_desc">在进入下一个时辰前 5 分钟提醒</string>
+    <string name="channel_chime_desc">每到真太阳时整点提醒一次</string></resources>

@@ -6,9 +6,9 @@
     android:background="@drawable/widget_background_night"
     android:orientation="horizontal"
     android:paddingStart="18dp"
-    android:paddingTop="14dp"
+    android:paddingTop="12dp"
     android:paddingEnd="18dp"
-    android:paddingBottom="14dp">
+    android:paddingBottom="12dp">
 
     <LinearLayout
         android:layout_width="0dp"
@@ -60,12 +60,27 @@
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/widget_label_solar"
-            android:textColor="#CCFFFFFF"
-            android:textSize="11sp" />
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/widget_label_solar"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/widget_solar_shichen"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:textColor="#B3FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/widget_solar_time"
@@ -78,12 +93,13 @@
             android:textSize="27sp" />
 
         <TextView
-            android:id="@+id/widget_solar_sub"
+            android:id="@+id/widget_coordinates"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
+            android:maxLines="1"
             android:textColor="#B3FFFFFF"
-            android:textSize="11sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
 </LinearLayout>

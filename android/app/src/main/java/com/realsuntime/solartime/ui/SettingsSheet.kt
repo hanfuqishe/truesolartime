@@ -36,8 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
@@ -59,6 +61,7 @@ fun SettingsSheet(
     onSelectMapStyle: (MapStyle) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
     var latitudeText by remember(place) { mutableStateOf("%.4f".format(place.latitude)) }
     var longitudeText by remember(place) { mutableStateOf("%.4f".format(place.longitude)) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -71,17 +74,17 @@ fun SettingsSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 36.dp),
         ) {
-            Text("位置与提醒", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "当前位置",
+                text = stringResource(R.string.settings_current_location),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "${place.label}　${TimeFormat.coordinates(place.latitude, place.longitude)}",
+                text = "${TimeText.placeLabel(context, place)}　${TimeText.coordinates(context, place.latitude, place.longitude)}",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
@@ -92,15 +95,15 @@ fun SettingsSheet(
                 if (trackingGps) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("重新开始跟随 GPS")
+                    Text(stringResource(R.string.action_restart_gps))
                 } else {
-                    Text("使用 GPS 自动定位")
+                    Text(stringResource(R.string.action_use_gps))
                 }
             }
 
             Spacer(Modifier.height(22.dp))
             Text(
-                text = "手动设置经纬度",
+                text = stringResource(R.string.section_manual),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -109,7 +112,7 @@ fun SettingsSheet(
                 OutlinedTextField(
                     value = latitudeText,
                     onValueChange = { latitudeText = it; error = null },
-                    label = { Text("纬度") },
+                    label = { Text(stringResource(R.string.label_latitude)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
@@ -117,7 +120,7 @@ fun SettingsSheet(
                 OutlinedTextField(
                     value = longitudeText,
                     onValueChange = { longitudeText = it; error = null },
-                    label = { Text("经度") },
+                    label = { Text(stringResource(R.string.label_longitude)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
@@ -138,23 +141,23 @@ fun SettingsSheet(
                     val longitude = longitudeText.trim().toDoubleOrNull()
                     when {
                         latitude == null || latitude !in Place.MIN_LATITUDE..Place.MAX_LATITUDE ->
-                            error = "纬度需为 -90 至 90 之间的数值"
+                            error = context.getString(R.string.error_latitude)
                         longitude == null || longitude !in Place.MIN_LONGITUDE..Place.MAX_LONGITUDE ->
-                            error = "经度需为 -180 至 180 之间的数值"
+                            error = context.getString(R.string.error_longitude)
                         else -> {
-                            onApplyManual(latitude, longitude, "手动设置")
+                            onApplyManual(latitude, longitude, context.getString(R.string.label_manual_place))
                             onDismiss()
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("应用坐标")
+                Text(stringResource(R.string.action_apply))
             }
 
             Spacer(Modifier.height(18.dp))
             Text(
-                text = "常用城市",
+                text = stringResource(R.string.section_cities),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -163,23 +166,23 @@ fun SettingsSheet(
                 Place.PRESETS.forEach { preset ->
                     AssistChip(
                         onClick = {
-                            onApplyManual(preset.latitude, preset.longitude, preset.label)
+                            onApplyManual(preset.latitude, preset.longitude, TimeText.placeLabel(context, preset))
                             onDismiss()
                         },
-                        label = { Text(preset.label) },
+                        label = { Text(TimeText.placeLabel(context, preset)) },
                     )
                 }
             }
 
             Spacer(Modifier.height(18.dp))
             Text(
-                text = "地图底图",
+                text = stringResource(R.string.section_map),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "自动：境内用高德，境外用 OpenStreetMap",
+                text = stringResource(R.string.map_auto_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -189,7 +192,7 @@ fun SettingsSheet(
                     FilterChip(
                         selected = style == mapStyle,
                         onClick = { onSelectMapStyle(style) },
-                        label = { Text(style.label) },
+                        label = { Text(MapText.label(context, style)) },
                     )
                 }
             }
@@ -197,9 +200,9 @@ fun SettingsSheet(
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("时辰交接提醒", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.reminder_title), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = "进入下一个时辰前 5 分钟发送通知",
+                        text = stringResource(R.string.reminder_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -210,9 +213,9 @@ fun SettingsSheet(
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("整点报时", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.chime_title), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = "每到真太阳时整点提醒一次（需保留通知权限）",
+                        text = stringResource(R.string.chime_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -222,18 +225,17 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(14.dp))
             Text(
-                text = "桌面小组件",
+                text = stringResource(R.string.section_widget),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "左侧为所在国标准时间与日期，右侧为当地真太阳时；定位取最近一次 GPS 结果",
+                text = stringResource(R.string.widget_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            val context = LocalContext.current
             val canPin = remember {
                 context.getSystemService(AppWidgetManager::class.java)
                     ?.isRequestPinAppWidgetSupported == true
@@ -243,18 +245,18 @@ fun SettingsSheet(
                 enabled = canPin,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (canPin) "添加到桌面" else "请长按桌面空白处添加")
+                Text(if (canPin) stringResource(R.string.action_add_to_home) else stringResource(R.string.widget_pin_unsupported))
             }
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
-            Text("关于计算", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.section_about), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差" +
-                    "（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。" +
-                    "十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。",
+                text = stringResource(R.string.about_body),
+
+
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

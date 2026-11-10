@@ -5,6 +5,7 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
@@ -25,6 +26,7 @@ import kotlin.math.abs
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val app: Application = application
     private val settings = AppSettings(application)
     private val locationTracker = LocationTracker(application)
 
@@ -86,7 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @SuppressLint("MissingPermission")
     fun startGpsTracking(announce: Boolean = true) {
         if (!locationTracker.hasPermission()) {
-            _message.value = "没有定位权限，请授予权限或手动输入经纬度"
+            _message.value = app.getString(R.string.msg_location_permission)
             return
         }
 
@@ -103,7 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             delay(FIX_TIMEOUT_MILLIS)
             if (_waitingForFix.value && _trackingGps.value) {
-                _message.value = "尚未收到 GPS 信号，可能需要在空旷处等待；也可手动设置经纬度"
+                _message.value = app.getString(R.string.msg_gps_timeout)
             }
         }
     }
@@ -116,14 +118,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun applyFix(location: Location) {
-        val accuracy = if (location.hasAccuracy()) "精度 ${location.accuracy.toInt()} 米" else "精度未知"
+        val accuracy = if (location.hasAccuracy()) app.getString(R.string.gps_label_accuracy, location.accuracy.toInt()) else app.getString(R.string.gps_label)
         _waitingForFix.value = false
-        updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, "GPS · $accuracy"))
+        updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, accuracy))
 
         if (!announcedFirstFix) {
             announcedFirstFix = true
             val place = _place.value
-            _message.value = "已跟随 GPS 定位（${TimeFormat.coordinates(place.latitude, place.longitude)}），每分钟更新"
+            _message.value = app.getString(R.string.msg_following_gps, TimeFormat.coordinates(place.latitude, place.longitude))
         }
     }
 

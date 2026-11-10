@@ -25,9 +25,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realsuntime.solartime.data.MapConfig
+import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.map.MapTileSources
@@ -39,6 +42,7 @@ import org.osmdroid.views.overlay.Marker
 
 @Composable
 fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     val style = mapStyle.effective(place.latitude, place.longitude)
 
@@ -51,13 +55,13 @@ fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "位置地图",
+                    text = stringResource(R.string.location_map_title),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = TimeFormat.coordinates(place.latitude, place.longitude),
+                    text = TimeText.coordinates(context, place.latitude, place.longitude),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -77,7 +81,7 @@ fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = attributionText(mapStyle = mapStyle, resolved = style),
+                text = attributionText(context, mapStyle, style),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -99,8 +103,12 @@ fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
     }
 }
 
-private fun attributionText(mapStyle: MapStyle, resolved: MapStyle): String =
-    if (mapStyle == MapStyle.AUTO) "${resolved.attribution} · 按所在地区自动选择" else resolved.attribution
+private fun attributionText(context: Context, mapStyle: MapStyle, resolved: MapStyle): String =
+    if (mapStyle == MapStyle.AUTO) {
+        MapText.attribution(context, resolved) + " · " + context.getString(R.string.map_auto_selected)
+    } else {
+        MapText.attribution(context, resolved)
+    }
 
 /** 高德底图为 GCJ-02，需把 WGS-84 坐标偏移后再标点。 */
 private fun markerPointOf(place: Place, style: MapStyle): Pair<Double, Double> =

@@ -15,6 +15,7 @@ class AppSettings(context: Context) {
                 ?.let { runCatching { PlaceSource.valueOf(it) }.getOrNull() }
                 ?: PlaceSource.DEFAULT,
             label = prefs.getString(KEY_LABEL, null) ?: Place.DEFAULT.label,
+            labelResName = prefs.getString(KEY_LABEL_RES, null) ?: Place.DEFAULT.labelResName,
         )
         set(value) {
             prefs.edit()
@@ -22,6 +23,7 @@ class AppSettings(context: Context) {
                 .putString(KEY_LONGITUDE, value.longitude.toString())
                 .putString(KEY_SOURCE, value.source.name)
                 .putString(KEY_LABEL, value.label)
+                .putString(KEY_LABEL_RES, value.labelResName)
                 .apply()
         }
 
@@ -47,6 +49,7 @@ class AppSettings(context: Context) {
         const val KEY_LONGITUDE = "longitude"
         const val KEY_SOURCE = "place_source"
         const val KEY_LABEL = "place_label"
+        const val KEY_LABEL_RES = "place_label_res"
         const val KEY_REMINDERS = "shichen_reminders"
         const val KEY_MAP_STYLE = "map_style"
         const val KEY_HOURLY_CHIME = "hourly_chime"
