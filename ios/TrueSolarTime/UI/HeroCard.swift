@@ -32,7 +32,7 @@ struct HeroCard: View {
                     .font(.system(size: 72, weight: .light, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
-                Text(String(format: "%02d", snapshot.trueSolarTime.second))
+                Text(":" + String(format: "%02d", snapshot.trueSolarTime.second))
                     .font(.system(size: 26, weight: .medium, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white.opacity(0.75))

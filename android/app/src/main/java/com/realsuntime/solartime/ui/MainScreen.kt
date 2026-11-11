@@ -323,7 +323,8 @@ private fun HeroCard(
                 )
                 if (!waitingForFix) {
                     Text(
-                        text = "%02d".format(snapshot.trueSolarTime.second),
+                        // 秒是「下标」样式，冒号也要跟着小一号，否则读起来像「21:27 50」。
+                        text = ":%02d".format(snapshot.trueSolarTime.second),
                         style = TextStyle(
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Medium,
