@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /**
- * 一个服用时间段，按所在国标准时间（钟表时间）的当日分钟数表示。
+ * 一段关键时间，按真太阳时的当日分钟数表示。
  *
  * [endMinute] 小于 [startMinute] 时表示这一段跨过午夜。
  */
@@ -23,14 +23,15 @@ data class TakeBand(val startMinute: Int, val endMinute: Int) {
     }
 }
 
-/** 服用要求：冻或温用绿色，热或温用红色。 */
+/** 关键时间的要求：冻或温用绿色，热或温用红色。 */
 enum class TakeTemperature { COLD_OR_MILD, HOT_OR_MILD }
 
-/** 网页上抓到的「服用时间」。 */
+/** 网页上抓到的关键时间。 */
 data class TakeTimeSchedule(val bands: List<TakeBand>, val temperature: TakeTemperature?)
 
 /**
- * 抓取「西格瑪食療」页面上的「服用時間 Take Time」，供小组件的时间轴着色。
+ * 抓取「西格瑪食療」页面上的「服用時間 Take Time」，我们称之为**关键时间**，供小组件的时间轴着色。
+ * 页面给出的时间一律当作真太阳时使用，不做时区或经度换算。
  *
  * 页面只有一个固定地址，内容变化很慢，因此：
  * 成功一次就把结果连时间戳一起存下来；后续刷新只用缓存，距上次尝试超过
@@ -70,7 +71,7 @@ object TakeTimeRepository {
 
     private val inFlight = AtomicBoolean(false)
 
-    /** 当前可用的服用时间；缓存缺失或超过 7 天返回 null（此时不着色）。 */
+    /** 当前可用的关键时间；缓存缺失或超过 7 天返回 null（此时不着色）。 */
     fun schedule(context: Context): TakeTimeSchedule? {
         val prefs = prefs(context)
         val bands = decodeBands(prefs.getString(KEY_BANDS, null)) ?: return null
@@ -161,7 +162,7 @@ object TakeTimeRepository {
     internal fun isFresh(ageMillis: Long): Boolean = ageMillis in 0..VALID_MILLIS
 
     /**
-     * 从页面里解析「服用時間 Take Time」。
+     * 从页面里解析「服用時間 Take Time」（关键时间）。
      *
      * 页面形如：
      * `服用時間 Take Time : 15:00-17:00　20:00-22:00　10:00-12:00　(凍或溫 Cold or Mild)`

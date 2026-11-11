@@ -24,15 +24,17 @@
     </style>
 
     <!--
-      真太阳时秒数：Chronometer 每秒自走（按 base 重算延时，不累积漂移），
-      宽度在刷新时用 setMaxWidth 限成两位数字，配合右对齐只显示秒数。
+      真太阳时秒数：Chronometer 每秒自走（按 base 重算延时，不累积漂移）。
+      它的文本是「0:SS」，宽度在刷新时用 setMaxWidth 限成两位数字、配合右对齐，
+      只露出秒数。字体必须是等宽的：等宽下「0:」与「00」同宽，切点才与字体缩放、
+      密度无关；用比例字体时冒号比数字窄，宽度稍偏就会把冒号露出来（多出一个冒号）。
+      这里写的 textSize 只是布局预览的初值，实际字号与宽度由 WidgetUpdater 按 px 下发。
     -->
     <style name="WidgetClockSecondChrono">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
-        <item name="android:fontFamily">sans-serif-light</item>
-        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:fontFamily">monospace</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
         <item name="android:singleLine">true</item>

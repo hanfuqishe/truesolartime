@@ -103,8 +103,8 @@ object WidgetUpdater {
     private const val MAIN_TEXT_SAMPLE = "00:00"
     private const val SECOND_SAMPLE = "00"
 
-    /** 秒数宽度再多留一点，避免亚像素误差把数字裁掉一条边。 */
-    private const val SECOND_WIDTH_SLACK_DP = 3.5f
+    /** 秒数宽度的余量：等宽字体下切点本就精确，只留一点防亚像素裁边。 */
+    private const val SECOND_WIDTH_SLACK_DP = 0.25f
     private const val MAX_MAIN_TEXT_SP = 48f
     private const val MIN_MAIN_TEXT_SP = 20f
     private const val SECOND_TEXT_SP = 23f
@@ -153,7 +153,7 @@ object WidgetUpdater {
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
         DistrictResolver.requestRefresh(context, place)
         WeatherRepository.requestRefresh(context, place)
-        // 服用时间一天一抓即可，内部按 6 小时重试间隔与 7 天有效期节流。
+        // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
         TakeTimeRepository.requestRefresh(context)
     }
 
@@ -192,7 +192,7 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             applyClockSizing(context, widthDp, date, compact, this)
-            bindAxis(context, widthDp, compact, now, zone, location.hasFix, solarOffset, this)
+            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
@@ -233,7 +233,7 @@ object WidgetUpdater {
     }
 
     /**
-     * 画时间轴：真太阳时 0–24 时，色带为「服用时间」，白点是当前时刻。
+     * 画时间轴：真太阳时 0–24 时，色带为「关键时间」，白点是当前时刻。
      *
      * 宽度按桌面回报的宽度减去左右内边距换算；还没有定位时不画点与色带，只留一条轴线。
      */
@@ -242,7 +242,6 @@ object WidgetUpdater {
         widthDp: Int,
         compact: Boolean,
         now: Instant,
-        zone: ZoneId,
         hasFix: Boolean,
         solarOffsetMillis: Long,
         views: RemoteViews,
@@ -259,8 +258,7 @@ object WidgetUpdater {
         } else {
             null
         }
-        // solarOffsetMillis 是相对 UTC 的偏移，服用时间段用的是钟表时间：减去时区偏移才是两者之差。
-        val shiftMinutes = (solarOffsetMillis - civilOffsetMillis(now, zone)) / 60_000.0
+        // 关键时间本身就按真太阳时算，和轴上的点同一套刻度，不用再换算。
         val bitmap = WidgetAxis.render(
             context = context,
             widthPx = widthPx,
@@ -268,7 +266,6 @@ object WidgetUpdater {
             solarSecondsOfDay = solarSeconds,
             bands = schedule?.bands.orEmpty(),
             temperature = schedule?.temperature,
-            offsetMinutes = shiftMinutes,
         )
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.widget_axis, bitmap)
@@ -416,14 +413,23 @@ object WidgetUpdater {
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
 
+        // 秒数用等宽字体，与 style 里的 WidgetClockSecondChrono 保持一致：
+        // 等宽下「0:」与「00」同宽，于是按「00」的宽度裁剪就恰好切在冒号之后。
+        val secondsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.MONOSPACE
+            textSize = spToPx(SECOND_TEXT_SP, metrics)
+        }
+        val secondsBlockPx = secondsPaint.measureText(SECOND_SAMPLE)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
             textSize = spToPx(SECOND_TEXT_SP, metrics)
         }
-        val secondsBlockPx = paint.measureText(SECOND_SAMPLE)
         val colonPx = paint.measureText(":")
         val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
+        // 秒数字号也由这里按 px 下发，不用布局里的 sp：sp 会由宿主按它自己的
+        // 字体缩放解析，一旦与本进程的度量不一致，裁剪点就会偏，把「0:SS」的冒号露出来。
+        views.setTextViewTextSize(R.id.widget_solar_sec, TypedValue.COMPLEX_UNIT_PX, secondsPaint.textSize)
         // Chronometer 的文本是「M:SS」，把宽度限成两位数字再配合右对齐，只露出秒数。
         views.setInt(
             R.id.widget_solar_sec,
