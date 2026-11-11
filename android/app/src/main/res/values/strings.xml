@@ -42,7 +42,7 @@
     <string name="section_map">Map tiles</string>
     <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
     <string name="reminder_title">Shichen change alert</string>
-    <string name="reminder_desc">Beep once 5 minutes before the next shichen begins</string>
+    <string name="reminder_desc">Beep once when the next shichen begins</string>
     <string name="chime_title">Chime at key times</string>
     <string name="chime_desc">Beep when a key time begins (true solar time)</string>
     <string name="section_widget">Home screen widget</string>

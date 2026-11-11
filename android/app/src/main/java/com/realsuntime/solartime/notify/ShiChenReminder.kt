@@ -11,7 +11,7 @@ import com.realsuntime.solartime.widget.Chime
 import java.time.Instant
 
 /**
- * 时辰交接提醒：在进入下一个时辰前 5 分钟蜂鸣一声（250 ms）。
+ * 时辰交接提醒：进入下一个时辰的那一刻蜂鸣一声（250 ms）。
  *
  * 只播提示音，不发通知 —— 提醒是瞬时事件，不该在通知栏留下条目。
  */
@@ -20,21 +20,22 @@ object ShiChenReminder {
     const val EXTRA_BOUNDARY_MILLIS = "boundary_millis"
 
     private const val ALARM_REQUEST_CODE = 4201
-    private const val LEAD_SECONDS = 300L
+
+    /** 对齐容差：正好落在边界上时把「下一个」让给再下一段，避免刚响过又立刻重响。 */
+    private const val SETTLE_SECONDS = 1L
 
     /** 时辰交接的提示音比关键时间报时更短，便于区分两种提醒。 */
     internal const val BEEP_MILLIS = 250
 
-    fun nextTrigger(place: Place, now: Instant): Instant {
-        val boundary = Shichen.nextBoundary(now.plusSeconds(LEAD_SECONDS + 1), place.longitude)
-        return boundary.minusSeconds(LEAD_SECONDS)
-    }
+    /** 下一个时辰交接的时刻（真太阳时整点）。 */
+    fun nextTrigger(place: Place, now: Instant): Instant =
+        Shichen.nextBoundary(now.plusSeconds(SETTLE_SECONDS), place.longitude)
 
     fun schedule(context: Context, place: Place) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val trigger = nextTrigger(place, Instant.now())
         val intent = Intent(context, ShichenBoundaryReceiver::class.java)
-            .putExtra(EXTRA_BOUNDARY_MILLIS, trigger.plusSeconds(LEAD_SECONDS).toEpochMilli())
+            .putExtra(EXTRA_BOUNDARY_MILLIS, trigger.toEpochMilli())
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             ALARM_REQUEST_CODE,
@@ -64,7 +65,7 @@ object ShiChenReminder {
         )
     }
 
-    /** 蜂鸣提醒：进入下一个时辰的 5 分钟前响一声。 */
+    /** 蜂鸣提醒：进入下一个时辰的这一刻响一声。 */
     fun chime() {
         Chime.beep(BEEP_MILLIS)
     }

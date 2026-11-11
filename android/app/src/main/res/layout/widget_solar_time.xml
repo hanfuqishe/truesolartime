@@ -1,17 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 由脚本生成：常规尺寸（3 行及以上）。改结构后请整份重新生成。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_background_night"
-    android:gravity="center_vertical"
-    android:orientation="vertical"
-    android:paddingStart="14dp"
-    android:paddingTop="10dp"
-    android:paddingEnd="14dp"
-    android:paddingBottom="10dp">
+    android:background="@drawable/widget_background_night">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:orientation="vertical"
+        android:paddingStart="14dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -32,6 +36,7 @@
                 android:orientation="horizontal">
 
                 <TextView
+                    android:id="@+id/widget_label_civil"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/widget_label_civil"
@@ -113,6 +118,7 @@
                 android:orientation="horizontal">
 
                 <TextView
+                    android:id="@+id/widget_label_solar"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/widget_label_solar"
@@ -284,3 +290,20 @@
     </LinearLayout>
 
 </LinearLayout>
+
+    <!-- 地名超长时的跨栏显示：占掉「标准时间」与「真太阳时」两处标签的空间。 -->
+    <TextView
+        android:id="@+id/widget_city_wide"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginEnd="26dp"
+        android:ellipsize="end"
+        android:gravity="end"
+        android:maxLines="1"
+        android:textColor="#B3FFFFFF"
+        android:textSize="11sp"
+        android:visibility="gone"
+        tools:text="克孜勒苏柯尔克孜自治州阿图什市" />
+</FrameLayout>
+

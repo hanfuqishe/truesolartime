@@ -42,7 +42,7 @@
     <string name="section_map">地图底图</string>
     <string name="map_auto_hint">自动：境内用高德，境外用 OpenStreetMap</string>
     <string name="reminder_title">时辰交接提醒</string>
-    <string name="reminder_desc">进入下一个时辰前 5 分钟蜂鸣一声</string>
+    <string name="reminder_desc">进入下一个时辰时蜂鸣一声</string>
     <string name="chime_title">进入关键时间报时</string>
     <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
     <string name="section_widget">桌面小组件</string>

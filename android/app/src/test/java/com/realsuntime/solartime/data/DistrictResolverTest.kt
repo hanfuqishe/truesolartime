@@ -51,6 +51,25 @@ class DistrictResolverTest {
     }
 
     @Test
+    fun keepsShortNameWithoutParents() {
+        // 长名字的小组件退路：只用区县名
+        val names = DistrictResolver.pickNames("阿图什市", "克孜勒苏柯尔克孜自治州", "新疆维吾尔自治区")
+        assertEquals("克孜勒苏柯尔克孜自治州阿图什市", names?.full)
+        assertEquals("阿图什市", names?.short)
+
+        val plain = DistrictResolver.pickNames("宝山区", "上海市", "上海市")
+        assertEquals("上海市宝山区", plain?.full)
+        assertEquals("宝山区", plain?.short)
+    }
+
+    @Test
+    fun shortNameEqualsFullWhenThereIsNoDistrict() {
+        val names = DistrictResolver.pickNames(null, "深圳市", "广东省")
+        assertEquals("深圳市", names?.full)
+        assertEquals("深圳市", names?.short)
+    }
+
+    @Test
     fun fallsBackToCity() {
         assertEquals("深圳市", DistrictResolver.pickName(null, "深圳市", "广东省"))
         assertEquals("深圳市", DistrictResolver.pickName("  ", "深圳市", "广东省"))

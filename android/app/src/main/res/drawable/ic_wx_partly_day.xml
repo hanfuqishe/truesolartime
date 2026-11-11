@@ -4,6 +4,12 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- 太阳的光芒：先画，右下的几条会被后面的云自然遮住。 -->
+    <path
+        android:pathData="M13.80,9.00L15.60,9.00M12.39,12.39L13.67,13.67M9.00,13.80L9.00,15.60M5.61,12.39L4.33,13.67M4.20,9.00L2.40,9.00M5.61,5.61L4.33,4.33M9.00,4.20L9.00,2.40M12.39,5.61L13.67,4.33"
+        android:strokeColor="#FFC65C"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
     <path
         android:fillColor="#FFC65C"
         android:pathData="M5.2,9.0a3.8,3.8 0 1,0 7.6,0a3.8,3.8 0 1,0 -7.6,0" />

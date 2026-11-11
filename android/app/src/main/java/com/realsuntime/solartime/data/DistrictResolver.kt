@@ -28,6 +28,7 @@ object DistrictResolver {
 
     private const val PREFS = "district_cache"
     private const val KEY_NAME = "name"
+    private const val KEY_SHORT = "short"
     private const val KEY_LAT = "lat"
     private const val KEY_LON = "lon"
     private const val KEY_TIME = "time"
@@ -36,10 +37,10 @@ object DistrictResolver {
     private const val MOVE_THRESHOLD_KM = 5.0
 
     /**
-     * 缓存格式版本。结果写法变了（例如现在带上「市」前缀）就把旧缓存当过期，
+     * 缓存格式版本。结果写法变了（例如现在带上「市」前缀、并额外存区县短名）就把旧缓存当过期，
      * 避免升级后一直显示旧名字。
      */
-    private const val CACHE_SCHEMA = 2
+    private const val CACHE_SCHEMA = 3
     private const val KEY_SCHEMA = "schema"
 
     /** 高德用来占位、本身不是地名的上级字段。 */
@@ -56,9 +57,22 @@ object DistrictResolver {
     // 懒加载：纯逻辑（pickName）可在 JVM 单测里直接调用，不依赖 Android Looper。
     private val handler by lazy { Handler(Looper.getMainLooper()) }
 
-    /** 最近一次反查到的区县名；不判断距离，避免新结果回来前显示闪成别的名字。 */
-    fun cachedName(context: Context): String? =
-        prefs(context).getString(KEY_NAME, null)
+    /**
+     * 反查结果的两级写法：[full] 带上级（如「上海市宝山区」），[short] 只有区县（如「宝山区」）。
+     *
+     * 小组件里那一行只有十来字的宽度，名字太长就得退到 [short]，否则会被省略号截断成
+     * 「克孜勒苏柯尔克孜自治…」这种看不出位置的样子。
+     */
+    data class DistrictNames(val full: String, val short: String)
+
+    /** 最近一次反查到的名字；不判断距离，避免新结果回来前显示闪成别的名字。 */
+    fun cachedNames(context: Context): DistrictNames? {
+        val prefs = prefs(context)
+        val full = prefs.getString(KEY_NAME, null) ?: return null
+        return DistrictNames(full, prefs.getString(KEY_SHORT, null) ?: full)
+    }
+
+    fun cachedName(context: Context): String? = cachedNames(context)?.full
 
     /** 距离上次反查的坐标是否已超过阈值、或缓存已过期。 */
     fun needsRefresh(context: Context, place: Place): Boolean {
@@ -97,9 +111,9 @@ object DistrictResolver {
                         try {
                             if (code == AMapException.CODE_AMAP_SUCCESS) {
                                 val address = result?.regeocodeAddress
-                                val name = pickName(address?.district, address?.city, address?.province)
-                                if (name != null) {
-                                    save(app, place, name)
+                                val names = pickNames(address?.district, address?.city, address?.province)
+                                if (names != null) {
+                                    save(app, place, names)
                                     WidgetUpdater.refreshAll(app)
                                 }
                             }
@@ -128,14 +142,23 @@ object DistrictResolver {
      * 市缺失或只是「市辖区」这类占位值时用省；区县名本身已带上级前缀就不再重复。
      * 没有区县时退回市，再退回省。
      */
-    fun pickName(district: String?, city: String?, province: String?): String? {
+    fun pickNames(district: String?, city: String?, province: String?): DistrictNames? {
         val county = cleanName(district)
         val town = cleanName(city)?.takeUnless { it in PLACEHOLDER_REGIONS }
         val region = cleanName(province)?.takeUnless { it in PLACEHOLDER_REGIONS }
-        if (county == null) return town ?: region
-        val parent = listOfNotNull(town, region).firstOrNull { it != county } ?: return county
-        return if (county.startsWith(parent)) county else parent + county
+        if (county == null) {
+            val only = town ?: region ?: return null
+            return DistrictNames(only, only)
+        }
+        val parent = listOfNotNull(town, region).firstOrNull { it != county }
+        val full = if (parent == null || county.startsWith(parent)) county else parent + county
+        // 短名只留区县；若区县就是全部（如县级市），短名与全名相同。
+        return DistrictNames(full, county)
     }
+
+    /** 只要带上级的全名。 */
+    fun pickName(district: String?, city: String?, province: String?): String? =
+        pickNames(district, city, province)?.full
 
     /** 高德会把空字段填成空串或「[]」，这类值一律当作没有。 */
     private fun cleanName(value: String?): String? =
@@ -144,9 +167,10 @@ object DistrictResolver {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    private fun save(context: Context, place: Place, name: String) {
+    private fun save(context: Context, place: Place, names: DistrictNames) {
         prefs(context).edit()
-            .putString(KEY_NAME, name)
+            .putString(KEY_NAME, names.full)
+            .putString(KEY_SHORT, names.short)
             .putInt(KEY_SCHEMA, CACHE_SCHEMA)
             .putFloat(KEY_LAT, place.latitude.toFloat())
             .putFloat(KEY_LON, place.longitude.toFloat())

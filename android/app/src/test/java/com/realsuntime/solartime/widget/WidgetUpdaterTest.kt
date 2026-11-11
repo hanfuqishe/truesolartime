@@ -1,5 +1,7 @@
 package com.realsuntime.solartime.widget
 
+import com.realsuntime.solartime.data.DistrictResolver
+import com.realsuntime.solartime.data.PlaceSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,6 +38,83 @@ class WidgetUpdaterTest {
             WidgetUpdater.TICK_MARGIN_MILLIS,
             WidgetUpdater.nextTickDelayMillis(nowMillis = 60_000L, civilOffsetMillis = 0L, solarOffsetMillis = 0L),
         )
+    }
+
+    @Test
+    fun keepsLabelsWhenTheNameFitsTheColumn() {
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("上海市宝山区", "宝山区"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertEquals("上海市宝山区", plan.text)
+        assertFalse(plan.wide)
+        assertTrue(plan.showCivilLabel)
+        assertTrue(plan.showSolarLabel)
+    }
+
+    @Test
+    fun givesUpTheCivilLabelFirst() {
+        // 12 字：左栏放不下（10），让出「标准时间」后（14）放得下
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州", "克孜勒苏柯尔克孜自治州"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertEquals("克孜勒苏柯尔克孜自治州", plan.text)
+        assertFalse(plan.wide)
+        assertFalse(plan.showCivilLabel)
+        assertTrue(plan.showSolarLabel)
+    }
+
+    @Test
+    fun spansBothColumnsWhenStillTooLong() {
+        // 15 字：让出「标准时间」也不够，连「真太阳时」一起让出，改成跨栏一行
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州阿图什市", "阿图什市"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertEquals("克孜勒苏柯尔克孜自治州阿图什市", plan.text)
+        assertTrue(plan.wide)
+        assertFalse(plan.showCivilLabel)
+        assertFalse(plan.showSolarLabel)
+    }
+
+    @Test
+    fun fallsBackToDistrictWhenEvenTheWideRowOverflows() {
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("某个特别特别特别长的自治州某某自治县", "某某自治县"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 12,
+        )
+        assertEquals("某某自治县", plan.text)
+        assertTrue(plan.wide)
+    }
+
+    @Test
+    fun keepsBothLabelsForOfflineFallbackNames() {
+        val plan = WidgetUpdater.planCityLabel(null, fallback = "乌鲁木齐", maxNarrow = 10, maxNoLabel = 14, maxWide = 30)
+        assertEquals("乌鲁木齐", plan.text)
+        assertTrue(plan.showCivilLabel)
+        assertTrue(plan.showSolarLabel)
+        assertFalse(plan.wide)
+    }
+
+    @Test
+    fun manualPlaceIgnoresTheSystemFix() {
+        // 手工指定坐标后，即便系统里有最近定位也不采用
+        assertFalse(WidgetUpdater.followsSystemFix(PlaceSource.MANUAL))
+        assertTrue(WidgetUpdater.followsSystemFix(PlaceSource.GPS))
+        assertTrue(WidgetUpdater.followsSystemFix(PlaceSource.DEFAULT))
     }
 
     @Test

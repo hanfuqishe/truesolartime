@@ -95,6 +95,14 @@ object WidgetUpdater {
 
     private const val TEXT_GAP_DP = 2f
 
+    /** 地名那一行：字号与左侧「标准时间」标签的宽度（4 个汉字）估算用。 */
+    private const val CITY_TEXT_SP = 11f
+    private const val CITY_LABEL_CHARS = 4
+    private const val CITY_LABEL_GAP_DP = 6f
+
+    /** 跨栏显示地名时，右端要给「时辰」两个字留出的宽度。 */
+    private const val CITY_WIDE_END_RESERVE_DP = 26f
+
     /** 时间轴的左右内边距（与布局里 widget_root 的 paddingStart/End 一致）与高度。 */
     private const val AXIS_PADDING_DP = 14f
     private const val COMPACT_AXIS_PADDING_DP = 10f
@@ -198,14 +206,22 @@ object WidgetUpdater {
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
-            setTextViewText(
-                R.id.widget_city,
-                if (!location.hasFix) {
-                    ""
-                } else {
-                    DistrictResolver.cachedName(context)
-                        ?: CityIndex.nearest(place.latitude, place.longitude, Locale.getDefault().language)?.name.orEmpty()
-                },
+            val city = cityLabel(context, place, widthDp, compact)
+            setTextViewText(R.id.widget_city, if (location.hasFix) city.text else "")
+            setTextViewText(R.id.widget_city_wide, if (location.hasFix) city.text else "")
+            setViewVisibility(R.id.widget_city, if (location.hasFix && !city.wide) View.VISIBLE else View.GONE)
+            setViewVisibility(
+                R.id.widget_city_wide,
+                if (location.hasFix && city.wide) View.VISIBLE else View.GONE,
+            )
+            // 名字太长时先把标签的位置让出去，版面才装得下完整地名。
+            setViewVisibility(
+                R.id.widget_label_civil,
+                if (city.showCivilLabel) View.VISIBLE else View.GONE,
+            )
+            setViewVisibility(
+                R.id.widget_label_solar,
+                if (city.showSolarLabel) View.VISIBLE else View.GONE,
             )
             if (location.hasFix) {
                 setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
@@ -271,6 +287,61 @@ object WidgetUpdater {
         )
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.widget_axis, bitmap)
+        }
+    }
+
+    /**
+     * 那一行能显示的地名：名字越长，依次让出「标准时间」「真太阳时」标签的位置，
+     * 而不是把名字截成「克孜勒苏柯尔克孜自治…」。
+     */
+    private fun cityLabel(context: Context, place: Place, widthDp: Int, compact: Boolean): CityLabelPlan {
+        val fallback = CityIndex.nearest(
+            place.latitude,
+            place.longitude,
+            Locale.getDefault().language,
+        )?.name.orEmpty()
+        val names = DistrictResolver.cachedNames(context)
+        val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
+        val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
+        val columnDp = (totalWidthDp - chromeDp) / 2f
+        val paddingDp = if (compact) 10f else 14f
+        val maxNarrow = ((columnDp - CITY_LABEL_CHARS * CITY_TEXT_SP - CITY_LABEL_GAP_DP) / CITY_TEXT_SP).toInt()
+        val maxNoLabel = ((columnDp - CITY_LABEL_GAP_DP) / CITY_TEXT_SP).toInt()
+        // 跨栏时可用的宽度：整条轴减去左右内边距，再给右端的「时辰」留出位置。
+        val maxWide = ((totalWidthDp - paddingDp * 2f - CITY_WIDE_END_RESERVE_DP) / CITY_TEXT_SP).toInt()
+        return planCityLabel(names, fallback, maxNarrow, maxNoLabel, maxWide)
+    }
+
+    /**
+     * 地名的三级显示：先按现状塞进左栏；塞不下就把「标准时间」标签让出来；
+     * 还塞不下就连「真太阳时」的标签一起让出来，改成横跨两栏的一行。
+     *
+     * @param maxNarrow 有「标准时间」标签时能放的字数
+     * @param maxNoLabel 让出「标准时间」后的字数
+     * @param maxWide 连「真太阳时」也让出后的字数
+     */
+    internal data class CityLabelPlan(
+        val text: String,
+        val wide: Boolean,
+        val showCivilLabel: Boolean,
+        val showSolarLabel: Boolean,
+    )
+
+    internal fun planCityLabel(
+        names: DistrictResolver.DistrictNames?,
+        fallback: String,
+        maxNarrow: Int,
+        maxNoLabel: Int,
+        maxWide: Int,
+    ): CityLabelPlan {
+        if (names == null) return CityLabelPlan(fallback, wide = false, showCivilLabel = true, showSolarLabel = true)
+        val full = names.full
+        return when {
+            full.length <= maxNarrow -> CityLabelPlan(full, false, true, true)
+            full.length <= maxNoLabel -> CityLabelPlan(full, false, false, true)
+            // 跨栏后仍然放不下就用区县名，交给 TextView 的省略号兜底。
+            full.length <= maxWide -> CityLabelPlan(full, true, false, false)
+            else -> CityLabelPlan(names.short, true, false, false)
         }
     }
 
@@ -627,17 +698,27 @@ object WidgetUpdater {
             ZoneId.systemDefault()
         }
 
+    /**
+     * 手工指定过坐标时，App 与小组件一律按它显示，连系统最近一次定位都不看；
+     * 其余情况跟随 GPS（与 App 内判定一致）。
+     */
+    internal fun followsSystemFix(source: PlaceSource): Boolean = source != PlaceSource.MANUAL
+
     private fun resolveLocation(context: Context): LocationState {
         val saved = AppSettings(context).place
-        // 手动指定过位置就一直用它；否则跟随 GPS（与 App 内判定一致）。
-        val followingGps = saved.source != PlaceSource.MANUAL
+        if (!followsSystemFix(saved.source)) return LocationState(saved, hasFix = true)
+
         val fix = LocationTracker(context).lastKnownLocation()
         if (fix != null) {
             val place = Place(fix.latitude, fix.longitude, PlaceSource.GPS, context.getString(R.string.gps_label))
-            return LocationState(place, hasFix = hasValidFix(followingGps, hadFix = true, fixNow = true))
+            return LocationState(place, hasFix = true)
         }
         // 没有实时定位时，只有「历史上确实拿到过 GPS 定位」才继续用它；默认坐标不算有效定位。
-        val hasFix = hasValidFix(followingGps, hadFix = saved.source == PlaceSource.GPS, fixNow = false)
+        val hasFix = hasValidFix(
+            followingGps = true,
+            hadFix = saved.source == PlaceSource.GPS,
+            fixNow = false,
+        )
         return LocationState(saved, hasFix)
     }
 
