@@ -7,6 +7,7 @@ import android.media.AudioTrack
 import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import kotlin.math.sin
 
 /**
@@ -25,12 +26,35 @@ object Chime {
     private const val RELEASE_DELAY_MILLIS = 200L
 
     /**
+     * 两个提醒撞车的去重窗口。
+     *
+     * 15:00 这类时刻既是关键时间的起点、又正好是时辰交接，两个闹钟只差几十毫秒到达，
+     * 若各自播放就会叠成一声更响、带相位干涉的怪音。窗口内只让先到的响。
+     */
+    private const val DEDUPE_WINDOW_MILLIS = 800L
+
+    /** 上一次真正播放的时刻（[SystemClock.elapsedRealtime]），由 [beep] 主线程写入。 */
+    private var lastPlayedAt = 0L
+
+    /** [nowMillis] 距上次播放是否已经超过去重窗口（从未播放过时恒为真）。 */
+    internal fun shouldPlay(nowMillis: Long, lastPlayedMillis: Long): Boolean =
+        lastPlayedMillis <= 0L ||
+            nowMillis - lastPlayedMillis >= DEDUPE_WINDOW_MILLIS
+
+    /**
      * 播一声 [durationMillis] 长的蜂鸣。
      *
      * 短音效必须自己收尾，否则会一直占着音频通路。
-     * [onDone] 在播放结束（并释放音轨）后回调，便于接收器用 `goAsync()` 保住进程。
+     * [onDone] 在播放结束（并释放音轨）后回调，便于接收器用 `goAsync()` 保住进程；
+     * 因撞车被跳过时也会立即回调。
      */
     fun beep(durationMillis: Int, onDone: () -> Unit = {}) {
+        val now = SystemClock.elapsedRealtime()
+        if (!shouldPlay(now, lastPlayedAt)) {
+            onDone()
+            return
+        }
+        lastPlayedAt = now
         val samples = samples(durationMillis)
         val track = runCatching {
             AudioTrack.Builder()
