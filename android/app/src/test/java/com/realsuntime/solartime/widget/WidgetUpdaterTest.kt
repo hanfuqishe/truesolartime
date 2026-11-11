@@ -1,9 +1,13 @@
 package com.realsuntime.solartime.widget
 
+import com.realsuntime.solartime.data.TakeTimeSchedule
+import com.realsuntime.solartime.data.TakeTemperature
+import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.PlaceSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -107,6 +111,31 @@ class WidgetUpdaterTest {
         assertTrue(plan.showCivilLabel)
         assertTrue(plan.showSolarLabel)
         assertFalse(plan.wide)
+    }
+
+    @Test
+    fun colorsSolarTimeOnlyInsideAKeyBand() {
+        val schedule = TakeTimeSchedule(
+            bands = listOf(TakeBand(900, 1020)),
+            temperature = TakeTemperature.COLD_OR_MILD,
+        )
+        // 16:00 在 15:00-17:00 之内 → 绿色
+        assertEquals(KeyTimePalette.COLD, WidgetUpdater.activeKeyColor(schedule, 16 * 3600.0))
+        // 13:00 不在 → 默认色（null）
+        assertNull(WidgetUpdater.activeKeyColor(schedule, 13 * 3600.0))
+        // 没有关键时间数据 → 默认色
+        assertNull(WidgetUpdater.activeKeyColor(null, 16 * 3600.0))
+        // 没有温度标记 → 不着色
+        assertNull(WidgetUpdater.activeKeyColor(schedule.copy(temperature = null), 16 * 3600.0))
+    }
+
+    @Test
+    fun hotBandsUseRed() {
+        val schedule = TakeTimeSchedule(
+            bands = listOf(TakeBand(600, 720)),
+            temperature = TakeTemperature.HOT_OR_MILD,
+        )
+        assertEquals(KeyTimePalette.HOT, WidgetUpdater.activeKeyColor(schedule, 11 * 3600.0))
     }
 
     @Test

@@ -19,8 +19,6 @@ import com.realsuntime.solartime.data.TakeTemperature
 object WidgetAxis {
 
     private const val MINUTES_PER_DAY = 24 * 60
-    private const val GREEN = 0xFF66BB6A.toInt()
-    private const val RED = 0xFFEF5350.toInt()
     private const val AXIS_COLOR = 0x40FFFFFF
     private const val DOT_CORE = 0xFFFFFFFF.toInt()
     private const val DOT_EDGE = 0x00FFFFFF
@@ -80,11 +78,7 @@ object WidgetAxis {
         canvas.drawLine(inset, centerY, widthPx - inset, centerY, paint)
 
         if (solarSecondsOfDay != null) {
-            val bandColor = when (temperature) {
-                TakeTemperature.COLD_OR_MILD -> GREEN
-                TakeTemperature.HOT_OR_MILD -> RED
-                null -> 0
-            }
+            val bandColor = KeyTimePalette.of(temperature) ?: 0
             if (bandColor != 0 && bands.isNotEmpty()) {
                 // 与轴线等宽，只换颜色：色带是提示，不该比时间本身更抢眼。
                 paint.color = bandColor

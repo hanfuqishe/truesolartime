@@ -26,6 +26,7 @@ import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.TakeTimeRepository
+import com.realsuntime.solartime.data.TakeTimeSchedule
 import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.map.CoordinateTransform
@@ -119,6 +120,9 @@ object WidgetUpdater {
     private const val DATE_TEXT_SP = 11f
     private const val MIN_DATE_TEXT_SP = 8f
 
+    /** 真太阳时的默认颜色；进入关键时间段时改用 KeyTimePalette 里的绿或红。 */
+    private const val SOLAR_TIME_COLOR = 0xFFFFC65C.toInt()
+
     /** 还没有有效 GPS 定位时真太阳时的占位符。 */
     private const val SOLAR_PLACEHOLDER = "--:--"
 
@@ -190,6 +194,10 @@ object WidgetUpdater {
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
         // 折算后放不下常规布局的内容（如默认 5x2）时，改用只压缩留白的紧凑间距布局。
         val compact = effectiveHeightDp > 0f && effectiveHeightDp < REGULAR_MIN_CONTENT_DP
+        // 关键时间只在刷新时读一次：时间轴着色与真太阳时的数字都要用。
+        val keyTime = TakeTimeRepository.schedule(context)
+        val solarSecondsOfDay = solarSeconds.toDouble()
+        val keyColor = if (location.hasFix) activeKeyColor(keyTime, solarSecondsOfDay) else null
         // 再矮就连逐时行都放不下，先让位给时钟。
         val showHourly = effectiveHeightDp <= 0f || effectiveHeightDp >= MIN_HEIGHT_WITH_HOURLY_DP
         val layout = if (compact) R.layout.widget_solar_time_compact else R.layout.widget_solar_time
@@ -202,7 +210,7 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             applyClockSizing(context, widthDp, date, compact, this)
-            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, this)
+            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
@@ -232,6 +240,8 @@ object WidgetUpdater {
                 setChronometer(R.id.widget_solar_sec, minuteStartElapsed, null, true)
                 setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
+                // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
+                applySolarColor(keyColor ?: SOLAR_TIME_COLOR, this)
                 setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
                 setTextViewText(
                     R.id.widget_coordinates,
@@ -242,6 +252,7 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_solar_time, SOLAR_PLACEHOLDER)
                 setViewVisibility(R.id.widget_solar_colon, View.GONE)
                 setViewVisibility(R.id.widget_solar_sec, View.GONE)
+                applySolarColor(SOLAR_TIME_COLOR, this)
                 setTextViewText(R.id.widget_solar_shichen, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
@@ -262,6 +273,7 @@ object WidgetUpdater {
         now: Instant,
         hasFix: Boolean,
         solarOffsetMillis: Long,
+        schedule: TakeTimeSchedule?,
         views: RemoteViews,
     ) {
         val density = context.resources.displayMetrics.density
@@ -270,7 +282,6 @@ object WidgetUpdater {
         val widthPx = ((totalWidthDp - paddingDp * 2f) * density).toInt()
         val heightDp = if (compact) COMPACT_AXIS_HEIGHT_DP else AXIS_HEIGHT_DP
         val heightPx = (heightDp * density).toInt()
-        val schedule = TakeTimeRepository.schedule(context)
         val solarSeconds = if (hasFix) {
             Math.floorMod(now.toEpochMilli() + solarOffsetMillis, 86_400_000L) / 1000L
         } else {
@@ -343,6 +354,20 @@ object WidgetUpdater {
             full.length <= maxWide -> CityLabelPlan(full, true, false, false)
             else -> CityLabelPlan(names.short, true, false, false)
         }
+    }
+
+    /** 当前真太阳时若落在某段关键时间里，就取那一段的配色；否则返回 null（用默认金色）。 */
+    internal fun activeKeyColor(schedule: TakeTimeSchedule?, solarSecondsOfDay: Double): Int? {
+        if (schedule == null) return null
+        val minuteOfDay = solarSecondsOfDay / 60.0
+        val inside = schedule.bands.any { it.contains(minuteOfDay) }
+        return if (inside) KeyTimePalette.of(schedule.temperature) else null
+    }
+
+    private fun applySolarColor(color: Int, views: RemoteViews) {
+        views.setTextColor(R.id.widget_solar_time, color)
+        views.setTextColor(R.id.widget_solar_colon, color)
+        views.setTextColor(R.id.widget_solar_sec, color)
     }
 
     /** 三个区域各自的点击目标：标准时间→闹钟，天气行→天气，真太阳时→本 App。 */

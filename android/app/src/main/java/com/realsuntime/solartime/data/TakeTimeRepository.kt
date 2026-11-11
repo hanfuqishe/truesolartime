@@ -18,6 +18,12 @@ data class TakeBand(val startMinute: Int, val endMinute: Int) {
 
     fun lengthMinutes(): Int = Math.floorMod(endMinute - startMinute, MINUTES_PER_DAY)
 
+    /** [minuteOfDay] 是否落在这段关键时间里（含起点、不含终点，跨午夜的段也支持）。 */
+    fun contains(minuteOfDay: Double): Boolean {
+        val offset = (minuteOfDay - startMinute).mod(MINUTES_PER_DAY.toDouble())
+        return offset < lengthMinutes()
+    }
+
     companion object {
         const val MINUTES_PER_DAY = 24 * 60
     }

@@ -137,6 +137,23 @@ class TakeTimeRepositoryTest {
     }
 
     @Test
+    fun bandContainsReportsWhetherNowIsInside() {
+        val band = TakeBand(900, 1020) // 15:00-17:00
+        assertTrue(band.contains(900.0))
+        assertTrue(band.contains(950.5))
+        assertFalse(band.contains(1020.0))
+        assertFalse(band.contains(899.9))
+
+        // 跨午夜：23:50-00:30
+        val late = TakeBand(1430, 30)
+        assertTrue(late.contains(1440.0 - 5))   // 23:55
+        assertTrue(late.contains(0.0))
+        assertTrue(late.contains(29.9))
+        assertFalse(late.contains(30.0))
+        assertFalse(late.contains(600.0))
+    }
+
+    @Test
     fun cacheStaysValidForSevenDaysOnly() {
         assertTrue(TakeTimeRepository.isFresh(0L))
         assertTrue(TakeTimeRepository.isFresh(7L * 24 * 60 * 60 * 1000))
