@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -230,6 +232,17 @@ fun SettingsSheet(
                     )
                 }
                 Switch(checked = keyTimeChimeEnabled, onCheckedChange = onToggleKeyTimeChime)
+            }
+
+            // 华为/荣耀会冻结后台应用、延迟广播，报时可能因此晚响；这里给一个直达入口。
+            TextButton(
+                onClick = { PowerSettings.openBackgroundSettings(context) },
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.chime_background_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
 
             Spacer(Modifier.height(14.dp))

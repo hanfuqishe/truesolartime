@@ -45,6 +45,7 @@
     <string name="reminder_desc">进入下一个时辰时蜂鸣一声</string>
     <string name="chime_title">进入关键时间报时</string>
     <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
+    <string name="chime_background_hint">报时没响？点此允许本应用后台运行</string>
     <string name="section_widget">桌面小组件</string>
     <string name="widget_desc">左侧为所在国标准时间与日期，右侧为当地真太阳时与经纬度</string>
     <string name="action_add_to_home">添加到桌面</string>

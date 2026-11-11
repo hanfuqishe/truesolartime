@@ -12,6 +12,7 @@ import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.widget.Chime
+import com.realsuntime.solartime.widget.ChimeAlarm
 import java.time.Instant
 
 /**
@@ -51,11 +52,7 @@ object ShiChenReminder {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        if (canScheduleExact(alarmManager)) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger.toEpochMilli(), pendingIntent)
-        } else {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger.toEpochMilli(), pendingIntent)
-        }
+        ChimeAlarm.schedule(context, trigger.toEpochMilli(), pendingIntent)
     }
 
     /**
@@ -83,10 +80,6 @@ object ShiChenReminder {
             val delta = (solarMinuteOfDay - band.startMinute).mod(MINUTES_PER_DAY.toDouble())
             delta < COLLISION_MINUTES || delta > MINUTES_PER_DAY - COLLISION_MINUTES
         }
-
-    /** 高版本系统需用户授予「闹钟和提醒」权限才允许精确定时，否则退化为可延迟的闹钟。 */
-    private fun canScheduleExact(alarmManager: AlarmManager): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
     fun cancel(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return

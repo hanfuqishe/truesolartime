@@ -67,12 +67,7 @@ object KeyTimeChime {
             return
         }
         val trigger = now.toEpochMilli() + (deltaSeconds * 1000).roundToLong()
-        val pendingIntent = alarmIntent(context, trigger)
-        if (canScheduleExact(manager)) {
-            manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
-        } else {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent)
-        }
+        ChimeAlarm.schedule(context, trigger, alarmIntent(context, trigger))
     }
 
     fun cancel(context: Context) {
@@ -128,7 +123,9 @@ class KeyTimeChimeReceiver : BroadcastReceiver() {
         // 用 goAsync 保住进程直到播放结束：onReceive 一返回进程就可能被回收，
         // 音轨随之销毁，蜂鸣会被截断（锁屏/后台时尤其明显）。
         val pending = goAsync()
-        KeyTimeChime.beep { pending.finish() }
+        KeyTimeChime.beep {
+            pending.finish()
+        }
         // 排下一次；关键时间数据没变时这里只是重算，不会重复响。
         KeyTimeChime.schedule(context)
     }

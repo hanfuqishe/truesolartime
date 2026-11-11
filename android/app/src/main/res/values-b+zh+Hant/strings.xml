@@ -45,6 +45,7 @@
     <string name="reminder_desc">進入下一個時辰時蜂鳴一聲</string>
     <string name="chime_title">進入關鍵時間報時</string>
     <string name="chime_desc">進入關鍵時間時蜂鳴一聲（按真太陽時）</string>
+    <string name="chime_background_hint">報時沒響？點此允許本應用後台執行</string>
     <string name="section_widget">桌面小工具</string>
     <string name="widget_desc">左側為所在國標準時間與日期，右側為當地真太陽時與經緯度</string>
     <string name="action_add_to_home">加入主畫面</string>
