@@ -169,11 +169,15 @@
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
+    <!-- 真太阳时 0–24 时的时间轴：彩色段是「服用时间」，白点是当前时刻；位图由 WidgetAxis 绘制。 -->
+    <ImageView
+        android:id="@+id/widget_axis"
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="7dp"
-        android:background="#22FFFFFF" />
+        android:layout_height="11dp"
+        android:layout_marginTop="2dp"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        tools:ignore="ContentDescription" />
 
     <LinearLayout
         android:id="@+id/widget_hour_row"

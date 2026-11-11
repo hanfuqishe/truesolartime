@@ -25,6 +25,7 @@ import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.map.CoordinateTransform
@@ -93,6 +94,12 @@ object WidgetUpdater {
     private const val COMPACT_COLUMN_CHROME_DP = 37f
 
     private const val TEXT_GAP_DP = 2f
+
+    /** 时间轴的左右内边距（与布局里 widget_root 的 paddingStart/End 一致）与高度。 */
+    private const val AXIS_PADDING_DP = 14f
+    private const val COMPACT_AXIS_PADDING_DP = 10f
+    private const val AXIS_HEIGHT_DP = 13f
+    private const val COMPACT_AXIS_HEIGHT_DP = 11f
     private const val MAIN_TEXT_SAMPLE = "00:00"
     private const val SECOND_SAMPLE = "00"
 
@@ -146,6 +153,8 @@ object WidgetUpdater {
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
         DistrictResolver.requestRefresh(context, place)
         WeatherRepository.requestRefresh(context, place)
+        // 服用时间一天一抓即可，内部按 6 小时重试间隔与 7 天有效期节流。
+        TakeTimeRepository.requestRefresh(context)
     }
 
     fun buildViews(
@@ -183,6 +192,7 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             applyClockSizing(context, widthDp, date, compact, this)
+            bindAxis(context, widthDp, compact, now, zone, location.hasFix, solarOffset, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
@@ -219,6 +229,49 @@ object WidgetUpdater {
             }
             bindHourly(context, now, zone, showHourly && location.hasFix, this)
             bindClicks(context, place, this)
+        }
+    }
+
+    /**
+     * 画时间轴：真太阳时 0–24 时，色带为「服用时间」，白点是当前时刻。
+     *
+     * 宽度按桌面回报的宽度减去左右内边距换算；还没有定位时不画点与色带，只留一条轴线。
+     */
+    private fun bindAxis(
+        context: Context,
+        widthDp: Int,
+        compact: Boolean,
+        now: Instant,
+        zone: ZoneId,
+        hasFix: Boolean,
+        solarOffsetMillis: Long,
+        views: RemoteViews,
+    ) {
+        val density = context.resources.displayMetrics.density
+        val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
+        val paddingDp = if (compact) COMPACT_AXIS_PADDING_DP else AXIS_PADDING_DP
+        val widthPx = ((totalWidthDp - paddingDp * 2f) * density).toInt()
+        val heightDp = if (compact) COMPACT_AXIS_HEIGHT_DP else AXIS_HEIGHT_DP
+        val heightPx = (heightDp * density).toInt()
+        val schedule = TakeTimeRepository.schedule(context)
+        val solarSeconds = if (hasFix) {
+            Math.floorMod(now.toEpochMilli() + solarOffsetMillis, 86_400_000L) / 1000L
+        } else {
+            null
+        }
+        // solarOffsetMillis 是相对 UTC 的偏移，服用时间段用的是钟表时间：减去时区偏移才是两者之差。
+        val shiftMinutes = (solarOffsetMillis - civilOffsetMillis(now, zone)) / 60_000.0
+        val bitmap = WidgetAxis.render(
+            context = context,
+            widthPx = widthPx,
+            heightPx = heightPx,
+            solarSecondsOfDay = solarSeconds,
+            bands = schedule?.bands.orEmpty(),
+            temperature = schedule?.temperature,
+            offsetMinutes = shiftMinutes,
+        )
+        if (bitmap != null) {
+            views.setImageViewBitmap(R.id.widget_axis, bitmap)
         }
     }
 
