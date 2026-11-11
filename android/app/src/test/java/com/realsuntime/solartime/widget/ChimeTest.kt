@@ -11,11 +11,11 @@ import kotlin.math.abs
 class ChimeTest {
 
     @Test
-    fun beepIsHalfASecondAtTwoKilohertz() {
+    fun beepIsHalfASecondAtThirtyTwoHundredHertz() {
         val samples = Chime.samples(500)
         // 22050 Hz × 0.5 s
         assertEquals(11_025, samples.size)
-        assertEquals(2_000.0, Chime.BEEP_HZ, 0.0)
+        assertEquals(3_200.0, Chime.BEEP_HZ, 0.0)
 
         // 首尾各有淡入淡出，中间振幅应接近满量程的 60%
         assertEquals(0, samples.first().toInt())
@@ -23,9 +23,9 @@ class ChimeTest {
         val peak = samples.maxOf { abs(it.toInt()) }
         assertTrue("peak=$peak", peak in 17_000..19_700)
 
-        // 一个完整周期（22050/2000 ≈ 11 个采样点）之后相位应回到相近位置
-        val period = (22_050.0 / 2_000.0).toInt()
-        assertTrue(abs(samples[2_000] - samples[2_000 + period]) < 2_000)
+        // 22050/3200 ≈ 6.89 个采样点一个周期：累计 8 个周期后相位接近回到原点
+        val period = (22_050.0 / 3_200.0 * 9).toInt()
+        assertTrue(abs(samples[1_000] - samples[1_000 + period]) < 6_000)
     }
 
     @Test

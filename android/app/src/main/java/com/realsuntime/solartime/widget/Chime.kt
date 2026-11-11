@@ -19,7 +19,7 @@ import kotlin.math.sin
 object Chime {
 
     /** 蜂鸣频率：比系统提示音（约 800 Hz）高，短促而清楚。 */
-    internal const val BEEP_HZ = 2_000.0
+    internal const val BEEP_HZ = 3_200.0
 
     private const val SAMPLE_RATE = 22_050
     private const val TONE_VOLUME = 95
@@ -56,11 +56,6 @@ object Chime {
         }
         lastPlayedAt = now
         play(durationMillis, hz, onDone)
-    }
-
-    /** 只播放、不做撞车去重：设置里的试听按钮要能连点。 */
-    fun preview(durationMillis: Int, hz: Double) {
-        play(durationMillis, hz) {}
     }
 
     private fun play(durationMillis: Int, hz: Double, onDone: () -> Unit) {
