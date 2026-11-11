@@ -230,13 +230,13 @@ object WidgetUpdater {
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
             val city = cityLabel(context, place, widthDp, compact)
-            setTextViewText(R.id.widget_city, if (location.hasFix) city.text else "")
-            setTextViewText(R.id.widget_city_wide, if (location.hasFix) city.text else "")
+            // 地名放不下时才用「整行」：那一行里地名在左、时辰在右，右边那一栏的时辰就不必再显示。
+            val wideName = location.hasFix && city.wide
+            setTextViewText(R.id.widget_city, if (location.hasFix && !city.wide) city.text else "")
+            setTextViewText(R.id.widget_city_wide, if (wideName) city.text else "")
             setViewVisibility(R.id.widget_city, if (location.hasFix && !city.wide) View.VISIBLE else View.GONE)
-            setViewVisibility(
-                R.id.widget_city_wide,
-                if (location.hasFix && city.wide) View.VISIBLE else View.GONE,
-            )
+            setViewVisibility(R.id.widget_wide_row, if (wideName) View.VISIBLE else View.GONE)
+            setViewVisibility(R.id.widget_solar_shichen, if (wideName) View.GONE else View.VISIBLE)
             // 名字太长时先把标签的位置让出去，版面才装得下完整地名。
             setViewVisibility(
                 R.id.widget_label_civil,
@@ -267,6 +267,10 @@ object WidgetUpdater {
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
                 applySolarColor(keyColor ?: SOLAR_TIME_COLOR, this)
                 setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
+                setTextViewText(
+                    R.id.widget_city_wide_shichen,
+                    TimeText.shichenName(context, shichenIndex),
+                )
                 setTextViewText(
                     R.id.widget_coordinates,
                     TimeText.coordinates(context, place.latitude, place.longitude),
