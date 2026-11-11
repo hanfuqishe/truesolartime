@@ -47,6 +47,7 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetUpdater
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -232,6 +233,20 @@ fun SettingsSheet(
                     )
                 }
                 Switch(checked = keyTimeChimeEnabled, onCheckedChange = onToggleKeyTimeChime)
+            }
+
+            // 没有「闹钟和提醒」权限时，报时只能退化为可延迟闹钟（可能晚几分钟响）。
+            if (!ChimeAlarm.canScheduleExact(context) && (remindersEnabled || keyTimeChimeEnabled)) {
+                TextButton(
+                    onClick = { PowerSettings.openExactAlarmSettings(context) },
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chime_exact_alarm_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
 
             // 华为/荣耀会冻结后台应用、延迟广播，报时可能因此晚响；这里给一个直达入口。

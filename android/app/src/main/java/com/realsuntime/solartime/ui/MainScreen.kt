@@ -71,6 +71,7 @@ import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.widget.ChimeAlarm
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -135,13 +136,19 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     val toggleReminders: (Boolean) -> Unit = { enabled ->
-        // 交接提醒只播提示音，不需要通知权限。
+        // 交接提醒只播提示音，不需要通知权限；但需要「闹钟和提醒」才能准时响。
         viewModel.setRemindersEnabled(enabled)
+        if (enabled && !ChimeAlarm.canScheduleExact(context)) {
+            PowerSettings.openExactAlarmSettings(context)
+        }
     }
 
     val toggleKeyTimeChime: (Boolean) -> Unit = { enabled ->
-        // 报时只播提示音，不需要通知权限。
+        // 报时只播提示音，不需要通知权限；但需要「闹钟和提醒」才能准时响。
         viewModel.setKeyTimeChimeEnabled(enabled)
+        if (enabled && !ChimeAlarm.canScheduleExact(context)) {
+            PowerSettings.openExactAlarmSettings(context)
+        }
     }
 
     LaunchedEffect(message) {

@@ -27,6 +27,13 @@ internal object ChimeAlarm {
     internal fun needsAlarmClockSemantics(manufacturer: String?): Boolean =
         manufacturer?.trim()?.lowercase() in FREEZING_MANUFACTURERS
 
+    /** 当前是否允许精确定时（Android 12+ 需用户授权，13+ 默认拒绝）。 */
+    fun canScheduleExact(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val manager = context.getSystemService(AlarmManager::class.java) ?: return false
+        return manager.canScheduleExactAlarms()
+    }
+
     fun schedule(context: Context, triggerMillis: Long, pending: PendingIntent) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         if (needsAlarmClockSemantics(Build.MANUFACTURER)) {
@@ -34,9 +41,10 @@ internal object ChimeAlarm {
                 AlarmManager.AlarmClockInfo(triggerMillis, showIntent(context)),
                 pending,
             )
-        } else if (canScheduleExact(manager)) {
+        } else if (canScheduleExact(context)) {
             manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pending)
         } else {
+            // 没有精确闹钟权限时只能退化为可延迟闹钟；调用方应引导用户去授权。
             manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pending)
         }
     }

@@ -24,6 +24,18 @@ internal object PowerSettings {
         runCatching { context.startActivity(details) }
     }
 
+    /**
+     * 「闹钟和提醒」权限页（Android 12+）。没有它报时只能退化为可延迟闹钟，
+     * 响铃可能晚几分钟 —— Android 13 起该权限默认不授予，必须让用户手动打开。
+     */
+    fun openExactAlarmSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+            .setData(Uri.parse("package:${context.packageName}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching { context.startActivity(intent) }.isSuccess
+    }
+
     /** 只有华为/荣耀才有这一页，其他机型直接返回 false。 */
     private fun openHuaweiStartupManager(context: Context): Boolean {
         if (Build.MANUFACTURER?.lowercase() !in setOf("huawei", "honor")) return false

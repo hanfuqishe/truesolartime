@@ -46,6 +46,7 @@
     <string name="chime_title">Chime at key times</string>
     <string name="chime_desc">Beep when a key time begins (true solar time)</string>
     <string name="chime_background_hint">Chimes not ringing? Allow this app to run in the background</string>
+    <string name="chime_exact_alarm_hint">Chimes may be a few minutes late — tap to allow “Alarms &amp; reminders”</string>
     <string name="section_widget">Home screen widget</string>
     <string name="widget_desc">Standard time and date on the left, true solar time and coordinates on the right</string>
     <string name="action_add_to_home">Add to home screen</string>
