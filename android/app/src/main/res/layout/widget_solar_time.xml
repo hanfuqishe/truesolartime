@@ -17,6 +17,21 @@
         android:paddingEnd="14dp"
         android:paddingBottom="10dp">
 
+    <!-- 地名超长时的整行显示：让出「标准时间」「真太阳时」两处标签的位置。
+         放在内容列里（不是叠在 FrameLayout 顶部），这样它会跟着整块内容一起居中。 -->
+    <TextView
+        android:id="@+id/widget_city_wide"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
+        android:ellipsize="end"
+        android:gravity="start"
+        android:maxLines="1"
+        android:textColor="#B3FFFFFF"
+        android:textSize="11sp"
+        android:visibility="gone"
+        tools:text="克孜勒苏柯尔克孜自治州阿图什市" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -297,20 +312,5 @@
     </LinearLayout>
 
 </LinearLayout>
-
-    <!-- 地名超长时的跨栏显示：占掉「标准时间」与「真太阳时」两处标签的空间。 -->
-    <TextView
-        android:id="@+id/widget_city_wide"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:layout_marginEnd="26dp"
-        android:ellipsize="end"
-        android:gravity="end"
-        android:maxLines="1"
-        android:textColor="#B3FFFFFF"
-        android:textSize="11sp"
-        android:visibility="gone"
-        tools:text="克孜勒苏柯尔克孜自治州阿图什市" />
 </FrameLayout>
 
