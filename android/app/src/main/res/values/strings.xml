@@ -53,6 +53,10 @@
     <string name="widget_pin_no_space">The current home page is full. Swipe to a page with free space (or long-press an empty area to add a page), then tap Add to home again.</string>
     <string name="widget_pin_unsupported">This launcher does not support pinning widgets. Add it from the home screen: long-press → Widgets → True Solar Time.</string>
     <string name="widget_pin_hint">The widget is added to the current home page. If that page is full, swipe to an empty page (or long-press an empty spot to add one) first.</string>
+    <string name="widget_pin_hint_manual">This launcher may ignore the in-app request; if nothing happens, long-press an empty spot on the home screen → Widgets → drag “True Solar Time” out.</string>
+    <string name="widget_pin_requested">Request sent — confirm on the launcher if prompted…</string>
+    <string name="widget_pin_done">Widget added.</string>
+    <string name="widget_pin_manual">This launcher ignored the in-app request. Long-press an empty spot on the home screen → Widgets → find “True Solar Time” and drag it out.</string>
     <string name="section_about">About the calculation</string>
     <string name="about_body">True solar time follows the actual position of the sun: first correct for the longitude offset from 120°E (4 minutes per degree), then add the equation of time caused by Earth orbital eccentricity and obliquity. The twelve shichen follow true solar time, starting with Zi at 23:00, two hours each.</string>
 

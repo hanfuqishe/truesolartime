@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 等待启动器新增小组件实例的最长时间（用户还要在系统弹窗里确认）。 */
-private const val PIN_RESULT_TIMEOUT_MILLIS = 10_000L
+private const val PIN_RESULT_TIMEOUT_MILLIS = 6_000L
 private const val PIN_POLL_INTERVAL_MILLIS = 300L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -279,24 +279,39 @@ fun SettingsSheet(
                         ?.isRequestPinAppWidgetSupported == true
             }
             var pinHint by remember { mutableStateOf<String?>(null) }
+            var pinFailed by remember { mutableStateOf(false) }
+            val needsManualPin = remember {
+                WidgetUpdater.pinNeedsManualFallback(Build.MANUFACTURER, Build.BRAND)
+            }
             val scope = rememberCoroutineScope()
             FilledTonalButton(
                 onClick = {
-                    pinHint = null
                     val before = WidgetUpdater.pinnedCount(context)
                     if (!onAddWidget()) {
                         pinHint = context.getString(R.string.widget_pin_unsupported)
+                        pinFailed = true
                         return@FilledTonalButton
                     }
-                    // 启动器只在真的加上去时才新增实例；用户还要在系统弹窗里点「添加」，
-                    // 因此轮询一段时间，始终没有新实例才认为这次没加上（多半是桌面没空间）。
+                    // 请求已发出就先给个反馈，否则部分系统上「什么都不发生」，看起来像没反应。
+                    pinHint = context.getString(R.string.widget_pin_requested)
+                    pinFailed = false
+                    // 启动器只在真的加上去时才新增实例；用户可能还要在系统弹窗里确认，
+                    // 因此轮询一小段时间，始终没有新实例才认为这次没加上。
                     scope.launch {
                         val deadline = System.currentTimeMillis() + PIN_RESULT_TIMEOUT_MILLIS
                         while (System.currentTimeMillis() < deadline) {
                             delay(PIN_POLL_INTERVAL_MILLIS)
-                            if (WidgetUpdater.pinnedCount(context) > before) return@launch
+                            if (WidgetUpdater.pinnedCount(context) > before) {
+                                pinHint = context.getString(R.string.widget_pin_done)
+                                pinFailed = false
+                                return@launch
+                            }
                         }
-                        pinHint = context.getString(R.string.widget_pin_no_space)
+                        // 国产 ROM 上多半是「应用内添加」没走通，直接引导手动添加更靠谱。
+                        pinHint = context.getString(
+                            if (needsManualPin) R.string.widget_pin_manual else R.string.widget_pin_no_space,
+                        )
+                        pinFailed = true
                     }
                 },
                 enabled = canPin,
@@ -309,12 +324,19 @@ fun SettingsSheet(
                 Text(
                     text = hint,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (pinFailed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                 )
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                text = stringResource(R.string.widget_pin_hint),
+                // 小米/华为等桌面可能直接忽略应用内的添加请求，这时常驻显示手动路径。
+                text = stringResource(
+                    if (needsManualPin) R.string.widget_pin_hint_manual else R.string.widget_pin_hint,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

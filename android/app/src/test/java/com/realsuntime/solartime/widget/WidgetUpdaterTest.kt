@@ -139,6 +139,21 @@ class WidgetUpdaterTest {
     }
 
     @Test
+    fun domesticLaunchersNeedTheManualPinPath() {
+        // 小米/红米：requestPinAppWidget 返回 true 但桌面不真的添加
+        assertTrue(WidgetUpdater.pinNeedsManualFallback("Xiaomi", "Redmi"))
+        assertTrue(WidgetUpdater.pinNeedsManualFallback("Redmi", "Redmi"))
+        assertTrue(WidgetUpdater.pinNeedsManualFallback("POCO", "POCO"))
+        // 华为/荣耀：桌面只提示「当前窗口已满」
+        assertTrue(WidgetUpdater.pinNeedsManualFallback("HUAWEI", "HUAWEI"))
+        assertTrue(WidgetUpdater.pinNeedsManualFallback("HONOR", "HONOR"))
+        // 原生/其他厂商：仍按「桌面没空间」提示
+        assertFalse(WidgetUpdater.pinNeedsManualFallback("Google", "google"))
+        assertFalse(WidgetUpdater.pinNeedsManualFallback("samsung", "samsung"))
+        assertFalse(WidgetUpdater.pinNeedsManualFallback(null, null))
+    }
+
+    @Test
     fun manualPlaceIgnoresTheSystemFix() {
         // 手工指定坐标后，即便系统里有最近定位也不采用
         assertFalse(WidgetUpdater.followsSystemFix(PlaceSource.MANUAL))

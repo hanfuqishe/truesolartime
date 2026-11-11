@@ -53,6 +53,10 @@
     <string name="widget_pin_no_space">当前桌面页已满，小组件放不下。请先滑到有空白位置的一页（或长按桌面空白处新建一页），再点「添加到桌面」。</string>
     <string name="widget_pin_unsupported">当前桌面不支持直接固定小组件。可长按桌面 → 小组件 → 选择「真太阳时」添加。</string>
     <string name="widget_pin_hint">小组件会加到当前桌面页；该页放不下时，请先滑到空白页（或长按桌面空白处新建一页）再点添加。</string>
+    <string name="widget_pin_hint_manual">小米、华为等桌面可能忽略应用内的添加请求；若点了没反应，请长按桌面空白处 → 小组件 → 把「真太阳时」拖到桌面。</string>
+    <string name="widget_pin_requested">已发送添加请求，若桌面弹出提示请确认…</string>
+    <string name="widget_pin_done">小组件已添加。</string>
+    <string name="widget_pin_manual">当前桌面没有响应应用内的添加请求。请长按桌面空白处 → 小组件 → 找到「真太阳时」拖到桌面。</string>
     <string name="section_about">关于计算</string>
     <string name="about_body">真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。</string>
 

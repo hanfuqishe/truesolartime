@@ -53,6 +53,10 @@
     <string name="widget_pin_no_space">目前桌面頁已滿，小工具放不下。請先滑到有空白位置的一頁（或長按桌面空白處新增一頁），再點「加入桌面」。</string>
     <string name="widget_pin_unsupported">目前桌面不支援直接固定小工具。可長按桌面 → 小工具 → 選擇「真太陽時」加入。</string>
     <string name="widget_pin_hint">小工具會加到目前桌面頁；該頁放不下時，請先滑到空白頁（或長按桌面空白處新增一頁）再點加入。</string>
+    <string name="widget_pin_hint_manual">小米、華為等桌面可能忽略應用內的新增請求；若點了沒反應，請長按桌面空白處 → 小工具 → 把「真太陽時」拖到桌面。</string>
+    <string name="widget_pin_requested">已送出新增請求，若桌面跳出提示請確認…</string>
+    <string name="widget_pin_done">小工具已新增。</string>
+    <string name="widget_pin_manual">目前桌面沒有回應應用程式內的新增請求。請長按桌面空白處 → 小工具 → 找到「真太陽時」拖到桌面。</string>
     <string name="section_about">關於計算</string>
     <string name="about_body">真太陽時依太陽的真實位置計時：先由當地經度相對東經 120° 的偏差修正時差（每 1° 相差 4 分鐘），再加上因地球軌道離心率與黃赤交角產生的均時差。十二時辰依真太陽時劃分，子時自 23:00 起，每兩小時一個時辰。</string>
 

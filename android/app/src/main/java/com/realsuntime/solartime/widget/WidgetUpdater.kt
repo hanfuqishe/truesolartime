@@ -686,6 +686,20 @@ object WidgetUpdater {
         manager.cancel(tickIntent(context))
     }
 
+    /**
+     * 桌面是否把「应用内直接添加」做成了半成品。
+     *
+     * 小米/红米（HyperOS、MIUI）上 `requestPinAppWidget` 会返回 true，但桌面的
+     * AddItemActivity 只是闪一下就退，并不真的添加；华为桌面则只提示「当前窗口已满」。
+     * 这两类系统上，提示语要引导用户走「长按桌面 → 小组件」的手动路径。
+     */
+    internal fun pinNeedsManualFallback(manufacturer: String?, brand: String?): Boolean {
+        val names = listOfNotNull(manufacturer, brand).map { it.trim().lowercase() }
+        return names.any { it in PIN_FALLBACK_VENDORS }
+    }
+
+    private val PIN_FALLBACK_VENDORS = setOf("xiaomi", "redmi", "poco", "huawei", "honor")
+
     /** 请求把小组件固定到桌面；返回请求是否已发出。 */
     fun requestPin(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
