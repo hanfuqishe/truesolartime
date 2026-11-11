@@ -66,9 +66,28 @@ internal object WidgetIntents {
         return if (resolvable(context, web)) web else null
     }
 
+    /**
+     * 系统日历：优先用 `CATEGORY_APP_CALENDAR` 打开日历主页；
+     * 定制 ROM 没注册这个分类时，退回 `content://com.android.calendar/time`（打开今天）。
+     * 都不存在时返回 null，此时日期区域不挂点击（会冒泡到左栏的闹钟）。
+     */
+    fun calendar(context: Context): Intent? {
+        val byCategory = Intent(Intent.ACTION_MAIN)
+            .addCategory(APP_CALENDAR_CATEGORY)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (resolvable(context, byCategory)) return byCategory
+
+        val today = Intent(Intent.ACTION_VIEW).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).setData(
+            Uri.parse("content://com.android.calendar/time/${System.currentTimeMillis()}"),
+        )
+        return if (resolvable(context, today)) today else null
+    }
+
     private fun resolvable(context: Context, intent: Intent): Boolean =
         context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) != null
 
     /** `Intent.CATEGORY_APP_WEATHER` 常量只有 15+ 才有，这里直接写字面量。 */
     private const val APP_WEATHER_CATEGORY = "android.intent.category.APP_WEATHER"
+
+    private const val APP_CALENDAR_CATEGORY = "android.intent.category.APP_CALENDAR"
 }

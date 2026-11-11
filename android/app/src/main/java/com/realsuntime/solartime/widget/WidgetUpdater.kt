@@ -56,6 +56,7 @@ object WidgetUpdater {
     private const val REQUEST_APP = 7302
     private const val REQUEST_ALARM = 7303
     private const val REQUEST_WEATHER = 7304
+    private const val REQUEST_CALENDAR = 7305
     private const val MINUTE_MILLIS = 60_000L
 
     /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
@@ -370,7 +371,7 @@ object WidgetUpdater {
         views.setTextColor(R.id.widget_solar_sec, color)
     }
 
-    /** 三个区域各自的点击目标：标准时间→闹钟，天气行→天气，真太阳时→本 App。 */
+    /** 各区域的点击目标：日期→日历，标准时间→闹钟，天气行→天气，真太阳时→本 App。 */
     private fun bindClicks(context: Context, place: Place, views: RemoteViews) {
         val appPending = activityIntent(context, REQUEST_APP, openApp(context))
         views.setOnClickPendingIntent(R.id.widget_root, appPending)
@@ -379,6 +380,10 @@ object WidgetUpdater {
             R.id.widget_civil_column,
             activityIntent(context, REQUEST_ALARM, alarmIntent(context)),
         )
+        // 日期单独指向日历；解析不到日历应用时不挂，点击会冒泡到左栏（闹钟）。
+        WidgetIntents.calendar(context)?.let {
+            views.setOnClickPendingIntent(R.id.widget_civil_date, activityIntent(context, REQUEST_CALENDAR, it))
+        }
         weatherPendingIntent(context, place)?.let {
             views.setOnClickPendingIntent(R.id.widget_hour_row, it)
         }

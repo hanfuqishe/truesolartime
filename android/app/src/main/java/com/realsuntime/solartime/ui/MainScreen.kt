@@ -266,8 +266,11 @@ private fun HeroCard(
             .background(Brush.linearGradient(gradient))
             .padding(22.dp),
     ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     // 有反查结果时直接显示行政区划（如「上海市宝山区」），否则回退到原来的说明文字。
                     text = districtName?.takeIf { it.isNotBlank() }
@@ -276,9 +279,9 @@ private fun HeroCard(
                     color = onHero.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    // 占满标签左边的所有空间，标签自然贴到右边。
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.weight(1f))
                 Surface(
                     color = onHero.copy(alpha = 0.18f),
                     shape = RoundedCornerShape(50),
