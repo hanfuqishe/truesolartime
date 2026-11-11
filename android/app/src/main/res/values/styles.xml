@@ -23,6 +23,26 @@
         <item name="android:textColor">#FFFFC65C</item>
     </style>
 
+    <!--
+      真太阳时秒数：Chronometer 每秒自走（按 base 重算延时，不累积漂移），
+      宽度在刷新时用 setMaxWidth 限成两位数字，配合右对齐只显示秒数。
+    -->
+    <style name="WidgetClockSecondChrono">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">5dp</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">none</item>
+        <item name="android:layout_marginStart">2dp</item>
+        <item name="android:gravity">end</item>
+        <item name="android:textSize">23sp</item>
+        <item name="android:textColor">#FFFFC65C</item>
+    </style>
+
     <!-- 标准时间与冒号：冒号与秒同样半高，底部留 5dp 与主时间对齐 -->
     <style name="WidgetClockColon">
         <item name="android:layout_width">wrap_content</item>

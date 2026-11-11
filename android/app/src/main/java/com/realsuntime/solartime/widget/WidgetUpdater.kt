@@ -9,6 +9,9 @@ import android.content.Intent
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.text.TextPaint
 import android.util.DisplayMetrics
 import android.util.TypedValue
@@ -44,12 +47,27 @@ import kotlin.math.roundToLong
 object WidgetUpdater {
 
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
+
+    /** 刷新闹钟携带的目标写入时刻（epoch 毫秒），接收方据此等到整分边界再刷新。 */
+    const val EXTRA_TICK_AT = "com.realsuntime.solartime.extra.TICK_AT"
     private const val REQUEST_TICK = 7301
     private const val REQUEST_APP = 7302
     private const val REQUEST_ALARM = 7303
     private const val REQUEST_WEATHER = 7304
     private const val MINUTE_MILLIS = 60_000L
-    private const val TICK_MARGIN_MILLIS = 150L
+
+    /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
+    internal const val TICK_MARGIN_MILLIS = 30L
+
+    /**
+     * 闹钟提前醒来、等真正的边界再写入的提前量。
+     * 精确闹钟只有几十毫秒抖动；未授予精确闹钟权限时系统闹钟可能迟到近 1 秒，需要多留一些。
+     */
+    private const val TICK_LEAD_EXACT_MILLIS = 200L
+    private const val TICK_LEAD_INEXACT_MILLIS = 1_000L
+
+    /** 等待上限，兜住异常的时间戳，避免广播一直不结束。 */
+    private const val TICK_MAX_LEAD_MILLIS = TICK_LEAD_INEXACT_MILLIS + TICK_MARGIN_MILLIS
 
     /** 外部应用（闹钟/天气）的解析结果缓存时长。 */
     private const val RESOLVE_TTL_MILLIS = 10L * 60 * 1000
@@ -77,6 +95,9 @@ object WidgetUpdater {
     private const val TEXT_GAP_DP = 2f
     private const val MAIN_TEXT_SAMPLE = "00:00"
     private const val SECOND_SAMPLE = "00"
+
+    /** 秒数宽度再多留一点，避免亚像素误差把数字裁掉一条边。 */
+    private const val SECOND_WIDTH_SLACK_DP = 3.5f
     private const val MAX_MAIN_TEXT_SP = 48f
     private const val MIN_MAIN_TEXT_SP = 20f
     private const val SECOND_TEXT_SP = 23f
@@ -176,7 +197,11 @@ object WidgetUpdater {
             )
             if (location.hasFix) {
                 setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
-                setInt(R.id.widget_solar_sec, "setDisplayedChild", (solarSeconds % 60).toInt())
+                // 秒数交给 Chronometer 自走：base 取「当前真太阳时整分的时刻」，
+                // 它每秒按 base 重算到下一整秒的延时，因此永远落在整秒边界上，不会累积漂移。
+                val minuteStartElapsed =
+                    SystemClock.elapsedRealtime() - Math.floorMod(now.toEpochMilli() + solarOffset, MINUTE_MILLIS)
+                setChronometer(R.id.widget_solar_sec, minuteStartElapsed, null, true)
                 setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
@@ -346,6 +371,12 @@ object WidgetUpdater {
         val secondsBlockPx = paint.measureText(SECOND_SAMPLE)
         val colonPx = paint.measureText(":")
         val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
+        // Chronometer 的文本是「M:SS」，把宽度限成两位数字再配合右对齐，只露出秒数。
+        views.setInt(
+            R.id.widget_solar_sec,
+            "setMaxWidth",
+            (secondsBlockPx + SECOND_WIDTH_SLACK_DP * density).toInt(),
+        )
 
         paint.textSize = spToPx(MAX_MAIN_TEXT_SP, metrics)
         val widthRatio = paint.measureText(MAIN_TEXT_SAMPLE) / paint.textSize
@@ -389,33 +420,74 @@ object WidgetUpdater {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, metrics)
 
     /**
-     * 对齐到下一次「整分」或「真太阳时整分」，取更早的那个再多留 0.15 秒。
+     * 安排下一次刷新：写入时刻取「整分」与「真太阳时整分」里较早的那个（平均每 30 秒一次）。
      *
-     * 标准时间由 TextClock 自行走时，这里只负责刷新真太阳时的分钟、日期、时辰与天气；
-     * 两个时钟的分钟边界相差 0~59 秒，两者各自的边界都要刷新一次（约每 30 秒一次）。
+     * 闹钟提前 [TICK_LEAD_EXACT_MILLIS]/[TICK_LEAD_INEXACT_MILLIS] 醒来，由 [refreshAtTick]
+     * 等到真正的边界才写入。这样即使闹钟本身迟到，分钟也不会比秒数慢半拍。
      */
     fun scheduleNextTick(context: Context, place: Place = resolveLocation(context).place) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val nowMillis = System.currentTimeMillis()
         val now = Instant.ofEpochMilli(nowMillis)
-        val toCivil = millisToNextMinute(nowMillis, civilOffsetMillis(now, civilZoneOf(place)))
-        val toSolar = millisToNextMinute(nowMillis, solarOffsetMillis(now, place))
-        val next = nowMillis + minOf(toCivil, toSolar) + TICK_MARGIN_MILLIS
-        val pendingIntent = tickIntent(context)
+        val at = nowMillis + nextTickDelayMillis(
+            nowMillis = nowMillis,
+            civilOffsetMillis = civilOffsetMillis(now, civilZoneOf(place)),
+            solarOffsetMillis = solarOffsetMillis(now, place),
+        )
+        val pendingIntent = tickIntent(context, at)
+        val exact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && canScheduleExact(manager)
+        val lead = if (exact) TICK_LEAD_EXACT_MILLIS else TICK_LEAD_INEXACT_MILLIS
+        val fireAt = maxOf(at - lead, nowMillis + TICK_MARGIN_MILLIS)
         // RTC：熄屏时不唤醒 CPU。Doze 下 setExact 会被推迟到维护窗口（可能十几分钟），
         // 因此优先用 *AndAllowWhileIdle，保证每分钟的刷新仍能落地。
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            manager.set(AlarmManager.RTC, next, pendingIntent)
-        } else if (canScheduleExact(manager)) {
-            manager.setExactAndAllowWhileIdle(AlarmManager.RTC, next, pendingIntent)
+            manager.set(AlarmManager.RTC, fireAt, pendingIntent)
+        } else if (exact) {
+            manager.setExactAndAllowWhileIdle(AlarmManager.RTC, fireAt, pendingIntent)
         } else {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC, next, pendingIntent)
+            manager.setAndAllowWhileIdle(AlarmManager.RTC, fireAt, pendingIntent)
         }
     }
 
-    /** 显示时刻距离下一个整分还有多少毫秒。 */
-    private fun millisToNextMinute(nowMillis: Long, offsetMillis: Long): Long =
-        MINUTE_MILLIS - Math.floorMod(nowMillis + offsetMillis, MINUTE_MILLIS)
+    /**
+     * 距离下一次写入还有多少毫秒：两个时钟的分钟边界相差 0~59 秒，各自的边界都要刷新一次，
+     * 因此取较早的那个边界再押后 [TICK_MARGIN_MILLIS]。
+     */
+    internal fun nextTickDelayMillis(
+        nowMillis: Long,
+        civilOffsetMillis: Long,
+        solarOffsetMillis: Long,
+    ): Long = minOf(
+        millisToNextMinute(nowMillis, civilOffsetMillis),
+        millisToNextMinute(nowMillis, solarOffsetMillis),
+    ) + TICK_MARGIN_MILLIS
+
+    /** 显示时刻距离下一个整分还有多少毫秒（正好落在边界上时返回 0）。 */
+    private fun millisToNextMinute(nowMillis: Long, offsetMillis: Long): Long {
+        val intoMinute = Math.floorMod(nowMillis + offsetMillis, MINUTE_MILLIS)
+        return if (intoMinute == 0L) 0L else MINUTE_MILLIS - intoMinute
+    }
+
+    /**
+     * 处理刷新闹钟：闹钟可能比边界早醒，等到 [atMillis] 这个真正的整分边界再刷新，
+     * 使真太阳时的分钟与秒数在同一刻变化。等待期间用接收方的 goAsync 保住广播。
+     */
+    fun refreshAtTick(context: Context, atMillis: Long, onDone: () -> Unit) {
+        val appContext = context.applicationContext
+        val delay = (atMillis - System.currentTimeMillis()).coerceIn(0L, TICK_MAX_LEAD_MILLIS)
+        if (delay <= 0L) {
+            runCatching { refreshAll(appContext) }
+            onDone()
+            return
+        }
+        Handler(Looper.getMainLooper()).postDelayed(
+            {
+                runCatching { refreshAll(appContext) }
+                onDone()
+            },
+            delay,
+        )
+    }
 
     private val HOUR_LABEL_IDS = intArrayOf(
         R.id.widget_hour_label_0,
@@ -468,8 +540,10 @@ object WidgetUpdater {
         manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
     }.getOrDefault(0)
 
-    private fun tickIntent(context: Context): PendingIntent {
-        val intent = Intent(context, SolarWidgetProvider::class.java).setAction(ACTION_TICK)
+    private fun tickIntent(context: Context, atMillis: Long = 0L): PendingIntent {
+        val intent = Intent(context, SolarWidgetProvider::class.java)
+            .setAction(ACTION_TICK)
+            .putExtra(EXTRA_TICK_AT, atMillis)
         return PendingIntent.getBroadcast(
             context,
             REQUEST_TICK,

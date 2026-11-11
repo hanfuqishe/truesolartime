@@ -39,7 +39,15 @@ class SolarWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
-            WidgetUpdater.ACTION_TICK,
+            WidgetUpdater.ACTION_TICK -> {
+                // 闹钟提前醒来，等真正的整分边界再刷新；goAsync 保住广播不被提前回收。
+                val pending = goAsync()
+                WidgetUpdater.refreshAtTick(
+                    context = context,
+                    atMillis = intent.getLongExtra(WidgetUpdater.EXTRA_TICK_AT, 0L),
+                    onDone = { pending.finish() },
+                )
+            }
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_DATE_CHANGED,
