@@ -5,8 +5,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.data.TakeBand
+import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.solar.Shichen
+import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.widget.Chime
 import java.time.Instant
 
@@ -27,13 +31,18 @@ object ShiChenReminder {
     /** 时辰交接的提示音比关键时间报时更短，便于区分两种提醒。 */
     internal const val BEEP_MILLIS = 250
 
+    private const val MINUTES_PER_DAY = 24 * 60
+
+    /** 落点与关键时间起点的容差（分钟）。两个闹钟同刻触发，差值远小于 1 分钟。 */
+    private const val COLLISION_MINUTES = 0.5
+
     /** 下一个时辰交接的时刻（真太阳时整点）。 */
     fun nextTrigger(place: Place, now: Instant): Instant =
         Shichen.nextBoundary(now.plusSeconds(SETTLE_SECONDS), place.longitude)
 
     fun schedule(context: Context, place: Place) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        val trigger = nextTrigger(place, Instant.now())
+        val trigger = nextTriggerYieldingToKeyTime(context, place)
         val intent = Intent(context, ShichenBoundaryReceiver::class.java)
             .putExtra(EXTRA_BOUNDARY_MILLIS, trigger.toEpochMilli())
         val pendingIntent = PendingIntent.getBroadcast(
@@ -48,6 +57,32 @@ object ShiChenReminder {
             alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger.toEpochMilli(), pendingIntent)
         }
     }
+
+    /**
+     * 下一次交接时刻；若正好撞上关键时间的起点，就让位给那一声（500 ms 比这里的 250 ms 长），
+     * 顺延到再下一个时辰，避免同一刻响两声。
+     *
+     * 只在「关键时间报时已开启且有数据」时让位 —— 否则交接提醒会被无故吞掉。
+     */
+    private fun nextTriggerYieldingToKeyTime(context: Context, place: Place): Instant {
+        val trigger = nextTrigger(place, Instant.now())
+        if (!AppSettings(context).keyTimeChimeEnabled) return trigger
+        val bands = TakeTimeRepository.schedule(context)?.bands.orEmpty()
+        if (bands.isEmpty()) return trigger
+        val solarMinute = SolarTimeMath.trueSolarSecondsOfDay(trigger, place.longitude) / 60.0
+        return if (collidesWithKeyStart(solarMinute, bands)) {
+            nextTrigger(place, trigger.plusSeconds(1))
+        } else {
+            trigger
+        }
+    }
+
+    /** [solarMinuteOfDay] 是否落在某段关键时间的起点附近（同一分钟即算撞车）。 */
+    internal fun collidesWithKeyStart(solarMinuteOfDay: Double, bands: List<TakeBand>): Boolean =
+        bands.any { band ->
+            val delta = (solarMinuteOfDay - band.startMinute).mod(MINUTES_PER_DAY.toDouble())
+            delta < COLLISION_MINUTES || delta > MINUTES_PER_DAY - COLLISION_MINUTES
+        }
 
     /** 高版本系统需用户授予「闹钟和提醒」权限才允许精确定时，否则退化为可延迟的闹钟。 */
     private fun canScheduleExact(alarmManager: AlarmManager): Boolean =
