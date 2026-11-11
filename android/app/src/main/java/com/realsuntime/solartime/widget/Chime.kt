@@ -48,14 +48,23 @@ object Chime {
      * [onDone] 在播放结束（并释放音轨）后回调，便于接收器用 `goAsync()` 保住进程；
      * 因撞车被跳过时也会立即回调。
      */
-    fun beep(durationMillis: Int, onDone: () -> Unit = {}) {
+    fun beep(durationMillis: Int, hz: Double = BEEP_HZ, onDone: () -> Unit = {}) {
         val now = SystemClock.elapsedRealtime()
         if (!shouldPlay(now, lastPlayedAt)) {
             onDone()
             return
         }
         lastPlayedAt = now
-        val samples = samples(durationMillis)
+        play(durationMillis, hz, onDone)
+    }
+
+    /** 只播放、不做撞车去重：设置里的试听按钮要能连点。 */
+    fun preview(durationMillis: Int, hz: Double) {
+        play(durationMillis, hz) {}
+    }
+
+    private fun play(durationMillis: Int, hz: Double, onDone: () -> Unit) {
+        val samples = samples(durationMillis, hz)
         val track = runCatching {
             AudioTrack.Builder()
                 .setAudioAttributes(
@@ -96,12 +105,12 @@ object Chime {
     }
 
     /** 指定时长的正弦波，首尾各 10 ms 淡入淡出。 */
-    internal fun samples(durationMillis: Int): ShortArray {
+    internal fun samples(durationMillis: Int, hz: Double = BEEP_HZ): ShortArray {
         val count = SAMPLE_RATE * durationMillis / 1000
         val fade = SAMPLE_RATE / 100
         return ShortArray(count) { index ->
             val envelope = minOf(1.0, index / fade.toDouble(), (count - 1 - index) / fade.toDouble())
-            val wave = sin(2.0 * Math.PI * BEEP_HZ * index / SAMPLE_RATE)
+            val wave = sin(2.0 * Math.PI * hz * index / SAMPLE_RATE)
             (wave * envelope * Short.MAX_VALUE * 0.6).toInt().toShort()
         }
     }

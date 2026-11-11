@@ -98,7 +98,7 @@ object KeyTimeChime {
 
     /** 蜂鸣 500 ms；[onDone] 在播放结束后回调。 */
     fun beep(onDone: () -> Unit = {}) {
-        Chime.beep(BEEP_MILLIS, onDone)
+        Chime.beep(BEEP_MILLIS, onDone = onDone)
     }
 
     private fun alarmIntent(context: Context, triggerMillis: Long): PendingIntent {

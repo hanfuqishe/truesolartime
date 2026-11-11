@@ -47,6 +47,7 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.widget.Chime
 import com.realsuntime.solartime.widget.WidgetUpdater
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,6 +55,10 @@ import kotlinx.coroutines.launch
 /** 等待启动器新增小组件实例的最长时间（用户还要在系统弹窗里确认）。 */
 private const val PIN_RESULT_TIMEOUT_MILLIS = 10_000L
 private const val PIN_POLL_INTERVAL_MILLIS = 300L
+
+/** TEMP-TONE：试听用的频率档位与时长。 */
+private val TONE_OPTIONS = listOf(2000, 2200, 2400, 2600, 2800, 3000, 3200, 3500, 3800, 4000)
+private const val TONE_PREVIEW_MILLIS = 500
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -232,6 +237,22 @@ fun SettingsSheet(
                     )
                 }
                 Switch(checked = keyTimeChimeEnabled, onCheckedChange = onToggleKeyTimeChime)
+            }
+
+            // TEMP-TONE：临时试听按钮，选好频率后整段删除。
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "试听蜂鸣（临时）",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TONE_OPTIONS.forEach { hz ->
+                    AssistChip(
+                        onClick = { Chime.preview(TONE_PREVIEW_MILLIS, hz.toDouble()) },
+                        label = { Text("$hz Hz") },
+                    )
+                }
             }
 
             // 华为/荣耀会冻结后台应用、延迟广播，报时可能因此晚响；这里给一个直达入口。
