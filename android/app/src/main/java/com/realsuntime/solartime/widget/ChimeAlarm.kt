@@ -10,10 +10,12 @@ import com.realsuntime.solartime.MainActivity
 /**
  * 排「报时」这种必须准时响一次的闹钟。
  *
- * 普通精确闹钟（`setExactAndAllowWhileIdle`）在多数机型上够用，但华为/荣耀的
- * PowerGenie 会冻结后台应用并**代理其广播**，日志里能看到
+ * 普通精确闹钟（`setExactAndAllowWhileIdle`）在多数机型上够用，但
+ * 华为/荣耀的 PowerGenie 会冻结后台应用并**代理其广播**，日志里能看到
  * `proxyBroadcast:[…] proxy:true` + `perform delay action` —— 闹钟准点触发，
  * 广播却被压到应用下次解冻才投递（往往是用户回到桌面时），报时就晚了几分钟。
+ * 小米/红米/HyperOS 上更狠：息屏后普通精确闹钟（唤醒型也一样）会整个被吞掉，
+ * 排好的下一次刷新直接从系统闹钟列表里消失，小组件的分钟就永远停在旧值。
  *
  * 这类 ROM 上改用 `setAlarmClock()`：把下一次报时登记成「闹钟」，系统会在触发
  * 瞬间解冻应用并正常投递（日志里变成 `unF_Z … OK` + `proxy:false`）。
@@ -21,7 +23,7 @@ import com.realsuntime.solartime.MainActivity
  */
 internal object ChimeAlarm {
 
-    private val FREEZING_MANUFACTURERS = setOf("huawei", "honor")
+    private val FREEZING_MANUFACTURERS = setOf("huawei", "honor", "xiaomi", "redmi", "poco")
 
     /** 该机型是否会代理/延迟后台广播，需要用「闹钟」语义排程。 */
     internal fun needsAlarmClockSemantics(manufacturer: String?): Boolean =

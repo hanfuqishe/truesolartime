@@ -162,6 +162,95 @@ class WidgetUpdaterTest {
     }
 
     @Test
+    fun solarSecondMatchesTheChronometer() {
+        // Chronometer 在整秒边界翻页、两次翻页之间保持旧值，等价于向下取整
+        assertEquals(32L, WidgetUpdater.solarSecondOf(32_400L))
+        assertEquals(32L, WidgetUpdater.solarSecondOf(32_500L))
+        assertEquals(32L, WidgetUpdater.solarSecondOf(32_671L))
+        assertEquals(0L, WidgetUpdater.solarSecondOf(499L))
+        assertEquals(0L, WidgetUpdater.solarSecondOf(500L))
+        assertEquals(0L, WidgetUpdater.solarSecondOf(999L))
+        // 整分边界
+        assertEquals(59L, WidgetUpdater.solarSecondOf(59_400L))
+        // 一天的最后一刻不能溢出成 86400
+        assertEquals(86_399L, WidgetUpdater.solarSecondOf(86_399_600L))
+        assertEquals(0L, WidgetUpdater.solarSecondOf(0L))
+    }
+
+    @Test
+    fun keepsChronometerBaseWhileThePhaseIsUnchanged() {
+        val base = 1_234_000L
+        // 同一分钟内相差几毫秒：相位没变，不能重发（重发会让秒提前跳一下）
+        assertFalse(WidgetUpdater.shouldResetChronometer(base + 7, base, force = false))
+        assertFalse(WidgetUpdater.shouldResetChronometer(base - 30, base, force = false))
+        // 跨过整分：基准相差一个整分，相位仍然一致
+        assertFalse(WidgetUpdater.shouldResetChronometer(base, base - 60_000L, force = false))
+        assertFalse(WidgetUpdater.shouldResetChronometer(base, base + 60_000L, force = false))
+        // 偏移量真的变了（换位置 / 时区设置）：必须重发
+        assertTrue(WidgetUpdater.shouldResetChronometer(base + 600, base, force = false))
+        assertTrue(WidgetUpdater.shouldResetChronometer(base - 900, base, force = false))
+        // 首次下发、以及宿主强制重建
+        assertTrue(WidgetUpdater.shouldResetChronometer(base, null, force = false))
+        assertTrue(WidgetUpdater.shouldResetChronometer(base, base, force = true))
+    }
+
+    /**
+     * 模拟 `Chronometer` 的算术，验证「不重发 base」确实消除了秒忽大忽小。
+     *
+     * `Chronometer.updateText` = `Math.round((now - base) / 1000f)`，走时回调按
+     * `1000 - ((now - base) % 1000) + 1` 排下一次，即永远落在「base + 整秒 + 1ms」。
+     * 界面每秒只看得到两个值：我们下发 base 的那一刻，以及之后的每次走时回调。
+     */
+    private fun chronometerSecondDurations(alwaysReset: Boolean, refreshPhaseMillis: Long): List<Long> {
+        val minuteStart = 0L
+        var base = minuteStart
+        var shownAt = 0L
+        var shown = 0L
+        val durations = mutableListOf<Long>()
+        var nextRefresh = refreshPhaseMillis
+        var nextTick = 1L
+        while (nextRefresh < 60_000L) {
+            val at = minOf(nextRefresh, nextTick)
+            if (at == nextRefresh) {
+                // 刷新时算出的基准永远是「当前真太阳时整分」，相位本身并没有变
+                val desired = at - at % 60_000L
+                if (alwaysReset || WidgetUpdater.shouldResetChronometer(desired, base, force = false)) {
+                    base = desired
+                    val value = Math.round((at - base) / 1000.0)
+                    if (value != shown) {
+                        durations += at - shownAt
+                        shownAt = at
+                        shown = value
+                    }
+                    // setBase 会立刻 updateText，并重新按时基排下一次走时
+                    nextTick = base + (Math.floorDiv(at - base, 1000L) + 1) * 1000L + 1
+                }
+                nextRefresh += 15_000L
+            } else {
+                val value = Math.round((at - base) / 1000.0)
+                if (value != shown) {
+                    durations += at - shownAt
+                    shownAt = at
+                    shown = value
+                }
+                nextTick += 1000L
+            }
+        }
+        return durations
+    }
+
+    @Test
+    fun extraRefreshesNoLongerStretchOrShrinkTheSecond() {
+        // 每次刷新都无条件重发 base：刷新点落在某一秒的后半段时，下一秒被提前显示
+        val jittery = chronometerSecondDurations(alwaysReset = true, refreshPhaseMillis = 700L)
+        assertEquals(listOf(700L, 1301L, 1000L), jittery.take(3))
+
+        // 相位不变就不重发：每一秒都稳稳占满 1 秒
+        val steady = chronometerSecondDurations(alwaysReset = false, refreshPhaseMillis = 700L)
+        assertTrue("秒长应均匀，实际 $steady", steady.all { it == 1_000L || it == 1_001L })
+    }
+
+    @Test
     fun hidesSolarTimeWhileFollowingGpsWithoutAnyFix() {
         // 跟随 GPS，但从未拿到定位，当前也取不到 → 不显示真太阳时
         assertFalse(WidgetUpdater.hasValidFix(followingGps = true, hadFix = false, fixNow = false))

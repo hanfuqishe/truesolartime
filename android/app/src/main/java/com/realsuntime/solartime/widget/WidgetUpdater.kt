@@ -9,8 +9,7 @@ import android.content.Intent
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.text.TextPaint
 import android.util.DisplayMetrics
@@ -50,9 +49,10 @@ object WidgetUpdater {
 
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
 
-    /** 刷新闹钟携带的目标写入时刻（epoch 毫秒），接收方据此等到整分边界再刷新。 */
-    const val EXTRA_TICK_AT = "com.realsuntime.solartime.extra.TICK_AT"
+    /** 兜底刷新：正常每分钟的 [ACTION_TICK] 万一被系统丢掉，靠它把链条接回来。 */
+    const val ACTION_WATCHDOG = "com.realsuntime.solartime.action.WIDGET_WATCHDOG"
     private const val REQUEST_TICK = 7301
+    private const val REQUEST_WATCHDOG = 7306
     private const val REQUEST_APP = 7302
     private const val REQUEST_ALARM = 7303
     private const val REQUEST_WEATHER = 7304
@@ -62,15 +62,8 @@ object WidgetUpdater {
     /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
     internal const val TICK_MARGIN_MILLIS = 30L
 
-    /**
-     * 闹钟提前醒来、等真正的边界再写入的提前量。
-     * 精确闹钟只有几十毫秒抖动；未授予精确闹钟权限时系统闹钟可能迟到近 1 秒，需要多留一些。
-     */
-    private const val TICK_LEAD_EXACT_MILLIS = 200L
-    private const val TICK_LEAD_INEXACT_MILLIS = 1_000L
-
-    /** 等待上限，兜住异常的时间戳，避免广播一直不结束。 */
-    private const val TICK_MAX_LEAD_MILLIS = TICK_LEAD_INEXACT_MILLIS + TICK_MARGIN_MILLIS
+    /** 兜底刷新的间隔：链条断了最多这么久就自己接回来。 */
+    private const val WATCHDOG_INTERVAL_MILLIS = 10L * 60 * 1000
 
     /** 外部应用（闹钟/天气）的解析结果缓存时长。 */
     private const val RESOLVE_TTL_MILLIS = 10L * 60 * 1000
@@ -146,7 +139,14 @@ object WidgetUpdater {
         fixNow || !followingGps || hadFix
 
 
-    fun refreshAll(context: Context) {
+    /**
+     * 刷新所有实例。
+     *
+     * @param forceChronometer 强制重发秒数的基准时刻。只在「视图可能是新建的」或
+     *   「时间/时区被改动」时才需要；平时重发会让秒的显示出现忽长忽短的抖动，见
+     *   [shouldResetChronometer]。
+     */
+    fun refreshAll(context: Context, forceChronometer: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java))
         if (ids.isEmpty()) {
@@ -155,14 +155,18 @@ object WidgetUpdater {
         }
         val location = resolveLocation(context)
         val place = location.place
+        // 先排下一分钟再刷新：刷新途中出任何异常（或者进程被系统冻结）都不会把链条断掉。
+        scheduleNextTick(context, place)
         // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
         ids.forEach { id ->
             val options = manager.getAppWidgetOptions(id)
             val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
             val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-            manager.updateAppWidget(id, buildViews(context, location, widthDp, heightDp))
+            manager.updateAppWidget(
+                id,
+                buildViews(context, location, widthDp, heightDp, id, forceChronometer),
+            )
         }
-        scheduleNextTick(context, place)
         // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
         DistrictResolver.requestRefresh(context, place)
         WeatherRepository.requestRefresh(context, place)
@@ -177,6 +181,8 @@ object WidgetUpdater {
         location: LocationState = resolveLocation(context),
         widthDp: Int = 0,
         heightDp: Int = 0,
+        widgetId: Int = 0,
+        forceChronometer: Boolean = false,
     ): RemoteViews {
         val place = location.place
         val now = Instant.now()
@@ -186,10 +192,18 @@ object WidgetUpdater {
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(now, place.longitude)
         val shichenIndex = Shichen.indexOf(trueSolarSeconds)
         val isDay = SolarTimeMath.solarAltitudeDegrees(now, place.latitude, place.longitude) > -0.833
-        // 时:分由刷新写入；秒交给 ViewFlipper 每秒自动翻页（60 个孩子循环），
-        // 每次刷新把显示位置对齐到当前秒，消除累积误差。
-        // 标准时间改由布局里的 TextClock 自走（含秒），不再依赖刷新。
-        val solarSeconds = secondsOfDay(now, solarOffset)
+        // 真太阳时的秒由 Chronometer 自走，这里只负责写入「时:分」与它的基准时刻。
+        // 两个细节必须一起处理，否则秒会与「时:分」、也与标准时间错位：
+        // 1) 取样必须一次完成 —— now 与 elapsedRealtime 若分两次读，中间隔着的
+        //    buildViews 耗时（字体测量、时间轴位图）会让基准整体偏移几十毫秒；
+        // 2) 口径必须与 Chronometer 的**显示值**一致 —— 它每秒在整秒边界更新一次，
+        //    两次更新之间显示的是上一次的值，也就是 floor；这里跟着用 floor，
+        //    「时:分」与秒才不会在整分前后差一拍。基准只在必要时下发，见
+        //    shouldResetChronometer。
+        val wallNowMillis = System.currentTimeMillis()
+        val elapsedNowMillis = SystemClock.elapsedRealtime()
+        val solarDayMillis = Math.floorMod(wallNowMillis + solarOffset, DAY_MILLIS)
+        val solarSeconds = solarSecondOf(solarDayMillis)
         val date = dateText(context, civil, place, location.hasFix)
         // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
@@ -234,11 +248,20 @@ object WidgetUpdater {
             )
             if (location.hasFix) {
                 setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
-                // 秒数交给 Chronometer 自走：base 取「当前真太阳时整分的时刻」，
-                // 它每秒按 base 重算到下一整秒的延时，因此永远落在整秒边界上，不会累积漂移。
-                val minuteStartElapsed =
-                    SystemClock.elapsedRealtime() - Math.floorMod(now.toEpochMilli() + solarOffset, MINUTE_MILLIS)
-                setChronometer(R.id.widget_solar_sec, minuteStartElapsed, null, true)
+                // base 取「当前真太阳时整分的时刻」，且与上面同一套取样：
+                // Chronometer 每秒按 base 重算到下一整秒的延时，永远落在整秒边界上。
+                // 但只在必要时下发：Chronometer 内部用 Math.round 换算秒数，若在某一秒的
+                // 后半段重发 base，它会把下一秒提前显示出来，那一秒就只有 0.6 秒、下一秒
+                // 却占 1.4 秒 —— 看上去就是「秒忽大忽小」。
+                val minuteStartElapsed = elapsedNowMillis - Math.floorMod(solarDayMillis, MINUTE_MILLIS)
+                val layoutChanged = lastChronometerLayout[widgetId] != layout
+                val reset = layoutChanged ||
+                    shouldResetChronometer(minuteStartElapsed, lastChronometerBase[widgetId], forceChronometer)
+                if (reset) {
+                    lastChronometerBase[widgetId] = minuteStartElapsed
+                    lastChronometerLayout[widgetId] = layout
+                    setChronometer(R.id.widget_solar_sec, minuteStartElapsed, null, true)
+                }
                 setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
@@ -487,9 +510,56 @@ object WidgetUpdater {
             WeatherRepository.Condition.THUNDER -> R.drawable.ic_wx_thunder
         }
 
-    /** 系统时刻加上偏移后，落在当天的第几秒。 */
-    private fun secondsOfDay(now: Instant, offsetMillis: Long): Long =
-        Math.floorMod(now.toEpochMilli() + offsetMillis, 86_400_000L) / 1000L
+    /**
+     * 一天的毫秒数。
+     */
+    private const val DAY_MILLIS = 86_400_000L
+
+    /**
+     * 每个实例上次下发的 Chronometer base（elapsedRealtime 时基）与当时的布局。
+     *
+     * 同一个基准下 Chronometer 会自己走时；重复下发只会带来取整误差，所以只记下来避免重复。
+     * 布局换了意味着宿主会重新 inflate、基准随之丢失，这时必须补发。
+     */
+    private val lastChronometerBase = HashMap<Int, Long>()
+    private val lastChronometerLayout = HashMap<Int, Int>()
+
+    /**
+     * 相位容差：基准之间的差落在整分的这一范围内，就认为相位没变、不必重发。
+     *
+     * 同一分钟内反复取样只差几毫秒；跨分只差一个整分（60000），两者都在容差内。
+     */
+    private const val CHRONOMETER_TOLERANCE_MILLIS = 100L
+
+    /**
+     * 是否需要重发 Chronometer 的 base。
+     *
+     * `Chronometer` 的 `updateText` 是 `Math.round((now - base) / 1000f)`，而它自己的走时
+     * 回调永远落在「base + 整秒 + 1ms」上。也就是说：基准正确时显示值恰好在整秒边界
+     * 翻页，但**额外的**一次 `setBase` 会把「已过整秒半秒以上」的当前时刻四舍五入成
+     * 下一秒——那一秒只显示了零点几秒，下一秒却占了整整一秒多，看上去就是秒忽大忽小。
+     *
+     * 基准本身是绝对的（elapsedRealtime 单调），一旦对齐就不会再漂，所以只有相位真的
+     * 变了才需要重发：换了位置导致偏移变化、进程重启、视图重建。
+     *
+     * @param desired 这次算出的基准
+     * @param last 上次下发的基准（没有则为 null）
+     * @param force 视图可能是新建的（首次添加、重建、改时间）时强制下发
+     */
+    internal fun shouldResetChronometer(desired: Long, last: Long?, force: Boolean): Boolean {
+        if (force || last == null) return true
+        val diff = Math.floorMod(desired - last, MINUTE_MILLIS)
+        return Math.min(diff, MINUTE_MILLIS - diff) > CHRONOMETER_TOLERANCE_MILLIS
+    }
+
+    /**
+     * 真太阳时当天的第几秒，**向下取整**。
+     *
+     * `Chronometer` 在整秒边界翻页，两次翻页之间保持上一次的值，等价于向下取整；
+     * 「时:分」跟着用同一口径，才不会在整分前后和秒差一拍。
+     */
+    internal fun solarSecondOf(solarDayMillis: Long): Long =
+        solarDayMillis / 1000 % (DAY_MILLIS / 1000)
 
     /** 标准时间相对 UTC 的偏移。 */
     private fun civilOffsetMillis(now: Instant, zone: ZoneId): Long =
@@ -582,33 +652,46 @@ object WidgetUpdater {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, metrics)
 
     /**
-     * 安排下一次刷新：写入时刻取「整分」与「真太阳时整分」里较早的那个（平均每 30 秒一次）。
+     * 安排下一次刷新。
      *
-     * 闹钟提前 [TICK_LEAD_EXACT_MILLIS]/[TICK_LEAD_INEXACT_MILLIS] 醒来，由 [refreshAtTick]
-     * 等到真正的边界才写入。这样即使闹钟本身迟到，分钟也不会比秒数慢半拍。
+     * 亮屏时取「整分」与「真太阳时整分」里较早的那个（平均每 30 秒一次）；息屏时只跟真太阳时整分
+     * （标准时间由布局里的 `TextClock` 自己走，不用 App 刷），把夜里的唤醒减半。
+     *
+     * 闹钟直接排在边界之后 [TICK_MARGIN_MILLIS] 处，一响就刷新。**不要**再「提前醒来 + `postDelayed`
+     * 等到边界」：那样排下一次闹钟的动作就落进了进程里的 Handler，进程一旦被冻结/回收，
+     * 这次刷新和下一次排程一起丢掉，分钟会停在旧值直到系统 30 分钟的兜底刷新。
      */
     fun scheduleNextTick(context: Context, place: Place = resolveLocation(context).place) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
+        val power = context.getSystemService(PowerManager::class.java)
+        val interactive = power?.isInteractive ?: true
         val nowMillis = System.currentTimeMillis()
         val now = Instant.ofEpochMilli(nowMillis)
-        val at = nowMillis + nextTickDelayMillis(
-            nowMillis = nowMillis,
-            civilOffsetMillis = civilOffsetMillis(now, civilZoneOf(place)),
-            solarOffsetMillis = solarOffsetMillis(now, place),
+        val solarOffset = solarOffsetMillis(now, place)
+        val fireAt = nowMillis +
+            if (interactive) {
+                // 亮屏时两个时钟的整分都要刷（日期、天气、时辰、色带都跟着走）。
+                nextTickDelayMillis(
+                    nowMillis = nowMillis,
+                    civilOffsetMillis = civilOffsetMillis(now, civilZoneOf(place)),
+                    solarOffsetMillis = solarOffset,
+                )
+            } else {
+                // 息屏：只有真太阳时是 App 写的，标准时间由宿主自己的 TextClock 走时；只对
+                // 真太阳时整分刷新即可，把夜里的唤醒次数从每分钟两次压到一次。
+                millisToNextMinute(nowMillis, solarOffset) + TICK_MARGIN_MILLIS
+            }
+        val pendingIntent = tickIntent(context)
+        // 必须是唤醒型、并且在会冻结/吞闹钟的 ROM 上走「闹钟」语义（见 [ChimeAlarm]）：
+        // 普通闹钟在息屏后会被吞掉，分钟从此停在旧值。
+        ChimeAlarm.schedule(context, fireAt, pendingIntent)
+        // 每分钟都会重排一次，这里顺带把兜底闹钟刷成最新（覆盖安装后闹钟会被系统清空）。
+        manager.setInexactRepeating(
+            AlarmManager.RTC,
+            nowMillis + WATCHDOG_INTERVAL_MILLIS,
+            WATCHDOG_INTERVAL_MILLIS,
+            watchdogIntent(context),
         )
-        val pendingIntent = tickIntent(context, at)
-        val exact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && canScheduleExact(manager)
-        val lead = if (exact) TICK_LEAD_EXACT_MILLIS else TICK_LEAD_INEXACT_MILLIS
-        val fireAt = maxOf(at - lead, nowMillis + TICK_MARGIN_MILLIS)
-        // RTC：熄屏时不唤醒 CPU。Doze 下 setExact 会被推迟到维护窗口（可能十几分钟），
-        // 因此优先用 *AndAllowWhileIdle，保证每分钟的刷新仍能落地。
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            manager.set(AlarmManager.RTC, fireAt, pendingIntent)
-        } else if (exact) {
-            manager.setExactAndAllowWhileIdle(AlarmManager.RTC, fireAt, pendingIntent)
-        } else {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC, fireAt, pendingIntent)
-        }
     }
 
     /**
@@ -628,27 +711,6 @@ object WidgetUpdater {
     private fun millisToNextMinute(nowMillis: Long, offsetMillis: Long): Long {
         val intoMinute = Math.floorMod(nowMillis + offsetMillis, MINUTE_MILLIS)
         return if (intoMinute == 0L) 0L else MINUTE_MILLIS - intoMinute
-    }
-
-    /**
-     * 处理刷新闹钟：闹钟可能比边界早醒，等到 [atMillis] 这个真正的整分边界再刷新，
-     * 使真太阳时的分钟与秒数在同一刻变化。等待期间用接收方的 goAsync 保住广播。
-     */
-    fun refreshAtTick(context: Context, atMillis: Long, onDone: () -> Unit) {
-        val appContext = context.applicationContext
-        val delay = (atMillis - System.currentTimeMillis()).coerceIn(0L, TICK_MAX_LEAD_MILLIS)
-        if (delay <= 0L) {
-            runCatching { refreshAll(appContext) }
-            onDone()
-            return
-        }
-        Handler(Looper.getMainLooper()).postDelayed(
-            {
-                runCatching { refreshAll(appContext) }
-                onDone()
-            },
-            delay,
-        )
     }
 
     private val HOUR_LABEL_IDS = intArrayOf(
@@ -684,6 +746,7 @@ object WidgetUpdater {
     fun cancelTick(context: Context) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         manager.cancel(tickIntent(context))
+        manager.cancel(watchdogIntent(context))
     }
 
     /**
@@ -716,10 +779,9 @@ object WidgetUpdater {
         manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
     }.getOrDefault(0)
 
-    private fun tickIntent(context: Context, atMillis: Long = 0L): PendingIntent {
+    private fun tickIntent(context: Context): PendingIntent {
         val intent = Intent(context, SolarWidgetProvider::class.java)
             .setAction(ACTION_TICK)
-            .putExtra(EXTRA_TICK_AT, atMillis)
         return PendingIntent.getBroadcast(
             context,
             REQUEST_TICK,
@@ -728,8 +790,16 @@ object WidgetUpdater {
         )
     }
 
-    private fun canScheduleExact(manager: AlarmManager): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || manager.canScheduleExactAlarms()
+    private fun watchdogIntent(context: Context): PendingIntent {
+        val intent = Intent(context, SolarWidgetProvider::class.java)
+            .setAction(ACTION_WATCHDOG)
+        return PendingIntent.getBroadcast(
+            context,
+            REQUEST_WATCHDOG,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     /**
      * 所在地的法定时区。中国全境统一为东八区，直接固定；
