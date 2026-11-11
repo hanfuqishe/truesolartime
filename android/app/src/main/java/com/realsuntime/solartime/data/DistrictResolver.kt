@@ -35,6 +35,16 @@ object DistrictResolver {
     /** 新坐标与上次反查坐标相距超过该距离才重新反查，其余情况沿用已缓存的结果。 */
     private const val MOVE_THRESHOLD_KM = 5.0
 
+    /**
+     * 缓存格式版本。结果写法变了（例如现在带上「市」前缀）就把旧缓存当过期，
+     * 避免升级后一直显示旧名字。
+     */
+    private const val CACHE_SCHEMA = 2
+    private const val KEY_SCHEMA = "schema"
+
+    /** 高德用来占位、本身不是地名的上级字段。 */
+    private val PLACEHOLDER_REGIONS = setOf("市辖区", "县", "省直辖县级行政区划", "自治区直辖县级行政区划")
+
     /** 缓存有效期。 */
     private const val MAX_AGE_MILLIS = 30L * 24 * 60 * 60 * 1000
 
@@ -54,6 +64,7 @@ object DistrictResolver {
     fun needsRefresh(context: Context, place: Place): Boolean {
         val prefs = prefs(context)
         if (prefs.getString(KEY_NAME, null) == null) return true
+        if (prefs.getInt(KEY_SCHEMA, 0) != CACHE_SCHEMA) return true
         val lat = prefs.getFloat(KEY_LAT, Float.NaN).toDouble()
         val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
         if (lat.isNaN() || lon.isNaN()) return true
@@ -112,11 +123,23 @@ object DistrictResolver {
         }
     }
 
-    /** 优先区县，其次市，最后省（直辖市的 city 常为空）。 */
-    fun pickName(district: String?, city: String?, province: String?): String? =
-        listOf(district, city, province)
-            .mapNotNull { it?.trim() }
-            .firstOrNull { it.isNotEmpty() && it != "[]" }
+    /**
+     * 区县名补上上级行政区划：优先市（直辖市时市与省同名，于是得到「上海市宝山区」），
+     * 市缺失或只是「市辖区」这类占位值时用省；区县名本身已带上级前缀就不再重复。
+     * 没有区县时退回市，再退回省。
+     */
+    fun pickName(district: String?, city: String?, province: String?): String? {
+        val county = cleanName(district)
+        val town = cleanName(city)?.takeUnless { it in PLACEHOLDER_REGIONS }
+        val region = cleanName(province)?.takeUnless { it in PLACEHOLDER_REGIONS }
+        if (county == null) return town ?: region
+        val parent = listOfNotNull(town, region).firstOrNull { it != county } ?: return county
+        return if (county.startsWith(parent)) county else parent + county
+    }
+
+    /** 高德会把空字段填成空串或「[]」，这类值一律当作没有。 */
+    private fun cleanName(value: String?): String? =
+        value?.trim()?.takeIf { it.isNotEmpty() && it != "[]" }
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -124,6 +147,7 @@ object DistrictResolver {
     private fun save(context: Context, place: Place, name: String) {
         prefs(context).edit()
             .putString(KEY_NAME, name)
+            .putInt(KEY_SCHEMA, CACHE_SCHEMA)
             .putFloat(KEY_LAT, place.latitude.toFloat())
             .putFloat(KEY_LON, place.longitude.toFloat())
             .putLong(KEY_TIME, System.currentTimeMillis())

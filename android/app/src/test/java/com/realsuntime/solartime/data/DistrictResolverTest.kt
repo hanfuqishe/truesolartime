@@ -26,8 +26,28 @@ class DistrictResolverTest {
     }
 
     @Test
-    fun prefersDistrict() {
-        assertEquals("宝山区", DistrictResolver.pickName("宝山区", "", "上海市"))
+    fun prefixesDistrictWithItsCity() {
+        assertEquals("上海市宝山区", DistrictResolver.pickName("宝山区", "上海市", "上海市"))
+        assertEquals("南京市鼓楼区", DistrictResolver.pickName("鼓楼区", "南京市", "江苏省"))
+    }
+
+    @Test
+    fun fallsBackToProvinceWhenCityIsMissing() {
+        // 直辖市常只给省不给市
+        assertEquals("上海市宝山区", DistrictResolver.pickName("宝山区", "", "上海市"))
+        // 县级市：省 + 区县
+        assertEquals("浙江省义乌市", DistrictResolver.pickName("义乌市", null, "浙江省"))
+    }
+
+    @Test
+    fun skipsPlaceholderCities() {
+        assertEquals("湖北省仙桃市", DistrictResolver.pickName("仙桃市", "省直辖县级行政区划", "湖北省"))
+        assertEquals("河北省某县", DistrictResolver.pickName("某县", "市辖区", "河北省"))
+    }
+
+    @Test
+    fun keepsNameThatAlreadyCarriesItsParent() {
+        assertEquals("上海市宝山区", DistrictResolver.pickName("上海市宝山区", "上海市", "上海市"))
     }
 
     @Test
