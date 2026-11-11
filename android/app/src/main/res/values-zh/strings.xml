@@ -42,9 +42,9 @@
     <string name="section_map">地图底图</string>
     <string name="map_auto_hint">自动：境内用高德，境外用 OpenStreetMap</string>
     <string name="reminder_title">时辰交接提醒</string>
-    <string name="reminder_desc">进入下一个时辰前 5 分钟发送通知</string>
-    <string name="chime_title">整点报时</string>
-    <string name="chime_desc">每到真太阳时整点「嘀」一声</string>
+    <string name="reminder_desc">进入下一个时辰前 5 分钟蜂鸣一声</string>
+    <string name="chime_title">进入关键时间报时</string>
+    <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
     <string name="section_widget">桌面小组件</string>
     <string name="widget_desc">左侧为所在国标准时间与日期，右侧为当地真太阳时与经纬度</string>
     <string name="action_add_to_home">添加到桌面</string>
@@ -78,14 +78,7 @@
     <string name="widget_label_solar">真太阳时</string>
     <string name="widget_description">左侧显示所在国标准时间与日期，右侧显示当地真太阳时与经纬度</string>
 
-    <string name="channel_shichen">时辰交接提醒</string>
-    <string name="notif_upcoming_title">即将进入%1$s</string>
-    <string name="notif_started_title">%1$s已开始</string>
-    <string name="notif_upcoming_body">约 %1$d 分钟后（真太阳时 %2$s）</string>
-    <string name="notif_started_body">真太阳时 %1$s 进入%2$s</string>
-
     <string name="msg_location_permission">没有定位权限，请在系统设置中允许，或手动输入经纬度</string>
-    <string name="msg_notification_reminder">未授予通知权限，提醒可能无法显示</string>
     <string name="msg_gps_timeout">尚未收到定位结果，可能需要在空旷处等待；也可手动设置经纬度</string>
     <string name="msg_following_gps">已跟随 GPS 定位（%1$s），每分钟更新</string>
     <string name="gps_label">GPS</string>
@@ -126,7 +119,6 @@
         <item>戌</item>
         <item>亥</item>
     </string-array>
-    <string name="channel_shichen_desc">在进入下一个时辰前 5 分钟提醒</string>
 
     <string name="date_weekday_short">%1$d月%2$d日 %3$s</string>
     <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>

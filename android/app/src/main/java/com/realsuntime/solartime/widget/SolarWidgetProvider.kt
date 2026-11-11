@@ -26,14 +26,14 @@ class SolarWidgetProvider : AppWidgetProvider() {
     override fun onEnabled(context: Context) {
         WidgetUpdater.refreshAll(context)
         val settings = AppSettings(context)
-        if (settings.hourlyChimeEnabled) {
-            HourlyChime.schedule(context, settings.place)
+        if (settings.keyTimeChimeEnabled) {
+            KeyTimeChime.schedule(context)
         }
     }
 
     override fun onDisabled(context: Context) {
         WidgetUpdater.cancelTick(context)
-        HourlyChime.cancel(context)
+        KeyTimeChime.cancel(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {

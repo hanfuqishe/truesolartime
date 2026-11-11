@@ -42,9 +42,9 @@
     <string name="section_map">Map tiles</string>
     <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
     <string name="reminder_title">Shichen change alert</string>
-    <string name="reminder_desc">Notify 5 minutes before the next shichen begins</string>
-    <string name="chime_title">Hourly chime</string>
-    <string name="chime_desc">Beep once at every true solar hour</string>
+    <string name="reminder_desc">Beep once 5 minutes before the next shichen begins</string>
+    <string name="chime_title">Chime at key times</string>
+    <string name="chime_desc">Beep when a key time begins (true solar time)</string>
     <string name="section_widget">Home screen widget</string>
     <string name="widget_desc">Standard time and date on the left, true solar time and coordinates on the right</string>
     <string name="action_add_to_home">Add to home screen</string>
@@ -78,14 +78,7 @@
     <string name="widget_label_solar">True solar</string>
     <string name="widget_description">Left: local standard time and date. Right: true solar time and coordinates.</string>
 
-    <string name="channel_shichen">Shichen alerts</string>
-    <string name="notif_upcoming_title">Entering %1$s soon</string>
-    <string name="notif_started_title">%1$s has begun</string>
-    <string name="notif_upcoming_body">In about %1$d minutes (true solar %2$s)</string>
-    <string name="notif_started_body">%2$s begins at true solar %1$s</string>
-
     <string name="msg_location_permission">No location permission. Allow it in system settings, or enter coordinates manually.</string>
-    <string name="msg_notification_reminder">Notification permission not granted; alerts may not appear.</string>
     <string name="msg_gps_timeout">No GPS fix yet. Try open sky, or set coordinates manually.</string>
     <string name="msg_following_gps">Following GPS (%1$s), updated every minute</string>
     <string name="gps_label">GPS</string>
@@ -126,7 +119,6 @@
         <item>Xu</item>
         <item>Hai</item>
     </string-array>
-    <string name="channel_shichen_desc">Notify 5 minutes before the next shichen</string>
 
     <string name="date_weekday_short">%1$d/%2$d %3$s</string>
     <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>

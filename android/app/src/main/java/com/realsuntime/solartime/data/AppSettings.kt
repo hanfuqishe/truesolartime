@@ -35,7 +35,8 @@ class AppSettings(context: Context) {
         get() = MapStyle.fromName(prefs.getString(KEY_MAP_STYLE, null))
         set(value) = prefs.edit().putString(KEY_MAP_STYLE, value.name).apply()
 
-    var hourlyChimeEnabled: Boolean
+    /** 「进入关键时间」报时。pref 键沿用旧名字，升级后不丢设置。 */
+    var keyTimeChimeEnabled: Boolean
         get() = prefs.getBoolean(KEY_HOURLY_CHIME, false)
         set(value) = prefs.edit().putBoolean(KEY_HOURLY_CHIME, value).apply()
 

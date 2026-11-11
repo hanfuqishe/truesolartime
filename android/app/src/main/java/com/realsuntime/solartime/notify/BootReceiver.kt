@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.realsuntime.solartime.data.AppSettings
-import com.realsuntime.solartime.widget.HourlyChime
+import com.realsuntime.solartime.widget.KeyTimeChime
 import com.realsuntime.solartime.widget.WidgetUpdater
 
 /** 重启后 AlarmManager 中的闹钟会丢失，这里重新排程。 */
@@ -16,8 +16,8 @@ class BootReceiver : BroadcastReceiver() {
         if (settings.remindersEnabled) {
             ShiChenReminder.schedule(context, settings.place)
         }
-        if (settings.hourlyChimeEnabled) {
-            HourlyChime.schedule(context, settings.place)
+        if (settings.keyTimeChimeEnabled) {
+            KeyTimeChime.schedule(context)
         }
         WidgetUpdater.refreshAll(context)
     }

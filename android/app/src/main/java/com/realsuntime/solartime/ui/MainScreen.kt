@@ -81,7 +81,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val trackingGps by viewModel.trackingGps.collectAsStateWithLifecycle()
     val waitingForFix by viewModel.waitingForFix.collectAsStateWithLifecycle()
     val remindersEnabled by viewModel.remindersEnabled.collectAsStateWithLifecycle()
-    val hourlyChimeEnabled by viewModel.hourlyChimeEnabled.collectAsStateWithLifecycle()
+    val keyTimeChimeEnabled by viewModel.keyTimeChimeEnabled.collectAsStateWithLifecycle()
+    val districtName by viewModel.districtName.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
@@ -101,15 +102,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             viewModel.startGpsTracking()
         } else {
             viewModel.postMessage(context.getString(R.string.msg_location_permission))
-        }
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        viewModel.setRemindersEnabled(true)
-        if (!granted) {
-            viewModel.postMessage(context.getString(R.string.msg_notification_reminder))
         }
     }
 
@@ -143,22 +135,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     val toggleReminders: (Boolean) -> Unit = { enabled ->
-        when {
-            !enabled -> viewModel.setRemindersEnabled(false)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED -> notificationPermissionLauncher.launch(
-                Manifest.permission.POST_NOTIFICATIONS,
-            )
-            else -> viewModel.setRemindersEnabled(true)
-        }
+        // 交接提醒只播提示音，不需要通知权限。
+        viewModel.setRemindersEnabled(enabled)
     }
 
-    val toggleHourlyChime: (Boolean) -> Unit = { enabled ->
+    val toggleKeyTimeChime: (Boolean) -> Unit = { enabled ->
         // 报时只播提示音，不需要通知权限。
-        viewModel.setHourlyChimeEnabled(enabled)
+        viewModel.setKeyTimeChimeEnabled(enabled)
     }
 
     LaunchedEffect(message) {
@@ -185,6 +168,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             HeroCard(
                 snapshot = snapshot,
                 placeLabel = place.label,
+                districtName = districtName,
                 trackingGps = trackingGps,
                 waitingForFix = waitingForFix,
             )
@@ -215,7 +199,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             place = place,
             trackingGps = trackingGps,
             remindersEnabled = remindersEnabled,
-            hourlyChimeEnabled = hourlyChimeEnabled,
+            keyTimeChimeEnabled = keyTimeChimeEnabled,
             mapStyle = mapStyle,
             onDismiss = { showSettings = false },
             onRequestGps = {
@@ -224,7 +208,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             },
             onApplyManual = { lat, lon, label -> viewModel.applyManualPlace(lat, lon, label) },
             onToggleReminders = toggleReminders,
-            onToggleHourlyChime = toggleHourlyChime,
+            onToggleKeyTimeChime = toggleKeyTimeChime,
             onSelectMapStyle = viewModel::setMapStyle,
             onAddWidget = viewModel::requestPinWidget,
         )
@@ -261,6 +245,7 @@ private fun Header(onOpenSettings: () -> Unit) {
 private fun HeroCard(
     snapshot: SolarSnapshot,
     placeLabel: String,
+    districtName: String?,
     trackingGps: Boolean,
     waitingForFix: Boolean,
 ) {
@@ -284,7 +269,9 @@ private fun HeroCard(
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (trackingGps) stringResource(R.string.hero_title_tracking) else stringResource(R.string.hero_title),
+                    // 有反查结果时直接显示行政区划（如「上海市宝山区」），否则回退到原来的说明文字。
+                    text = districtName?.takeIf { it.isNotBlank() }
+                        ?: if (trackingGps) stringResource(R.string.hero_title_tracking) else stringResource(R.string.hero_title),
                     style = MaterialTheme.typography.labelLarge,
                     color = onHero.copy(alpha = 0.85f),
                     maxLines = 1,

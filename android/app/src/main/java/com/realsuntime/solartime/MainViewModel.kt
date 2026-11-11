@@ -7,13 +7,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
+import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
-import com.realsuntime.solartime.widget.HourlyChime
+import com.realsuntime.solartime.widget.KeyTimeChime
 import com.realsuntime.solartime.widget.WidgetUpdater
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,11 +48,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _remindersEnabled = MutableStateFlow(settings.remindersEnabled)
     val remindersEnabled: StateFlow<Boolean> = _remindersEnabled.asStateFlow()
 
-    private val _hourlyChimeEnabled = MutableStateFlow(settings.hourlyChimeEnabled)
-    val hourlyChimeEnabled: StateFlow<Boolean> = _hourlyChimeEnabled.asStateFlow()
+    private val _keyTimeChimeEnabled = MutableStateFlow(settings.keyTimeChimeEnabled)
+    val keyTimeChimeEnabled: StateFlow<Boolean> = _keyTimeChimeEnabled.asStateFlow()
 
     private val _mapStyle = MutableStateFlow(settings.mapStyle)
     val mapStyle: StateFlow<MapStyle> = _mapStyle.asStateFlow()
+
+    /** 反查到的行政区划（如「上海市宝山区」）；没有时首页仍显示「当地真太阳时」。 */
+    private val _districtName = MutableStateFlow(DistrictResolver.cachedName(application))
+    val districtName: StateFlow<String?> = _districtName.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -63,14 +68,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             while (isActive) {
                 _now.value = Instant.now()
+                // 区县反查在后台跑完会写缓存；这里读的是内存里的 prefs，代价可忽略。
+                _districtName.value = DistrictResolver.cachedName(application)
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
         }
         if (settings.remindersEnabled) {
             ShiChenReminder.schedule(application, settings.place)
         }
-        if (settings.hourlyChimeEnabled) {
-            HourlyChime.schedule(application, settings.place)
+        if (settings.keyTimeChimeEnabled) {
+            KeyTimeChime.schedule(application)
         }
         // 默认跟随 GPS；用户手动指定过位置时保持手动。
         if (locationTracker.hasPermission() && settings.place.source != PlaceSource.MANUAL) {
@@ -154,14 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _mapStyle.value = style
     }
 
-    fun setHourlyChimeEnabled(enabled: Boolean) {
-        _hourlyChimeEnabled.value = enabled
-        settings.hourlyChimeEnabled = enabled
+    fun setKeyTimeChimeEnabled(enabled: Boolean) {
+        _keyTimeChimeEnabled.value = enabled
+        settings.keyTimeChimeEnabled = enabled
         val app = getApplication<Application>()
         if (enabled) {
-            HourlyChime.schedule(app, _place.value)
+            KeyTimeChime.schedule(app)
         } else {
-            HourlyChime.cancel(app)
+            KeyTimeChime.cancel(app)
         }
     }
 
@@ -193,8 +200,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_remindersEnabled.value && changed) {
             ShiChenReminder.schedule(app, place)
         }
-        if (_hourlyChimeEnabled.value && changed) {
-            HourlyChime.schedule(app, place)
+        if (_keyTimeChimeEnabled.value && changed) {
+            KeyTimeChime.schedule(app)
         }
         if (changed) {
             WidgetUpdater.refreshAll(app)

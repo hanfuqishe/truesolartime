@@ -59,13 +59,13 @@ fun SettingsSheet(
     place: Place,
     trackingGps: Boolean,
     remindersEnabled: Boolean,
-    hourlyChimeEnabled: Boolean,
+    keyTimeChimeEnabled: Boolean,
     mapStyle: MapStyle,
     onDismiss: () -> Unit,
     onRequestGps: () -> Unit,
     onApplyManual: (Double, Double, String) -> Unit,
     onToggleReminders: (Boolean) -> Unit,
-    onToggleHourlyChime: (Boolean) -> Unit,
+    onToggleKeyTimeChime: (Boolean) -> Unit,
     onSelectMapStyle: (MapStyle) -> Unit,
     onAddWidget: () -> Boolean,
 ) {
@@ -229,7 +229,7 @@ fun SettingsSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = hourlyChimeEnabled, onCheckedChange = onToggleHourlyChime)
+                Switch(checked = keyTimeChimeEnabled, onCheckedChange = onToggleKeyTimeChime)
             }
 
             Spacer(Modifier.height(14.dp))

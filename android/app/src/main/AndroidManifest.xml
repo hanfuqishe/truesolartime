@@ -5,7 +5,6 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 小组件点「标准时间」要打开系统闹钟，SHOW_ALARMS 需要这个权限。 -->
@@ -68,7 +67,7 @@
             android:exported="false" />
 
         <receiver
-            android:name=".widget.HourlyChimeReceiver"
+            android:name=".widget.KeyTimeChimeReceiver"
             android:exported="false" />
 
         <receiver

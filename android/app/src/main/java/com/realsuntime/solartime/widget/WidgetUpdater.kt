@@ -155,6 +155,8 @@ object WidgetUpdater {
         WeatherRepository.requestRefresh(context, place)
         // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
         TakeTimeRepository.requestRefresh(context)
+        // 关键时间可能刚更新，重排「进入关键时间」报时（关闭时这里是空操作）。
+        KeyTimeChime.schedule(context)
     }
 
     fun buildViews(
