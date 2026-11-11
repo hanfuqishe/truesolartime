@@ -38,6 +38,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -77,6 +79,8 @@ fun SettingsSheet(
     var latitudeText by remember(place) { mutableStateOf("%.4f".format(place.latitude)) }
     var longitudeText by remember(place) { mutableStateOf("%.4f".format(place.longitude)) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 桌面上已有的小组件数量：>0 时分钟刷新同样依赖精确闹钟权限，要一并提示。
+    var pinnedWidgets by remember { mutableStateOf(WidgetUpdater.pinnedCount(context)) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -235,8 +239,11 @@ fun SettingsSheet(
                 Switch(checked = keyTimeChimeEnabled, onCheckedChange = onToggleKeyTimeChime)
             }
 
-            // 没有「闹钟和提醒」权限时，报时只能退化为可延迟闹钟（可能晚几分钟响）。
-            if (!ChimeAlarm.canScheduleExact(context) && (remindersEnabled || keyTimeChimeEnabled)) {
+            // 没有「闹钟和提醒」权限时，报时只能退化为可延迟闹钟（可能晚几分钟响）；
+            // 小组件的分钟刷新也靠精确闹钟，桌面上有实例时同样需要提示。
+            if (!ChimeAlarm.canScheduleExact(context) &&
+                (remindersEnabled || keyTimeChimeEnabled || pinnedWidgets > 0)
+            ) {
                 TextButton(
                     onClick = { PowerSettings.openExactAlarmSettings(context) },
                     contentPadding = PaddingValues(0.dp),
@@ -280,8 +287,35 @@ fun SettingsSheet(
             }
             var pinHint by remember { mutableStateOf<String?>(null) }
             var pinFailed by remember { mutableStateOf(false) }
+            // 已发出请求、结果未定的基准实例数；系统确认弹窗可能一直开着，
+            // 用户点「添加」之前不能判失败，所以要等回到前台再复核。
+            var pinBaseline by remember { mutableStateOf<Int?>(null) }
+            var pinSawPause by remember { mutableStateOf(false) }
             val needsManualPin = remember {
                 WidgetUpdater.pinNeedsManualFallback(Build.MANUFACTURER, Build.BRAND)
+            }
+            fun settlePin(baseline: Int) {
+                val count = WidgetUpdater.pinnedCount(context)
+                pinnedWidgets = count
+                val added = count > baseline
+                pinHint = context.getString(
+                    if (added) {
+                        R.string.widget_pin_done
+                    } else if (needsManualPin) {
+                        R.string.widget_pin_manual
+                    } else {
+                        R.string.widget_pin_no_space
+                    },
+                )
+                pinFailed = !added
+            }
+            LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
+                if (pinBaseline != null) pinSawPause = true
+            }
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                val baseline = pinBaseline ?: return@LifecycleEventEffect
+                pinBaseline = null
+                settlePin(baseline)
             }
             val scope = rememberCoroutineScope()
             FilledTonalButton(
@@ -295,23 +329,27 @@ fun SettingsSheet(
                     // 请求已发出就先给个反馈，否则部分系统上「什么都不发生」，看起来像没反应。
                     pinHint = context.getString(R.string.widget_pin_requested)
                     pinFailed = false
+                    pinBaseline = before
+                    pinSawPause = false
                     // 启动器只在真的加上去时才新增实例；用户可能还要在系统弹窗里确认，
-                    // 因此轮询一小段时间，始终没有新实例才认为这次没加上。
+                    // 因此轮询一小段时间。超时也不算失败——弹窗还开着就交给 ON_RESUME 复核。
                     scope.launch {
                         val deadline = System.currentTimeMillis() + PIN_RESULT_TIMEOUT_MILLIS
                         while (System.currentTimeMillis() < deadline) {
                             delay(PIN_POLL_INTERVAL_MILLIS)
                             if (WidgetUpdater.pinnedCount(context) > before) {
+                                pinBaseline = null
+                                pinnedWidgets = WidgetUpdater.pinnedCount(context)
                                 pinHint = context.getString(R.string.widget_pin_done)
                                 pinFailed = false
                                 return@launch
                             }
                         }
-                        // 国产 ROM 上多半是「应用内添加」没走通，直接引导手动添加更靠谱。
-                        pinHint = context.getString(
-                            if (needsManualPin) R.string.widget_pin_manual else R.string.widget_pin_no_space,
-                        )
-                        pinFailed = true
+                        // 全程没离开过前台 = 系统压根没弹窗（国产 ROM 上多半是没走通），
+                        // 直接引导手动添加；离开过就让用户确认完、回到前台时再判定。
+                        if (pinSawPause) return@launch
+                        pinBaseline = null
+                        settlePin(before)
                     }
                 },
                 enabled = canPin,

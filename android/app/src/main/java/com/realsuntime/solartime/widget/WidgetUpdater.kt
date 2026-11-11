@@ -779,6 +779,15 @@ object WidgetUpdater {
         manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
     }.getOrDefault(0)
 
+    /**
+     * 桌面实例被移除时清掉按实例缓存的秒数基准：实例 id 会被系统回收复用，
+     * 留着旧值会让新实例以为基准已经下发过，秒数就停在 `00` 不再走。
+     */
+    fun forgetWidget(widgetId: Int) {
+        lastChronometerBase.remove(widgetId)
+        lastChronometerLayout.remove(widgetId)
+    }
+
     private fun tickIntent(context: Context): PendingIntent {
         val intent = Intent(context, SolarWidgetProvider::class.java)
             .setAction(ACTION_TICK)

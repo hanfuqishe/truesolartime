@@ -38,6 +38,10 @@ class SolarWidgetProvider : AppWidgetProvider() {
         KeyTimeChime.cancel(context)
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        appWidgetIds.forEach(WidgetUpdater::forgetWidget)
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {

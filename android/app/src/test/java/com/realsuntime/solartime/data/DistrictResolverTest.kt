@@ -85,4 +85,39 @@ class DistrictResolverTest {
         assertNull(DistrictResolver.pickName("[]", "[]", ""))
         assertNull(DistrictResolver.pickName(null, null, null))
     }
+
+    @Test
+    fun composesLocalizedNamesFromFinestToCoarsest() {
+        val names = DistrictResolver.composeNames("Huangpu District", "Shanghai", "Shanghai")
+        assertEquals("Huangpu District, Shanghai", names?.full)
+        assertEquals("Huangpu District", names?.short)
+    }
+
+    @Test
+    fun keepsOneLevelWhenOnlyOneIsKnown() {
+        assertEquals("Huangpu District", DistrictResolver.composeNames("Huangpu District", null, null)?.full)
+        assertEquals("Shanghai", DistrictResolver.composeNames(null, "Shanghai", "")?.full)
+    }
+
+    @Test
+    fun dropsRepeatedParentAndPlaceholders() {
+        // Geocoder 有时把同一级填进两个字段；「市辖区」这类高德占位值也不该出现。
+        assertEquals("Shanghai", DistrictResolver.composeNames(null, "Shanghai", "Shanghai")?.full)
+        assertEquals("某县, 河北省", DistrictResolver.composeNames("某县", "市辖区", "河北省")?.full)
+        assertNull(DistrictResolver.composeNames(" ", "[]", null))
+    }
+
+    @Test
+    fun composesFromAnyNumberOfLevels() {
+        val names = DistrictResolver.composeNames(
+            listOf(null, "Old Town", "Huangpu District", "Shanghai", "Shanghai"),
+        )
+        assertEquals("Old Town, Huangpu District, Shanghai", names?.full)
+        assertEquals("Old Town", names?.short)
+        // 只保留最细的三级，太长的会被小组件省略号吃掉。
+        assertEquals(
+            "A, B, C",
+            DistrictResolver.composeNames(listOf("A", "B", "C", "D", "E"))?.full,
+        )
+    }
 }

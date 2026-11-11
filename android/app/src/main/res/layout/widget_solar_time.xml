@@ -147,10 +147,16 @@
                     android:textColor="#FFFFC65C"
                     tools:ignore="HardcodedText" />
 
+                <!--
+                  冒号与秒默认隐藏：桌面「添加小组件」的系统预览直接渲染这份布局，
+                  此时还没有 base，Chronometer 会显示一段被裁掉的时间（看着像多出一个括号）。
+                  真正刷新时由 WidgetUpdater 把它们设为可见。
+                -->
                 <TextView
                     android:id="@+id/widget_solar_colon"
                     style="@style/WidgetClockColonSolar"
                     android:text=":"
+                    android:visibility="invisible"
                     tools:ignore="HardcodedText" />
 
                 <!--
@@ -161,6 +167,7 @@
                 <Chronometer
                     android:id="@+id/widget_solar_sec"
                     style="@style/WidgetClockSecondChrono"
+                    android:visibility="invisible"
                     tools:ignore="HardcodedText" />
             </LinearLayout>
 

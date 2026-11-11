@@ -73,6 +73,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
         }
+        // 没加小组件时也要能反查出区划；换了界面语言会重查（见 DistrictResolver.needsRefresh）。
+        DistrictResolver.requestRefresh(application, settings.place)
         if (settings.remindersEnabled) {
             ShiChenReminder.schedule(application, settings.place)
         }
