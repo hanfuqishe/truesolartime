@@ -65,8 +65,8 @@ object ShiChenReminder {
         )
     }
 
-    /** 蜂鸣提醒：进入下一个时辰的这一刻响一声。 */
-    fun chime() {
-        Chime.beep(BEEP_MILLIS)
+    /** 蜂鸣提醒：进入下一个时辰的这一刻响一声；[onDone] 在播放结束后回调。 */
+    fun chime(onDone: () -> Unit = {}) {
+        Chime.beep(BEEP_MILLIS, onDone)
     }
 }

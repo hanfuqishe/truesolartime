@@ -101,9 +101,9 @@ object KeyTimeChime {
         runCatching { pending.cancel() }
     }
 
-    /** 蜂鸣 500 ms。 */
-    fun beep() {
-        Chime.beep(BEEP_MILLIS)
+    /** 蜂鸣 500 ms；[onDone] 在播放结束后回调。 */
+    fun beep(onDone: () -> Unit = {}) {
+        Chime.beep(BEEP_MILLIS, onDone)
     }
 
     private fun alarmIntent(context: Context, triggerMillis: Long): PendingIntent {
@@ -125,7 +125,10 @@ class KeyTimeChimeReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (!AppSettings(context).keyTimeChimeEnabled) return
-        KeyTimeChime.beep()
+        // 用 goAsync 保住进程直到播放结束：onReceive 一返回进程就可能被回收，
+        // 音轨随之销毁，蜂鸣会被截断（锁屏/后台时尤其明显）。
+        val pending = goAsync()
+        KeyTimeChime.beep { pending.finish() }
         // 排下一次；关键时间数据没变时这里只是重算，不会重复响。
         KeyTimeChime.schedule(context)
     }

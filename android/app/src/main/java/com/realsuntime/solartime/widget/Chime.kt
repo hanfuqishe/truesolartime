@@ -28,8 +28,9 @@ object Chime {
      * 播一声 [durationMillis] 长的蜂鸣。
      *
      * 短音效必须自己收尾，否则会一直占着音频通路。
+     * [onDone] 在播放结束（并释放音轨）后回调，便于接收器用 `goAsync()` 保住进程。
      */
-    fun beep(durationMillis: Int) {
+    fun beep(durationMillis: Int, onDone: () -> Unit = {}) {
         val samples = samples(durationMillis)
         val track = runCatching {
             AudioTrack.Builder()
@@ -60,12 +61,13 @@ object Chime {
         }
         if (!started) {
             // 少数机型上 AudioTrack 不可用，退回系统的高频 pip 音。
-            beepWithToneGenerator(durationMillis)
+            beepWithToneGenerator(durationMillis, onDone)
             return
         }
         Handler(Looper.getMainLooper()).postDelayed({
             runCatching { track?.stop() }
             runCatching { track?.release() }
+            onDone()
         }, durationMillis + RELEASE_DELAY_MILLIS)
     }
 
@@ -80,14 +82,21 @@ object Chime {
         }
     }
 
-    private fun beepWithToneGenerator(durationMillis: Int) {
+    private fun beepWithToneGenerator(durationMillis: Int, onDone: () -> Unit) {
         val tone = runCatching {
             ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME).also {
                 it.startTone(ToneGenerator.TONE_CDMA_PIP, durationMillis)
             }
-        }.getOrNull() ?: return
+        }.getOrNull()
+        if (tone == null) {
+            onDone()
+            return
+        }
         Handler(Looper.getMainLooper()).postDelayed(
-            { runCatching { tone.release() } },
+            {
+                runCatching { tone.release() }
+                onDone()
+            },
             durationMillis + RELEASE_DELAY_MILLIS,
         )
     }

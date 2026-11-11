@@ -11,7 +11,9 @@ class ShichenBoundaryReceiver : BroadcastReceiver() {
         val settings = AppSettings(context)
         if (!settings.remindersEnabled) return
 
-        ShiChenReminder.chime()
+        // 与关键时间报时一样，用 goAsync 保住进程直到播放结束，锁屏时也不会被截断。
+        val pending = goAsync()
+        ShiChenReminder.chime { pending.finish() }
         ShiChenReminder.schedule(context, settings.place)
     }
 }
