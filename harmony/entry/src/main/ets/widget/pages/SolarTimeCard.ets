@@ -74,7 +74,7 @@ const WHITE: string = '#FFFFFF';
 const TEXT_DIM: string = '#B3FFFFFF';
 const TEXT_LABEL: string = '#CCFFFFFF';
 const DIVIDER: string = '#33FFFFFF';
-const AXIS_TRACK: string = '#2A3B5C';
+const AXIS_TRACK: string = '#40FFFFFF';
 
 let storage: LocalStorage = new LocalStorage();
 
@@ -164,7 +164,7 @@ struct SolarTimeCard {
         Column() {
           this.labelRow('标准时间', this.city)
           TextClock()
-            .fontSize(27)
+            .fontSize(38)
             .fontWeight(FontWeight.Lighter)
             .fontColor(WHITE)
           Row() {
@@ -191,22 +191,22 @@ struct SolarTimeCard {
           this.labelRow('真太阳时', this.shichen)
           Row() {
             Text(this.solarTime)
-              .fontSize(27)
+              .fontSize(38)
               .fontWeight(FontWeight.Lighter)
               .fontColor(GOLD)
               .maxLines(1)
             Text(':')
-              .fontSize(15)
+              .fontSize(21)
               .fontWeight(FontWeight.Lighter)
               .fontColor(GOLD)
               .maxLines(1)
-              .margin({ bottom: 3 })
+              .margin({ bottom: 4 })
             Text(this.solarSeconds)
-              .fontSize(15)
+              .fontSize(21)
               .fontWeight(FontWeight.Lighter)
               .fontColor(GOLD)
               .maxLines(1)
-              .margin({ bottom: 3, left: 1 })
+              .margin({ bottom: 4, left: 1 })
           }
           .width('100%')
           .alignItems(VerticalAlign.Bottom)
@@ -230,43 +230,46 @@ struct SolarTimeCard {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // 0–24 时时间轴：Android 上是一条很细的线，这里同样只画 3vp
+      // 0–24 时时间轴：与 Android 的 WidgetAxis 同款——1vp 细线 + 边缘柔化的圆点
       Stack() {
         Row() {
           ForEach(this.segments, (item: string) => {
             if (isBand(item)) {
               Row()
-                .height(3)
-                .borderRadius(1.5)
+                .height(1)
                 .backgroundColor(this.bandColor())
                 .layoutWeight(segmentLength(item))
             } else {
               Row()
-                .height(3)
+                .height(1)
                 .layoutWeight(segmentLength(item))
             }
           }, (item: string, index: number) => `${index}-${item}`)
         }
         .width('100%')
-        .height(3)
-        .borderRadius(1.5)
+        .height(1)
         .backgroundColor(AXIS_TRACK)
 
         Row() {
           Row().layoutWeight(this.passedWeight())
           Column()
-            .width(2)
-            .height(9)
-            .borderRadius(1)
-            .backgroundColor(WHITE)
+            .width(11)
+            .height(11)
+            .borderRadius(5.5)
+            .radialGradient({
+              center: ['50%', '50%'],
+              radius: 5.5,
+              colors: [[WHITE, 0], [WHITE, 0.45], ['#00FFFFFF', 1]]
+            })
           Row().layoutWeight(this.remainingWeight())
         }
         .width('100%')
-        .height(9)
+        .height(11)
       }
       .width('100%')
-      .height(9)
-      .margin({ top: 3 })
+      .height(11)
+      .padding({ left: 6, right: 6 })
+      .margin({ top: 2 })
 
       Row() {
         ForEach(this.hourLabels, (label: string, index: number) => {
