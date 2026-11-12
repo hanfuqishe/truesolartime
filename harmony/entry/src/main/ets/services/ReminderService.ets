@@ -11,7 +11,6 @@
  * 必然在通知栏留下一条到点通知。
  */
 
-import { wantAgent } from '@kit.AbilityKit';
 import { reminderAgentManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -20,6 +19,7 @@ import { Place } from '../core/Place';
 import { TakeBand } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
+import { AppStore } from './Store';
 
 export const SHICHEN_REMINDER_TITLE: string = 'TrueSolarTime.Shichen';
 export const KEY_TIME_REMINDER_TITLE: string = 'TrueSolarTime.KeyTime';
@@ -53,20 +53,17 @@ function textsFor(language: string): ReminderTexts {
 }
 
 export class ReminderService {
-  /** 关掉全部提醒（用户关闭开关时调用）。 */
+  /** 取消本应用此前发布的全部提醒。 */
   static async cancelAll(): Promise<void> {
-    try {
-      const reminders: reminderAgentManager.ReminderRequest[] = await reminderAgentManager.getValidReminders();
-      for (const reminder of reminders) {
-        const title: string = reminder.title === undefined ? '' : reminder.title;
-        if (title === SHICHEN_REMINDER_TITLE || title === KEY_TIME_REMINDER_TITLE) {
-          await reminderAgentManager.cancelReminder(reminder.reminderId);
-        }
+    const ids: number[] = AppStore.reminderIds();
+    for (const id of ids) {
+      try {
+        await reminderAgentManager.cancelReminder(id);
+      } catch (error) {
+        // 已被系统回收的提醒取消会失败，忽略即可。
       }
-    } catch (error) {
-      const failure: BusinessError = error as BusinessError;
-      console.warn(`cancelAll failed: ${failure.code} ${failure.message}`);
     }
+    AppStore.setReminderIds([]);
   }
 
   /** 按当前设置与观测点重排所有提醒。 */
@@ -83,18 +80,20 @@ export class ReminderService {
     }
     const texts: ReminderTexts = textsFor(language);
     const now: number = Date.now();
+    const published: number[] = [];
     try {
       if (shichenEnabled) {
         const triggers: number[] = ChimeLogic.upcomingShichenTriggers(now, place.longitude, SHICHEN_COUNT);
         let index: number = 0;
         for (const trigger of triggers) {
           const shichenName: string = ReminderService.shichenLabel(trigger, place, language);
-          await ReminderService.publishCalendar(
+          const id: number = await ReminderService.publishCalendar(
             trigger,
             SHICHEN_REMINDER_TITLE,
             `${texts.shichenTitle}: ${shichenName}`,
             NOTIFICATION_ID_SHICHEN + index
           );
+          published.push(id);
           index++;
         }
       }
@@ -102,18 +101,21 @@ export class ReminderService {
         const triggers: number[] = ChimeLogic.upcomingKeyTimeTriggers(now, place.longitude, bands, KEY_TIME_DAYS);
         let index: number = 0;
         for (const trigger of triggers) {
-          await ReminderService.publishCalendar(
+          const id: number = await ReminderService.publishCalendar(
             trigger,
             KEY_TIME_REMINDER_TITLE,
             texts.takeNow,
             NOTIFICATION_ID_KEY_TIME + index
           );
+          published.push(id);
           index++;
         }
       }
     } catch (error) {
       const failure: BusinessError = error as BusinessError;
       console.warn(`reschedule failed: ${failure.code} ${failure.message}`);
+    } finally {
+      AppStore.setReminderIds(published);
     }
   }
 
@@ -133,19 +135,7 @@ export class ReminderService {
     title: string,
     content: string,
     notificationId: number
-  ): Promise<void> {
-    const agentInfo: wantAgent.WantAgentInfo = {
-      wants: [
-        {
-          bundleName: BUNDLE_NAME,
-          abilityName: ABILITY_NAME
-        }
-      ],
-      actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: notificationId,
-      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    };
-    const agent = await wantAgent.getWantAgent(agentInfo);
+  ): Promise<number> {
     const date: Date = new Date(triggerMillis);
     const request: reminderAgentManager.ReminderRequestCalendar = {
       reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_CALENDAR,
@@ -161,11 +151,15 @@ export class ReminderService {
       content: content,
       expiredContent: content,
       notificationId: notificationId,
-      wantAgent: agent,
+      // 代理提醒里的 wantAgent 是「点通知后打开什么」的简单描述，不是 wantAgent 模块的对象。
+      wantAgent: {
+        pkgName: BUNDLE_NAME,
+        abilityName: ABILITY_NAME
+      },
       slotType: notificationManager.SlotType.SERVICE_INFORMATION,
       ringDuration: 2,
       snoozeTimes: 0
     };
-    await reminderAgentManager.publishReminder(request);
+    return reminderAgentManager.publishReminder(request);
   }
 }

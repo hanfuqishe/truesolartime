@@ -103,10 +103,10 @@ export class DistrictService {
       }
       const address: geoLocationManager.GeoAddress = addresses[0];
       return DistrictNameLogic.composeNames([
-        address.subLocality,
-        address.locality,
-        address.subAdministrativeArea,
-        address.administrativeArea
+        address.subLocality ?? '',
+        address.locality ?? '',
+        address.subAdministrativeArea ?? '',
+        address.administrativeArea ?? ''
       ]);
     } catch (error) {
       return null;

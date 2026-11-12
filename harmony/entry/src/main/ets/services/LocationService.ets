@@ -29,8 +29,7 @@ export class LocationService {
   static async ensurePermission(context: common.UIAbilityContext): Promise<boolean> {
     try {
       const manager: abilityAccessCtrl.AtManager = abilityAccessCtrl.createAtManager();
-      const result: abilityAccessCtrl.PermissionRequestResult =
-        await manager.requestPermissionsFromUser(context, LOCATION_PERMISSIONS);
+      const result = await manager.requestPermissionsFromUser(context, LOCATION_PERMISSIONS);
       for (let index = 0; index < result.authResults.length; index++) {
         if (result.authResults[index] === 0) {
           return true;

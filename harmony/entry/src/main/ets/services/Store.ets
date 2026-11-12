@@ -46,56 +46,56 @@ export class CachedDistrict {
 }
 
 export class AppStore {
-  private static settings: preferences.Preferences | null = null;
-  private static weather: preferences.Preferences | null = null;
-  private static keyTime: preferences.Preferences | null = null;
-  private static district: preferences.Preferences | null = null;
-  private static card: preferences.Preferences | null = null;
+  private static settingsPrefs: preferences.Preferences | null = null;
+  private static weatherPrefs: preferences.Preferences | null = null;
+  private static keyTimePrefs: preferences.Preferences | null = null;
+  private static districtPrefs: preferences.Preferences | null = null;
+  private static cardPrefs: preferences.Preferences | null = null;
 
   static init(context: common.Context): void {
-    if (AppStore.settings !== null) {
+    if (AppStore.settingsPrefs !== null) {
       return;
     }
-    AppStore.settings = preferences.getPreferencesSync(context, { name: SETTINGS_STORE });
-    AppStore.weather = preferences.getPreferencesSync(context, { name: WEATHER_STORE });
-    AppStore.keyTime = preferences.getPreferencesSync(context, { name: KEY_TIME_STORE });
-    AppStore.district = preferences.getPreferencesSync(context, { name: DISTRICT_STORE });
-    AppStore.card = preferences.getPreferencesSync(context, { name: CARD_STORE });
+    AppStore.settingsPrefs = preferences.getPreferencesSync(context, { name: SETTINGS_STORE });
+    AppStore.weatherPrefs = preferences.getPreferencesSync(context, { name: WEATHER_STORE });
+    AppStore.keyTimePrefs = preferences.getPreferencesSync(context, { name: KEY_TIME_STORE });
+    AppStore.districtPrefs = preferences.getPreferencesSync(context, { name: DISTRICT_STORE });
+    AppStore.cardPrefs = preferences.getPreferencesSync(context, { name: CARD_STORE });
   }
 
   private static settingsStore(): preferences.Preferences {
-    if (AppStore.settings === null) {
+    if (AppStore.settingsPrefs === null) {
       throw new Error('AppStore.init() must be called before use');
     }
-    return AppStore.settings;
+    return AppStore.settingsPrefs;
   }
 
   private static weatherStore(): preferences.Preferences {
-    if (AppStore.weather === null) {
+    if (AppStore.weatherPrefs === null) {
       throw new Error('AppStore.init() must be called before use');
     }
-    return AppStore.weather;
+    return AppStore.weatherPrefs;
   }
 
   private static keyTimeStore(): preferences.Preferences {
-    if (AppStore.keyTime === null) {
+    if (AppStore.keyTimePrefs === null) {
       throw new Error('AppStore.init() must be called before use');
     }
-    return AppStore.keyTime;
+    return AppStore.keyTimePrefs;
   }
 
   private static districtStore(): preferences.Preferences {
-    if (AppStore.district === null) {
+    if (AppStore.districtPrefs === null) {
       throw new Error('AppStore.init() must be called before use');
     }
-    return AppStore.district;
+    return AppStore.districtPrefs;
   }
 
   private static cardStore(): preferences.Preferences {
-    if (AppStore.card === null) {
+    if (AppStore.cardPrefs === null) {
       throw new Error('AppStore.init() must be called before use');
     }
-    return AppStore.card;
+    return AppStore.cardPrefs;
   }
 
   // ArkTS 的类型断言（as）只用于有继承关系的类型，读偏好设置一律走 typeof 收窄。
@@ -193,6 +193,29 @@ export class AppStore {
     const ids: string[] = AppStore.formIds().filter((id: string): boolean => id !== formId);
     const store: preferences.Preferences = AppStore.cardStore();
     store.putSync('form_ids', ids.join('|'));
+    store.flush();
+  }
+
+  // ---- 已发布的代理提醒（系统不提供「按标题查自己发的提醒」，只能自己记账）----
+
+  static reminderIds(): number[] {
+    const raw: string = AppStore.stringValue(AppStore.settingsStore(), 'reminder_ids', '');
+    const result: number[] = [];
+    if (raw.length === 0) {
+      return result;
+    }
+    for (const part of raw.split(',')) {
+      const id: number = Number.parseInt(part);
+      if (!isNaN(id)) {
+        result.push(id);
+      }
+    }
+    return result;
+  }
+
+  static setReminderIds(ids: number[]): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    store.putSync('reminder_ids', ids.join(','));
     store.flush();
   }
 

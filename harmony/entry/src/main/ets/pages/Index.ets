@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { Place, PlaceSource } from '../core/Place';
@@ -94,7 +93,7 @@ struct Index {
   private context: common.UIAbilityContext | null = null;
 
   aboutToAppear(): void {
-    this.context = getContext(this) as common.UIAbilityContext;
+    this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
     this.place = AppStore.place();
     this.shichenReminders = AppStore.shichenReminders();
@@ -254,12 +253,12 @@ struct Index {
       const granted: boolean = await LocationService.ensurePermission(context);
       AppStore.setLocationAsked(true);
       if (!granted) {
-        promptAction.showToast({ message: '未授予定位权限，可在设置里手动输入坐标' });
+        this.toast('未授予定位权限，可在设置里手动输入坐标');
         return;
       }
       const point = await LocationService.current();
       if (point === null) {
-        promptAction.showToast({ message: '暂时取不到位置，请稍后再试' });
+        this.toast('暂时取不到位置，请稍后再试');
         return;
       }
       this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
@@ -272,7 +271,7 @@ struct Index {
     const latitude: number = Number.parseFloat(this.manualLatitude);
     const longitude: number = Number.parseFloat(this.manualLongitude);
     if (!Place.isValidLatitude(latitude) || !Place.isValidLongitude(longitude)) {
-      promptAction.showToast({ message: '请输入有效的经纬度' });
+      this.toast('请输入有效的经纬度');
       return;
     }
     this.showManualInput = false;
@@ -285,6 +284,15 @@ struct Index {
       return city.name;
     }
     return TimeFormat.coordinates(place.latitude, place.longitude);
+  }
+
+  /** 轻提示；UIContext 的 PromptAction 可能抛异常，这里统一兜住。 */
+  private toast(message: string): void {
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: message });
+    } catch (error) {
+      console.warn(`toast failed: ${message}`);
+    }
   }
 
   private bandColor(): string {

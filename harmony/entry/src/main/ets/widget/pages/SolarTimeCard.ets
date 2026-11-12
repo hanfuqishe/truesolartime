@@ -33,6 +33,7 @@ struct SolarTimeCard {
   @LocalStorageProp('district') district: string = '';
   @LocalStorageProp('shichen') shichen: string = '';
   @LocalStorageProp('shichenRange') shichenRange: string = '';
+  @LocalStorageProp('solarTime') solarTime: string = '';
   @LocalStorageProp('beijing') beijing: string = '';
   @LocalStorageProp('offsetMinutes') offsetMinutes: number = 480;
   @LocalStorageProp('offsetText') offsetText: string = '';
@@ -68,14 +69,16 @@ struct SolarTimeCard {
       }
       .width('100%')
 
-      TextClock({ timeZoneOffset: this.offsetMinutes })
-        .format('HH:mm:ss')
-        .fontSize(40)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#F5D68A')
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .visibility(USE_TEXT_CLOCK ? Visibility.Visible : Visibility.None)
+      Row() {
+        TextClock({ timeZoneOffset: this.offsetMinutes })
+          .format('HH:mm:ss')
+          .fontSize(40)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#F5D68A')
+          .visibility(USE_TEXT_CLOCK ? Visibility.Visible : Visibility.None)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
 
       Text(this.solarTime)
         .fontSize(40)

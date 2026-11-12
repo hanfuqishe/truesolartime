@@ -125,6 +125,26 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 构建与真机验证。核心逻辑刻意不 import 任何 `@kit.*`，就是为了让上面这套检查能在没有鸿蒙 SDK 的
 机器上跑起来。
 
+## 实测编译结果
+
+在本机 **DevEco Studio 26.0.1.290**（HarmonyOS SDK API 26.0.1.120 Beta1、hvigor 6.26.20）上用命令行
+`hvigorw assembleHap` 试过：
+
+```
+> hvigor BUILD SUCCESSFUL in 13 s 965 ms
+33 tasks in total: 18 executed, 15 up-to-date
+```
+
+- **0 error、0 warning**（首次编译的 46 个 error + 65 个 warning 已全部修掉，主要是偏好设置字段与方法同名、
+  `ReminderRequest.wantAgent` 的结构、`GeoAddress` 的可选字段、卡片里 `TextClock` 不支持 `textAlign`
+  等；`getContext` / `showToast` 的弃用警告改用 `getUIContext()`）
+- 产物 `entry/build/default/outputs/default/entry-default-unsigned.hap`，489 KB
+- 包内结构已验证：`ets/widgets.abc`（25 KB，卡片已编译进去）、`resources/base/profile/form_config.json`、
+  `resources/rawfile/chime500.wav` 与 `chime250.wav`、`module.json` 里 5 项权限齐全，
+  `minAPIVersion = 50000012` —— `compatibleSdkVersion` 仍是 `5.0.0(12)`，用 API 26 SDK 编译但向下兼容 API 12
+- **未做**：真机/模拟器运行。本机没有调试证书（签名需登录华为账号，DevEco 里 `Project Structure → Signing Configs`
+  勾自动签名即可），模拟器镜像也没下载（`Device Manager` 里下 `HarmonyOS 7.0.1 B1` 镜像后即可启动 `Mate 90 Pro`）
+
 ## 与 Android 的差异
 
 1. **卡片秒级显示**：鸿蒙卡片没有 `Chronometer` 这类可设 `base` 的自走控件，但 `TextClock` 支持任意
