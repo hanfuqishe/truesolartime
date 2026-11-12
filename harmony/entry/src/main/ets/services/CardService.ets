@@ -1,19 +1,25 @@
 /**
  * 桌面卡片的数据组装与推送。
  *
- * 卡片里没有 Chronometer 这样的自走时钟，但 TextClock 支持任意时区偏移（分钟），
- * 于是「真太阳时相对 UTC 的偏移」正好可以交给它，卡片上的秒是系统在跳，不需要刷新。
- * 其余内容（时辰、天气、关键时间）靠系统每 30 分钟一次的刷新与应用主动推送。
- * 偏移必须是整数分钟，误差因此在 ±30 秒以内。
+ * 版面对齐 Android 版小组件：左栏「标准时间」+ 地名 + 日期，右栏「真太阳时」+ 时辰 + 经纬度，
+ * 下面是 0–24 时的时间轴与六格逐时预报。
+ *
+ * 鸿蒙卡片与 Android 小组件的两处硬差异（实测于 HarmonyOS 6.0.0 模拟器，API 20）：
+ *   1. 卡片里的 TextClock 只走系统本地时间：`format()` 与 `timeZoneOffset` 都被忽略，
+ *      所以真太阳时不能交给 TextClock 自走，只能按快照展示、随卡片刷新更新；
+ *   2. 卡片里禁用 setInterval/setTimeout（编译报 11706006 can't support form application），
+ *      卡片自身也无法逐秒重算。
+ * 于是真太阳时按「HH:mm:ss」快照下发，卡片每次刷新（系统 30 分钟一次 / 应用主动推送）都会更新。
  */
 
 import { formBindingData, formProvider } from '@kit.FormKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
+import { AxisSegment, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { TimeFormat } from '../core/TimeFormat';
-import { WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { NearbyCity, CityIndex } from '../core/CityIndex';
+import { HourPoint, WeatherCondition, WeatherLogic, WeatherSnapshot } from '../core/Weather';
 import { AppStore } from './Store';
 import { DistrictService } from './DistrictService';
 import { KeyTimeService } from './KeyTimeService';
@@ -22,36 +28,42 @@ import { WeatherService } from './WeatherService';
 /** TextClock 允许的时区偏移范围（分钟）。 */
 const MIN_OFFSET_MINUTES: number = -720;
 const MAX_OFFSET_MINUTES: number = 840;
+/** 逐时预报的格数（与版面一致）。 */
+const HOUR_CELLS: number = 6;
+const MINUTES_PER_DAY: number = 1440;
+const BEIJING_OFFSET_SECONDS: number = SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000;
 
 export class CardData {
-  /** 区县名（最细一级）。 */
-  district: string = '';
-  /** 完整区划名，卡片放不下时用不上，主界面用。 */
-  districtFull: string = '';
-  /** 例如「子时 · 初」。 */
+  /** 左栏地名（区县名，取不到时退回最近的城市名）。 */
+  city: string = '';
+  /** 例如「亥时」。 */
   shichen: string = '';
-  /** 例如「23:00 – 01:00」。 */
-  shichenRange: string = '';
-  /** 真太阳时 HH:mm:ss（拍快照时的值；卡片上有 TextClock 时只作回退）。 */
+  /** 例如「11 月 12 日 · 星期四」。 */
+  dateText: string = '';
+  /** 今日温度区间，例如「2° / 12°」。 */
+  temperatureRange: string = '';
+  /** 真太阳时「HH:mm」。 */
   solarTime: string = '';
-  /** 北京时间 HH:mm:ss。 */
-  beijing: string = '';
-  /** TextClock 用的时区偏移（分钟）。 */
-  offsetMinutes: number = 0;
-  /** 例如「21°」。 */
-  temperature: string = '';
-  /** 例如「多云」。 */
-  weather: string = '';
-  /** 关键时间段的文字，例如「15:00 – 17:00 · 20:00 – 22:00」。 */
-  keyTime: string = '';
+  /** 真太阳时的秒，两位。 */
+  solarSeconds: string = '';
+  /** 例如「39.9042°N  116.4074°E」。 */
+  coords: string = '';
+  /** 与北京时间的时差文字，例如「+1 分 31 秒」。 */
+  offsetText: string = '';
   /** 时间轴分段，元素形如「900,-1」（长度分钟数,段号，段号 -1 为空档）。 */
   segments: string[] = [];
-  /** "cold" / "hot" / ""。 */
+  /** 当前时刻在时间轴上的位置（分钟），用于画白点。 */
+  nowMinute: number = 0;
+  /** 一天的分钟数，卡片按比例摆放白点。 */
+  dayMinutes: number = MINUTES_PER_DAY;
+  /** TextClock 用的时区偏移（分钟）；卡片上会被忽略，保留以便将来系统支持。 */
+  offsetMinutes: number = 0;
+  /** 六格逐时预报：时刻标签、天气名称、图标名（对应 resources/base/media/wx_*.svg）。 */
+  hourLabels: string[] = [];
+  hourConds: string[] = [];
+  hourIcons: string[] = [];
+  /** "cold" / "hot" / ""，决定时间轴色条颜色。 */
   temperatureKey: string = '';
-  /** 与北京时间的时差文字，例如「+14 分 22 秒」。 */
-  offsetText: string = '';
-  /** 数据来源标注。 */
-  credit: string = 'Open-Meteo';
 }
 
 export class CardService {
@@ -63,47 +75,123 @@ export class CardService {
     const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language);
     const data: CardData = new CardData();
 
-    data.districtFull = DistrictService.cachedName();
-    data.district = DistrictService.cachedShortName();
-    data.shichen = `${snapshot.shichenName} · ${snapshot.shichenHalf}`;
-    data.shichenRange = snapshot.shichenRange;
-    data.solarTime = TimeFormat.clockWithSeconds(snapshot.trueSolarSeconds);
-    data.beijing = TimeFormat.clockWithSeconds(snapshot.beijingSeconds);
+    data.city = CardService.cityName(place.latitude, place.longitude, language);
+    data.shichen = snapshot.shichenName;
+    data.dateText = TimeFormat.dateWithWeekday(now, language);
+    data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
+    data.solarSeconds = `${Math.floor(snapshot.trueSolarSeconds % 60)}`.padStart(2, '0');
+    data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);
+    data.nowMinute = snapshot.trueSolarSeconds / 60;
     const minutes: number = Math.round(SolarTimeMath.trueSolarOffsetSeconds(now, place.longitude) / 60);
     data.offsetMinutes = Math.max(MIN_OFFSET_MINUTES, Math.min(MAX_OFFSET_MINUTES, minutes));
 
-    const weather: WeatherSnapshot | null = WeatherService.cached();
-    if (weather !== null) {
-      data.temperature = `${weather.temperatureC}°`;
-      data.weather = WeatherLogic.conditionName(WeatherLogic.conditionOf(weather.code), language);
-    } else {
-      data.temperature = '--';
-      data.weather = '';
+    const dayStart: number = CardService.dayStartMillis(now);
+    const range: number[] | null = WeatherLogic.temperatureRange(
+      WeatherService.hourly(),
+      dayStart,
+      dayStart + 24 * 3600 * 1000,
+      SolarTimeMath.BEIJING_OFFSET_MILLIS
+    );
+    if (range !== null) {
+      data.temperatureRange = `${range[0]}° ~ ${range[1]}°`;
     }
+
+    const weather: WeatherSnapshot | null = WeatherService.cached();
+    CardService.fillHourly(data, now, weather === null ? -1 : weather.code, language);
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule !== null && schedule.bands.length > 0) {
-      data.keyTime = CardService.bandsText(schedule.bands);
       data.segments = CardService.encodeSegments(TakeTimeLogic.axisSegments(schedule.bands));
       data.temperatureKey = TakeTimeLogic.temperatureToKey(schedule.temperature);
     }
     return data;
   }
 
+  /** 地名：优先用逆地理得到的区县名，取不到就退回最近的城市名，绝不显示占位符。 */
+  private static cityName(latitude: number, longitude: number, language: string): string {
+    const short: string = DistrictService.cachedShortName();
+    if (short.length > 0) {
+      return short;
+    }
+    const full: string = DistrictService.cachedName();
+    if (full.length > 0) {
+      return full;
+    }
+    const nearest: NearbyCity | null = CityIndex.nearest(latitude, longitude, language);
+    return nearest === null ? '' : nearest.name;
+  }
+
+  private static dayStartMillis(epochMillis: number): number {
+    const local: number = epochMillis + SolarTimeMath.BEIJING_OFFSET_MILLIS;
+    return local - (local % (24 * 3600 * 1000)) - SolarTimeMath.BEIJING_OFFSET_MILLIS;
+  }
+
+  /** 逐时预报：从当前小时起六格，第一格标「现在」并用实时天气码。 */
+  private static fillHourly(data: CardData, now: number, currentCode: number, language: string): void {
+    const hourly: HourPoint[] = WeatherService.hourly();
+    const slots: number[] = WeatherLogic.slots(now / 1000, BEIJING_OFFSET_SECONDS, HOUR_CELLS, 1);
+    for (let index = 0; index < slots.length; index++) {
+      const slot: number = slots[index];
+      let point: HourPoint | null = null;
+      for (const candidate of hourly) {
+        if (candidate.epochSeconds === slot) {
+          point = candidate;
+          break;
+        }
+      }
+      let code: number = point === null ? -1 : point.code;
+      if (index === 0 && currentCode >= 0) {
+        code = currentCode;
+      }
+      const localHour: number = Math.floor(((slot + BEIJING_OFFSET_SECONDS) % 86400) / 3600);
+      data.hourLabels.push(index === 0 ? CardService.nowLabel(language) : CardService.hourLabel(localHour, language));
+      data.hourConds.push(code < 0 ? '' : WeatherLogic.conditionLabel(code, language));
+      data.hourIcons.push(code < 0 ? 'unknown' : CardService.iconOf(code, localHour >= 6 && localHour <= 17));
+    }
+  }
+
+  private static nowLabel(language: string): string {
+    return language.startsWith('zh') ? '现在' : 'Now';
+  }
+
+  private static hourLabel(hour: number, language: string): string {
+    return language.startsWith('zh') ? `${hour}时` : `${hour}:00`;
+  }
+
+  /** 天气图标名，对应 resources/base/media/wx_*.svg。 */
+  private static iconOf(code: number, isDay: boolean): string {
+    switch (WeatherLogic.conditionOf(code)) {
+      case WeatherCondition.CLEAR:
+        return isDay ? 'clear_day' : 'clear_night';
+      case WeatherCondition.PARTLY_CLOUDY:
+        return isDay ? 'partly_day' : 'partly_night';
+      case WeatherCondition.OVERCAST:
+        return 'overcast';
+      case WeatherCondition.FOG:
+        return 'fog';
+      case WeatherCondition.DRIZZLE:
+        return 'drizzle';
+      case WeatherCondition.RAIN:
+        return 'rain';
+      case WeatherCondition.HEAVY_RAIN:
+        return 'heavy_rain';
+      case WeatherCondition.SHOWERS:
+        return 'showers';
+      case WeatherCondition.SNOW:
+        return 'snow';
+      case WeatherCondition.HEAVY_SNOW:
+        return 'heavy_snow';
+      case WeatherCondition.THUNDER:
+        return 'thunder';
+      default:
+        return 'unknown';
+    }
+  }
+
   /** 卡片布局按比例摆放色条，元素形如「长度,段号」。 */
   private static encodeSegments(segments: AxisSegment[]): string[] {
     return segments.map((segment: AxisSegment): string => `${segment.lengthMinutes},${segment.bandIndex}`);
-  }
-
-  private static bandsText(bands: TakeBand[]): string {
-    return bands
-      .map((band: TakeBand): string => `${CardService.minutes(band.startMinute)} – ${CardService.minutes(band.endMinute)}`)
-      .join('  ');
-  }
-
-  private static minutes(minute: number): string {
-    return TimeFormat.clock(minute * 60);
   }
 
   /** 把数据推给所有已知的卡片实例。 */

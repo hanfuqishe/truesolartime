@@ -7,7 +7,7 @@
 
 | 功能 | Android | 鸿蒙 | 说明 |
 | --- | --- | --- | --- |
-| 每秒刷新的真太阳时大时钟 | ✅ | ✅ | 页面内 1 秒定时器；卡片靠 `TextClock` 自走 |
+| 每秒刷新的真太阳时大时钟 | ✅ | ✅ | 页面内 1 秒定时器；卡片见「与 Android 的差异」 |
 | 时辰（时初／时正、刻数、范围、倒计时） | ✅ | ✅ | 同一套 `Shichen` 逻辑 || 北京时间对照（经度修正 + 均时差拆解） | ✅ | ✅ | |
 | 日出／上中天／日落、白昼时长、高度角、极昼极夜 | ✅ | ✅ | 同一套 NOAA 公式 |
 | 天气（气温 + WMO 天气码，30 分钟缓存） | ✅ | ✅ | Open-Meteo，无需 Key；主界面另有未来 5 小时逐时预报与今日温度区间 |
@@ -16,7 +16,7 @@
 | 手动坐标 / 常用城市 / 定位 | ✅ | ✅ | 定位只用 `APPROXIMATELY_LOCATION`（±100 m 足够） |
 | 时辰交接提醒（250 ms） | ✅ | ✅（系统代理提醒） | 见「与 Android 的差异」 |
 | 进入关键时间报时（500 ms） | ✅ | ✅（系统代理提醒） | 同上 |
-| 桌面卡片：区县 · 时辰 · 真太阳时 · 时差 · 天气 · 关键时间轴 | ✅ | ✅ | 2×4，可加 4×4 |
+| 桌面卡片：标准时间／真太阳时两栏、日期与气温区间、经纬度、关键时间轴、六格逐时预报 | ✅ | ✅ | 2×4，版面与 Android 的 `widget_solar_time_compact.xml` 一致 |
 | 内嵌地图（高德／OSM 底图） | ✅ | ❌ | 鸿蒙 Map Kit 需要在 AGC 建项目并配置签名与 `client_id`，本仓库不预置；位置信息改由「坐标 + 最近城市」呈现 |
 | 小组件点击打开系统应用（时钟／日历／天气） | ✅ | ❌ | 卡片只保留展示能力 |
 
@@ -61,7 +61,7 @@ harmony/
 │   ├── core-check.ts             自检用例（期望值与 Android 单测一致）
 │   ├── check-ets.py              导入／导出、括号、ArkTS 禁用特性静态检查
 │   ├── gen-city-index.py         从 Android 城市表同步 CityIndex.ets
-│   └── gen-icons.py              生成应用图标 PNG
+│   └── gen-icons.py              把 design/icon-512.png（与 Android 同一张图）同步成 app_icon.png
 └── build-profile.json5
 ```
 
@@ -152,15 +152,28 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 - **未做**：真机/模拟器运行。本机没有调试证书（签名需登录华为账号，DevEco 里 `Project Structure → Signing Configs`
   勾自动签名即可），模拟器镜像也没下载（`Device Manager` 里下 `HarmonyOS 7.0.1 B1` 镜像后即可启动 `Mate 90 Pro`）
 
+## 图标
+
+应用图标不再单独设计，直接沿用 Android 版：`Tools/gen-icons.py` 把 `design/icon-512.png`
+（与 Android `ic_launcher` 同一张图）复制到 `AppScope/resources/base/media/app_icon.png`
+与 `entry/src/main/resources/base/media/app_icon.png`。换图标只需替换 `design/icon-512.png`
+后重跑脚本。
+
 ## 与 Android 的差异
 
-1. **卡片秒级显示**：鸿蒙卡片没有 `Chronometer` 这类可设 `base` 的自走控件，但 `TextClock` 支持任意
-   时区偏移（分钟）。真太阳时相对 UTC 的偏移恰好就是「经度 × 4 + 均时差」分钟数，交给 `TextClock`
-   即可秒级自走，不需要频繁刷新卡片；偏移取整到分钟后误差 ≤ 30 秒，且只在卡片刷新时重算
-   （30 分钟内均时差变化不到 1 秒）。因此卡片刷新频率用系统允许的最小值 `updateDuration: 1`（30 分钟），
-   不再需要 Android 那套「唤醒闹钟 + 兜底闹钟」的机制，也不存在被 ROM 冻结导致停摆的问题。
-   若目标设备/SDK 的卡片不支持 `TextClock`，把 `SolarTimeCard.ets` 顶部的 `USE_TEXT_CLOCK` 改成
-   `false` 即可退回分钟精度（内容随刷新更新）。
+1. **卡片上的真太阳时是快照，不能逐秒自走**（实测 HarmonyOS 6.0.0 / API 20 模拟器）：
+
+   | 尝试 | 结果 |
+   | --- | --- |
+   | `TextClock().format('HH:mm:ss')` / `format('ss')` | **被忽略**，始终按系统格式显示到分钟 |
+   | `TextClock({ timeZoneOffset: 482 })`（含范围内 420 的对照实验） | **被忽略**，始终是系统本地时间 |
+   | 卡片内 `setInterval` / `setTimeout` | 编译期报错 `11706006 can't support form application` |
+
+   也就是说卡片只能显示本机时间，无法把「经度 × 4 + 均时差」的偏移交给它。因此卡片改为：
+   左栏「标准时间」用 `TextClock` 自走（分钟精度、跟随系统 12/24 小时制），右栏「真太阳时」用
+   快照文本（`HH:mm:ss`），由以下时机刷新：系统定时刷新（`updateDuration: 1`，即 30 分钟）、
+   打开应用（`EntryAbility.onForeground` 里推一次）。点卡片会打开应用，因此「点一下即刷新」。
+   代价：不打开应用时，右栏最多滞后 30 分钟。这是卡片能力本身的边界，不是实现偷懒。
 2. **报时用系统代理提醒**：鸿蒙不允许第三方应用自建精确闹钟。这里用 `reminderAgentManager`
    提前发布未来 12 个时辰交接（24 小时）与未来 2 天关键时间起点的提醒，由系统代发通知并响铃 ——
    应用不必常驻，代价是**通知栏会留下一条到点通知**（Android 端是只响铃不通知）。
@@ -182,7 +195,7 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 | `ohos.permission.APPROXIMATELY_LOCATION` / `LOCATION` | 定位求经度、逆地理编码 |
 | `ohos.permission.PUBLISH_AGENT_REMINDER` | 发布时辰交接与关键时间的代理提醒 |
 
-不申请后台常驻、不申请精确定时：卡片的秒级显示由 `TextClock` 承担，提醒由系统代发。
+不申请后台常驻、不申请精确定时：卡片的标准时间由 `TextClock` 承担，真太阳时随卡片刷新更新，提醒由系统代发。
 
 ## 待办
 

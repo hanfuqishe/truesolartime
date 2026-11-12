@@ -31,12 +31,11 @@ export default class SolarTimeFormAbility extends FormExtensionAbility {
   }
 
   onFormEvent(formId: string, message: string): void {
-    // 目前卡片上没有可点区域，收到事件就顺手刷新一次。
+    // 卡片上没有常驻进程：点一下卡片就重新取数并回推（卡片里的真太阳时是快照）。
     AppStore.init(this.context);
-    formProvider.updateForm(formId, formBindingData.createFormBindingData(CardService.buildData()))
-      .catch((error: BusinessError) => {
-        console.warn(`onFormEvent ${formId} failed: ${error.code} ${error.message}`);
-      });
+    CardService.refresh().catch((error: BusinessError) => {
+      console.warn(`onFormEvent refresh failed: ${error.code} ${error.message}`);
+    });
   }
 
   onRemoveForm(formId: string): void {
