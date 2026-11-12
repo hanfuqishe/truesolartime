@@ -1,4 +1,4 @@
-import { common } from '@kit.AbilityKit';
+﻿import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { Place, PlaceSource } from '../core/Place';
@@ -8,6 +8,7 @@ import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/
 import { TimeFormat } from '../core/TimeFormat';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { router } from '@kit.ArkUI';
 import { weatherIcon } from '../common/WeatherIcon';
 import { AppStore } from '../services/Store';
 import { CardService } from '../services/CardService';
@@ -83,24 +84,22 @@ struct Index {
   @State temperatureKey: string = '';
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
-  @State locating: boolean = false;
-  @State manualLatitude: string = '';
-  @State manualLongitude: string = '';
-  @State showManualInput: boolean = false;
-  @State hint: string = '';
 
   private timerId: number = -1;
   private previousSolarSecond: number = -1;
   private previousShichenIndex: number = -1;
   private lastDerivedMillis: number = 0;
   private context: common.UIAbilityContext | null = null;
+  private sunSettings: RenderingContextSettings = new RenderingContextSettings(true);
+  private sunCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.sunSettings);
+  private sunCtxReady: boolean = false;
+  private sunW: number = 0;
+  private sunH: number = 0;
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
-    this.place = AppStore.place();
-    this.shichenReminders = AppStore.shichenReminders();
-    this.keyTimeChime = AppStore.keyTimeChime();
+    this.reloadSettings();
     this.refreshDerived();
     this.lastDerivedMillis = Date.now();
     this.tick();
@@ -109,6 +108,22 @@ struct Index {
     }, 1000);
     this.refreshRemote();
     this.syncGpsSilently();
+  }
+
+  /** 从设置页返回后重新读取偏好（观测点、提醒开关都可能在那边改过）。 */
+  onPageShow(): void {
+    if (this.context === null) {
+      return;
+    }
+    this.reloadSettings();
+    this.refreshDerived();
+    this.refreshRemote();
+  }
+
+  private reloadSettings(): void {
+    this.place = AppStore.place();
+    this.shichenReminders = AppStore.shichenReminders();
+    this.keyTimeChime = AppStore.keyTimeChime();
   }
 
   /**
@@ -149,6 +164,8 @@ struct Index {
     this.previousShichenIndex = shichenIndex;
     this.solarSecond = seconds;
     this.beijingSecond = Math.floor(SolarTimeMath.beijingSecondsOfDay(now)) % 86400;
+    // 太阳弧线上的圆点跟着真太阳时走，每秒重画一次。
+    this.drawSunArc();
     // 分钟级别的数据每 30 秒重算一次，别让每秒的刷新去碰网络与字符串拼接。
     if (now - this.lastDerivedMillis >= 30000) {
       this.lastDerivedMillis = now;
@@ -293,41 +310,6 @@ struct Index {
     });
   }
 
-  private async locate(): Promise<void> {
-    const context: common.UIAbilityContext | null = this.context;
-    if (context === null || this.locating) {
-      return;
-    }
-    this.locating = true;
-    try {
-      const granted: boolean = await LocationService.ensurePermission(context);
-      AppStore.setLocationAsked(true);
-      if (!granted) {
-        this.toast('未授予定位权限，可在设置里手动输入坐标');
-        return;
-      }
-      const point = await LocationService.current();
-      if (point === null) {
-        this.toast('暂时取不到位置，请稍后再试');
-        return;
-      }
-      this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
-    } finally {
-      this.locating = false;
-    }
-  }
-
-  private applyManual(): void {
-    const latitude: number = Number.parseFloat(this.manualLatitude);
-    const longitude: number = Number.parseFloat(this.manualLongitude);
-    if (!Place.isValidLatitude(latitude) || !Place.isValidLongitude(longitude)) {
-      this.toast('请输入有效的经纬度');
-      return;
-    }
-    this.showManualInput = false;
-    this.applyPlace(new Place(latitude, longitude, PlaceSource.MANUAL, '', ''));
-  }
-
   private placeLabel(place: Place): string {
     const city: NearbyCity | null = CityIndex.nearest(place.latitude, place.longitude, DistrictService.language());
     if (city !== null) {
@@ -401,6 +383,18 @@ struct Index {
         .fontColor(HERO_COLOR)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ right: 10 })
+      Text('设置')
+        .fontSize(12)
+        .fontColor(TEXT_COLOR)
+        .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+        .backgroundColor('#24304F')
+        .borderRadius(12)
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
+            console.warn(`open settings failed: ${error.code} ${error.message}`);
+          });
+        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
@@ -631,84 +625,7 @@ struct Index {
     .linearGradient({ angle: 315, colors: [['#2A3B5C', 0], ['#151B2E', 1]] })
   }
 
-  @Builder
-  metric(label: string, value: string) {
-    Column() {
-      Text(label)
-        .fontSize(10)
-        .fontColor(SUBTLE_COLOR)
-      Text(value)
-        .fontSize(12)
-        .fontColor(TEXT_COLOR)
-        .margin({ top: 4 })
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .alignItems(HorizontalAlign.Start)
-    .layoutWeight(1)
-  }
-
-  @Builder
-  keyTimeCard() {
-    Column() {
-      Row() {
-        Text('关键时间')
-          .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
-          .layoutWeight(1)
-        Text(this.keyTimeState)
-          .fontSize(11)
-          .fontColor(this.bandColor())
-      }
-      .width('100%')
-
-      Row() {
-        ForEach(this.segments, (item: string) => {
-          if (isBandSegment(item)) {
-            Row()
-              .height(8)
-              .borderRadius(4)
-              .backgroundColor(this.bandColor())
-              .layoutWeight(segmentLength(item))
-          } else {
-            Row()
-              .height(8)
-              .layoutWeight(segmentLength(item))
-          }
-        }, (item: string, index: number) => `${index}-${item}`)
-      }
-      .width('100%')
-      .height(8)
-      .borderRadius(4)
-      .backgroundColor('#24304F')
-      .margin({ top: 10 })
-
-      Row() {
-        Text('0:00')
-          .fontSize(9)
-          .fontColor('#5A6885')
-          .layoutWeight(1)
-        Text('12:00')
-          .fontSize(9)
-          .fontColor('#5A6885')
-        Text('24:00')
-          .fontSize(9)
-          .fontColor('#5A6885')
-          .layoutWeight(1)
-          .textAlign(TextAlign.End)
-      }
-      .width('100%')
-      .margin({ top: 4 })
-
-      Text(this.keyTimeText.length > 0 ? this.keyTimeText : '还没有关键时间数据（每天 01:00–05:00 自动同步一次）')
-        .fontSize(12)
-        .fontColor(this.keyTimeText.length > 0 ? TEXT_COLOR : SUBTLE_COLOR)
-        .margin({ top: 8 })
-        .width('100%')
-    }
-    .cardStyle()
-  }
-
+  /** 太阳弧线：与 Android 的 SunArc 同款——虚线弧 + 地平线 + 柔光圆点标出当前太阳位置。 */
   @Builder
   sunCard() {
     Column() {
@@ -719,194 +636,167 @@ struct Index {
           .layoutWeight(1)
         Text(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`)
           .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
-      }
-      .width('100%')
-      Row() {
-        this.metric('日出', TimeFormat.clock(this.snapshot.sunriseBeijingSeconds))
-        this.metric('上中天', TimeFormat.clock(this.snapshot.solarNoonBeijingSeconds))
-        this.metric('日落', TimeFormat.clock(this.snapshot.sunsetBeijingSeconds))
-        this.metric('白昼', this.snapshot.daylightSeconds >= 0
-          ? TimeFormat.duration(this.snapshot.daylightSeconds, this.language)
-          : '--')
-      }
-      .width('100%')
-      .margin({ top: 10 })
-      Text(`日出日落按真太阳时：${TimeFormat.clock(this.snapshot.sunriseTrueSolarSeconds)} / ` +
-        `${TimeFormat.clock(this.snapshot.sunsetTrueSolarSeconds)}`)
-        .fontSize(10)
-        .fontColor('#5A6885')
-        .margin({ top: 8 })
-      if (this.sunSummary().length > 0) {
-        Text(this.sunSummary())
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
-          .margin({ top: 4 })
-      }
-    }
-    .cardStyle()
-  }
-
-  @Builder
-  placeCard() {
-    Column() {
-      Row() {
-        Text('观测点')
-          .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
-          .layoutWeight(1)
-        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(HERO_COLOR)
       }
       .width('100%')
 
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(Place.PRESETS, (preset: Place, index: number) => {
-          Text(index < this.presetLabels.length ? this.presetLabels[index] : TimeFormat.coordinates(preset.latitude, preset.longitude))
-            .fontSize(12)
-            .fontColor(this.place.sameLocation(preset) ? PAGE_COLOR : TEXT_COLOR)
-            .backgroundColor(this.place.sameLocation(preset) ? HERO_COLOR : '#24304F')
-            .borderRadius(14)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .margin({ right: 8, top: 8 })
-            .onClick(() => {
-              this.applyPlace(preset);
-            })
-        }, (preset: Place) => `${preset.latitude}-${preset.longitude}`)
-      }
-      .width('100%')
+      Canvas(this.sunCtx)
+        .width('100%')
+        .height(110)
+        .margin({ top: 6 })
+        .onReady(() => {
+          this.sunCtxReady = true;
+          this.drawSunArc();
+        })
+        .onAreaChange((oldValue: Area, newValue: Area) => {
+          this.sunW = Number(newValue.width);
+          this.sunH = Number(newValue.height);
+          this.drawSunArc();
+        })
 
-      Row() {
-        Button(this.locating ? '定位中…' : '使用当前位置')
-          .fontSize(13)
-          .backgroundColor('#24304F')
-          .fontColor(TEXT_COLOR)
-          .layoutWeight(1)
-          .height(38)
-          .onClick(() => {
-            this.locate();
-          })
-        Button('手动输入')
-          .fontSize(13)
-          .backgroundColor('#24304F')
-          .fontColor(TEXT_COLOR)
-          .layoutWeight(1)
-          .height(38)
-          .margin({ left: 8 })
-          .onClick(() => {
-            this.showManualInput = !this.showManualInput;
-          })
-      }
-      .width('100%')
-      .margin({ top: 12 })
-
-      if (this.showManualInput) {
+      if (this.snapshot.polar === PolarState.NORMAL) {
         Row() {
-          TextInput({ text: this.manualLatitude, placeholder: '纬度 39.9042' })
-            .type(InputType.NUMBER_DECIMAL)
-            .backgroundColor('#0F1830')
-            .fontColor(TEXT_COLOR)
-            .layoutWeight(1)
-            .onChange((value: string) => {
-              this.manualLatitude = value;
-            })
-          TextInput({ text: this.manualLongitude, placeholder: '经度 116.4074' })
-            .type(InputType.NUMBER_DECIMAL)
-            .backgroundColor('#0F1830')
-            .fontColor(TEXT_COLOR)
-            .layoutWeight(1)
-            .margin({ left: 8 })
-            .onChange((value: string) => {
-              this.manualLongitude = value;
-            })
-          Button('确定')
-            .fontSize(13)
-            .backgroundColor(HERO_COLOR)
-            .fontColor(PAGE_COLOR)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.applyManual();
-            })
+          Column() {
+            Text('日出')
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+            Text(TimeFormat.clock(this.snapshot.sunriseBeijingSeconds))
+              .fontSize(17)
+              .fontColor(TEXT_COLOR)
+              .margin({ top: 2 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Center)
+          Column() {
+            Text('上中天')
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+            Text(TimeFormat.clock(this.snapshot.solarNoonBeijingSeconds))
+              .fontSize(17)
+              .fontColor(TEXT_COLOR)
+              .margin({ top: 2 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Center)
+          Column() {
+            Text('日落')
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+            Text(TimeFormat.clock(this.snapshot.sunsetBeijingSeconds))
+              .fontSize(17)
+              .fontColor(TEXT_COLOR)
+              .margin({ top: 2 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Center)
         }
         .width('100%')
         .margin({ top: 10 })
+        Text(`白昼 ${this.snapshot.daylightSeconds >= 0
+          ? TimeFormat.duration(this.snapshot.daylightSeconds, this.language)
+          : '--'} · 真太阳时 ${TimeFormat.clock(this.snapshot.sunriseTrueSolarSeconds)} / ` +
+          `${TimeFormat.clock(this.snapshot.sunsetTrueSolarSeconds)}`)
+          .fontSize(10)
+          .fontColor('#5A6885')
+          .margin({ top: 8 })
+          .width('100%')
+      } else {
+        Text(this.sunSummary())
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+          .margin({ top: 8 })
+          .width('100%')
       }
     }
     .cardStyle()
   }
 
-  @Builder
-  settingsCard() {
-    Column() {
-      Text('提醒')
-        .fontSize(13)
-        .fontColor(SUBTLE_COLOR)
-        .width('100%')
-      Row() {
-        Column() {
-          Text('时辰交接提醒')
-            .fontSize(14)
-            .fontColor(TEXT_COLOR)
-          Text('进入下一个时辰时响一声（250 ms）')
-            .fontSize(10)
-            .fontColor(SUBTLE_COLOR)
-            .margin({ top: 2 })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.shichenReminders })
-          .onChange((isOn: boolean) => {
-            this.shichenReminders = isOn;
-            AppStore.setShichenReminders(isOn);
-            this.previousShichenIndex = -1;
-            this.rescheduleReminders();
-          })
-      }
-      .width('100%')
-      .margin({ top: 10 })
-
-      Row() {
-        Column() {
-          Text('关键时间报时')
-            .fontSize(14)
-            .fontColor(TEXT_COLOR)
-          Text('每进入一段关键时间响一次（500 ms）')
-            .fontSize(10)
-            .fontColor(SUBTLE_COLOR)
-            .margin({ top: 2 })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.keyTimeChime })
-          .onChange((isOn: boolean) => {
-            this.keyTimeChime = isOn;
-            AppStore.setKeyTimeChime(isOn);
-            this.rescheduleReminders();
-          })
-      }
-      .width('100%')
-      .margin({ top: 14 })
-
-      Text('提醒由系统代理发出：应用不在前台也会到点通知。打开应用时则只响铃、不留通知。')
-        .fontSize(10)
-        .fontColor('#5A6885')
-        .margin({ top: 12 })
-        .width('100%')
+  /** 白昼进度：真太阳时在日出与日落之间的比例；没有日出日落时取 0.5。 */
+  private daylightProgress(): number {
+    const sunrise: number = this.snapshot.sunriseTrueSolarSeconds;
+    const sunset: number = this.snapshot.sunsetTrueSolarSeconds;
+    if (sunrise < 0 || sunset < 0) {
+      return 0.5;
     }
-    .cardStyle()
+    const start: number = sunrise;
+    let end: number = sunset;
+    if (end <= start) {
+      end += 86400;
+    }
+    let current: number = this.solarSecond;
+    if (current < start) {
+      current += 86400;
+    }
+    const span: number = end - start;
+    if (span <= 0) {
+      return 0.5;
+    }
+    return Math.min(1, Math.max(0, (current - start) / span));
   }
 
+  /**
+   * 画弧：起点 (6%, 88%)、终点 (94%, 88%)、控制点 (50%, -42%) 的二次曲线，
+   * 与 Android 的 SunArc 参数一致；太阳位置按白昼进度取曲线上的点。
+   */
+  private drawSunArc(): void {
+    if (!this.sunCtxReady) {
+      return;
+    }
+    const width: number = this.sunW;
+    const height: number = this.sunH;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    const ctx: CanvasRenderingContext2D = this.sunCtx;
+    const horizonY: number = height * 0.88;
+    const startX: number = width * 0.06;
+    const endX: number = width * 0.94;
+    const controlX: number = width / 2;
+    const controlY: number = -height * 0.42;
+    const trackColor: string = '#3A4763';
+
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.beginPath();
+    ctx.moveTo(startX, horizonY);
+    ctx.quadraticCurveTo(controlX, controlY, endX, horizonY);
+    ctx.setLineDash([10, 10]);
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = trackColor;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.setLineDash([]);
+    ctx.moveTo(0, horizonY);
+    ctx.lineTo(width, horizonY);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = trackColor;
+    ctx.stroke();
+
+    const t: number = this.daylightProgress();
+    const u: number = 1 - t;
+    const sunX: number = u * u * startX + 2 * u * t * controlX + t * t * endX;
+    const sunY: number = u * u * horizonY + 2 * u * t * controlY + t * t * horizonY;
+    const isDay: boolean = this.snapshot.isDay();
+    const sunColor: string = isDay ? '#FFB300' : '#9AA7BF';
+    if (isDay) {
+      ctx.beginPath();
+      ctx.fillStyle = '#2EFFB300';
+      ctx.arc(sunX, sunY, 20, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.fillStyle = sunColor;
+    ctx.arc(sunX, sunY, 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
   build() {
     Column() {
       this.header()
       Scroll() {
         Column({ space: 12 }) {
           this.heroCard()
-          this.keyTimeCard()
           this.sunCard()
-          this.placeCard()
-          this.settingsCard()
           Text(`v1.0.0 · 数据来源 Open-Meteo（CC BY 4.0）`)
             .fontSize(10)
             .fontColor('#5A6885')
@@ -917,6 +807,7 @@ struct Index {
       }
       .layoutWeight(1)
       .scrollBar(BarState.Off)
+      .align(Alignment.Top)
     }
     .width('100%')
     .height('100%')
