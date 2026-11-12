@@ -47,7 +47,6 @@ export class CardData {
   /** 真太阳时「HH:mm」。 */
   solarTime: string = '';
   /** 真太阳时的秒，两位。 */
-  solarSeconds: string = '';
   /** 例如「39.9042°N  116.4074°E」。 */
   coords: string = '';
   /** 与北京时间的时差文字，例如「+1 分 31 秒」。 */
@@ -81,7 +80,6 @@ export class CardService {
     data.shichen = snapshot.shichenName;
     data.dateText = TimeFormat.dateWithWeekday(now, language);
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
-    data.solarSeconds = `${Math.floor(snapshot.trueSolarSeconds % 60)}`.padStart(2, '0');
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);
     data.nowMinute = snapshot.trueSolarSeconds / 60;

@@ -18,7 +18,7 @@
 | 进入关键时间报时（500 ms） | ✅ | ✅（系统代理提醒） | 同上 |
 | 桌面卡片：标准时间／真太阳时两栏、日期与气温区间、经纬度、关键时间轴、六格逐时预报 | ✅ | ✅ | 2×4，版面与 Android 的 `widget_solar_time_compact.xml` 一致；时间轴为 1vp 细线 + 边缘柔化的圆点 |
 | 内嵌地图（高德／OSM 底图） | ✅ | ❌ | 鸿蒙 Map Kit 需要在 AGC 建项目并配置签名与 `client_id`，本仓库不预置；位置信息改由「坐标 + 最近城市」呈现 |
-| 小组件点击打开系统应用（时钟／日历／天气） | ✅ | ❌ | 卡片只保留展示能力 |
+| 桌面卡片点击分区 | ✅ | ✅ | 左栏→时钟、日期→日历、逐时行→天气、右栏与空白→本应用；见下 |
 
 ## 目录结构
 
@@ -177,8 +177,9 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 
    也就是说卡片只能显示本机时间，无法把「经度 × 4 + 均时差」的偏移交给它。因此卡片改为：
    左栏「标准时间」用 `TextClock` 自走（分钟精度、跟随系统 12/24 小时制），右栏「真太阳时」用
-   快照文本（`HH:mm:ss`），由以下时机刷新：系统定时刷新（`updateDuration: 1`，即 30 分钟）、
-   打开应用（`EntryAbility.onForeground` 里推一次）。点卡片会打开应用，因此「点一下即刷新」。
+   快照文本（只有 `HH:mm`，**不再显示秒** —— 卡片上秒走不起来，显示不动的秒只会误导），
+   由以下时机刷新：系统定时刷新（`updateDuration: 1`，即 30 分钟）、
+   打开应用（`EntryAbility.onForeground` 里推一次）。
    代价：不打开应用时，右栏最多滞后 30 分钟。这是卡片能力本身的边界，不是实现偷懒。
 2. **报时用系统代理提醒**：鸿蒙不允许第三方应用自建精确闹钟。这里用 `reminderAgentManager`
    提前发布未来 12 个时辰交接（24 小时）与未来 2 天关键时间起点的提醒，由系统代发通知并响铃 ——
@@ -198,6 +199,23 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 `AppName_text_<bundleName>_<label>`），不是卡片自身的内容，卡片区域也不受它影响。
 实测把 `form_label`（改成测试值）与 `form_display_name`（置空）都无效 —— 它取的是
 `AppScope/app.json5` 的 `label`，改它等于给应用改名，因此没有提供隐藏开关。
+
+### 卡片点击分区
+
+与 Android 的 `bindClicks` 一一对应：
+
+| 区域 | 目标 |
+| --- | --- |
+| 左栏（标准时间） | 时钟 `com.huawei.hmos.clock` / `com.huawei.hmos.clock.MainAbility` |
+| 日期那一行 | 日历 `com.huawei.hmos.calendar` / `com.huawei.hmos.calendar.MainAbility` |
+| 底部逐时预报 | 天气 `com.huawei.hmos.weather` / `com.huawei.hmos.weather.MainAbility` |
+| 右栏（真太阳时）、时间轴、空白 | 本应用 `EntryAbility` |
+
+实现方式是卡片里的 `postCardAction({ action: 'router', bundleName, abilityName })`：卡片/FormExtension
+侧拿不到 `startAbility`（`FormExtensionContext` 只有 `connect`），只能由桌面代拉。因此
+**目标应用的包名与 ability 名是写死的**，取的是华为系统应用的命名惯例（本机 `com.huawei.hmos.settings`
+的入口就是 `com.huawei.hmos.settings.MainAbility`）。设备上没有这些应用时，对应区域点击不会有反应 ——
+模拟器镜像里就没装时钟/日历/天气，所以这三块只能在真机上验证。
 
 ### 跟随 GPS
 点「使用当前位置」后，位置来源记为 `PlaceSource.GPS`，之后不再是一次性快照：

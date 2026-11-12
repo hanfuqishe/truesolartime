@@ -6,6 +6,10 @@
  *   中间一条 1vp 竖分隔线；下面 0–24 时时间轴（色条为关键时间，柔化圆点为当前时刻）
  *   底部六格逐时预报（时刻、天气图标、天气名）
  *
+ * 点击分区与 Android 一致：左栏→时钟、日期→日历、逐时行→天气、右栏与空白→本应用。
+ * 目标应用用 `postCardAction` 的 router 直接拉起（卡片里拿不到 FormExtensionContext.startAbility），
+ * 因此写的是华为系统应用的包名 + `<bundle>.MainAbility`；设备上没有对应应用时该区域点击无反应。
+ *
  * 尺寸按鸿蒙 2*4 卡片实际可用的约 226×110vp 收：Android 的 4×2 有约 146dp 高，
  * 这里更矮，所以内边距、字号、图标都比 Android 再紧一档，保证六格预报不被裁掉。
  *
@@ -45,7 +49,6 @@ struct SolarTimeCard {
   @LocalStorageProp('dateText') dateText: string = '';
   @LocalStorageProp('temperatureRange') temperatureRange: string = '';
   @LocalStorageProp('solarTime') solarTime: string = '';
-  @LocalStorageProp('solarSeconds') solarSeconds: string = '';
   @LocalStorageProp('coords') coords: string = '';
   @LocalStorageProp('segments') segments: string[] = [];
   @LocalStorageProp('nowMinute') nowMinute: number = 0;
@@ -135,9 +138,25 @@ struct SolarTimeCard {
           }
           .width('100%')
           .margin({ top: 1 })
+          .onClick(() => {
+            // 日期 → 日历（Android 的 widget_civil_date 指向日历，解析不到时冒泡到左栏的闹钟）
+            postCardAction(this, {
+              action: 'router',
+              bundleName: 'com.huawei.hmos.calendar',
+              abilityName: 'com.huawei.hmos.calendar.MainAbility'
+            });
+          })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        .onClick(() => {
+          // 左栏（标准时间）→ 时钟（闹钟），与 Android 的左栏一致
+          postCardAction(this, {
+            action: 'router',
+            bundleName: 'com.huawei.hmos.clock',
+            abilityName: 'com.huawei.hmos.clock.MainAbility'
+          });
+        })
 
         Column()
           .width(1)
@@ -145,37 +164,15 @@ struct SolarTimeCard {
           .backgroundColor(DIVIDER)
           .margin({ left: 10, right: 10 })
 
-        // 右：真太阳时（快照，随卡片刷新更新）
+        // 右：真太阳时（快照，随卡片刷新更新；卡片里秒走不起来，所以只显示到分钟）
         Column() {
           this.labelRow('真太阳时', this.shichen)
-          Row() {
-            Text(this.solarTime)
-              .fontSize(38)
-              .fontWeight(FontWeight.Lighter)
-              .fontColor(GOLD)
-              .maxLines(1)
-            Text(':')
-              .fontSize(21)
-              .fontWeight(FontWeight.Lighter)
-              .fontColor(GOLD)
-              .maxLines(1)
-              .margin({ bottom: 4 })
-            Text(this.solarSeconds)
-              .fontSize(21)
-              .fontWeight(FontWeight.Lighter)
-              .fontColor(GOLD)
-              .maxLines(1)
-              .margin({ bottom: 4, left: 1 })
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Bottom)
-          .onClick(() => {
-            // 卡片上的真太阳时是快照，点一下让应用立刻重算并回推（卡片自身不能用定时器）。
-            postCardAction(this, {
-              action: 'message',
-              params: { msg: 'refresh' }
-            });
-          })
+          Text(this.solarTime)
+            .fontSize(38)
+            .fontWeight(FontWeight.Lighter)
+            .fontColor(GOLD)
+            .maxLines(1)
+            .width('100%')
           Text(this.coords)
             .fontSize(9)
             .fontColor(TEXT_DIM)
@@ -185,6 +182,14 @@ struct SolarTimeCard {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
+        .onClick(() => {
+          // 右栏（真太阳时）→ 打开本应用
+          postCardAction(this, {
+            action: 'router',
+            bundleName: 'com.realsuntime.solartime',
+            abilityName: 'EntryAbility'
+          });
+        })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -241,6 +246,14 @@ struct SolarTimeCard {
       }
       .width('100%')
       .margin({ top: 3 })
+      .onClick(() => {
+        // 逐时预报 → 天气应用，与 Android 的 widget_hour_row 一致
+        postCardAction(this, {
+          action: 'router',
+          bundleName: 'com.huawei.hmos.weather',
+          abilityName: 'com.huawei.hmos.weather.MainAbility'
+        });
+      })
     }
     .width('100%')
     .height('100%')
@@ -249,5 +262,13 @@ struct SolarTimeCard {
     .alignItems(HorizontalAlign.Start)
     .borderRadius(22)
     .linearGradient({ angle: 315, colors: [['#2A3B5C', 0], ['#151B2E', 1]] })
+    .onClick(() => {
+      // 空白处 / 时间轴 → 打开本应用
+      postCardAction(this, {
+        action: 'router',
+        bundleName: 'com.realsuntime.solartime',
+        abilityName: 'EntryAbility'
+      });
+    })
   }
 }
