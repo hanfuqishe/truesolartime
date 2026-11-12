@@ -11,7 +11,7 @@ import { Shichen } from './core/Shichen';
 import { TimeFormat } from './core/TimeFormat';
 import { SolarTimeSnapshot } from './core/SolarSnapshot';
 import { CityIndex } from './core/CityIndex';
-import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition } from './core/Weather';
+import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint } from './core/Weather';
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place } from './core/Place';
@@ -307,6 +307,27 @@ for (const item of equationCases) {
     'https://api.open-meteo.com/v1/forecast?latitude=39.9042&longitude=116.4074' +
       '&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&forecast_days=2&past_days=1&timezone=UTC',
     WeatherLogic.buildUrl(39.9042, 116.4074)
+  );
+
+  // 逐时预报文案：槽位按本地（+8）整点对齐
+  const forecastPoints: HourPoint[] = [
+    new HourPoint(Date.UTC(2026, 10, 2, 0, 0, 0) / 1000, 20, 0),
+    new HourPoint(Date.UTC(2026, 10, 2, 1, 0, 0) / 1000, 19, 3)
+  ];
+  const forecast = WeatherLogic.forecastLabels(
+    forecastPoints,
+    Date.UTC(2026, 10, 2, 0, 30, 0) / 1000,
+    8 * 3600,
+    2,
+    'zh-CN'
+  );
+  equal('two forecast labels', 2, forecast.length);
+  equal('first forecast label', '8时 晴 20°', forecast[0]);
+  equal('second forecast label', '9时 阴 19°', forecast[1]);
+  equal(
+    'english forecast label',
+    '8:00 Clear 20°',
+    WeatherLogic.forecastLabels(forecastPoints, Date.UTC(2026, 10, 2, 0, 30, 0) / 1000, 8 * 3600, 1, 'en-US')[0]
   );
 }
 

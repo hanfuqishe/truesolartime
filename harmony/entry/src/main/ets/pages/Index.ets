@@ -74,6 +74,7 @@ struct Index {
   @State weatherTemperature: string = '--';
   @State weatherText: string = '';
   @State weatherRange: string = '';
+  @State forecastLabels: string[] = [];
   @State keyTimeText: string = '';
   @State keyTimeState: string = '';
   @State segments: string[] = [];
@@ -187,6 +188,13 @@ struct Index {
       SolarTimeMath.BEIJING_OFFSET_MILLIS
     );
     this.weatherRange = range === null ? '' : `${range[0]}° ~ ${range[1]}°`;
+    this.forecastLabels = WeatherLogic.forecastLabels(
+      WeatherService.hourly(),
+      Math.floor(now / 1000),
+      SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000,
+      5,
+      language
+    );
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule === null || schedule.bands.length === 0) {
@@ -289,6 +297,12 @@ struct Index {
     return HERO_COLOR;
   }
 
+  /** 距下个时辰交接的秒数，按每秒更新的真太阳时算，倒计时才会走。 */
+  private secondsToNextShichen(): number {
+    const shifted: number = (((this.solarSecond + 3600) % 86400) + 86400) % 86400;
+    return 7200 - (shifted % 7200);
+  }
+
   private sunSummary(): string {
     if (this.snapshot.polar === PolarState.MIDNIGHT_SUN) {
       return '极昼：太阳整日不落';
@@ -375,11 +389,23 @@ struct Index {
           .fontSize(11)
           .fontColor(SUBTLE_COLOR)
           .layoutWeight(1)
-        Text(TimeFormat.signedDuration(this.snapshot.offsetSeconds, this.language))
+        Text(`与北京时间 ${TimeFormat.signedDuration(this.snapshot.offsetSeconds, this.language)}`)
           .fontSize(11)
           .fontColor(SUBTLE_COLOR)
       }
       .width('100%')
+
+      Row() {
+        Text(`距下个时辰 ${TimeFormat.countdown(this.secondsToNextShichen())}`)
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+          .layoutWeight(1)
+        Text(this.snapshot.isDay() ? '白昼' : '夜晚')
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+      }
+      .width('100%')
+      .margin({ top: 4 })
     }
     .cardStyle()
   }
@@ -457,6 +483,20 @@ struct Index {
       }
       .width('100%')
       .margin({ top: 6 })
+      if (this.forecastLabels.length > 0) {
+        Row() {
+          ForEach(this.forecastLabels, (label: string) => {
+            Text(label)
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .maxLines(1)
+          }, (label: string, index: number) => `${index}-${label}`)
+        }
+        .width('100%')
+        .margin({ top: 10 })
+      }
     }
     .cardStyle()
   }

@@ -199,6 +199,39 @@ export class WeatherLogic {
     return !(ageMillis >= 0 && ageMillis <= WeatherLogic.TTL_MILLIS) || movedKm > WeatherLogic.MOVE_THRESHOLD_KM;
   }
 
+  /**
+   * 未来 count 个小时的预报文案，例如「14时 多云 21°」/ "2:00 PM? "。
+   * 槽位按本地整点对齐，找不到对应数据的小时直接跳过。
+   */
+  static forecastLabels(
+    points: HourPoint[],
+    nowEpochSeconds: number,
+    zoneOffsetSeconds: number,
+    count: number,
+    language: string
+  ): string[] {
+    const slots: number[] = WeatherLogic.slots(nowEpochSeconds, zoneOffsetSeconds, count, 1);
+    const labels: string[] = [];
+    for (const slot of slots) {
+      let match: HourPoint | null = null;
+      for (const point of points) {
+        if (point.epochSeconds === slot) {
+          match = point;
+          break;
+        }
+      }
+      if (match === null) {
+        continue;
+      }
+      const hour: number = new Date((slot + zoneOffsetSeconds) * 1000).getUTCHours();
+      const name: string = WeatherLogic.conditionName(WeatherLogic.conditionOf(match.code), language);
+      labels.push(language.startsWith('zh')
+        ? `${hour}时 ${name} ${match.temperatureC}°`
+        : `${hour}:00 ${name} ${match.temperatureC}°`);
+    }
+    return labels;
+  }
+
   /** WMO 天气码 → 分类。 */
   static conditionOf(code: number): WeatherCondition {
     switch (code) {
