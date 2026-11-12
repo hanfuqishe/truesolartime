@@ -87,6 +87,13 @@ cd harmony
 hdc install entry/build/default/outputs/default/entry-default-signed.hap
 ```
 
+在 DevEco Studio 里构建时 IDE 会自己注入 SDK 路径；**脱离 IDE 直接跑 `hvigorw` 必须先给 `DEVECO_SDK_HOME`**，
+否则报 `00303217 Configuration Error: Invalid value of 'DEVECO_SDK_HOME'`：
+
+```powershell
+$env:DEVECO_SDK_HOME = 'D:\DevEco Studio\sdk'   # DevEco 安装目录下的 sdk
+```
+
 没有签名时 `assembleHap` 也能过，只是产物未签名、无法安装（`entry-default-unsigned.hap`）。
 
 ### 用更高版本的 DevEco Studio 打开
