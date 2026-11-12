@@ -149,12 +149,18 @@ object WidgetUpdater {
     fun refreshAll(context: Context, forceChronometer: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java))
+        val location = resolveLocation(context)
+        val place = location.place
+        // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
+        // 否则定位变化后首页会一直显示启动时那个默认位置的地名。
+        DistrictResolver.requestRefresh(context, place)
+        WeatherRepository.requestRefresh(context, place)
+        // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
+        TakeTimeRepository.requestRefresh(context)
         if (ids.isEmpty()) {
             cancelTick(context)
             return
         }
-        val location = resolveLocation(context)
-        val place = location.place
         // 先排下一分钟再刷新：刷新途中出任何异常（或者进程被系统冻结）都不会把链条断掉。
         scheduleNextTick(context, place)
         // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
@@ -167,11 +173,6 @@ object WidgetUpdater {
                 buildViews(context, location, widthDp, heightDp, id, forceChronometer),
             )
         }
-        // 区县名与天气都要联网，命中缓存时不会重复请求；失败则用离线城市表／旧天气。
-        DistrictResolver.requestRefresh(context, place)
-        WeatherRepository.requestRefresh(context, place)
-        // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
-        TakeTimeRepository.requestRefresh(context)
         // 关键时间可能刚更新，重排「进入关键时间」报时（关闭时这里是空操作）。
         KeyTimeChime.schedule(context)
     }
