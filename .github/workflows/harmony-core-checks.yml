@@ -1,0 +1,38 @@
+name: harmony-core-checks
+
+# 鸿蒙版的核心逻辑不依赖任何 @kit.* 系统 API，因此可以在普通 Linux runner 上
+# 用 TypeScript + Node 验证；ArkUI 界面与系统能力仍需 DevEco Studio 构建。
+on:
+  push:
+    paths:
+      - 'harmony/**'
+      - '.github/workflows/harmony-core-checks.yml'
+  pull_request:
+    paths:
+      - 'harmony/**'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harmony/Tools
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install tooling
+        run: npm install
+
+      - name: Numerical self checks (core logic)
+        run: node verify-core.js
+
+      - name: Parse ArkTS sources that contain no ArkUI DSL
+        run: node parse-ets.js
+
+      - name: Import/export and bracket checks for every ArkTS file
+        run: python3 check-ets.py
