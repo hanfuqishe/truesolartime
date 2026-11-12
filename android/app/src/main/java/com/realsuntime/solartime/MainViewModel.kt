@@ -75,6 +75,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         // 没加小组件时也要能反查出区划；换了界面语言会重查（见 DistrictResolver.needsRefresh）。
         DistrictResolver.requestRefresh(application, settings.place)
+        // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
+        // 小组件也会被系统屏蔽（桌面显示「加载失败」），打开一次就恢复。
+        // 这条路径本来就在主线程跑（广播接收器），这里保持一致，避免踩线程限制。
+        val app = application
+        viewModelScope.launch {
+            runCatching { WidgetUpdater.refreshAll(app, forceChronometer = true) }
+        }
         if (settings.remindersEnabled) {
             ShiChenReminder.schedule(application, settings.place)
         }

@@ -12,7 +12,7 @@ class SolarWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         // 桌面刚绑定视图，秒数的基准必须重新下发一次。
-        WidgetUpdater.refreshAll(context, forceChronometer = true)
+        safeRefresh(context, "onUpdate")
     }
 
     /** 桌面拖拽改变尺寸后立刻按新宽度重排，避免时钟与日期被裁切。 */
@@ -22,15 +22,24 @@ class SolarWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: Bundle,
     ) {
-        WidgetUpdater.refreshAll(context, forceChronometer = true)
+        safeRefresh(context, "onOptionsChanged")
     }
 
     override fun onEnabled(context: Context) {
-        WidgetUpdater.refreshAll(context, forceChronometer = true)
+        safeRefresh(context, "onEnabled")
         val settings = AppSettings(context)
         if (settings.keyTimeChimeEnabled) {
             KeyTimeChime.schedule(context)
         }
+    }
+
+    /**
+     * 任何一次刷新都不允许把异常抛回系统：provider 一抛异常，桌面就会把整个小组件
+     * 标成「加载失败」，用户连降级版面都看不到。
+     */
+    private fun safeRefresh(context: Context, from: String) {
+        runCatching { WidgetUpdater.refreshAll(context, forceChronometer = true) }
+            .onFailure { Log.w(TAG, "refreshAll from $from failed", it) }
     }
 
     override fun onDisabled(context: Context) {
@@ -49,13 +58,17 @@ class SolarWidgetProvider : AppWidgetProvider() {
                 // 闹钟可能被系统迟到投递，甚至整条链被清掉；这里只管立刻写一遍，
                 // 下一次排程由 refreshAll 负责，不依赖任何进程内的延时任务。
                 runCatching { WidgetUpdater.refreshAll(context) }
-                    .onFailure { Log.w("SolarWidget", "refresh on $intent failed", it) }
+                    .onFailure { Log.w(TAG, "refresh on $intent failed", it) }
             }
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
             Intent.ACTION_DATE_CHANGED,
             Intent.ACTION_LOCALE_CHANGED,
-            -> WidgetUpdater.refreshAll(context, forceChronometer = true)
+            -> safeRefresh(context, "timeChanged")
         }
+    }
+
+    private companion object {
+        const val TAG = "SolarWidget"
     }
 }

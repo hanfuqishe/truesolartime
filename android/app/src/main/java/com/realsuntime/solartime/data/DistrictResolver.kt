@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.amap.api.services.core.AMapException
 import com.amap.api.services.core.LatLonPoint
 import com.amap.api.services.core.ServiceSettings
@@ -31,6 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 正式上架时应改为在用户同意隐私政策后再触发查询。
  */
 object DistrictResolver {
+
+    private const val TAG = "DistrictResolver"
 
     private const val PREFS = "district_cache"
     private const val KEY_NAME = "name"
@@ -113,15 +116,21 @@ object DistrictResolver {
 
     /** 需要时发起一次查询，成功后重绘小组件。必须在主线程调用（高德 SDK 的限制）。 */
     fun requestRefresh(context: Context, place: Place) {
-        if (!needsRefresh(context, place)) return
-        if (!inFlight.compareAndSet(false, true)) return
-        val app = context.applicationContext
-        // 兜底：任何一步卡住（后台线程没回调）都不要让 inFlight 一直是 true。
-        handler.postDelayed({ inFlight.set(false) }, LOOKUP_TIMEOUT_MILLIS)
-        if (prefersChineseNames(app)) {
-            if (!startAmap(app, place)) inFlight.set(false)
-        } else {
-            startNominatim(app, place)
+        // 取地名只是「锦上添花」，任何失败都不该影响小组件刷时间，所以整体兜住 Throwable。
+        runCatching {
+            if (!needsRefresh(context, place)) return
+            if (!inFlight.compareAndSet(false, true)) return
+            val app = context.applicationContext
+            // 兜底：任何一步卡住（后台线程没回调）都不要让 inFlight 一直是 true。
+            handler.postDelayed({ inFlight.set(false) }, LOOKUP_TIMEOUT_MILLIS)
+            if (prefersChineseNames(app)) {
+                if (!startAmap(app, place)) inFlight.set(false)
+            } else {
+                startNominatim(app, place)
+            }
+        }.onFailure {
+            inFlight.set(false)
+            Log.w(TAG, "district lookup skipped", it)
         }
     }
 
@@ -238,7 +247,10 @@ object DistrictResolver {
                 search.getFromLocationAsyn(
                     RegeocodeQuery(LatLonPoint(gcjLat, gcjLon), 200f, GeocodeSearch.AMAP),
                 )
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                // 这里必须兜住 Throwable：高德 SDK 带 native 库，在 16 KB page size 或
+                // ABI 不匹配的新机型上会抛 UnsatisfiedLinkError（属于 Error 而非 Exception），
+                // 漏出去就会把 provider 进程带崩，桌面只能显示「小组件加载失败」。
                 inFlight.set(false)
                 return@post
             }

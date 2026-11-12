@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.text.TextPaint
 import android.util.DisplayMetrics
+import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
@@ -48,6 +49,8 @@ import kotlin.math.roundToLong
 object WidgetUpdater {
 
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
+
+    private const val TAG = "SolarWidget"
 
     /** 兜底刷新：正常每分钟的 [ACTION_TICK] 万一被系统丢掉，靠它把链条接回来。 */
     const val ACTION_WATCHDOG = "com.realsuntime.solartime.action.WIDGET_WATCHDOG"
@@ -103,6 +106,13 @@ object WidgetUpdater {
     private const val COMPACT_AXIS_PADDING_DP = 10f
     private const val AXIS_HEIGHT_DP = 13f
     private const val COMPACT_AXIS_HEIGHT_DP = 11f
+
+    /**
+     * 时间轴位图的像素上限。位图随每次刷新 parcel 给系统进程，Binder 事务只有约 1 MB；
+     * 高密度大屏（5 列 × ~500dpi）按真实像素画会逼近上限，桌面上就表现成「加载失败」。
+     */
+    private const val AXIS_MAX_WIDTH_PX = 1024
+    private const val AXIS_MAX_HEIGHT_PX = 64
     private const val MAIN_TEXT_SAMPLE = "00:00"
     private const val SECOND_SAMPLE = "00"
 
@@ -163,19 +173,41 @@ object WidgetUpdater {
         }
         // 先排下一分钟再刷新：刷新途中出任何异常（或者进程被系统冻结）都不会把链条断掉。
         scheduleNextTick(context, place)
+        val fallbackSeconds = solarSecondOf(
+            Math.floorMod(
+                System.currentTimeMillis() + solarOffsetMillis(Instant.now(), place),
+                DAY_MILLIS,
+            ),
+        )
         // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
+        // 单个实例出错（尺寸异常、缓存里是坏 JSON、位图分配失败……）不能连累其它实例，
+        // 否则桌面会整块显示「加载失败」——这里逐个兜住，失败就退成只显示时刻的最小版面。
         ids.forEach { id ->
-            val options = manager.getAppWidgetOptions(id)
-            val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-            val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-            manager.updateAppWidget(
-                id,
-                buildViews(context, location, widthDp, heightDp, id, forceChronometer),
-            )
+            val updates = runCatching {
+                val options = manager.getAppWidgetOptions(id)
+                val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+                val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+                buildViews(context, location, widthDp, heightDp, id, forceChronometer)
+            }.onFailure {
+                Log.w(TAG, "buildViews($id) failed, falling back to minimal", it)
+            }.getOrNull() ?: minimalViews(context, fallbackSeconds)
+            runCatching { manager.updateAppWidget(id, updates) }.onFailure { error ->
+                // 系统可能直接拒收这棵 RemoteViews（例如 Android 17 的位图内存上限），
+                // 那种情况下退成最小版面至少能让用户看到时间，而不是「加载失败」。
+                Log.w(TAG, "updateAppWidget($id) rejected, retrying with minimal", error)
+                runCatching { manager.updateAppWidget(id, minimalViews(context, fallbackSeconds)) }
+                    .onFailure { Log.e(TAG, "minimal update($id) also failed", it) }
+            }
         }
         // 关键时间可能刚更新，重排「进入关键时间」报时（关闭时这里是空操作）。
         KeyTimeChime.schedule(context)
     }
+
+    /** 刷新失败时的兜底版面：只显示真太阳时的「时:分」，不含位图与 Chronometer。 */
+    private fun minimalViews(context: Context, solarSeconds: Long): RemoteViews =
+        RemoteViews(context.packageName, R.layout.widget_solar_time_minimal).apply {
+            setTextViewText(R.id.widget_minimal_time, clockText(solarSeconds))
+        }
 
     fun buildViews(
         context: Context,
@@ -308,9 +340,14 @@ object WidgetUpdater {
         val density = context.resources.displayMetrics.density
         val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
         val paddingDp = if (compact) COMPACT_AXIS_PADDING_DP else AXIS_PADDING_DP
-        val widthPx = ((totalWidthDp - paddingDp * 2f) * density).toInt()
+        val widthPx = (((totalWidthDp - paddingDp * 2f) * density).toInt())
+            // 整张位图要 parcel 给系统进程，Binder 事务上限约 1 MB：高密度大屏上
+            // 「可用宽度 × 13dp」能到好几百 KB（小米 18 Pro 这类 ~500dpi、5 列的机器
+            // 甚至接近上限），超了桌面会直接判小组件「加载失败」。轴只有十几 dp 高、
+            // 内容是一条线和几段纯色，图片用 fitXY 拉伸，限到 1024px 宽肉眼无差别。
+            .coerceIn(1, AXIS_MAX_WIDTH_PX)
         val heightDp = if (compact) COMPACT_AXIS_HEIGHT_DP else AXIS_HEIGHT_DP
-        val heightPx = (heightDp * density).toInt()
+        val heightPx = (heightDp * density).toInt().coerceIn(1, AXIS_MAX_HEIGHT_PX)
         val solarSeconds = if (hasFix) {
             Math.floorMod(now.toEpochMilli() + solarOffsetMillis, 86_400_000L) / 1000L
         } else {

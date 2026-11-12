@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  兜底版面：正常刷新抛出异常（尺寸异常、缓存损坏、位图分配失败……）时用它顶上，
+  只显示真太阳时的「时:分」，不带位图、Chronometer 与逐时行，保证桌面上至少不是
+  「加载失败」的空白块。只用两个 TextView，几乎不可能再失败。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_minimal_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_night"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/widget_minimal_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:text="00:00"
+        android:textColor="#FFFFC65C"
+        android:textSize="30sp"
+        tools:ignore="HardcodedText" />
+</LinearLayout>
