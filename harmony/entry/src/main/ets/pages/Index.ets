@@ -7,7 +7,8 @@ import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
-import { WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { weatherIcon } from '../common/WeatherIcon';
 import { AppStore } from '../services/Store';
 import { CardService } from '../services/CardService';
 import { ChimePlayer } from '../services/ChimePlayer';
@@ -73,7 +74,9 @@ struct Index {
   @State weatherTemperature: string = '--';
   @State weatherText: string = '';
   @State weatherRange: string = '';
-  @State forecastLabels: string[] = [];
+  @State hourLabels: string[] = [];
+  @State hourConds: string[] = [];
+  @State hourIcons: string[] = [];
   @State keyTimeText: string = '';
   @State keyTimeState: string = '';
   @State segments: string[] = [];
@@ -208,13 +211,39 @@ struct Index {
       SolarTimeMath.BEIJING_OFFSET_MILLIS
     );
     this.weatherRange = range === null ? '' : `${range[0]}° ~ ${range[1]}°`;
-    this.forecastLabels = WeatherLogic.forecastLabels(
-      WeatherService.hourly(),
+    // 六格逐时预报（首格标「现在」并用实时天气码），与桌面卡片同一套取数规则。
+    const hourLabelList: string[] = [];
+    const conditions: string[] = [];
+    const icons: string[] = [];
+    const hourly: HourPoint[] = WeatherService.hourly();
+    const slots: number[] = WeatherLogic.slots(
       Math.floor(now / 1000),
       SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000,
-      5,
-      language
+      6,
+      1
     );
+    const currentCode: number = weather === null ? -1 : weather.code;
+    for (let index = 0; index < slots.length; index++) {
+      const slot: number = slots[index];
+      let point: HourPoint | null = null;
+      for (const candidate of hourly) {
+        if (candidate.epochSeconds === slot) {
+          point = candidate;
+          break;
+        }
+      }
+      let code: number = point === null ? -1 : point.code;
+      if (index === 0 && currentCode >= 0) {
+        code = currentCode;
+      }
+      const localHour: number = Math.floor(((slot + SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000) % 86400) / 3600);
+      hourLabelList.push(index === 0 ? '现在' : `${localHour}时`);
+      conditions.push(code < 0 ? '' : WeatherLogic.conditionLabel(code, language));
+      icons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
+    }
+    this.hourLabels = hourLabelList;
+    this.hourConds = conditions;
+    this.hourIcons = icons;
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule === null || schedule.bands.length === 0) {
@@ -377,44 +406,156 @@ struct Index {
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
   }
 
+  /** 首页大卡片：与桌面卡片同款版面，但页面里可以逐秒刷新，所以右栏真太阳时是活的。 */
   @Builder
   heroCard() {
     Column() {
       Row() {
-        Text(this.district.length > 0 ? this.district : this.placeName)
-          .fontSize(13)
-          .fontColor(TEXT_COLOR)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(`${this.snapshot.shichenName} · ${this.snapshot.shichenHalf}`)
-          .fontSize(13)
-          .fontColor(HERO_COLOR)
-      }
-      .width('100%')
+        // 左：标准时间
+        Column() {
+          Row() {
+            Text('标准时间')
+              .fontSize(12)
+              .fontColor('#CCFFFFFF')
+            Text(this.district.length > 0 ? this.district : this.placeName)
+              .fontSize(12)
+              .fontColor('#B3FFFFFF')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+          }
+          .width('100%')
+          Row() {
+            Text(TimeFormat.clock(this.beijingSecond))
+              .fontSize(42)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor('#FFFFFF')
+              .maxLines(1)
+            Text(':')
+              .fontSize(23)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor('#FFFFFF')
+              .maxLines(1)
+              .margin({ bottom: 5 })
+            Text(pad2(this.beijingSecond % 60))
+              .fontSize(23)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor('#FFFFFF')
+              .maxLines(1)
+              .margin({ bottom: 5, left: 1 })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Bottom)
+          Text(TimeFormat.dateWithWeekday(Date.now(), this.language))
+            .fontSize(10)
+            .fontColor('#B3FFFFFF')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 2 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
 
-      Row() {
-        Text(TimeFormat.clock(this.solarSecond))
-          .fontSize(66)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(HERO_COLOR)
-        Text(':')
-          .fontSize(40)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(HERO_COLOR)
-          .margin({ bottom: 12 })
-        Text(pad2(this.solarSecond % 60))
-          .fontSize(48)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(HERO_COLOR)
-          .margin({ left: 2 })
+        Column()
+          .width(1)
+          .height(78)
+          .backgroundColor('#33FFFFFF')
+          .margin({ left: 12, right: 12 })
+
+        // 右：真太阳时（逐秒刷新）
+        Column() {
+          Row() {
+            Text('真太阳时')
+              .fontSize(12)
+              .fontColor('#CCFFFFFF')
+            Text(`${this.snapshot.shichenName} · ${this.snapshot.shichenHalf}`)
+              .fontSize(12)
+              .fontColor('#B3FFFFFF')
+              .maxLines(1)
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ left: 8 })
+          }
+          .width('100%')
+          Row() {
+            Text(TimeFormat.clock(this.solarSecond))
+              .fontSize(42)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor(HERO_COLOR)
+              .maxLines(1)
+            Text(':')
+              .fontSize(23)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor(HERO_COLOR)
+              .maxLines(1)
+              .margin({ bottom: 5 })
+            Text(pad2(this.solarSecond % 60))
+              .fontSize(23)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor(HERO_COLOR)
+              .maxLines(1)
+              .margin({ bottom: 5, left: 1 })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Bottom)
+          Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+            .fontSize(10)
+            .fontColor('#B3FFFFFF')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 2 })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
-      .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
 
+      // 0–24 时时间轴：与桌面卡片、Android WidgetAxis 同款（1vp 细线 + 柔化圆点）
+      Stack() {
+        Row() {
+          ForEach(this.segments, (item: string) => {
+            if (isBandSegment(item)) {
+              Row()
+                .height(1)
+                .backgroundColor(this.bandColor())
+                .layoutWeight(segmentLength(item))
+            } else {
+              Row()
+                .height(1)
+                .layoutWeight(segmentLength(item))
+            }
+          }, (item: string, index: number) => `${index}-${item}`)
+        }
+        .width('100%')
+        .height(1)
+        .backgroundColor('#40FFFFFF')
+
+        Row() {
+          Row().layoutWeight(this.solarSecond > 0 ? this.solarSecond / 60 : 0.1)
+          Column()
+            .width(11)
+            .height(11)
+            .borderRadius(5.5)
+            .radialGradient({
+              center: ['50%', '50%'],
+              radius: 5.5,
+              colors: [['#FFFFFFFF', 0], ['#FFFFFFFF', 0.45], ['#00FFFFFF', 1]]
+            })
+          Row().layoutWeight(this.solarSecond < 86400 ? (86400 - this.solarSecond) / 60 : 0.1)
+        }
+        .width('100%')
+        .height(11)
+      }
+      .width('100%')
+      .height(11)
+      .padding({ left: 6, right: 6 })
+      .margin({ top: 10 })
+
       Row() {
-        Text(`${this.snapshot.shichenName} ${this.snapshot.shichenRange} · 第 ${this.snapshot.shichenQuarter} 刻`)
+        Text(`距下个时辰 ${TimeFormat.countdown(this.secondsToNextShichen())}`)
           .fontSize(11)
           .fontColor(SUBTLE_COLOR)
           .layoutWeight(1)
@@ -423,40 +564,60 @@ struct Index {
           .fontColor(SUBTLE_COLOR)
       }
       .width('100%')
+      .margin({ top: 8 })
 
+      // 六格逐时预报
       Row() {
-        Text(`距下个时辰 ${TimeFormat.countdown(this.secondsToNextShichen())}`)
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
+        ForEach(this.hourLabels, (label: string, index: number) => {
+          Column() {
+            Text(label)
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+              .maxLines(1)
+            Image(weatherIcon(index < this.hourIcons.length ? this.hourIcons[index] : 'unknown'))
+              .width(22)
+              .height(22)
+              .objectFit(ImageFit.Contain)
+              .margin({ top: 3 })
+            Text(index < this.hourConds.length ? this.hourConds[index] : '')
+              .fontSize(10)
+              .fontColor(SUBTLE_COLOR)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 1 })
+          }
           .layoutWeight(1)
-        Text(this.snapshot.isDay() ? '白昼' : '夜晚')
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
+          .alignItems(HorizontalAlign.Center)
+        }, (label: string, index: number) => `${index}-${label}`)
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: 10 })
     }
-    .cardStyle()
+    .width('100%')
+    .padding(16)
+    .borderRadius(18)
+    .alignItems(HorizontalAlign.Start)
+    .linearGradient({ angle: 315, colors: [['#2A3B5C', 0], ['#151B2E', 1]] })
   }
 
   @Builder
   beijingCard() {
     Column() {
       Row() {
-        Text('北京时间')
+        Text('时差构成')
           .fontSize(13)
           .fontColor(SUBTLE_COLOR)
           .layoutWeight(1)
-        Text(TimeFormat.clockWithSeconds(this.beijingSecond))
-          .fontSize(18)
+        Text(TimeFormat.signedDuration(this.snapshot.offsetSeconds, this.language))
+          .fontSize(13)
           .fontColor(TEXT_COLOR)
       }
       .width('100%')
       Divider().color('#24304F').margin({ top: 10, bottom: 10 })
       Row() {
-        this.metric('日期', TimeFormat.dateWithWeekday(Date.now(), this.language))
         this.metric('经度修正', TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language))
         this.metric('均时差', TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language))
+        this.metric('时辰进度', `第 ${this.snapshot.shichenQuarter} 刻`)
       }
       .width('100%')
     }
@@ -512,20 +673,6 @@ struct Index {
       }
       .width('100%')
       .margin({ top: 6 })
-      if (this.forecastLabels.length > 0) {
-        Row() {
-          ForEach(this.forecastLabels, (label: string) => {
-            Text(label)
-              .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-              .maxLines(1)
-          }, (label: string, index: number) => `${index}-${label}`)
-        }
-        .width('100%')
-        .margin({ top: 10 })
-      }
     }
     .cardStyle()
   }

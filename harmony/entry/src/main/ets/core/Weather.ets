@@ -284,6 +284,39 @@ export class WeatherLogic {
     return WeatherLogic.conditionName(WeatherLogic.conditionOf(code), language);
   }
 
+  /**
+   * 天气码 → 图标名（对应 resources/base/media/wx_*.svg，由 Tools/gen-wx-icons.py 从
+   * Android 的 VectorDrawable 转出）。卡片与主界面共用，避免两处各写一套映射。
+   */
+  static iconKey(code: number, isDay: boolean): string {
+    switch (WeatherLogic.conditionOf(code)) {
+      case WeatherCondition.CLEAR:
+        return isDay ? 'clear_day' : 'clear_night';
+      case WeatherCondition.PARTLY_CLOUDY:
+        return isDay ? 'partly_day' : 'partly_night';
+      case WeatherCondition.OVERCAST:
+        return 'overcast';
+      case WeatherCondition.FOG:
+        return 'fog';
+      case WeatherCondition.DRIZZLE:
+        return 'drizzle';
+      case WeatherCondition.RAIN:
+        return 'rain';
+      case WeatherCondition.HEAVY_RAIN:
+        return 'heavy_rain';
+      case WeatherCondition.SHOWERS:
+        return 'showers';
+      case WeatherCondition.SNOW:
+        return 'snow';
+      case WeatherCondition.HEAVY_SNOW:
+        return 'heavy_snow';
+      case WeatherCondition.THUNDER:
+        return 'thunder';
+      default:
+        return 'unknown';
+    }
+  }
+
   static conditionName(condition: WeatherCondition, language: string): string {
     const zh: string[] = ['晴', '多云', '阴', '雾', '毛毛雨', '小雨', '大雨', '阵雨', '雪', '大雪', '雷雨'];
     const en: string[] = [

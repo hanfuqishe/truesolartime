@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 桌面卡片的数据组装与推送。
  *
  * 版面对齐 Android 版小组件：左栏「标准时间」+ 地名 + 日期，右栏「真太阳时」+ 时辰 + 经纬度，
@@ -19,7 +19,7 @@ import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { TimeFormat } from '../core/TimeFormat';
 import { NearbyCity, CityIndex } from '../core/CityIndex';
-import { HourPoint, WeatherCondition, WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
 import { AppStore } from './Store';
 import { DistrictService } from './DistrictService';
 import { KeyTimeService } from './KeyTimeService';
@@ -149,7 +149,7 @@ export class CardService {
       const localHour: number = Math.floor(((slot + BEIJING_OFFSET_SECONDS) % 86400) / 3600);
       data.hourLabels.push(index === 0 ? CardService.nowLabel(language) : CardService.hourLabel(localHour, language));
       data.hourConds.push(code < 0 ? '' : WeatherLogic.conditionLabel(code, language));
-      data.hourIcons.push(code < 0 ? 'unknown' : CardService.iconOf(code, localHour >= 6 && localHour <= 17));
+      data.hourIcons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
   }
 
@@ -162,34 +162,6 @@ export class CardService {
   }
 
   /** 天气图标名，对应 resources/base/media/wx_*.svg。 */
-  private static iconOf(code: number, isDay: boolean): string {
-    switch (WeatherLogic.conditionOf(code)) {
-      case WeatherCondition.CLEAR:
-        return isDay ? 'clear_day' : 'clear_night';
-      case WeatherCondition.PARTLY_CLOUDY:
-        return isDay ? 'partly_day' : 'partly_night';
-      case WeatherCondition.OVERCAST:
-        return 'overcast';
-      case WeatherCondition.FOG:
-        return 'fog';
-      case WeatherCondition.DRIZZLE:
-        return 'drizzle';
-      case WeatherCondition.RAIN:
-        return 'rain';
-      case WeatherCondition.HEAVY_RAIN:
-        return 'heavy_rain';
-      case WeatherCondition.SHOWERS:
-        return 'showers';
-      case WeatherCondition.SNOW:
-        return 'snow';
-      case WeatherCondition.HEAVY_SNOW:
-        return 'heavy_snow';
-      case WeatherCondition.THUNDER:
-        return 'thunder';
-      default:
-        return 'unknown';
-    }
-  }
 
   /** 卡片布局按比例摆放色条，元素形如「长度,段号」。 */
   private static encodeSegments(segments: AxisSegment[]): string[] {

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 真太阳时桌面卡片，版面严格对齐 Android 版小组件（widget_solar_time_compact.xml）：
  *
  *   左栏：标准时间 + 地名 / 大号标准时间 / 日期与今日温度区间
  *   右栏：真太阳时 + 时辰 / 大号真太阳时（带秒）/ 经纬度
- *   中间一条 1vp 竖分隔线；下面 0–24 时时间轴（色条为关键时间，白条为当前时刻）
+ *   中间一条 1vp 竖分隔线；下面 0–24 时时间轴（色条为关键时间，柔化圆点为当前时刻）
  *   底部六格逐时预报（时刻、天气图标、天气名）
  *
  * 尺寸按鸿蒙 2*4 卡片实际可用的约 226×110vp 收：Android 的 4×2 有约 146dp 高，
@@ -15,6 +15,8 @@
  *   - 因此左栏标准时间交给 TextClock 自走（分钟精度、跟随系统 12/24 小时制）。
  */
 
+import { weatherIcon } from '../../common/WeatherIcon';
+
 function segmentLength(item: string): number {
   const parts: string[] = item.split(',');
   const length: number = Number.parseFloat(parts[0]);
@@ -24,49 +26,6 @@ function segmentLength(item: string): number {
 function isBand(item: string): boolean {
   const parts: string[] = item.split(',');
   return parts.length > 1 && parts[1] !== '-1';
-}
-
-function iconOf(name: string): Resource {
-  if (name === 'clear_day') {
-    return $r('app.media.wx_clear_day');
-  }
-  if (name === 'clear_night') {
-    return $r('app.media.wx_clear_night');
-  }
-  if (name === 'partly_day') {
-    return $r('app.media.wx_partly_day');
-  }
-  if (name === 'partly_night') {
-    return $r('app.media.wx_partly_night');
-  }
-  if (name === 'overcast') {
-    return $r('app.media.wx_overcast');
-  }
-  if (name === 'fog') {
-    return $r('app.media.wx_fog');
-  }
-  if (name === 'drizzle') {
-    return $r('app.media.wx_drizzle');
-  }
-  if (name === 'rain') {
-    return $r('app.media.wx_rain');
-  }
-  if (name === 'heavy_rain') {
-    return $r('app.media.wx_heavy_rain');
-  }
-  if (name === 'showers') {
-    return $r('app.media.wx_showers');
-  }
-  if (name === 'snow') {
-    return $r('app.media.wx_snow');
-  }
-  if (name === 'heavy_snow') {
-    return $r('app.media.wx_heavy_snow');
-  }
-  if (name === 'thunder') {
-    return $r('app.media.wx_thunder');
-  }
-  return $r('app.media.wx_unknown');
 }
 
 const GOLD: string = '#FFC65C';
@@ -141,7 +100,7 @@ struct SolarTimeCard {
         .fontSize(9)
         .fontColor(TEXT_DIM)
         .maxLines(1)
-      Image(iconOf(icon))
+      Image(weatherIcon(icon))
         .width(15)
         .height(15)
         .objectFit(ImageFit.Contain)
