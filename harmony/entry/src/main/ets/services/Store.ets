@@ -98,28 +98,48 @@ export class AppStore {
     return AppStore.card;
   }
 
+  // ArkTS 的类型断言（as）只用于有继承关系的类型，读偏好设置一律走 typeof 收窄。
+
+  private static numberValue(store: preferences.Preferences, key: string, fallback: number): number {
+    const value: preferences.ValueType = store.getSync(key, fallback);
+    return typeof value === 'number' ? value : fallback;
+  }
+
+  private static stringValue(store: preferences.Preferences, key: string, fallback: string): string {
+    const value: preferences.ValueType = store.getSync(key, fallback);
+    return typeof value === 'string' ? value : fallback;
+  }
+
+  private static booleanValue(store: preferences.Preferences, key: string, fallback: boolean): boolean {
+    const value: preferences.ValueType = store.getSync(key, fallback);
+    return typeof value === 'boolean' ? value : fallback;
+  }
+
   // ---- 观测点与开关 ----
 
   static place(): Place {
     const store: preferences.Preferences = AppStore.settingsStore();
-    const latitude: number = store.getSync('latitude', Place.DEFAULT.latitude) as number;
-    const longitude: number = store.getSync('longitude', Place.DEFAULT.longitude) as number;
-    const source: number = store.getSync('place_source', PlaceSource.DEFAULT as number) as number;
-    const label: string = store.getSync('place_label', '') as string;
-    return new Place(latitude, longitude, source as PlaceSource, label, '');
+    const latitude: number = AppStore.numberValue(store, 'latitude', Place.DEFAULT.latitude);
+    const longitude: number = AppStore.numberValue(store, 'longitude', Place.DEFAULT.longitude);
+    const sourceValue: number = AppStore.numberValue(store, 'place_source', PlaceSource.DEFAULT);
+    const label: string = AppStore.stringValue(store, 'place_label', '');
+    const source: PlaceSource =
+      sourceValue === PlaceSource.GPS ? PlaceSource.GPS
+        : (sourceValue === PlaceSource.MANUAL ? PlaceSource.MANUAL : PlaceSource.DEFAULT);
+    return new Place(latitude, longitude, source, label, '');
   }
 
   static setPlace(place: Place): void {
     const store: preferences.Preferences = AppStore.settingsStore();
     store.putSync('latitude', place.latitude);
     store.putSync('longitude', place.longitude);
-    store.putSync('place_source', place.source as number);
+    store.putSync('place_source', place.source);
     store.putSync('place_label', place.label);
     store.flush();
   }
 
   static shichenReminders(): boolean {
-    return AppStore.settingsStore().getSync('shichen_reminders', false) as boolean;
+    return AppStore.booleanValue(AppStore.settingsStore(), 'shichen_reminders', false);
   }
 
   static setShichenReminders(enabled: boolean): void {
@@ -129,7 +149,7 @@ export class AppStore {
   }
 
   static keyTimeChime(): boolean {
-    return AppStore.settingsStore().getSync('key_time_chime', false) as boolean;
+    return AppStore.booleanValue(AppStore.settingsStore(), 'key_time_chime', false);
   }
 
   static setKeyTimeChime(enabled: boolean): void {
@@ -139,7 +159,7 @@ export class AppStore {
   }
 
   static locationAsked(): boolean {
-    return AppStore.settingsStore().getSync('location_asked', false) as boolean;
+    return AppStore.booleanValue(AppStore.settingsStore(), 'location_asked', false);
   }
 
   static setLocationAsked(asked: boolean): void {
@@ -151,7 +171,7 @@ export class AppStore {
   // ---- 已发布的卡片 ----
 
   static formIds(): string[] {
-    const raw: string = AppStore.cardStore().getSync('form_ids', '') as string;
+    const raw: string = AppStore.stringValue(AppStore.cardStore(), 'form_ids', '');
     if (raw.length === 0) {
       return [];
     }
@@ -181,11 +201,11 @@ export class AppStore {
   static weather(): CachedWeather {
     const store: preferences.Preferences = AppStore.weatherStore();
     const cached: CachedWeather = new CachedWeather();
-    cached.temperatureC = store.getSync('temp', 0) as number;
-    cached.code = store.getSync('code', 0) as number;
-    cached.fetchedMillis = store.getSync('time', 0) as number;
-    cached.schema = store.getSync('schema', 0) as number;
-    cached.hourly = store.getSync('hourly', '') as string;
+    cached.temperatureC = AppStore.numberValue(store, 'temp', 0);
+    cached.code = AppStore.numberValue(store, 'code', 0);
+    cached.fetchedMillis = AppStore.numberValue(store, 'time', 0);
+    cached.schema = AppStore.numberValue(store, 'schema', 0);
+    cached.hourly = AppStore.stringValue(store, 'hourly', '');
     return cached;
   }
 
@@ -202,11 +222,11 @@ export class AppStore {
   }
 
   static weatherLatitude(): number {
-    return AppStore.weatherStore().getSync('lat', Number.NaN) as number;
+    return AppStore.numberValue(AppStore.weatherStore(), 'lat', Number.NaN);
   }
 
   static weatherLongitude(): number {
-    return AppStore.weatherStore().getSync('lon', Number.NaN) as number;
+    return AppStore.numberValue(AppStore.weatherStore(), 'lon', Number.NaN);
   }
 
   // ---- 关键时间缓存 ----
@@ -214,13 +234,13 @@ export class AppStore {
   static keyTime(): CachedKeyTime {
     const store: preferences.Preferences = AppStore.keyTimeStore();
     const cached: CachedKeyTime = new CachedKeyTime();
-    cached.bands = store.getSync('bands', '') as string;
-    cached.temperature = store.getSync('temp', '') as string;
-    cached.fetchedMillis = store.getSync('fetched', 0) as number;
-    cached.attemptMillis = store.getSync('attempt', 0) as number;
-    cached.successDay = store.getSync('success_day', '') as string;
-    cached.targetDay = store.getSync('target_day', '') as string;
-    cached.targetMillis = store.getSync('target_millis', 0) as number;
+    cached.bands = AppStore.stringValue(store, 'bands', '');
+    cached.temperature = AppStore.stringValue(store, 'temp', '');
+    cached.fetchedMillis = AppStore.numberValue(store, 'fetched', 0);
+    cached.attemptMillis = AppStore.numberValue(store, 'attempt', 0);
+    cached.successDay = AppStore.stringValue(store, 'success_day', '');
+    cached.targetDay = AppStore.stringValue(store, 'target_day', '');
+    cached.targetMillis = AppStore.numberValue(store, 'target_millis', 0);
     return cached;
   }
 
@@ -251,13 +271,13 @@ export class AppStore {
   static district(): CachedDistrict {
     const store: preferences.Preferences = AppStore.districtStore();
     const cached: CachedDistrict = new CachedDistrict();
-    cached.full = store.getSync('name', '') as string;
-    cached.short = store.getSync('short', '') as string;
-    cached.language = store.getSync('lang', '') as string;
-    cached.latitude = store.getSync('lat', Number.NaN) as number;
-    cached.longitude = store.getSync('lon', Number.NaN) as number;
-    cached.fetchedMillis = store.getSync('time', 0) as number;
-    cached.schema = store.getSync('schema', 0) as number;
+    cached.full = AppStore.stringValue(store, 'name', '');
+    cached.short = AppStore.stringValue(store, 'short', '');
+    cached.language = AppStore.stringValue(store, 'lang', '');
+    cached.latitude = AppStore.numberValue(store, 'lat', Number.NaN);
+    cached.longitude = AppStore.numberValue(store, 'lon', Number.NaN);
+    cached.fetchedMillis = AppStore.numberValue(store, 'time', 0);
+    cached.schema = AppStore.numberValue(store, 'schema', 0);
     return cached;
   }
 

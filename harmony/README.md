@@ -91,6 +91,7 @@ hdc install entry/build/default/outputs/default/entry-default-signed.hap
 cd harmony/Tools
 npm install          # typescript + @types/node
 node verify-core.js  # 155 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
+node parse-ets.js    # 用 TypeScript 解析器检查 core/services/Ability 的语法（21 个文件）
 python check-ets.py  # 23 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
 ```
 
@@ -100,7 +101,8 @@ python check-ets.py  # 23 个 ArkTS 文件的导入导出一致性、括号平�
 「时辰交接让位给关键时间」规则、城市索引。
 
 ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ability.ets` 只能靠 DevEco Studio
-构建与真机验证。
+构建与真机验证。核心逻辑刻意不 import 任何 `@kit.*`，就是为了让上面这套检查能在没有鸿蒙 SDK 的
+机器上跑起来。
 
 ## 与 Android 的差异
 
@@ -109,8 +111,8 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
    即可秒级自走，不需要频繁刷新卡片；偏移取整到分钟后误差 ≤ 30 秒，且只在卡片刷新时重算
    （30 分钟内均时差变化不到 1 秒）。因此卡片刷新频率用系统允许的最小值 `updateDuration: 1`（30 分钟），
    不再需要 Android 那套「唤醒闹钟 + 兜底闹钟」的机制，也不存在被 ROM 冻结导致停摆的问题。
-   若目标设备/SDK 的卡片不支持 `TextClock`，把 `SolarTimeCard.ets` 里的 `TextClock` 换成
-   `Text('${this.solarTime}')` 即可退回分钟精度（内容随刷新更新）。
+   若目标设备/SDK 的卡片不支持 `TextClock`，把 `SolarTimeCard.ets` 顶部的 `USE_TEXT_CLOCK` 改成
+   `false` 即可退回分钟精度（内容随刷新更新）。
 2. **报时用系统代理提醒**：鸿蒙不允许第三方应用自建精确闹钟。这里用 `reminderAgentManager`
    提前发布未来 12 个时辰交接（24 小时）与未来 2 天关键时间起点的提醒，由系统代发通知并响铃 ——
    应用不必常驻，代价是**通知栏会留下一条到点通知**（Android 端是只响铃不通知）。

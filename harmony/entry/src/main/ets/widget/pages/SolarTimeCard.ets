@@ -8,6 +8,12 @@
  * 时间轴上每一段的宽度用 layoutWeight 按分钟数分配，数据来自卡片绑定的 segments。
  */
 
+/**
+ * 卡片能否用 TextClock 秒级自走：API 11 起卡片支持 TextClock，若目标设备/IDE 版本不支持，
+ * 把这里改成 false —— 时间退回「快照值 + 随刷新更新」（分钟级）。
+ */
+const USE_TEXT_CLOCK: boolean = true;
+
 function segmentLength(item: string): number {
   const parts: string[] = item.split(',');
   const length: number = Number.parseFloat(parts[0]);
@@ -69,6 +75,15 @@ struct SolarTimeCard {
         .fontColor('#F5D68A')
         .width('100%')
         .textAlign(TextAlign.Center)
+        .visibility(USE_TEXT_CLOCK ? Visibility.Visible : Visibility.None)
+
+      Text(this.solarTime)
+        .fontSize(40)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#F5D68A')
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .visibility(USE_TEXT_CLOCK ? Visibility.None : Visibility.Visible)
 
       Row() {
         Text(this.shichenRange)
@@ -113,6 +128,9 @@ struct SolarTimeCard {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`北京 ${this.beijing}`)
+          .fontSize(10)
+          .fontColor('#9AA7BF')
       }
       .width('100%')
       .margin({ top: 4 })
