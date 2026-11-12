@@ -167,6 +167,8 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
    | --- | --- |
    | `TextClock().format('HH:mm:ss')` / `format('ss')` | **被忽略**，始终按系统格式显示到分钟 |
    | `TextClock({ timeZoneOffset: 482 })`（含范围内 420 的对照实验） | **被忽略**，始终是系统本地时间 |
+   | 把 `compatibleSdkVersion` 从 `5.0.0(12)` 提到 `6.0.0(20)` 再测 | 仍然忽略，与目标 API 无关 |
+   | 解包 `ets/widgets.abc` 查字符串 | `HH:mm:ss` / `timeZoneOffset` / `format` **都在**，是运行时（卡片渲染侧）丢弃，不是编译期裁剪 |
    | 卡片内 `setInterval` / `setTimeout` | 编译期报错 `11706006 can't support form application` |
 
    也就是说卡片只能显示本机时间，无法把「经度 × 4 + 均时差」的偏移交给它。因此卡片改为：
