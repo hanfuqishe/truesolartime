@@ -13,7 +13,7 @@ import { CardService } from '../services/CardService';
 import { ChimePlayer } from '../services/ChimePlayer';
 import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
-import { LocationService } from '../services/LocationService';
+import { LocationService, GeoPoint } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
 import { WeatherService } from '../services/WeatherService';
 
@@ -105,6 +105,27 @@ struct Index {
       this.tick();
     }, 1000);
     this.refreshRemote();
+    this.syncGpsSilently();
+  }
+
+  /**
+   * 跟随 GPS 时，每次打开应用静默刷新一次坐标（不弹权限框；没授权就跳过）。
+   */
+  private syncGpsSilently(): void {
+    if (this.place.source !== PlaceSource.GPS) {
+      return;
+    }
+    LocationService.hasPermission().then((granted: boolean) => {
+      if (!granted) {
+        return;
+      }
+      LocationService.current().then((point: GeoPoint | null) => {
+        if (point === null) {
+          return;
+        }
+        this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
+      });
+    });
   }
 
   aboutToDisappear(): void {

@@ -23,6 +23,8 @@ import { HourPoint, WeatherCondition, WeatherLogic, WeatherSnapshot } from '../c
 import { AppStore } from './Store';
 import { DistrictService } from './DistrictService';
 import { KeyTimeService } from './KeyTimeService';
+import { LocationService, GeoPoint } from './LocationService';
+import { Place, PlaceSource } from '../core/Place';
 import { WeatherService } from './WeatherService';
 
 /** TextClock 允许的时区偏移范围（分钟）。 */
@@ -213,10 +215,38 @@ export class CardService {
   }
 
   /**
+   * 跟随 GPS：位置来源是定位时，每次刷新前重新取一次坐标（与 Android 卡片每次 buildViews
+   * 都调用 LocationTracker 的行为一致）。没有权限或取不到定位时保留上一次的坐标。
+   */
+  private static async syncGpsPlace(): Promise<void> {
+    const place: Place = AppStore.place();
+    if (place.source !== PlaceSource.GPS) {
+      return;
+    }
+    if (!(await LocationService.hasPermission())) {
+      return;
+    }
+    const point: GeoPoint | null = await LocationService.current();
+    if (point === null) {
+      return;
+    }
+    if (Math.abs(point.latitude - place.latitude) < 0.000001 &&
+      Math.abs(point.longitude - place.longitude) < 0.000001) {
+      return;
+    }
+    AppStore.setPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, place.label, place.labelKey));
+  }
+
+  /**
    * 取一次天气、关键时间、区划名，然后刷新卡片。
    * 取数失败也照样推一次：至少时间与时辰是新的。
    */
   static async refresh(): Promise<void> {
+    try {
+      await CardService.syncGpsPlace();
+    } catch (error) {
+      console.warn('gps sync failed');
+    }
     const place = AppStore.place();
     try {
       await DistrictService.refreshIfNeeded(place);
