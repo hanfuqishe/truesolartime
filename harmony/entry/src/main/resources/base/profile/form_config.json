@@ -1,0 +1,27 @@
+{
+  "forms": [
+    {
+      "name": "solar_time_card",
+      "displayName": "$string:form_display_name",
+      "description": "$string:form_desc",
+      "src": "./ets/widget/pages/SolarTimeCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": true,
+      "updateEnabled": true,
+      "scheduledUpdateTime": "00:00",
+      "updateDuration": 1,
+      "defaultDimension": "2*4",
+      "supportDimensions": [
+        "2*4",
+        "4*4"
+      ],
+      "formConfigAbility": "ability://EntryAbility"
+    }
+  ]
+}

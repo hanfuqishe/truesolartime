@@ -1,0 +1,9 @@
+node_modules/
+.verify/
+oh_modules/
+build/
+.hvigor/
+.idea/
+local.properties
+*.har
+*.hap

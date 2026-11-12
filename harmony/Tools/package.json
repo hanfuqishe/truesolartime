@@ -1,0 +1,14 @@
+{
+  "name": "truesolartime-harmony-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地校验脚本：把 ArkTS 核心逻辑当 TypeScript 编译并跑数值自检",
+  "scripts": {
+    "verify": "node verify-core.js",
+    "check-ets": "python check-ets.py"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "5.6.3"
+  }
+}

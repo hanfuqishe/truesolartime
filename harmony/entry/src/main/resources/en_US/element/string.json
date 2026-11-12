@@ -1,0 +1,36 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "True Solar Time"
+    },
+    {
+      "name": "module_desc",
+      "value": "True Solar Time entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "True Solar Time"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "True Solar Time"
+    },
+    {
+      "name": "reason_location",
+      "value": "Used to compute local true solar time and show the district name"
+    },
+    {
+      "name": "form_label",
+      "value": "True Solar Time card"
+    },
+    {
+      "name": "form_desc",
+      "value": "Shows local true solar time, shichen, weather and key times on the home screen"
+    },
+    {
+      "name": "form_display_name",
+      "value": "True Solar Time"
+    }
+  ]
+}

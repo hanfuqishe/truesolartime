@@ -1,0 +1,36 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "真太阳时"
+    },
+    {
+      "name": "module_desc",
+      "value": "真太阳时主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "真太阳时"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "真太阳时"
+    },
+    {
+      "name": "reason_location",
+      "value": "用于计算当地真太阳时并显示所在行政区划"
+    },
+    {
+      "name": "form_label",
+      "value": "真太阳时卡片"
+    },
+    {
+      "name": "form_desc",
+      "value": "在桌面显示当地真太阳时、时辰、天气与关键时间"
+    },
+    {
+      "name": "form_display_name",
+      "value": "真太阳时"
+    }
+  ]
+}

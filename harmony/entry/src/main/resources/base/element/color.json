@@ -1,0 +1,36 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#0B1220"
+    },
+    {
+      "name": "page_background",
+      "value": "#0B1220"
+    },
+    {
+      "name": "card_background",
+      "value": "#16203A"
+    },
+    {
+      "name": "hero_text",
+      "value": "#F5D68A"
+    },
+    {
+      "name": "primary_text",
+      "value": "#E8EDF7"
+    },
+    {
+      "name": "secondary_text",
+      "value": "#9AA7BF"
+    },
+    {
+      "name": "key_time_cold",
+      "value": "#4CAF7D"
+    },
+    {
+      "name": "key_time_hot",
+      "value": "#D9534F"
+    }
+  ]
+}

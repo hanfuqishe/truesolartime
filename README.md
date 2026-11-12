@@ -1,6 +1,6 @@
 # 真太阳时
 
-一个显示**真太阳时**（真太阳时 / 视太阳时）的跨平台应用，Android 与 iPhone 双端实现。
+一个显示**真太阳时**（真太阳时 / 视太阳时）的跨平台应用，Android、iPhone 与鸿蒙（HarmonyOS NEXT）三端实现。
 
 真太阳时的定义很简单：**太阳经过观测者所在子午线（正南或正北）的那一刻，记为 12:00**。它与钟表时间（北京时间）的差异来自两项修正：
 
@@ -48,6 +48,7 @@
 ```
 android/   Android 工程（Kotlin + Compose，Gradle 根目录）
 ios/       iPhone 工程（SwiftUI），见 ios/README.md
+harmony/   鸿蒙工程（ArkTS + ArkUI），见 harmony/README.md
 ```
 
 Android 侧需要 JDK 17+ 与 Android SDK（compileSdk 35、build-tools 35.0.0）。
@@ -102,6 +103,11 @@ ios/                              iPhone（SwiftUI），构建说明见 ios/READ
 ├── TrueSolarTime/                源码（Core / UI / 平台层）
 ├── Scripts/                      数值自检与构建脚本
 └── project.yml                   XcodeGen 工程定义
+
+harmony/                          鸿蒙（HarmonyOS NEXT，ArkTS + ArkUI），说明见 harmony/README.md
+├── entry/                        应用模块（core / services / pages / widget）
+├── AppScope/                     应用级配置
+└── Tools/                        本地校验脚本（核心逻辑可用 tsc + Node 验证）
 ```
 
 Android 源码结构：

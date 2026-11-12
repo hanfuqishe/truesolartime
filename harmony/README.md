@@ -1,0 +1,147 @@
+# 真太阳时 · 鸿蒙版（HarmonyOS NEXT）
+
+纯血鸿蒙（HarmonyOS NEXT / HarmonyOS 5）实现：ArkTS + ArkUI，不含任何 Android 兼容层，
+同时提供**桌面服务卡片**（Form）与**系统代理提醒**。功能以 Android 版 1.4.34 为基准。
+
+## 功能对照
+
+| 功能 | Android | 鸿蒙 | 说明 |
+| --- | --- | --- | --- |
+| 每秒刷新的真太阳时大时钟 | ✅ | ✅ | 页面内 1 秒定时器；卡片靠 `TextClock` 自走 |
+| 时辰（时初／时正、刻数、范围、倒计时） | ✅ | ✅ | 同一套 `Shichen` 逻辑 |
+| 北京时间对照（经度修正 + 均时差拆解） | ✅ | ✅ | |
+| 日出／上中天／日落、白昼时长、高度角、极昼极夜 | ✅ | ✅ | 同一套 NOAA 公式 |
+| 天气（气温 + WMO 天气码，30 分钟缓存） | ✅ | ✅ | Open-Meteo，无需 Key |
+| 关键时间时间轴（「服用時間 Take Time」） | ✅ | ✅ | 同一套解析与 7 天缓存、01:00–05:00 随机同步 |
+| 区划名（跟随界面语言，5 km / 30 天缓存） | ✅ | ✅ | 逆地理：系统 `geoLocationManager`，非中文界面走 OSM Nominatim |
+| 手动坐标 / 常用城市 / 定位 | ✅ | ✅ | 定位只用 `APPROXIMATELY_LOCATION`（±100 m 足够） |
+| 时辰交接提醒（250 ms） | ✅ | ✅（系统代理提醒） | 见「与 Android 的差异」 |
+| 进入关键时间报时（500 ms） | ✅ | ✅（系统代理提醒） | 同上 |
+| 桌面卡片：区县 · 时辰 · 真太阳时 · 时差 · 天气 · 关键时间轴 | ✅ | ✅ | 2×4，可加 4×4 |
+| 内嵌地图（高德／OSM 底图） | ✅ | ❌ | 鸿蒙 Map Kit 需要在 AGC 建项目并配置签名与 `client_id`，本仓库不预置；位置信息改由「坐标 + 最近城市」呈现 |
+| 小组件点击打开系统应用（时钟／日历／天气） | ✅ | ❌ | 卡片只保留展示能力 |
+
+## 目录结构
+
+```
+harmony/
+├── AppScope/                     应用级配置（bundleName、图标）
+├── entry/
+│   ├── src/main/
+│   │   ├── module.json5          入口 Ability、FormExtensionAbility、权限
+│   │   ├── ets/
+│   │   │   ├── core/             纯逻辑（不带系统 API，可用 tsc 编译验证）
+│   │   │   │   ├── SolarTimeMath.ets   均时差、赤纬、真太阳时、日出日落、高度角
+│   │   │   │   ├── Shichen.ets         十二时辰
+│   │   │   │   ├── SolarSnapshot.ets   供界面消费的聚合快照
+│   │   │   │   ├── TimeFormat.ets      时间／时长格式化（中英）
+│   │   │   │   ├── CityIndex.ets       250 个城市的离线表（中英双语）
+│   │   │   │   ├── TakeTime.ets        关键时间解析、缓存策略、时间轴分段
+│   │   │   │   ├── Weather.ets         天气码解析与分类
+│   │   │   │   ├── DistrictName.ets    区划名拼接规则
+│   │   │   │   ├── Chime.ets           报时窗口与下次交接时刻
+│   │   │   │   └── Place.ets           观测点模型与常用城市
+│   │   │   ├── services/         系统能力封装
+│   │   │   │   ├── Store.ets           preferences（同步读，卡片进程也能用）
+│   │   │   │   ├── HttpUtil.ets        HTTP GET
+│   │   │   │   ├── LocationService.ets 定位与权限
+│   │   │   │   ├── DistrictService.ets 逆地理编码 + OSM 兜底
+│   │   │   │   ├── WeatherService.ets  天气取数与缓存
+│   │   │   │   ├── KeyTimeService.ets  关键时间抓取与缓存
+│   │   │   │   ├── ReminderService.ets 代理提醒发布／取消
+│   │   │   │   ├── ChimePlayer.ets     前台报时音（AVPlayer + rawfile）
+│   │   │   │   └── CardService.ets     卡片数据组装与推送
+│   │   │   ├── entryability/     UIAbility
+│   │   │   ├── entryformability/ FormExtensionAbility
+│   │   │   ├── pages/Index.ets   主界面
+│   │   │   └── widget/pages/SolarTimeCard.ets  桌面卡片
+│   │   └── resources/           字符串（中／英）、颜色、图标、form_config.json、报时音
+│   └── build-profile.json5
+├── Tools/                        本地校验脚本（不需要 DevEco Studio）
+│   ├── verify-core.js            把 core/*.ets 当 TypeScript 编译并跑 155 项数值自检
+│   ├── core-check.ts             自检用例（期望值与 Android 单测一致）
+│   ├── check-ets.py              导入／导出、括号、ArkTS 禁用特性静态检查
+│   ├── gen-city-index.py         从 Android 城市表同步 CityIndex.ets
+│   └── gen-icons.py              生成应用图标 PNG
+└── build-profile.json5
+```
+
+## 构建
+
+需要 **DevEco Studio 5.0.3 及以上**（HarmonyOS SDK API 12 / 5.0.0），不支持 Android Studio。
+
+1. 用 DevEco Studio 打开本目录（`harmony/`），等待 `Sync` 完成。
+2. `File → Project Structure → Signing Configs` 勾选 **Automatically generate signature**（需登录华为开发者账号；真机调试用调试证书即可）。
+3. 运行 `entry` 到真机或模拟器；或命令行：
+
+```bash
+cd harmony
+./hvigorw --mode module -p product=default -p module=entry@default assembleHap
+# 产物：entry/build/default/outputs/default/entry-default-signed.hap
+hdc install entry/build/default/outputs/default/entry-default-signed.hap
+```
+
+没有签名时 `assembleHap` 也能过，只是产物未签名、无法安装（`entry-default-unsigned.hap`）。
+
+## 本地校验（不需要鸿蒙 SDK）
+
+核心逻辑刻意与系统 API 完全解耦，因此可以当 TypeScript 编译并用 Node 跑数值自检：
+
+```bash
+cd harmony/Tools
+npm install          # typescript + @types/node
+node verify-core.js  # 155 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
+python check-ets.py  # 23 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
+```
+
+覆盖范围：均时差与 NOAA 公布值、真太阳时与经度修正的等价性、北京 6/21 与 12/21 的日出日落与年鉴值、
+上中天等于真太阳时 12:00、极昼极夜、太阳高度角、十二时辰的边界与刻数、关键时间解析（含跨午夜、
+被标签拆开的时间段、温度标记）、时间轴分段、天气 JSON 解析与小时槽位、区划名拼接、报时窗口与
+「时辰交接让位给关键时间」规则、城市索引。
+
+ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ability.ets` 只能靠 DevEco Studio
+构建与真机验证。
+
+## 与 Android 的差异
+
+1. **卡片秒级显示**：鸿蒙卡片没有 `Chronometer` 这类可设 `base` 的自走控件，但 `TextClock` 支持任意
+   时区偏移（分钟）。真太阳时相对 UTC 的偏移恰好就是「经度 × 4 + 均时差」分钟数，交给 `TextClock`
+   即可秒级自走，不需要频繁刷新卡片；偏移取整到分钟后误差 ≤ 30 秒，且只在卡片刷新时重算
+   （30 分钟内均时差变化不到 1 秒）。因此卡片刷新频率用系统允许的最小值 `updateDuration: 1`（30 分钟），
+   不再需要 Android 那套「唤醒闹钟 + 兜底闹钟」的机制，也不存在被 ROM 冻结导致停摆的问题。
+   若目标设备/SDK 的卡片不支持 `TextClock`，把 `SolarTimeCard.ets` 里的 `TextClock` 换成
+   `Text('${this.solarTime}')` 即可退回分钟精度（内容随刷新更新）。
+2. **报时用系统代理提醒**：鸿蒙不允许第三方应用自建精确闹钟。这里用 `reminderAgentManager`
+   提前发布未来 12 个时辰交接（24 小时）与未来 2 天关键时间起点的提醒，由系统代发通知并响铃 ——
+   应用不必常驻，代价是**通知栏会留下一条到点通知**（Android 端是只响铃不通知）。
+   应用在前台时改为自己用 `AVPlayer` 播放 `rawfile` 里的 3200 Hz 蜂鸣，与 Android 听感一致。
+3. **区划名取数**：Android 用高德 SDK（中文）+ Nominatim（其他语言）。鸿蒙优先用系统逆地理编码
+   （`geoLocationManager.getAddressesFromLocation`，中文界面），非中文界面直接走 Nominatim，
+   因为系统逆地理的返回语言不由界面语言决定。缓存策略（5 km / 30 天 / 语言变化重查）与 Android 相同。
+4. **没有地图**：鸿蒙地图组件属于 Map Kit，需要在 AGC 创建项目、配置 `client_id` 与签名后才能显示。
+   本仓库不预置商业服务凭据，位置信息以「精确坐标 + 最近城市」呈现。
+5. **字面差异**：卡片与界面的少量辅助文案目前只有中文（英文界面下仍显示中文提示），
+   与 Android 的 `values-en` 相比还有差距，见「待办」。
+
+## 权限
+
+| 权限 | 用途 |
+| --- | --- |
+| `ohos.permission.INTERNET` | 天气（Open-Meteo）、关键时间页面、Nominatim |
+| `ohos.permission.GET_NETWORK_INFO` | 区分「没网」与「取数失败」 |
+| `ohos.permission.APPROXIMATELY_LOCATION` / `LOCATION` | 定位求经度、逆地理编码 |
+| `ohos.permission.PUBLISH_AGENT_REMINDER` | 发布时辰交接与关键时间的代理提醒 |
+
+不申请后台常驻、不申请精确定时：卡片的秒级显示由 `TextClock` 承担，提醒由系统代发。
+
+## 待办
+
+- 界面与卡片的英文文案（`values-en` 风格，与 Android/iOS 对齐）。
+- 若要做全景地图，接入 Map Kit（需 AGC 项目）。
+- 卡片尺寸 4×4 的专门布局（当前 4×4 复用 2×4 的内容，留白较多）。
+
+## 数据来源
+
+- 天气：Open-Meteo（CC BY 4.0）
+- 逆地理（非中文界面）：OpenStreetMap Nominatim（ODbL）
+- 关键时间：「西格瑪食療」<https://www.duosuccess.com/tcm/001a01080301b01a.htm> 的「服用時間 Take Time」

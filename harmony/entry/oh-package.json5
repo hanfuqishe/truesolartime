@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "真太阳时主模块",
+  "main": "",
+  "author": "realsuntime",
+  "license": "Apache-2.0",
+  "dependencies": {}
+}
