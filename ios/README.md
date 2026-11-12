@@ -117,12 +117,15 @@ SwiftUI / MapKit / UIKit 层必须用 **iOS SDK** 编译，只有安装 Xcode �
 ## 已验证
 
 在 macOS 15.0.1（VMware 虚机）+ **Xcode 16.2** + **iOS 18.3 模拟器**上实测：
-
 - `bash ios/Scripts/build.sh "platform=iOS Simulator,name=iPhone 16"` → **BUILD SUCCEEDED**，17 个 Swift 文件全部编译通过
 - App 成功安装并启动，界面完整渲染：主卡片、北京时间对照、太阳弧线、地图卡片
 - 系统定位授权弹窗正确显示中文说明（来自 `NSLocationWhenInUseUsageDescription`）
 - 自适应图标在桌面正常显示
 - 数值与 Android 端一致：上海 正午 11:37、真太阳时比北京时间快 22 分 16 秒
+
+**向 Android 看齐这一版（天气 / 区划名 / 关键时间 / 报时）的验证**：
+- 纯逻辑自检：`bash ios/Scripts/verify.sh` → **全部 71 项通过**（含天气解析、关键时间页面解析、区划名拼法、真太阳时 → 系统时刻换算）；
+- 完整编译：GitHub Actions「iOS 未签名包」[run #43160384757](https://github.com/hanfuqishe/truesolartime/actions/runs/43160384757) → **全部步骤成功**，并在 macOS runner 上用 Xcode 构建出 `TrueSolarTime-unsigned.ipa`（约 900 KB）。这条流水线同时也是「没有 Mac」时的编译验证手段。
 
 ### 虚机渲染注意
 
