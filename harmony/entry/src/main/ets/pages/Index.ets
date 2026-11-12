@@ -566,6 +566,37 @@ struct Index {
       .width('100%')
       .margin({ top: 8 })
 
+      // 天气：原先「天气」卡的内容并进来，避免重复卡片
+      Row() {
+        Text(this.weatherTemperature)
+          .fontSize(11)
+          .fontColor(TEXT_COLOR)
+        Text(this.weatherText)
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+          .margin({ left: 4, right: 4 })
+        Text(this.weatherRange.length > 0 ? `今日 ${this.weatherRange}` : '')
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(`第 ${this.snapshot.shichenQuarter} 刻`)
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+      }
+      .width('100%')
+      .margin({ top: 4 })
+
+      // 时差构成：原先「时差构成」卡的内容并进来
+      Text(`经度修正 ${TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language)} · ` +
+        `均时差 ${TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language)}`)
+        .fontSize(10)
+        .fontColor(SUBTLE_COLOR)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+
       // 六格逐时预报
       Row() {
         ForEach(this.hourLabels, (label: string, index: number) => {
@@ -601,30 +632,6 @@ struct Index {
   }
 
   @Builder
-  beijingCard() {
-    Column() {
-      Row() {
-        Text('时差构成')
-          .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
-          .layoutWeight(1)
-        Text(TimeFormat.signedDuration(this.snapshot.offsetSeconds, this.language))
-          .fontSize(13)
-          .fontColor(TEXT_COLOR)
-      }
-      .width('100%')
-      Divider().color('#24304F').margin({ top: 10, bottom: 10 })
-      Row() {
-        this.metric('经度修正', TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language))
-        this.metric('均时差', TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language))
-        this.metric('时辰进度', `第 ${this.snapshot.shichenQuarter} 刻`)
-      }
-      .width('100%')
-    }
-    .cardStyle()
-  }
-
-  @Builder
   metric(label: string, value: string) {
     Column() {
       Text(label)
@@ -639,42 +646,6 @@ struct Index {
     }
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
-  }
-
-  @Builder
-  weatherCard() {
-    Column() {
-      Row() {
-        Text('天气')
-          .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
-          .layoutWeight(1)
-        Text('Open-Meteo')
-          .fontSize(10)
-          .fontColor('#5A6885')
-      }
-      .width('100%')
-      Row() {
-        Text(this.weatherTemperature)
-          .fontSize(30)
-          .fontColor(TEXT_COLOR)
-        Column() {
-          Text(this.weatherText)
-            .fontSize(13)
-            .fontColor(TEXT_COLOR)
-          Text(this.weatherRange.length > 0 ? `今日 ${this.weatherRange}` : '暂无预报')
-            .fontSize(11)
-            .fontColor(SUBTLE_COLOR)
-            .margin({ top: 2 })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .margin({ left: 12 })
-        .layoutWeight(1)
-      }
-      .width('100%')
-      .margin({ top: 6 })
-    }
-    .cardStyle()
   }
 
   @Builder
@@ -932,8 +903,6 @@ struct Index {
       Scroll() {
         Column({ space: 12 }) {
           this.heroCard()
-          this.beijingCard()
-          this.weatherCard()
           this.keyTimeCard()
           this.sunCard()
           this.placeCard()
