@@ -7,6 +7,32 @@
 - macOS + **Xcode 15 或更新**（本目录只能在 macOS 上编译，Windows/Linux 无法构建 iOS 应用）
 - 可选：`brew install xcodegen`（用于从 `project.yml` 生成工程）
 
+### 没有 Mac，只有 Windows + iPhone，怎么装
+
+**硬约束**：iOS 应用只能用 macOS 上的 Xcode 编译（iOS SDK 只随 Xcode 提供，Apple 许可也要求 Xcode 跑在 Apple 硬件上）。所以「Windows 直接编译 iOS」和「Windows 直接 Xcode 调试」都不成立，但**开发、出包、装到自己的 iPhone 这三件事在 Windows 上都能完成**，只是换条路：
+
+| 路线 | 成本 | 有效期 | 适合 |
+| --- | --- | --- | --- |
+| **A. GitHub Actions 出未签名 ipa + Sideloadly/AltStore 自签** | 0 元（消耗少量 Actions 分钟） | 免费 Apple ID：**7 天**，到期重签；付费账号：1 年 | 自己用、快速试 |
+| **B. 租云端 Mac（MacinCloud / MacStadium / AWS EC2 Mac）** | 约 \$0.5–1/小时或 \$25/月起 | 取决于账号 | 要完整 Xcode 体验、真机 Debug |
+| **C. 付费开发者账号 \$99/年 + 云 Mac 或 CI** | ≈¥700/年 | TestFlight 内测 90 天，或直接上架 | 给别人用、长期 |
+
+#### 路线 A 的具体步骤（本仓库已配好 workflow）
+
+1. GitHub → **Actions** → 左侧「**iOS 未签名包**」→ **Run workflow**（只在手动触发时跑，平时不消耗 macOS 分钟）；
+2. 跑完进入该次 run，下载 artifact **`TrueSolarTime-unsigned-ipa`**（里面的 `TrueSolarTime-unsigned.ipa`）；
+3. Windows 上装 **iTunes**（要它带的 Apple 移动设备驱动）+ **Sideloadly**（或 AltStore）；
+4. iPhone 用数据线连电脑 → 打开 Sideloadly，把 ipa 拖进去 → 填 **Apple ID**（建议先开双重认证并生成 App 专用密码）→ Start；
+5. iPhone 上「设置 → 通用 → VPN 与设备管理」信任你的开发者证书；
+6. **7 天后过期**：重跑一次第 2–4 步（用 AltStore 可在 Wi-Fi 下自动续签，但要常驻一个 AltServer）。
+
+> 免费签名的附带限制：同时在装的 App 最多 3 个、Bundle ID 每周上限 10 个；如果以后加了 WidgetKit 小组件扩展，扩展和主 App 会一起被重签，同样 7 天到期。
+
+#### 这个仓库的 iOS 版现状
+
+- 已有：真太阳时、十二时辰、太阳位置、位置地图、时辰交接本地通知（`UNCalendarNotificationTrigger`）。
+- **还缺：桌面小组件**。iOS 的小组件是 WidgetKit 扩展，需要在 Xcode 里新建 extension target 并写 `TimelineProvider`（最低刷新间隔受系统预算限制，通常 ≥5 分钟，秒级跳秒要用 iOS 17+ 的 `Text(timerInterval:)`）。这是**代码工作**，跟有没有 Mac 无关 —— 没有 Mac 也一样能写，只是编译验证要靠路线 A/B。
+
 ### 在虚拟机里开发
 
 - Apple 的许可条款要求 macOS 跑在 Apple 硬件上；个人自用场景下，虚拟机需开启虚拟化支持（VMware/VirtualBox 要装 Guest Additions / 开启 3D 加速），否则 Xcode 会明显卡顿。

@@ -1,0 +1,64 @@
+name: iOS 未签名包
+
+# 只在手动触发时运行：本仓库平时不跑 macOS runner，避免无谓消耗 Actions 分钟数。
+# 用法：GitHub → Actions → 「iOS 未签名包」→ Run workflow → 下载 artifact 里的 ipa，
+# 在 Windows 上用 Sideloadly / AltStore 配自己的 Apple ID 签名装到 iPhone。
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 显示工具链
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 由 project.yml 生成工程
+        working-directory: ios
+        run: xcodegen generate
+
+      # 不做任何签名：产出的 .app 是未签名的，交给装机时的 Sideloadly/AltStore
+      # 用使用者自己的 Apple ID 重签（免费开发者证书即可，7 天有效）。
+      - name: 构建 iphoneos Release
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project TrueSolarTime.xcodeproj \
+            -scheme TrueSolarTime \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打包成未签名 ipa
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          APP="build/Build/Products/Release-iphoneos/TrueSolarTime.app"
+          test -d "$APP"
+          rm -rf out && mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          cd out
+          zip -qry TrueSolarTime-unsigned.ipa Payload
+          ls -lh TrueSolarTime-unsigned.ipa
+          # 顺便把版本号打出来，方便对照装的是哪一版
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+            Payload/TrueSolarTime.app/Info.plist || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrueSolarTime-unsigned-ipa
+          path: ios/out/TrueSolarTime-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
