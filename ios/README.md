@@ -1,6 +1,22 @@
 # 真太阳时 iOS 版
 
-与 [Android 版](../README.md) 功能一致的 SwiftUI 实现：真太阳时、十二时辰、太阳位置、位置地图、时辰交接提醒。
+与 [Android 版](../README.md) 功能对齐的 SwiftUI 实现：真太阳时、十二时辰、太阳位置、位置地图、天气、区划名、关键时间（时间轴 + 报时）、时辰交接提醒。
+
+### 与 Android 版的功能对照
+
+| 功能 | Android | iOS |
+| --- | --- | --- |
+| 每秒真太阳时 | ✅ | ✅ |
+| 区划名（跟随界面语言） | 高德 / OSM 反查 | `CLGeocoder`（系统自带、随系统语言），缓存策略相同（5 km / 30 天 / 语言变化重查） |
+| 天气（今日区间 + 未来 5 小时） | Open-Meteo | Open-Meteo，同接口同缓存（30 分钟 / 5 km） |
+| 关键时间（服用時間 Take Time） | 抓页面 + 7 天缓存 + 时间轴着色 | 相同（`TakeTimeParsing` 与 Android 解析规则一一对应） |
+| 进入关键时间报时 | 500 ms 3200 Hz 蜂鸣 | 本地通知 + `chime500.wav`（同样 3200 Hz / 500 ms） |
+| 时辰交接提醒 | 准时 250 ms 蜂鸣 | 本地通知 + `chime250.wav`，准时触发 |
+| 桌面小组件 | ✅ 5×2 可缩放 | ❌ 见文末说明 |
+| 地图底图切换 | 高德/OSM/卫星 | MapKit + 同样的瓦片 |
+
+> iOS 的提醒走系统通知（用户需允许通知），不能像 Android 那样在锁屏下自播蜂鸣。
+> **桌面小组件需要 WidgetKit 扩展**：要在 Xcode 里新增 extension target，并共享数据（App Group 需要付费开发者账号），因此单独安排，尚未实现。
 
 ## 环境要求
 
@@ -78,16 +94,19 @@ bash ios/Scripts/build.sh "platform=iOS Simulator,name=iPhone 16"
 bash ios/Scripts/verify.sh
 ```
 
-预期末行为「全部 37 项检查通过」。已在 macOS 15 + Swift 5.10（Command Line Tools）上实测通过，覆盖均时差对照值、北京日出日落、极昼极夜、时辰边界、GCJ-02 偏移与往返精度、成都与北京的正午换算。
+预期末行为「全部 71 项检查通过」。已在 macOS 15 + Swift 5.10（Command Line Tools）上实测通过，覆盖均时差对照值、北京日出日落、极昼极夜、时辰边界、GCJ-02 偏移与往返精度、成都与北京的正午换算；新增覆盖天气 JSON 解析与小时槽位、关键时间页面解析与跨午夜区间、区划名中英拼法、真太阳时 → 系统时刻的换算。
 
 ### 非 UI 层类型检查
 
-`Core/`、`AppSettings`、`LocationProvider`、`ShichenReminder`、`AppModel` 只依赖 Foundation / Combine / CoreLocation / UserNotifications，装了 Command Line Tools 即可做类型检查（无需 Xcode）：
+`Core/`、`AppSettings`、`WeatherStore`、`KeyTimeStore`、`KeyTimeReminder`、`DistrictStore`、`LocationProvider`、`AppModel` 只依赖 Foundation / Combine / CoreLocation / UserNotifications，装了 Command Line Tools 即可做类型检查（无需 Xcode）：
 
 ```bash
 cd ios/TrueSolarTime
-swiftc -typecheck Core/*.swift AppSettings.swift LocationProvider.swift ShichenReminder.swift AppModel.swift
+swiftc -typecheck Core/*.swift AppSettings.swift Services/*.swift \
+    LocationProvider.swift AppModel.swift
 ```
+
+纯 Foundation 的部分（`Core/` + `AppSettings.swift`）在 Windows 的 Swift 工具链上也能直接 `-typecheck`；`Services/` 与 `AppModel` 依赖 CoreLocation/UserNotifications，只能在 macOS 上检查。
 
 注意：macOS 上 `CLAuthorizationStatus.authorizedWhenInUse` 被标记为不可用，这条命令在 macOS 会报一处假错，在 iOS 目标下正常。
 
@@ -134,12 +153,22 @@ ios/
     ├── AppModel.swift              时钟、定位状态、位置与提醒
     ├── AppSettings.swift           UserDefaults 封装
     ├── LocationProvider.swift      CoreLocation 每分钟采样
-    ├── ShichenReminder.swift       时辰交接通知
+    ├── Services/
+    │   ├── WeatherStore.swift      Open-Meteo 天气与 30 分钟缓存
+    │   ├── KeyTimeStore.swift      关键时间抓取与 7 天缓存
+    │   ├── DistrictStore.swift     CLGeocoder 区划反查与缓存
+    │   └── KeyTimeReminder.swift   关键时间报时 + 时辰交接提醒（本地通知）
+    ├── Resources/
+    │   ├── chime500.wav            3200 Hz / 500 ms（进入关键时间）
+    │   └── chime250.wav            3200 Hz / 250 ms（时辰交接）
     ├── Core/                       纯 Foundation，可脱离 UI 单测
     │   ├── SolarTimeMath.swift     均时差、赤纬、真太阳时、日出日落、高度角
     │   ├── Shichen.swift           十二时辰
     │   ├── SolarSnapshot.swift     供 UI 消费的聚合快照
     │   ├── TimeFormat.swift        时间／时长格式化
+    │   ├── Weather.swift           天气模型、Open-Meteo 解析、小时槽位
+    │   ├── KeyTime.swift           关键时间模型、页面解析、区间判定
+    │   ├── DistrictName.swift      区划名拼接、距离与缓存判定
     │   ├── Place.swift             位置模型与常用城市
     │   └── MapStyle.swift          WGS-84 ↔ GCJ-02、底图选择
     ├── UI/                         SwiftUI 界面

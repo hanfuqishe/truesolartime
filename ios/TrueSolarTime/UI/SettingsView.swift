@@ -88,7 +88,17 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("时辰交接提醒")
                                     .font(.system(size: 15))
-                                Text("进入下一个时辰前 5 分钟发送通知")
+                                Text("每个时辰交接时准时提醒（250 ms 蜂鸣）")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Toggle(isOn: keyTimeChimeBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("进入关键时间报时")
+                                    .font(.system(size: 15))
+                                Text("每到一段关键时间的起点提醒（500 ms 蜂鸣）")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                             }
@@ -127,8 +137,7 @@ struct SettingsView: View {
                     model.setRemindersEnabled(false)
                     return
                 }
-                Task {
-                    let granted = await ShichenReminder.shared.requestAuthorization()
+                requestAuthorization { granted in
                     model.setRemindersEnabled(granted)
                     if !granted {
                         model.message = "未授予通知权限，提醒可能无法显示"
@@ -136,6 +145,31 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    private var keyTimeChimeBinding: Binding<Bool> {
+        Binding(
+            get: { model.keyTimeChimeEnabled },
+            set: { enabled in
+                guard enabled else {
+                    model.setKeyTimeChimeEnabled(false)
+                    return
+                }
+                requestAuthorization { granted in
+                    model.setKeyTimeChimeEnabled(granted)
+                    if !granted {
+                        model.message = "未授予通知权限，报时可能无法显示"
+                    }
+                }
+            }
+        )
+    }
+
+    private func requestAuthorization(_ completion: @escaping (Bool) -> Void) {
+        Task {
+            let granted = await KeyTimeReminder.shared.requestAuthorization()
+            await MainActor.run { completion(granted) }
+        }
     }
 
     private func applyManual() {

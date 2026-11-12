@@ -5,6 +5,11 @@ name: iOS 未签名包
 # 在 Windows 上用 Sideloadly / AltStore 配自己的 Apple ID 签名装到 iPhone。
 on:
   workflow_dispatch:
+  # 改动 iOS 源码时自动编译一次，作为「没有 Mac」时的编译验证。
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
 
 jobs:
   build:

@@ -9,6 +9,7 @@ struct AppSettings {
         static let placeSource = "place_source"
         static let placeLabel = "place_label"
         static let reminders = "shichen_reminders"
+        static let keyTimeChime = "keytime_chime"
         static let mapStyle = "map_style"
         static let locationAsked = "location_permission_requested"
     }
@@ -39,6 +40,12 @@ struct AppSettings {
     var remindersEnabled: Bool {
         get { defaults.bool(forKey: Key.reminders) }
         nonmutating set { defaults.set(newValue, forKey: Key.reminders) }
+    }
+
+    /// 「进入关键时间」报时开关。
+    var keyTimeChimeEnabled: Bool {
+        get { defaults.bool(forKey: Key.keyTimeChime) }
+        nonmutating set { defaults.set(newValue, forKey: Key.keyTimeChime) }
     }
 
     var mapStyle: MapStyle {

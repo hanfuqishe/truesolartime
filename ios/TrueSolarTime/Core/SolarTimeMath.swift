@@ -136,9 +136,25 @@ enum SolarTimeMath {
         )
     }
 
+    /// 把「某天真太阳时的第几分钟」换算成系统时刻。
+    ///
+    /// 关键时间与时辰都是以**真太阳时**给出的，要给本地通知排时间就得反解：
+    /// 真太阳时 = UTC 当天秒数 + 经度 × 240 + 均时差，所以
+    /// UTC 秒数 = 目标真太阳时秒数 − 经度 × 240 − 均时差。
+    /// 均时差随日期缓慢变化，用它自己的解迭代两次就足够（误差 < 1 秒）。
+    static func date(trueSolarMinuteOfDay: Double, on day: Date, longitude: Double) -> Date {
+        let midnightUTC = startOfBeijingDayInUTC(day)
+        let target = trueSolarMinuteOfDay * 60 - longitude * 240.0
+        var guess = midnightUTC.addingTimeInterval(target)
+        for _ in 0..<2 {
+            let equationOfTime = solarPosition(guess).equationOfTimeSeconds
+            guess = midnightUTC.addingTimeInterval(target - equationOfTime)
+        }
+        return guess
+    }
+
     /// 北京日期当天 0 点对应的 UTC 时刻。
-    static func startOfBeijingDayInUTC(_ date: Date) -> Date {
-        var beijingCalendar = Calendar(identifier: .gregorian)
+    static func startOfBeijingDayInUTC(_ date: Date) -> Date {        var beijingCalendar = Calendar(identifier: .gregorian)
         beijingCalendar.timeZone = TimeZone(secondsFromGMT: Int(beijingOffsetSeconds)) ?? .current
         let components = beijingCalendar.dateComponents([.year, .month, .day], from: date)
 

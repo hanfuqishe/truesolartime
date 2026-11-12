@@ -10,7 +10,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var trackingGps = false
     @Published private(set) var waitingForFix = false
     @Published private(set) var remindersEnabled: Bool
+    @Published private(set) var keyTimeChimeEnabled: Bool
     @Published private(set) var mapStyle: MapStyle
+    @Published private(set) var weather: WeatherSnapshot?
+    @Published private(set) var keyTime: TakeTimeSchedule?
+    @Published private(set) var districtName: DistrictNames?
     @Published var message: String?
 
     private let settings = AppSettings()
@@ -22,11 +26,14 @@ final class AppModel: ObservableObject {
     init() {
         place = settings.place
         remindersEnabled = settings.remindersEnabled
+        keyTimeChimeEnabled = settings.keyTimeChimeEnabled
         mapStyle = settings.mapStyle
+        weather = WeatherStore.shared.cached()
+        keyTime = KeyTimeStore.shared.schedule()
+        districtName = DistrictStore.shared.cachedNames()
         startClock()
-        if remindersEnabled {
-            ShichenReminder.shared.reschedule(place: place)
-        }
+        refreshData()
+        rescheduleReminders()
     }
 
     var snapshot: SolarSnapshot {
@@ -120,9 +127,39 @@ final class AppModel: ObservableObject {
 
         let moved = abs(newPlace.longitude - previous.longitude) > 0.01 ||
             abs(newPlace.latitude - previous.latitude) > 0.01
-        if remindersEnabled && (moved || previous.source != newPlace.source) {
-            ShichenReminder.shared.reschedule(place: newPlace)
+        if moved || previous.source != newPlace.source {
+            refreshData()
+            rescheduleReminders()
         }
+    }
+
+    // MARK: - 数据刷新
+
+    /// 天气、区划、关键时间各自带缓存，命中缓存时不会重复联网。
+    func refreshData(forceWeather: Bool = false) {
+        let currentPlace = place
+        WeatherStore.shared.requestRefresh(place: currentPlace, force: forceWeather) { [weak self] snapshot in
+            self?.weather = snapshot
+        }
+        DistrictStore.shared.requestRefresh(place: currentPlace) { [weak self] names in
+            self?.districtName = names
+        }
+        KeyTimeStore.shared.requestRefresh { [weak self] schedule in
+            guard let self else { return }
+            self.keyTime = schedule
+            // 关键时间可能刚更新，重排「进入关键时间」报时。
+            self.rescheduleReminders()
+        }
+    }
+
+    /// 按当前开关把通知重新排一遍（关掉的会先被清掉）。
+    func rescheduleReminders() {
+        KeyTimeReminder.shared.reschedule(
+            place: place,
+            schedule: keyTime,
+            chimeEnabled: keyTimeChimeEnabled,
+            shichenEnabled: remindersEnabled
+        )
     }
 
     // MARK: - 设置
@@ -130,11 +167,13 @@ final class AppModel: ObservableObject {
     func setRemindersEnabled(_ enabled: Bool) {
         remindersEnabled = enabled
         settings.remindersEnabled = enabled
-        if enabled {
-            ShichenReminder.shared.reschedule(place: place)
-        } else {
-            ShichenReminder.shared.clearPending()
-        }
+        rescheduleReminders()
+    }
+
+    func setKeyTimeChimeEnabled(_ enabled: Bool) {
+        keyTimeChimeEnabled = enabled
+        settings.keyTimeChimeEnabled = enabled
+        rescheduleReminders()
     }
 
     func setMapStyle(_ style: MapStyle) {
@@ -142,7 +181,7 @@ final class AppModel: ObservableObject {
         settings.mapStyle = style
     }
 
-    /// 回到前台时刷新位置与提醒。
+    /// 回到前台时刷新位置、数据与提醒。
     func handleBecameActive() {
         now = Date()
         if trackingGps {
@@ -152,8 +191,7 @@ final class AppModel: ObservableObject {
         } else if location.hasPermission && place.source != .manual {
             startGpsTracking(announce: false)
         }
-        if remindersEnabled {
-            ShichenReminder.shared.reschedule(place: place)
-        }
+        refreshData()
+        rescheduleReminders()
     }
 }

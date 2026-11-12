@@ -4,11 +4,17 @@ struct HeroCard: View {
 
     let snapshot: SolarSnapshot
     let placeLabel: String
+    let districtName: DistrictNames?
     let trackingGps: Bool
     let waitingForFix: Bool
 
+    /// 名字太长就退到「只有区县」，否则胶囊会被截成看不出位置的样子。
     private var statusLabel: String {
-        waitingForFix ? "定位中…" : placeLabel
+        if waitingForFix { return "定位中…" }
+        if let districtName {
+            return districtName.full.count <= 12 ? districtName.full : districtName.short
+        }
+        return placeLabel
     }
 
     var body: some View {

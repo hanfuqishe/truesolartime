@@ -16,11 +16,23 @@ struct ContentView: View {
                     HeroCard(
                         snapshot: model.snapshot,
                         placeLabel: model.place.label,
+                        districtName: model.districtName,
                         trackingGps: model.trackingGps,
                         waitingForFix: model.waitingForFix
                     )
 
                     BeijingCard(snapshot: model.snapshot)
+
+                    WeatherCard(
+                        weather: model.weather,
+                        isDay: model.snapshot.isDay,
+                        waitingForGPS: model.waitingForFix
+                    )
+
+                    KeyTimeCard(
+                        schedule: model.keyTime,
+                        trueSolarSeconds: Double(model.snapshot.trueSolarTime.secondsOfDay)
+                    )
 
                     SunCard(snapshot: model.snapshot)
 
