@@ -57,7 +57,7 @@ harmony/
 │   │   └── resources/           字符串（中／英）、颜色、图标、form_config.json、报时音
 │   └── build-profile.json5
 ├── Tools/                        本地校验脚本（不需要 DevEco Studio）
-│   ├── verify-core.js            把 core/*.ets 当 TypeScript 编译并跑 155 项数值自检
+│   ├── verify-core.js            把 core/*.ets 当 TypeScript 编译并跑 159 项数值自检
 │   ├── core-check.ts             自检用例（期望值与 Android 单测一致）
 │   ├── check-ets.py              导入／导出、括号、ArkTS 禁用特性静态检查
 │   ├── gen-city-index.py         从 Android 城市表同步 CityIndex.ets
@@ -67,7 +67,14 @@ harmony/
 
 ## 构建
 
-需要 **DevEco Studio 5.0.3 及以上**（HarmonyOS SDK API 12 / 5.0.0），不支持 Android Studio。
+装 **DevEco Studio**（Windows / macOS 都有），不支持 Android Studio。版本关系：
+
+| 工具链 | HarmonyOS SDK | 说明 |
+| --- | --- | --- |
+| DevEco Studio 5.0.3+ | API 12（5.0.0） | 本工程最低要求，也是 `compatibleSdkVersion` 的取值 |
+| DevEco Studio 5.1.x / 6.x 及更新版本 | API 更高 | **可以直接打开本工程**，详见下节 |
+
+### 首次构建
 
 1. 用 DevEco Studio 打开本目录（`harmony/`），等待 `Sync` 完成。
 2. `File → Project Structure → Signing Configs` 勾选 **Automatically generate signature**（需登录华为开发者账号；真机调试用调试证书即可）。
@@ -82,6 +89,21 @@ hdc install entry/build/default/outputs/default/entry-default-signed.hap
 
 没有签名时 `assembleHap` 也能过，只是产物未签名、无法安装（`entry-default-unsigned.hap`）。
 
+### 用更高版本的 DevEco Studio 打开
+
+不需要为此去找 5.0.3，装最新的就行。首次 `Sync` 时 IDE 会提示工程/hvigor 插件版本较旧，按提示升级即可：
+
+1. 弹出的 **「工程升级 / Migrate」** 提示点确认 —— 它会把 `hvigorfile.ts` 依赖、`hvigor/hvigor-config.json5` 与
+   `oh-package.json5` 里的 `modelVersion` 一起抬到当前 IDE 的版本，源码不用改。
+2. 若提示 `compatibleSdkVersion` 对应的 SDK 未安装，二选一：
+   - 在 SDK Manager 里补装 **API 12**（保持向下兼容，装到 HarmonyOS 5.x 真机也能跑）；
+   - 或者把 `build-profile.json5` 的 `compatibleSdkVersion` 改成当前 IDE 的版本（例如 `5.0.5(17)`、`6.0.0(20)`）——
+     本工程只用到 API 12 的能力（`TextClock.timeZoneOffset`、`reminderAgentManager`、
+     `getAddressesFromLocation`、`preferences.getPreferencesSync`），向上编译没有兼容问题，代价是装不到更旧的系统上。
+3. 如果 IDE 提示迁移到 **ArkTS 1.2 / 静态化**（HarmonyOS 6 起的新语法版本），选择**保持 ArkTS 1.1**：
+   本工程用的是 1.1 的装饰器写法（`@Entry` / `@Component` / `@Builder` / `@State`）。
+4. 升级后先跑一次 `Sync`，再看 `Build → Build Hap(s)` 是否通过。
+
 ## 本地校验（不需要鸿蒙 SDK）
 
 核心逻辑刻意与系统 API 完全解耦，因此可以当 TypeScript 编译并用 Node 跑数值自检：
@@ -89,7 +111,7 @@ hdc install entry/build/default/outputs/default/entry-default-signed.hap
 ```bash
 cd harmony/Tools
 npm install          # typescript + @types/node
-node verify-core.js  # 155 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
+node verify-core.js  # 159 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
 node parse-ets.js    # 用 TypeScript 解析器检查 core/services/Ability 的语法（21 个文件）
 python check-ets.py  # 23 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
 ```
