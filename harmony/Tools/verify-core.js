@@ -32,6 +32,7 @@ const args = [
   '--noUnusedLocals',
   '--noImplicitOverride',
   '--skipLibCheck',
+  '--typeRoots', path.join(__dirname, 'node_modules/@types'),
   '--outDir', path.join(verifyDir, 'out'),
   path.join(verifyDir, 'core-check.ts')
 ];
