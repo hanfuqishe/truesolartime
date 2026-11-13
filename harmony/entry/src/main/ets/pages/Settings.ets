@@ -54,7 +54,7 @@ struct Settings {
     this.manualLongitude = this.place.longitude.toFixed(4);
     const labels: string[] = [];
     for (const preset of Place.PRESETS) {
-      labels.push(this.labelOf(preset));
+      labels.push(this.cityLabel(preset));
     }
     this.presetLabels = labels;
   }
@@ -63,6 +63,14 @@ struct Settings {
     const district: string = place.sameLocation(AppStore.place()) ? DistrictService.cachedShortName() : '';
     if (district.length > 0) {
       return district;
+    }
+    return this.cityLabel(place);
+  }
+
+  /** 常用城市按钮上的名字：固定用城市名，不跟随逆地理结果（否则「上海」会变成「黄浦区」）。 */
+  private cityLabel(place: Place): string {
+    if (place.label.length > 0) {
+      return place.label;
     }
     const city: NearbyCity | null = CityIndex.nearest(place.latitude, place.longitude, DistrictService.language());
     if (city !== null) {
