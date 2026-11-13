@@ -388,9 +388,11 @@ struct Index {
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(TEXT_COLOR)
-        Text('以太阳为准的时间')
+        Text('以太阳经过当地子午线的时刻为正午')
           .fontSize(12)
           .fontColor(SUBTLE_COLOR)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
       }
       .alignItems(HorizontalAlign.Start)
