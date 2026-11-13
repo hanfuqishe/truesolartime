@@ -1,8 +1,12 @@
 package com.realsuntime.solartime.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -55,6 +59,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -94,6 +99,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val keyTimeChimeEnabled by viewModel.keyTimeChimeEnabled.collectAsStateWithLifecycle()
     val districtName by viewModel.districtName.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
+    val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -174,6 +180,17 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    // 屏幕常亮：只加窗口标志，退到后台后系统照旧按自己的超时熄屏。
+    val hostView = LocalView.current
+    LaunchedEffect(keepScreenOn) {
+        val window = hostView.context.findActivity()?.window ?: return@LaunchedEffect
+        if (keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     // 主题跟着太阳走：白天浅色，夜晚整体换深色（不再看系统的深色开关）。
     TrueSolarTimeTheme(darkTheme = !snapshot.isDay) {
         Scaffold(
@@ -229,6 +246,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 trackingGps = trackingGps,
                 remindersEnabled = remindersEnabled,
                 keyTimeChimeEnabled = keyTimeChimeEnabled,
+                keepScreenOn = keepScreenOn,
                 mapStyle = mapStyle,
                 onDismiss = { showSettings = false },
                 onRequestGps = {
@@ -239,6 +257,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onToggleReminders = toggleReminders,
                 onToggleKeyTimeChime = toggleKeyTimeChime,
                 onSelectMapStyle = viewModel::setMapStyle,
+                onToggleKeepScreenOn = viewModel::setKeepScreenOn,
                     )
         }
     }
@@ -709,4 +728,11 @@ private fun daylightProgress(snapshot: SolarSnapshot): Float {
     var current = snapshot.trueSolarTime.toSecondOfDay().toFloat()
     if (current < start) current += 86_400f
     return ((current - start) / (end - start)).coerceIn(0f, 1f)
+}
+
+/** Compose 的 LocalView.context 可能是 ContextWrapper 包了几层，取出宿主 Activity。 */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

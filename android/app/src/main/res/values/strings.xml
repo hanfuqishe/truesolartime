@@ -35,6 +35,8 @@
     <string name="chime_title">Chime at key times</string>
     <string name="chime_desc">Beep when a key time begins (true solar time)</string>
     <string name="chime_background_hint">Chimes not ringing? Allow this app to run in the background</string>
+    <string name="keep_screen_on_title">Keep screen on</string>
+    <string name="keep_screen_on_desc">Don\'t let the screen sleep while the app is open (uses more battery)</string>
     <string name="chime_exact_alarm_hint">Chimes may be a few minutes late — tap to allow “Alarms &amp; reminders”</string>
     <string name="section_about">About the calculation</string>
     <string name="about_body">True solar time follows the actual position of the sun: first correct for the longitude offset from 120°E (4 minutes per degree), then add the equation of time caused by Earth orbital eccentricity and obliquity. The twelve shichen follow true solar time, starting with Zi at 23:00, two hours each.</string>

@@ -54,12 +54,14 @@ fun SettingsSheet(
     trackingGps: Boolean,
     remindersEnabled: Boolean,
     keyTimeChimeEnabled: Boolean,
+    keepScreenOn: Boolean,
     mapStyle: MapStyle,
     onDismiss: () -> Unit,
     onRequestGps: () -> Unit,
     onApplyManual: (Double, Double, String) -> Unit,
     onToggleReminders: (Boolean) -> Unit,
     onToggleKeyTimeChime: (Boolean) -> Unit,
+    onToggleKeepScreenOn: (Boolean) -> Unit,
     onSelectMapStyle: (MapStyle) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -252,6 +254,19 @@ fun SettingsSheet(
                     text = stringResource(R.string.chime_background_hint),
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.keep_screen_on_title), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = stringResource(R.string.keep_screen_on_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = keepScreenOn, onCheckedChange = onToggleKeepScreenOn)
             }
 
             Spacer(Modifier.height(20.dp))

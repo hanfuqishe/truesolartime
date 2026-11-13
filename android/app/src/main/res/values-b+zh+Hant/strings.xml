@@ -34,6 +34,8 @@
     <string name="reminder_desc">進入下一個時辰時蜂鳴一聲</string>
     <string name="chime_title">進入關鍵時間報時</string>
     <string name="chime_desc">進入關鍵時間時蜂鳴一聲（按真太陽時）</string>
+    <string name="keep_screen_on_title">螢幕恆亮</string>
+    <string name="keep_screen_on_desc">應用程式開啟期間不自動螢幕逾時（會更耗電）</string>
     <string name="chime_background_hint">報時沒響？點此允許本應用後台執行</string>
     <string name="chime_exact_alarm_hint">報時可能晚幾分鐘，點此允許「鬧鐘和提醒」</string>
     <string name="section_about">關於計算</string>

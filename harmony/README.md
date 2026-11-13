@@ -191,7 +191,9 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
   3. 位置地图卡：坐标 + 瓦片地图 + 底图来源（对齐 Android 的 `MapCard`，可双指/双击缩放）；
   4. 页脚（版本与数据来源）。
 - **设置页**（`pages/Settings.ets`）：当前位置与「实时跟随GPS」按钮、手动坐标、常用城市、
-  两项提醒开关、关于。返回首页时由 `Index.onPageShow` 重新读取偏好。
+  两项提醒开关、屏幕常亮开关、关于。返回首页时由 `Index.onPageShow` 重新读取偏好。
+  应用只跑竖屏（`module.json5` 里 `EntryAbility` 的 `"orientation": "portrait"`）；「屏幕常亮」默认打开，
+  由 `services/KeepAwake.ets` 调 `window.setWindowKeepScreenOn`，只在前台生效（退到后台系统照旧按休眠时间熄屏）。
   「常用城市」和「实时跟随GPS」都是一步到位的选择——**点完立即返回首页**（手动坐标仍停在设置页，
   并提示「已保存，返回首页生效」）。换地点后缓存里的天气属于旧坐标，显示层立刻把它判为无效
   （天气位与逐时格退回 `--`），同时强制取一次新地点的天气，数据一到就显示（

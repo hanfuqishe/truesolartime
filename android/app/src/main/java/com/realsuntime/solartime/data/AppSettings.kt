@@ -45,6 +45,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
         set(value) = prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply()
 
+    /** 应用在前台时是否禁止自动熄屏（默认开）。 */
+    var keepScreenOn: Boolean
+        get() = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
+        set(value) = prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
+
     /** 上次为桌面卡片主动取 GPS 的时刻：卡片可见时最多 5 分钟取一次，避免每分钟都唤醒定位。 */
     var lastWidgetFixMillis: Long
         get() = prefs.getLong(KEY_LAST_WIDGET_FIX, 0L)
@@ -60,6 +65,7 @@ class AppSettings(context: Context) {
         const val KEY_MAP_STYLE = "map_style"
         const val KEY_HOURLY_CHIME = "hourly_chime"
         const val KEY_LOCATION_ASKED = "location_permission_requested"
+        const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_LAST_WIDGET_FIX = "last_widget_fix"
     }
 }

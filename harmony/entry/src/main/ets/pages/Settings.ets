@@ -16,6 +16,7 @@ import { AppStore } from '../services/Store';
 import { AppInfo } from '../services/AppInfo';
 import { CardService } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
+import { KeepAwake } from '../services/KeepAwake';
 import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, LocationAttempt } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
@@ -32,6 +33,7 @@ struct Settings {
   @State presetLabels: string[] = [];
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
+  @State keepScreenOn: boolean = true;
   @State locating: boolean = false;
   @State manualLatitude: string = '';
   @State manualLongitude: string = '';
@@ -56,6 +58,7 @@ struct Settings {
     this.placeName = this.labelOf(this.place);
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
+    this.keepScreenOn = AppStore.keepScreenOn();
     this.manualLatitude = this.place.latitude.toFixed(4);
     this.manualLongitude = this.place.longitude.toFixed(4);
     const labels: string[] = [];
@@ -392,6 +395,19 @@ struct Settings {
                 .margin({ top: 8 })
                 .width('100%')
             }
+          }
+          .cardStyle()
+    .backgroundColor(this.palette.card)
+
+          // 屏幕
+          Column() {
+            this.sectionTitle('屏幕')
+            this.switchRow('屏幕常亮', '应用打开期间不自动熄屏（会更耗电）', this.keepScreenOn,
+              (value: boolean) => {
+                this.keepScreenOn = value;
+                AppStore.setKeepScreenOn(value);
+                KeepAwake.apply(this.context);
+              })
           }
           .cardStyle()
     .backgroundColor(this.palette.card)

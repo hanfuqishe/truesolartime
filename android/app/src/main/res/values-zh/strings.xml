@@ -34,6 +34,8 @@
     <string name="reminder_desc">进入下一个时辰时蜂鸣一声</string>
     <string name="chime_title">进入关键时间报时</string>
     <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
+    <string name="keep_screen_on_title">屏幕常亮</string>
+    <string name="keep_screen_on_desc">应用打开期间不自动熄屏（会更耗电）</string>
     <string name="chime_background_hint">报时没响？点此允许本应用后台运行</string>
     <string name="chime_exact_alarm_hint">报时可能晚几分钟，点此允许「闹钟和提醒」</string>
     <string name="section_about">关于计算</string>

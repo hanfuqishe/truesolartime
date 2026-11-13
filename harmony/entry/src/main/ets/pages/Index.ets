@@ -19,6 +19,7 @@ import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, GeoPoint } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
+import { KeepAwake } from '../services/KeepAwake';
 import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
 
@@ -144,6 +145,7 @@ struct Index {
     }, 1000);
     this.refreshRemote();
     this.syncGpsSilently();
+    KeepAwake.apply(this.context);
   }
 
   /** 从设置页返回后重新读取偏好（观测点、提醒开关都可能在那边改过）。 */
@@ -157,6 +159,8 @@ struct Index {
     this.lastDerivedMillis = Date.now();
     this.refreshDerived();
     this.refreshRemote();
+    // 设置页里可能刚改过「屏幕常亮」。
+    KeepAwake.apply(this.context);
   }
 
   private reloadSettings(): void {

@@ -55,6 +55,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _mapStyle = MutableStateFlow(settings.mapStyle)
     val mapStyle: StateFlow<MapStyle> = _mapStyle.asStateFlow()
 
+    private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
+    val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
     /** 反查到的行政区划（如「上海市宝山区」）；没有时首页仍显示「当地真太阳时」。 */
     private val _districtName = MutableStateFlow(DistrictResolver.cachedName(application))
     val districtName: StateFlow<String?> = _districtName.asStateFlow()
@@ -170,6 +173,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setMapStyle(style: MapStyle) {
         settings.mapStyle = style
         _mapStyle.value = style
+    }
+
+    fun setKeepScreenOn(enabled: Boolean) {
+        settings.keepScreenOn = enabled
+        _keepScreenOn.value = enabled
     }
 
     fun setKeyTimeChimeEnabled(enabled: Boolean) {
