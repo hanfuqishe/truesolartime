@@ -500,14 +500,6 @@ struct Index {
           }
           .width('100%')
           .alignItems(VerticalAlign.Bottom)
-          Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
-            .fontSize(10)
-            .fontColor('#B3FFFFFF')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-            .textAlign(TextAlign.End)
-            .margin({ top: 2 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -515,14 +507,23 @@ struct Index {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      // 日期 + 当日天气与温度区间：整行显示，不受中间分隔线与栏宽限制
-      Text(this.dateTail())
-        .fontSize(10)
-        .fontColor('#B3FFFFFF')
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .margin({ top: 6 })
+      // 日期/天气与经纬度同处一行：左侧日期行占满剩余宽度，右侧经纬度贴右
+      Row() {
+        Text(this.dateTail())
+          .fontSize(10)
+          .fontColor('#B3FFFFFF')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+          .fontSize(10)
+          .fontColor('#B3FFFFFF')
+          .maxLines(1)
+          .textAlign(TextAlign.End)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+      .margin({ top: 6 })
 
       // 0–24 时时间轴：与桌面卡片、Android WidgetAxis 同款（1vp 细线 + 柔化圆点）
       Stack() {
