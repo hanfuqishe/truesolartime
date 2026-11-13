@@ -102,12 +102,10 @@ export class DistrictService {
         return null;
       }
       const address: geoLocationManager.GeoAddress = addresses[0];
-      return DistrictNameLogic.composeNames([
-        address.subLocality ?? '',
-        address.locality ?? '',
-        address.subAdministrativeArea ?? '',
-        address.administrativeArea ?? ''
-      ]);
+      const district: string = address.subLocality ?? address.locality ?? '';
+      const city: string = address.locality ?? address.subAdministrativeArea ?? '';
+      const province: string = address.administrativeArea ?? '';
+      return DistrictNameLogic.pickNames(district, city, province);
     } catch (error) {
       return null;
     }
@@ -133,11 +131,23 @@ export class DistrictService {
         return null;
       }
       const fields: Record<string, Object> = address as Record<string, Object>;
-      return DistrictNameLogic.composeNames([
-        DistrictService.firstOf(fields, ['village', 'town', 'suburb', 'city_district', 'district', 'hamlet']),
-        DistrictService.firstOf(fields, ['city', 'municipality', 'county', 'state_district']),
-        DistrictService.firstOf(fields, ['state', 'province', 'region'])
-      ]);
+      // 优先「区/县」一级：OSM 常把上海的区只写进 display_name（address 里只有街道），
+      // 因此再从 display_name 里捞一个以「区/县/旗」结尾的名字；街道只在完全没有区县时兜底。
+      const city: string = DistrictService.firstOf(fields, ['city', 'municipality', 'state_district']);
+      const display: string = DistrictService.firstOf(root, ['display_name']);
+      let district: string = DistrictService.firstOf(fields, ['city_district', 'district', 'county']);
+      if (district.length === 0) {
+        district = DistrictNameLogic.pickDistrictFromDisplay(display, city);
+      }
+      if (district.length === 0) {
+        district = DistrictService.firstOf(fields, ['suburb', 'town', 'village', 'hamlet']);
+      }
+      const province: string = DistrictService.firstOf(fields, ['state', 'province', 'region']);
+      // 中文界面写「上海市黄浦区」，其他语言保持由细到粗的逗号写法。
+      if (language.startsWith('zh')) {
+        return DistrictNameLogic.pickNames(district, city, province);
+      }
+      return DistrictNameLogic.composeNames([district, city, province]);
     } catch (error) {
       return null;
     }

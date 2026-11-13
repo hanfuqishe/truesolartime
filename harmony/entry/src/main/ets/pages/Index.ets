@@ -322,6 +322,17 @@ struct Index {
     return parts.join(' · ');
   }
 
+  /** 地名：优先完整区划名（市+区），其次区县名，最后退回城市名。 */
+  private districtLabel(): string {
+    if (this.districtFull.length > 0) {
+      return this.districtFull;
+    }
+    if (this.district.length > 0) {
+      return this.district;
+    }
+    return this.placeName;
+  }
+
   private placeLabel(place: Place): string {
     const city: NearbyCity | null = CityIndex.nearest(place.latitude, place.longitude, DistrictService.language());
     if (city !== null) {
@@ -347,12 +358,6 @@ struct Index {
       return HOT_COLOR;
     }
     return HERO_COLOR;
-  }
-
-  /** 距下个时辰交接的秒数，按每秒更新的真太阳时算，倒计时才会走。 */
-  private secondsToNextShichen(): number {
-    const shifted: number = (((this.solarSecond + 3600) % 86400) + 86400) % 86400;
-    return 7200 - (shifted % 7200);
   }
 
   private sunSummary(): string {
@@ -423,7 +428,7 @@ struct Index {
             Text('标准时间')
               .fontSize(12)
               .fontColor('#CCFFFFFF')
-            Text(this.district.length > 0 ? this.district : this.placeName)
+            Text(this.districtLabel())
               .fontSize(12)
               .fontColor('#B3FFFFFF')
               .maxLines(1)
@@ -565,34 +570,6 @@ struct Index {
       .height(11)
       .padding({ left: 6, right: 6 })
       .margin({ top: 10 })
-
-      Row() {
-        Text(`距下个时辰 ${TimeFormat.countdown(this.secondsToNextShichen())}`)
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
-          .layoutWeight(1)
-        Text(`与北京时间 ${TimeFormat.signedDuration(this.snapshot.offsetSeconds, this.language)}`)
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
-      }
-      .width('100%')
-      .margin({ top: 8 })
-
-      // 时差构成与时辰进度：原先「时差构成」卡的内容并进来
-      Row() {
-        Text(`经度修正 ${TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language)} · ` +
-          `均时差 ${TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language)}`)
-          .fontSize(10)
-          .fontColor(SUBTLE_COLOR)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(`第 ${this.snapshot.shichenQuarter} 刻`)
-          .fontSize(10)
-          .fontColor(SUBTLE_COLOR)
-      }
-      .width('100%')
-      .margin({ top: 4 })
 
       // 六格逐时预报
       Row() {

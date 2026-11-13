@@ -60,7 +60,46 @@ export class DistrictNameLogic {
     return new DistrictNames(levels.join(', '), levels[0]);
   }
 
-  /** 区县缺失时退回市或省，避免只显示一个空名字。 */
+  /**
+   * 从 OSM 的 display_name 里挑出「区/县/旗」一级的名字，例如
+   * "均乐社区, 南京东路街道, 上海市, 黄浦区, 上海市, 中国" → "黄浦区"。
+   * OSM 常把城市的「区」只写进 display_name，address 字段里没有，只能这样补。
+   */
+  static pickDistrictFromDisplay(display: string, city: string): string {
+    if (display.length === 0) {
+      return '';
+    }
+    for (const raw of display.split(',')) {
+      const name: string = raw.trim();
+      if (name.length === 0 || name === city) {
+        continue;
+      }
+      if (DistrictNameLogic.isPoiArea(name)) {
+        continue;
+      }
+      if (name.endsWith('区') || name.endsWith('县') || name.endsWith('旗')) {
+        return name;
+      }
+    }
+    return '';
+  }
+
+  /** 「XX社区 / XX园区」这类是点位而不是行政区，别当成区县。 */
+  private static isPoiArea(name: string): boolean {
+    const suffixes: string[] = ['社区', '小区', '园区', '街区', '校区', '景区', '厂区', '营区'];
+    for (const suffix of suffixes) {
+      if (name.endsWith(suffix)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 中文界面的写法：「市+区」直接相连（如「上海市黄浦区」「广东省深圳市南山区」），
+   * 与 Android 端 `pickNames` 一致；上级名本身已含该前缀时不再重复。
+   * 没有区县时退回市，再退回省。
+   */
   static pickNames(district: string, city: string, province: string): DistrictNames | null {
     const county: string = DistrictNameLogic.cleanName(district);
     const town: string = PLACEHOLDER_REGIONS.indexOf(DistrictNameLogic.cleanName(city)) >= 0 ? '' : DistrictNameLogic.cleanName(city);
@@ -70,12 +109,25 @@ export class DistrictNameLogic {
       if (only.length === 0) {
         return null;
       }
-      if (only === region && town.length === 0 && region.length > 0) {
-        return new DistrictNames(region, region);
-      }
       return new DistrictNames(only, only);
     }
-    return DistrictNameLogic.composeNames([county, town, region]);
+    const parents: string[] = [];
+    if (town.length > 0) {
+      parents.push(town);
+    }
+    if (region.length > 0) {
+      parents.push(region);
+    }
+    let parent: string = '';
+    for (const name of parents) {
+      if (name !== county) {
+        parent = name;
+        break;
+      }
+    }
+    const full: string = parent.length === 0 || county.startsWith(parent) ? county : parent + county;
+    // 短名只留区县；若区县就是全部（如县级市），短名与全名相同。
+    return new DistrictNames(full, county);
   }
 
   /** 缓存是否该重查：没有名字、坐标移动超过 5 km、缓存过期或界面语言变了。 */

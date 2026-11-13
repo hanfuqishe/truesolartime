@@ -341,9 +341,21 @@ for (const item of equationCases) {
   check('empty gives null', DistrictNameLogic.composeNames(['', '[]', '  ']) === null);
   const fallback = DistrictNameLogic.pickNames('', '深圳市', '广东省');
   check('fallback to city', fallback !== null && fallback.full === '深圳市', `${fallback ? fallback.full : 'null'}`);
+  const shanghai = DistrictNameLogic.pickNames('黄浦区', '上海市', '上海市');
+  check('municipality name joined', shanghai !== null && shanghai.full === '上海市黄浦区', `${shanghai ? shanghai.full : 'null'}`);
+  check('municipality short is district', shanghai !== null && shanghai.short === '黄浦区');
+  const shenzhen = DistrictNameLogic.pickNames('南山区', '深圳市', '广东省');
+  check('city prefixed to district', shenzhen !== null && shenzhen.full === '深圳市南山区', `${shenzhen ? shenzhen.full : 'null'}`);
+  const prefixed = DistrictNameLogic.pickNames('上海市黄浦区', '上海市', '上海市');
+  check('already prefixed not doubled', prefixed !== null && prefixed.full === '上海市黄浦区', `${prefixed ? prefixed.full : 'null'}`);
   check('language change triggers refresh', DistrictNameLogic.needsRefresh(true, 'zh-CN', 'en-US', 1000, 0));
   check('fresh cache reused', !DistrictNameLogic.needsRefresh(true, 'zh-CN', 'zh-CN', 60 * 1000, 1));
   check('moving triggers refresh', DistrictNameLogic.needsRefresh(true, 'zh-CN', 'zh-CN', 60 * 1000, 7));
+  const display = '均乐社区, 南京东路街道, 上海市, 黄浦区, 上海市, 中国';
+  check('district picked from display_name', DistrictNameLogic.pickDistrictFromDisplay(display, '上海市') === '黄浦区');
+  check('city token skipped', DistrictNameLogic.pickDistrictFromDisplay('上海市, 上海市, 中国', '上海市') === '');
+  check('no district in display', DistrictNameLogic.pickDistrictFromDisplay('Huangpu, Shanghai, China', 'Shanghai') === '');
+  check('county suffix recognised', DistrictNameLogic.pickDistrictFromDisplay('某镇, 某县, 某市', '某市') === '某县');
 }
 
 // ---- 报时窗口 ----

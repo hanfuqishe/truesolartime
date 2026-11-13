@@ -113,12 +113,11 @@ export class CardService {
     return data;
   }
 
-  /** 地名：优先用逆地理得到的区县名，取不到就退回最近的城市名，绝不显示占位符。 */
+  /**
+   * 地名：优先用逆地理得到的**完整名**（如「上海市黄浦区」），与 Android 卡片的做法一致；
+   * 没有逆地理结果时退回最近的城市名，绝不显示占位符。
+   */
   private static cityName(latitude: number, longitude: number, language: string): string {
-    const short: string = DistrictService.cachedShortName();
-    if (short.length > 0) {
-      return short;
-    }
     const full: string = DistrictService.cachedName();
     if (full.length > 0) {
       return full;
