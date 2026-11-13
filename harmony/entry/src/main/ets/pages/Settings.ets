@@ -14,7 +14,7 @@ import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore } from '../services/Store';
 import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
-import { LocationService, GeoPoint } from '../services/LocationService';
+import { LocationService, LocationAttempt } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
 
 const HERO_COLOR: string = '#F5D68A';
@@ -113,12 +113,16 @@ struct Settings {
         this.hint = '未授予定位权限，可手动输入坐标';
         return;
       }
-      const point: GeoPoint | null = await LocationService.current();
-      if (point === null) {
-        this.hint = '暂时取不到位置，请稍后再试';
+      const attempt: LocationAttempt = await LocationService.attempt();
+      if (attempt.point === null) {
+        // 最常见的失败不是超时，而是系统「位置」总开关没开（下拉控制中心里那个磁贴），
+        // 这种提示必须能直接告诉用户去哪儿打开，否则只能干等到超时后重试。
+        this.hint = LocationService.isSwitchOff(attempt.code)
+          ? '系统「位置」开关未打开：从屏幕顶部下拉控制中心打开「位置」后重试，或手动输入坐标'
+          : '暂时取不到位置，请稍后再试，也可手动输入坐标';
         return;
       }
-      this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
+      this.applyPlace(new Place(attempt.point.latitude, attempt.point.longitude, PlaceSource.GPS, '', ''));
     } finally {
       this.locating = false;
     }

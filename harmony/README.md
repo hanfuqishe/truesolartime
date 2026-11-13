@@ -243,6 +243,12 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 这条与 Android 卡片每次 `buildViews` 都调 `LocationTracker.lastKnownLocation()` 的行为一致。
 取不到定位（没授权、无信号）时保留上一次的坐标，不会把位置清空。
 
+**定位失败最常见的原因是系统「位置」总开关没打开**：此时 `getCurrentLocation` 返回
+`3301100 The location switch is off`，设置页会直接提示「系统「位置」开关未打开：从屏幕顶部
+下拉控制中心打开「位置」后重试」。注意它**不在**系统设置里 —— 这批模拟器镜像的设置首页没有
+「隐私/位置服务」入口，只能从控制中心那个「位置」磁贴开。开关打开后，模拟器里
+`-gps -latitude/-longitude` 注入的坐标与系统逆地理（区划名）都能正常工作。
+
 ## 权限
 
 | 权限 | 用途 |

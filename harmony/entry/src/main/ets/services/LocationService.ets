@@ -19,6 +19,20 @@ export class GeoPoint {
   }
 }
 
+/** 一次取坐标的结果：失败时带上系统给的错误码，方便界面给出可操作提示。 */
+export class LocationAttempt {
+  point: GeoPoint | null;
+  code: number;
+
+  constructor(point: GeoPoint | null, code: number) {
+    this.point = point;
+    this.code = code;
+  }
+}
+
+/** 系统「位置」总开关没打开时，鸿蒙定位接口返回的错误码。 */
+const ERROR_LOCATION_SWITCH_OFF: number = 3301100;
+
 const LOCATION_PERMISSIONS: Permissions[] = [
   'ohos.permission.APPROXIMATELY_LOCATION',
   'ohos.permission.LOCATION'
@@ -62,6 +76,11 @@ export class LocationService {
 
   /** 取一次当前坐标；失败或超时返回 null。 */
   static async current(): Promise<GeoPoint | null> {
+    return (await LocationService.attempt()).point;
+  }
+
+  /** 同上，但把失败原因（系统错误码）一并带出来。 */
+  static async attempt(): Promise<LocationAttempt> {
     const request: geoLocationManager.CurrentLocationRequest = {
       priority: geoLocationManager.LocationRequestPriority.FIRST_FIX,
       scenario: geoLocationManager.LocationRequestScenario.UNSET,
@@ -70,11 +89,16 @@ export class LocationService {
     };
     try {
       const location: geoLocationManager.Location = await geoLocationManager.getCurrentLocation(request);
-      return new GeoPoint(location.latitude, location.longitude);
+      return new LocationAttempt(new GeoPoint(location.latitude, location.longitude), 0);
     } catch (error) {
       const failure: BusinessError = error as BusinessError;
       console.warn(`getCurrentLocation failed: ${failure.code} ${failure.message}`);
-      return null;
+      return new LocationAttempt(null, failure.code);
     }
+  }
+
+  /** 系统「位置」开关没打开（下拉控制中心里的「位置」磁贴）。 */
+  static isSwitchOff(code: number): boolean {
+    return code === ERROR_LOCATION_SWITCH_OFF;
   }
 }
