@@ -12,6 +12,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
@@ -63,6 +64,11 @@ object WeatherRepository {
     private const val MOVE_THRESHOLD_KM = 5.0
 
     private val inFlight = AtomicBoolean(false)
+
+    /** 每成功写一次缓存就 +1：界面靠它发现「天气换过了」，不用等半分钟的刷新节拍。 */
+    private val revisionCount = AtomicInteger(0)
+
+    internal fun revision(): Int = revisionCount.get()
 
     fun cached(context: Context): Snapshot? {
         val prefs = prefs(context)
@@ -263,6 +269,7 @@ object WeatherRepository {
             .putFloat(KEY_LON, place.longitude.toFloat())
             .putLong(KEY_TIME, System.currentTimeMillis())
             .apply()
+        revisionCount.incrementAndGet()
     }
 
     private fun prefs(context: Context) =

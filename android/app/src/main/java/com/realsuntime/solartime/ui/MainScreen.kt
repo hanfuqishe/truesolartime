@@ -72,6 +72,7 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
 import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -103,8 +104,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         SolarTimeSnapshot.compute(now, place.latitude, place.longitude)
     }
 
-    // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好。
-    val heroExtras = remember(place, now.epochSecond / 30) {
+    // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好；
+    // 但新数据一到（例如刚换了城市、天气刚取回来）要立刻重算，所以把天气版本号也当键。
+    val weatherRevision = WeatherRepository.revision()
+    val heroExtras = remember(place, now.epochSecond / 30, weatherRevision) {
         loadHeroExtras(context, place, now)
     }
 
