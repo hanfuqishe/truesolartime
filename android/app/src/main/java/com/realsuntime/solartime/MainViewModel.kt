@@ -11,6 +11,7 @@ import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
@@ -147,7 +148,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyManualPlace(latitude: Double, longitude: Double, label: String) {
         stopGpsTracking()
-        updatePlace(Place(latitude, longitude, PlaceSource.MANUAL, label))
+        // 用户明确指定了新地点：天气与区划名不等 30 分钟窗口，立刻重取。
+        updatePlace(Place(latitude, longitude, PlaceSource.MANUAL, label), userChosen = true)
     }
 
     fun usePreset(preset: Place) {
@@ -197,7 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _message.value = null
     }
 
-    private fun updatePlace(place: Place) {
+    private fun updatePlace(place: Place, userChosen: Boolean = false) {
         val previous = _place.value
         settings.place = place
         _place.value = place
@@ -211,6 +213,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (_keyTimeChimeEnabled.value && changed) {
             KeyTimeChime.schedule(app)
+        }
+        if (userChosen) {
+            // 手工换地点后缓存里的天气属于旧坐标：不等 30 分钟窗口，立刻取一次新的。
+            WeatherRepository.requestRefresh(app, place, force = true)
+            DistrictResolver.requestRefresh(app, place)
         }
         if (changed) {
             WidgetUpdater.refreshAll(app)

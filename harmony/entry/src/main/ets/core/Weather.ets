@@ -52,6 +52,8 @@ export class WeatherLogic {
   /** 显示用的保留时限（与小时预报一致）：刷新失败时继续显示最近一次取到的数据。 */
   static readonly HOURLY_MAX_AGE_MILLIS: number = 6 * 60 * 60 * 1000;
   static readonly MOVE_THRESHOLD_KM: number = 5.0;
+  /** 没有有效天气时天气位显示的占位符。 */
+  static readonly PLACEHOLDER: string = '--';
 
   static buildUrl(latitude: number, longitude: number): string {
     return 'https://api.open-meteo.com/v1/forecast' +

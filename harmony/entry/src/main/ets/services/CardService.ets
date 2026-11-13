@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 桌面卡片的数据组装与推送。
  *
  * 版面对齐 Android 版小组件：左栏「标准时间」+ 地名 + 日期，右栏「真太阳时」+ 时辰 + 经纬度，
@@ -97,7 +97,7 @@ export class CardService {
 
     const dayStart: number = CardService.dayStartMillis(now);
     const range: number[] | null = WeatherLogic.temperatureRange(
-      WeatherService.hourly(),
+      WeatherService.hourly(place),
       dayStart,
       dayStart + 24 * 3600 * 1000,
       SolarTimeMath.BEIJING_OFFSET_MILLIS
@@ -106,11 +106,12 @@ export class CardService {
       data.temperatureRange = `${range[0]}~${range[1]}°`;
     }
 
-    const weather: WeatherSnapshot | null = WeatherService.cached();
+    const weather: WeatherSnapshot | null = WeatherService.cached(place);
+    // 没有有效天气时显示占位符，别让这一格空着（也别沿用上一个地点的读数）。
     data.weatherSummary = weather === null
-      ? ''
+      ? WeatherLogic.PLACEHOLDER
       : `${weather.temperatureC}° ${WeatherLogic.conditionLabel(weather.code, language)}`;
-    CardService.fillHourly(data, now, weather === null ? -1 : weather.code, language);
+    CardService.fillHourly(data, now, place, weather === null ? -1 : weather.code, language);
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule !== null && schedule.bands.length > 0) {
@@ -140,8 +141,8 @@ export class CardService {
   }
 
   /** 逐时预报：从当前小时起六格，第一格标「现在」并用实时天气码。 */
-  private static fillHourly(data: CardData, now: number, currentCode: number, language: string): void {
-    const hourly: HourPoint[] = WeatherService.hourly();
+  private static fillHourly(data: CardData, now: number, place: Place, currentCode: number, language: string): void {
+    const hourly: HourPoint[] = WeatherService.hourly(place);
     const slots: number[] = WeatherLogic.slots(now / 1000, BEIJING_OFFSET_SECONDS, HOUR_CELLS, 1);
     for (let index = 0; index < slots.length; index++) {
       const slot: number = slots[index];
@@ -158,7 +159,7 @@ export class CardService {
       }
       const localHour: number = Math.floor(((slot + BEIJING_OFFSET_SECONDS) % 86400) / 3600);
       data.hourLabels.push(index === 0 ? CardService.nowLabel(language) : CardService.hourLabel(localHour, language));
-      data.hourConds.push(code < 0 ? '' : WeatherLogic.conditionLabel(code, language));
+      data.hourConds.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
       data.hourIcons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
   }

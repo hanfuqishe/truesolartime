@@ -327,7 +327,7 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_solar_shichen, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
-            bindHourly(context, now, zone, showHourly && location.hasFix, this)
+            bindHourly(context, place, now, zone, showHourly && location.hasFix, this)
             bindClicks(context, place, this)
         }
     }
@@ -535,14 +535,15 @@ object WidgetUpdater {
     /** 底部小时预报：从当前时刻起每格 1 小时，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
     private fun bindHourly(
         context: Context,
+        place: Place,
         now: Instant,
         zone: ZoneId,
         show: Boolean,
         views: RemoteViews,
     ) {
-        val hourly = WeatherRepository.hourly(context).associateBy { it.epochSeconds }
-        views.setViewVisibility(R.id.widget_hour_row, if (show && hourly.isNotEmpty()) View.VISIBLE else View.GONE)
-        if (!show || hourly.isEmpty()) return
+        val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
+        views.setViewVisibility(R.id.widget_hour_row, if (show) View.VISIBLE else View.GONE)
+        if (!show) return
 
         val slots = WeatherRepository.slots(
             nowEpochSeconds = now.epochSecond,
@@ -551,16 +552,14 @@ object WidgetUpdater {
             stepHours = HOUR_STEP,
         )
         // 第一格标「现在」，用实时天气码，与日期行的读数保持一致。
-        val currentCode = WeatherRepository.cached(context)?.code
+        val currentCode = WeatherRepository.cached(context, place)?.code
+        val unknown = context.getString(R.string.weather_unknown)
         slots.forEachIndexed { index, epoch ->
             val point = hourly[epoch]
-            val label = when {
-                point == null -> ""
-                index == 0 -> context.getString(R.string.weather_now)
-                else -> context.getString(
-                    R.string.weather_hour,
-                    Instant.ofEpochSecond(epoch).atZone(zone).hour,
-                )
+            val label = if (index == 0) {
+                context.getString(R.string.weather_now)
+            } else {
+                context.getString(R.string.weather_hour, Instant.ofEpochSecond(epoch).atZone(zone).hour)
             }
             val code = if (index == 0) currentCode ?: point?.code else point?.code
             views.setTextViewText(HOUR_LABEL_IDS[index], label)
@@ -572,7 +571,7 @@ object WidgetUpdater {
             )
             views.setTextViewText(
                 HOUR_COND_IDS[index],
-                condition?.let { TimeText.conditionLabel(context, it) }.orEmpty(),
+                condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,
             )
         }
     }
@@ -982,31 +981,29 @@ object WidgetUpdater {
     /** 日期行；还没有有效定位时不带气温（那份气温属于别的城市）。 */
     /**
      * 日期 + 当日天气与温度区间，与首页大卡片同一行结构：
-     * 「11月13日 周五 · 17° 小雨 · 14°~19°」。没有天气数据时退化成只剩日期。
+     * 「11月13日 周五 · 17° 小雨 · 14°~19°」。没有有效天气时天气位显示占位符「--」。
      */
     private fun dateText(context: Context, civil: ZonedDateTime, place: Place, hasFix: Boolean): String {
         val date = TimeText.dateShortWithWeekday(context, civil.toLocalDate())
         if (!hasFix) return date
         val parts = ArrayList<String>(3)
         parts += date
-        val cached = WeatherRepository.cached(context)
-        if (cached != null) {
-            val condition = WeatherRepository.conditionOf(cached.code)
-            parts += context.getString(
+        val weather = WeatherRepository.cached(context, place)?.let {
+            context.getString(
                 R.string.hero_weather,
-                context.getString(R.string.weather_temp, cached.temperatureC),
-                TimeText.conditionLabel(context, condition),
+                context.getString(R.string.weather_temp, it.temperatureC),
+                TimeText.conditionLabel(context, WeatherRepository.conditionOf(it.code)),
             )
         }
+        // temperatureRange 返回的是 (最高, 最低)，显示顺序按「低 ~ 高」。
         val range = WeatherRepository.temperatureRange(
-            WeatherRepository.hourly(context),
+            WeatherRepository.hourly(context, place),
             civil.toLocalDate(),
             civil.zone,
-        )
-        if (range != null) {
-            // temperatureRange 返回的是 (最高, 最低)，显示顺序按「低 ~ 高」。
-            parts += context.getString(R.string.hero_temp_range, range.second, range.first)
-        }
+        )?.let { context.getString(R.string.hero_temp_range, it.second, it.first) }
+        // 一个都没有时留占位符，避免这一行只剩日期让人以为坏了。
+        parts += weather ?: range ?: context.getString(R.string.weather_unknown)
+        if (weather != null && range != null) parts += range
         return parts.joinToString(" · ")
     }
 }

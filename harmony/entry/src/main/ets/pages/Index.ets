@@ -243,7 +243,7 @@ struct Index {
     this.district = DistrictService.cachedShortName();
     this.placeName = this.placeLabel(this.place);
 
-    const weather: WeatherSnapshot | null = WeatherService.cached();
+    const weather: WeatherSnapshot | null = WeatherService.cached(this.place);
     if (weather !== null) {
       this.weatherTemperature = `${weather.temperatureC}°`;
       this.weatherText = WeatherLogic.conditionLabel(weather.code, language);
@@ -255,7 +255,7 @@ struct Index {
     const date: Date = new Date(now + SolarTimeMath.BEIJING_OFFSET_MILLIS);
     const dayStartUtc: number = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
     const range: number[] | null = WeatherLogic.temperatureRange(
-      WeatherService.hourly(),
+      WeatherService.hourly(this.place),
       dayStartUtc,
       dayStartUtc + 86400000,
       SolarTimeMath.BEIJING_OFFSET_MILLIS
@@ -265,7 +265,7 @@ struct Index {
     const hourLabelList: string[] = [];
     const conditions: string[] = [];
     const icons: string[] = [];
-    const hourly: HourPoint[] = WeatherService.hourly();
+    const hourly: HourPoint[] = WeatherService.hourly(this.place);
     const slots: number[] = WeatherLogic.slots(
       Math.floor(now / 1000),
       SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000,
@@ -288,7 +288,7 @@ struct Index {
       }
       const localHour: number = Math.floor(((slot + SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000) % 86400) / 3600);
       hourLabelList.push(index === 0 ? '现在' : `${localHour}时`);
-      conditions.push(code < 0 ? '' : WeatherLogic.conditionLabel(code, language));
+      conditions.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
       icons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
     this.hourLabels = hourLabelList;
@@ -379,14 +379,18 @@ struct Index {
     });
   }
 
-  /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」。 */
+  /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」；没有天气时留占位符。 */
   private dateTail(): string {
     const parts: string[] = [TimeFormat.dateCompact(Date.now(), this.language)];
-    if (this.weatherTemperature !== '--' && this.weatherText.length > 0) {
+    const hasWeather: boolean = this.weatherTemperature !== '--' && this.weatherText.length > 0;
+    if (hasWeather) {
       parts.push(`${this.weatherTemperature} ${this.weatherText}`);
     }
     if (this.weatherRange.length > 0) {
       parts.push(this.weatherRange);
+    }
+    if (!hasWeather && this.weatherRange.length === 0) {
+      parts.push(WeatherLogic.PLACEHOLDER);
     }
     return parts.join(' · ');
   }

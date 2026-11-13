@@ -15,8 +15,8 @@ const TIMEOUT_MILLIS: number = 8000;
 export class WeatherService {
   private static inFlight: boolean = false;
 
-  /** 最近一次成功取到的实时天气（6 小时内），用于显示；是否要重新取数由 needsRefresh 判断。 */
-  static cached(): WeatherSnapshot | null {
+  /** 最近一次成功取到的实时天气（6 小时内、且属于当前这个地点），用于显示。 */
+  static cached(place: Place): WeatherSnapshot | null {
     const cached: CachedWeather = AppStore.weather();
     if (cached.fetchedMillis <= 0 || cached.schema !== SCHEMA) {
       return null;
@@ -25,11 +25,17 @@ export class WeatherService {
     if (!(age >= 0 && age <= WeatherLogic.HOURLY_MAX_AGE_MILLIS)) {
       return null;
     }
+    // 换了城市后新数据回来之前（或取数一直失败），不能把上一个城市的天气安到新位置上。
+    const moved: number = CityIndex.distanceKm(
+      AppStore.weatherLatitude(), AppStore.weatherLongitude(), place.latitude, place.longitude);
+    if (moved > WeatherLogic.MOVE_THRESHOLD_KM) {
+      return null;
+    }
     return new WeatherSnapshot(cached.temperatureC, cached.code);
   }
 
-  /** 缓存的小时预报；过期太久则返回空列表。 */
-  static hourly(): HourPoint[] {
+  /** 缓存的小时预报；过期太久或属于别的地点则返回空列表。 */
+  static hourly(place: Place | null = null): HourPoint[] {
     const cached: CachedWeather = AppStore.weather();
     if (cached.fetchedMillis <= 0) {
       return [];
@@ -37,6 +43,14 @@ export class WeatherService {
     const age: number = Date.now() - cached.fetchedMillis;
     if (!(age >= 0 && age <= WeatherLogic.HOURLY_MAX_AGE_MILLIS)) {
       return [];
+    }
+    // 换城市后新数据回来之前，不能拿旧城市的预报去算温度区间或逐时格。
+    if (place !== null) {
+      const moved: number = CityIndex.distanceKm(
+        AppStore.weatherLatitude(), AppStore.weatherLongitude(), place.latitude, place.longitude);
+      if (moved > WeatherLogic.MOVE_THRESHOLD_KM) {
+        return [];
+      }
     }
     return WeatherLogic.decodeHourly(cached.hourly);
   }
@@ -54,9 +68,9 @@ export class WeatherService {
     return WeatherLogic.shouldRefresh(Date.now() - cached.fetchedMillis, moved);
   }
 
-  /** 需要时取一次数；成功返回 true。 */
-  static async refreshIfNeeded(place: Place): Promise<boolean> {
-    if (WeatherService.inFlight || !WeatherService.needsRefresh(place)) {
+  /** 需要时取一次数；成功返回 true。force 为 true 时忽略 30 分钟窗口（用户手工换了地点）。 */
+  static async refreshIfNeeded(place: Place, force: boolean = false): Promise<boolean> {
+    if (WeatherService.inFlight || (!force && !WeatherService.needsRefresh(place))) {
       return false;
     }
     WeatherService.inFlight = true;

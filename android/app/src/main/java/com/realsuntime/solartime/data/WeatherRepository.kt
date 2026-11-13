@@ -72,6 +72,17 @@ object WeatherRepository {
         return Snapshot(prefs.getInt(KEY_TEMP, 0), prefs.getInt(KEY_CODE, 0))
     }
 
+    /**
+     * 同上，但要求缓存是当前这个地点取的。
+     *
+     * 换城市后新数据回来之前（或者取数一直失败），不能把上一个城市的天气安到新位置上；
+     * 相距超过 5 km 就当没有数据。
+     */
+    fun cached(context: Context, place: Place): Snapshot? {
+        val snapshot = cached(context) ?: return null
+        return if (belongsTo(context, place)) snapshot else null
+    }
+
     /** 缓存的小时预报；过期太久则返回空列表。 */
     fun hourly(context: Context): List<HourPoint> {
         val prefs = prefs(context)
@@ -81,9 +92,26 @@ object WeatherRepository {
         return decodeHourly(encoded)
     }
 
+    /** 同上，但要求这份预报是当前地点取的：换城市后不能拿旧城市的预报顶上。 */
+    fun hourly(context: Context, place: Place): List<HourPoint> {
+        if (!belongsTo(context, place)) return emptyList()
+        return hourly(context)
+    }
+
+    /** 缓存里的坐标是否属于当前地点（相距不超过 5 km）。 */
+    private fun belongsTo(context: Context, place: Place): Boolean {
+        val prefs = prefs(context)
+        if (!prefs.contains(KEY_LAT) || !prefs.contains(KEY_LON)) return false
+        val lat = prefs.getFloat(KEY_LAT, Float.NaN).toDouble()
+        val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
+        if (lat.isNaN() || lon.isNaN()) return false
+        return CityIndex.distanceKm(lat, lon, place.latitude, place.longitude) <= MOVE_THRESHOLD_KM
+    }
+
     /** 需要时在后台刷新，成功后重绘小组件。 */
-    fun requestRefresh(context: Context, place: Place) {
-        if (!needsRefresh(context, place)) return
+    /** @param force 忽略 30 分钟窗口直接取数（用户手工换了地点时用）。 */
+    fun requestRefresh(context: Context, place: Place, force: Boolean = false) {
+        if (!force && !needsRefresh(context, place)) return
         if (!inFlight.compareAndSet(false, true)) return
 
         val app = context.applicationContext

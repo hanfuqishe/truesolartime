@@ -12,10 +12,12 @@ import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore } from '../services/Store';
+import { CardService } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, LocationAttempt } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
+import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
 
 @Entry
@@ -86,6 +88,16 @@ struct Settings {
     this.error = '';
     this.hint = '已保存，返回首页生效';
     this.reschedule();
+    // 手工换地点后缓存里的天气属于旧坐标：不等 30 分钟窗口，立刻取一次，并顺手更新区划名。
+    WeatherService.refreshIfNeeded(place, true).then((updated: boolean) => {
+      if (updated) {
+        CardService.refresh().catch((error: BusinessError) => {
+          console.warn(`card refresh failed: ${error.code} ${error.message}`);
+        });
+      }
+    }).catch((error: BusinessError) => {
+      console.warn(`weather refresh failed: ${error.code} ${error.message}`);
+    });
     DistrictService.refreshIfNeeded(place).catch((error: BusinessError) => {
       console.warn(`district refresh failed: ${error.code} ${error.message}`);
     });

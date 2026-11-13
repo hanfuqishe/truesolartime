@@ -132,6 +132,7 @@
     <string name="weather_temp">%1$d°</string>
     <string name="location_badge_gps">GPS</string>
     <string name="hero_shichen">%1$s · %2$s</string>
+    <string name="weather_unknown">--</string>
     <string name="hero_weather">%1$s %2$s</string>
     <string name="hero_temp_range">%1$d°~%2$d°</string>
     <string name="weather_hour">%1$d時</string>

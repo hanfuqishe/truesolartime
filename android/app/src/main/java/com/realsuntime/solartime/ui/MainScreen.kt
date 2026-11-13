@@ -105,7 +105,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好。
     val heroExtras = remember(place, now.epochSecond / 30) {
-        loadHeroExtras(context, now)
+        loadHeroExtras(context, place, now)
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -297,8 +297,10 @@ private fun HeroCard(
     // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
     val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
     val accent = HeroPalette.accent(isDay)
-    val bandColor = if (inKeyTime) HeroPalette.band(extras.temperature, isDay) else null
-    val solarColor = bandColor ?: accent
+    // 关键时段的色段一直画出来（与桌面卡片一致），只有「当前正落在某个关键时段里」时才把
+    // 真太阳时数字与时间轴圆点也换成该时段的配色。
+    val bandTint = if (waitingForFix) null else HeroPalette.band(extras.temperature, isDay)
+    val solarColor = if (inKeyTime) bandTint ?: accent else accent
     val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
@@ -407,8 +409,8 @@ private fun HeroCard(
             HeroAxis(
                 solarSecondsOfDay = if (waitingForFix) 0.0 else solarSeconds,
                 bands = if (waitingForFix) emptyList() else extras.bands,
-                bandColor = bandColor,
-                dotColor = bandColor ?: HeroPalette.DOT,
+                bandColor = bandTint,
+                dotColor = if (inKeyTime && bandTint != null) bandTint else HeroPalette.DOT,
             )
             if (!waitingForFix && extras.hourly.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))

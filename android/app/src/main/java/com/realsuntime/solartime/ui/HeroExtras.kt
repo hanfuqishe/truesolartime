@@ -2,6 +2,7 @@ package com.realsuntime.solartime.ui
 
 import android.content.Context
 import com.realsuntime.solartime.R
+import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
 import com.realsuntime.solartime.data.TakeTimeRepository
@@ -33,18 +34,19 @@ private val BEIJING: ZoneOffset = ZoneOffset.ofHours(8)
 private const val HOUR_CELLS = 6
 private const val HOUR_STEP = 1
 
-internal fun loadHeroExtras(context: Context, now: Instant): HeroExtras {
+internal fun loadHeroExtras(context: Context, place: Place, now: Instant): HeroExtras {
     val civil = now.atZone(BEIJING)
     val date = civil.toLocalDate()
     val schedule = TakeTimeRepository.schedule(context)
-    val cached = WeatherRepository.cached(context)
-    val hourly = WeatherRepository.hourly(context)
+    val cached = WeatherRepository.cached(context, place)
+    val hourly = WeatherRepository.hourly(context, place)
     val range = WeatherRepository.temperatureRange(hourly, date, civil.zone)
 
     val condition = cached?.let { WeatherRepository.conditionOf(it.code) }
     val temperatureText = cached?.let { context.getString(R.string.weather_temp, it.temperatureC) }.orEmpty()
     val weatherText = if (condition == null) {
-        temperatureText
+        // 没有有效天气时用占位符，别让这一格空着（也别沿用上一个地点的读数）。
+        context.getString(R.string.weather_unknown)
     } else if (temperatureText.isEmpty()) {
         TimeText.conditionLabel(context, condition)
     } else {
@@ -56,34 +58,31 @@ internal fun loadHeroExtras(context: Context, now: Instant): HeroExtras {
         dateText = TimeText.dateShortWithWeekday(context, date),
         weatherText = weatherText,
         rangeText = rangeText,
-        hourly = hourCells(context, now, cached?.code),
+        hourly = hourCells(context, place, now, cached?.code),
         bands = schedule?.bands.orEmpty(),
         temperature = schedule?.temperature,
     )
 }
 
 /** 从当前整点起的六格逐时预报；首格标「现在」并用实时天气码，与桌面卡片同一套规则。 */
-private fun hourCells(context: Context, now: Instant, currentCode: Int?): List<HourCell> {
-    val hourly = WeatherRepository.hourly(context).associateBy { it.epochSeconds }
+private fun hourCells(context: Context, place: Place, now: Instant, currentCode: Int?): List<HourCell> {
+    val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
     val slots = WeatherRepository.slots(
         nowEpochSeconds = now.epochSecond,
         zoneOffsetSeconds = BEIJING.totalSeconds,
         count = HOUR_CELLS,
         stepHours = HOUR_STEP,
     )
-    val current = WeatherRepository.cached(context)
+    val current = WeatherRepository.cached(context, place)
+    val unknown = context.getString(R.string.weather_unknown)
     return slots.mapIndexed { index, epoch ->
         val point = hourly[epoch]
         val code = if (index == 0) current?.code ?: currentCode ?: point?.code else point?.code
         val condition = code?.let { WeatherRepository.conditionOf(it) }
         val hour = Instant.ofEpochSecond(epoch).atZone(BEIJING).hour
         HourCell(
-            label = when {
-                index == 0 -> context.getString(R.string.weather_now)
-                point == null -> ""
-                else -> context.getString(R.string.weather_hour, hour)
-            },
-            condition = condition?.let { TimeText.conditionLabel(context, it) }.orEmpty(),
+            label = if (index == 0) context.getString(R.string.weather_now) else context.getString(R.string.weather_hour, hour),
+            condition = condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,
             iconRes = condition?.let { weatherIconRes(it, isDay = hour in 6..17) } ?: R.drawable.ic_wx_unknown,
         )
     }
