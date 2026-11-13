@@ -15,6 +15,7 @@ import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './cor
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place } from './core/Place';
+import { MapTilesLogic, MapDatum, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
 let passed = 0;
 const failures: string[] = [];
@@ -391,6 +392,64 @@ for (const item of equationCases) {
   equal('ten presets', 10, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
+}
+
+// ---- 位置地图瓦片 ----
+{
+  const shanghai = MapTilesLogic.layerFor(31.2304, 121.4737);
+  const tokyo = MapTilesLogic.layerFor(35.6812, 139.7671);
+  check('amap inside China', shanghai.datum === MapDatum.GCJ02 && shanghai.name.indexOf('amap') === 0);
+  check('osm outside China', tokyo.datum === MapDatum.WGS84 && tokyo.name === 'osm');
+  check('china bounds', MapTilesLogic.isInChina(31.23, 121.47) && !MapTilesLogic.isInChina(35.68, 139.76));
+
+  // 高德底图是 GCJ-02：上海一带的偏移在千米级（0.001°~0.01°）。
+  const gcj = MapTilesLogic.toGcj02(31.2304, 121.4737);
+  const dLat = Math.abs(gcj[0] - 31.2304);
+  const dLon = Math.abs(gcj[1] - 121.4737);
+  check('gcj02 offset inside China', dLat > 0.001 && dLat < 0.01 && dLon > 0.001 && dLon < 0.01,
+    `${dLat},${dLon}`);
+  const abroad = MapTilesLogic.toGcj02(35.6812, 139.7671);
+  check('gcj02 leaves abroad untouched', abroad[0] === 35.6812 && abroad[1] === 139.7671);
+  const display = MapTilesLogic.displayPoint(tokyo, 35.6812, 139.7671);
+  check('osm keeps wgs84', display[0] === 35.6812);
+
+  // 缩放 0 时全世界就是一片瓦片的中心。
+  const world = MapTilesLogic.tilePoint(0, 0, 0);
+  near('tile point at zoom 0', 0.5, world[0], 1e-9);
+  near('tile point at zoom 0 y', 0.5, world[1], 1e-9);
+  const tile = MapTilesLogic.tilePoint(31.2304, 121.4737, 12);
+  const back = MapTilesLogic.pointToLatLon(tile[0], tile[1], 12);
+  near('tile point round trip lat', 31.2304, back[0], 1e-6);
+  near('tile point round trip lon', 121.4737, back[1], 1e-6);
+
+  // 手指向右拖（+x）等于看更西边，经度应变小。
+  const moved = MapTilesLogic.shift(31.2304, 121.4737, 12, TILE_PX, 0);
+  check('drag east looks west', moved[1] < 121.4737, `${moved[1]}`);
+  near('drag keeps latitude', 31.2304, moved[0], 1e-9);
+
+  const widthPx = 988;
+  const heightPx = 570;
+  const tiles = MapTilesLogic.visibleTiles(shanghai, 31.2304, 121.4737, 12, widthPx, heightPx);
+  check('tiles cover viewport', tiles.length >= 12, `${tiles.length}`);
+  let covered = true;
+  for (const one of tiles) {
+    if (one.leftPx > widthPx || one.leftPx + TILE_PX < 0 || one.topPx > heightPx || one.topPx + TILE_PX < 0) {
+      covered = false;
+    }
+  }
+  check('no tile outside viewport', covered);
+  // 中心落在视口正中：至少有一片瓦片横跨中线。
+  let spansCenter = false;
+  for (const one of tiles) {
+    if (one.leftPx <= widthPx / 2 && one.leftPx + TILE_PX >= widthPx / 2) {
+      spansCenter = true;
+    }
+  }
+  check('center covered', spansCenter);
+  check('amap tile url', tiles[0].url.indexOf('is.autonavi.com/appmaptile') > 0 && tiles[0].url.indexOf('&z=12') > 0);
+  const osmTile = MapTilesLogic.visibleTiles(tokyo, 35.6812, 139.7671, 12, widthPx, heightPx)[0];
+  check('osm tile url', osmTile.url.indexOf('tile.openstreetmap.org/12/') > 0);
+  check('zoom clamped', MapTilesLogic.clampZoom(1) === MIN_ZOOM && MapTilesLogic.clampZoom(99) === MAX_ZOOM);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

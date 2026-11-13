@@ -18,7 +18,7 @@
 | 时辰交接提醒（250 ms） | ✅ | ✅（系统代理提醒） | 见「与 Android 的差异」 |
 | 进入关键时间报时（500 ms） | ✅ | ✅（系统代理提醒） | 同上 |
 | 桌面卡片：标准时间／真太阳时两栏、日期与气温区间、经纬度、关键时间轴、六格逐时预报 | ✅ | ✅ | 2×4，版面与 Android 的 `widget_solar_time_compact.xml` 一致；时间轴为 1vp 细线 + 边缘柔化的圆点 |
-| 内嵌地图（高德／OSM 底图） | ✅ | ❌ | 鸿蒙 Map Kit 需要在 AGC 建项目并配置签名与 `client_id`，本仓库不预置；位置信息改由「坐标 + 最近城市」呈现 |
+| 内嵌地图（高德／OSM 底图） | ✅ | ✅ | 不用 Map Kit，直接按 Web Mercator 拼栅格瓦片：境内高德（GCJ-02，标点前做偏移）、境外 OSM；见下 |
 | 桌面卡片点击分区 | ✅ | ✅ | 左栏→时钟、日期→日历、逐时行→天气、右栏与空白→本应用；见下 |
 
 ## 目录结构
@@ -32,6 +32,7 @@ harmony/
 │   │   ├── ets/
 │   │   │   ├── core/             纯逻辑（不带系统 API，可用 tsc 编译验证）
 │   │   │   │   ├── SolarTimeMath.ets   均时差、赤纬、真太阳时、日出日落、高度角
+│   │   │   │   ├── MapTiles.ets        位置地图：GCJ-02 偏移、Web Mercator 瓦片拼接
 │   │   │   │   ├── Shichen.ets         十二时辰
 │   │   │   │   ├── SolarSnapshot.ets   供界面消费的聚合快照
 │   │   │   │   ├── TimeFormat.ets      时间／时长格式化（中英）
@@ -119,15 +120,15 @@ $env:DEVECO_SDK_HOME = 'D:\DevEco Studio\sdk'   # DevEco 安装目录下的 sdk
 ```bash
 cd harmony/Tools
 npm install          # typescript + @types/node
-node verify-core.js  # 159 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
-node parse-ets.js    # 用 TypeScript 解析器检查 core/services/Ability 的语法（21 个文件）
-python check-ets.py  # 23 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
+node verify-core.js  # 185 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
+node parse-ets.js    # 用 TypeScript 解析器检查 core/services/Ability 的语法（22 个文件）
+python check-ets.py  # 26 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
 ```
 
 覆盖范围：均时差与 NOAA 公布值、真太阳时与经度修正的等价性、北京 6/21 与 12/21 的日出日落与年鉴值、
 上中天等于真太阳时 12:00、极昼极夜、太阳高度角、十二时辰的边界与刻数、关键时间解析（含跨午夜、
 被标签拆开的时间段、温度标记）、时间轴分段、天气 JSON 解析与小时槽位、区划名拼接、报时窗口与
-「时辰交接让位给关键时间」规则、城市索引。
+「时辰交接让位给关键时间」规则、城市索引、地图瓦片（GCJ-02 偏移与边界、瓦片编号与反算、视口覆盖）。
 
 ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ability.ets` 只能靠 DevEco Studio
 构建与真机验证。核心逻辑刻意不 import 任何 `@kit.*`，就是为了让上面这套检查能在没有鸿蒙 SDK 的
@@ -159,7 +160,8 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
   1. 大卡片（与桌面卡片同款版面，逐秒刷新，含时间轴与六格逐时预报）；
   2. 太阳卡：虚线弧 + 地平线 + 柔光圆点标出当前太阳位置（对齐 Android 的 `SunArc`），
      底下是日出/上中天/日落与白昼时长；
-  3. 页脚（版本与数据来源）。
+  3. 位置地图卡：坐标 + 瓦片地图 + 底图来源（对齐 Android 的 `MapCard`，可双指/双击缩放）；
+  4. 页脚（版本与数据来源）。
 - **设置页**（`pages/Settings.ets`）：当前位置与「实时跟随GPS」按钮、手动坐标、常用城市、
   两项提醒开关、关于。返回首页时由 `Index.onPageShow` 重新读取偏好。
 
@@ -204,8 +206,11 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
    因为系统逆地理的返回语言不由界面语言决定。中文写法是「上级+区县」直接相连（如「上海市黄浦区」），
    其他语言由细到粗用逗号连接（如「Huangpu District, Shanghai」），与 Android 相同。
    缓存策略（5 km / 30 天 / 语言变化重查）与 Android 相同。
-4. **没有地图**：鸿蒙地图组件属于 Map Kit，需要在 AGC 创建项目、配置 `client_id` 与签名后才能显示。
-   本仓库不预置商业服务凭据，位置信息以「精确坐标 + 最近城市」呈现。
+4. **地图不用 Map Kit**：鸿蒙的地图组件属于 Map Kit，需要在 AGC 建项目、配置 `client_id` 与签名，
+   本仓库不预置商业凭据。首页的「位置地图」改为直接拼栅格瓦片（`core/MapTiles.ets` + ArkUI `Image`）：
+   按 Web Mercator 算出视口内的瓦片编号与像素偏移，境内取高德（`webrd0x.is.autonavi.com`，
+   GCJ-02，标点前用 `toGcj02` 偏移）、境外取 OpenStreetMap；支持双指缩放与双击放大。
+   因为页面本身要上下滚动，地图不做拖动平移，标点始终在视口正中。
 5. **字面差异**：卡片与界面的少量辅助文案目前只有中文（英文界面下仍显示中文提示），
    与 Android 的 `values-en` 相比还有差距，见「待办」。
 

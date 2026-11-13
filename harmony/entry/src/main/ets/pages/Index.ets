@@ -1,6 +1,7 @@
 ﻿import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
+import { DEFAULT_ZOOM, MapLayer, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
@@ -83,6 +84,12 @@ struct Index {
   @State temperatureKey: string = '';
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
+  /** 位置地图：视口内的瓦片、底图来源说明、缩放级别与地图中心（底图坐标系）。 */
+  @State mapTiles: MapTile[] = [];
+  @State mapAttribution: string = '';
+  @State mapZoom: number = DEFAULT_ZOOM;
+  @State mapCenterLat: number = 0;
+  @State mapCenterLon: number = 0;
 
   private timerId: number = -1;
   private previousSolarSecond: number = -1;
@@ -94,6 +101,10 @@ struct Index {
   private sunCtxReady: boolean = false;
   private sunW: number = 0;
   private sunH: number = 0;
+  /** 地图视口尺寸（像素）与双指缩放前的级别。 */
+  private mapWpx: number = 0;
+  private mapHpx: number = 0;
+  private mapBaseZoom: number = DEFAULT_ZOOM;
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -123,6 +134,7 @@ struct Index {
     this.place = AppStore.place();
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
+    this.recenterMap();
   }
 
   /**
@@ -284,9 +296,41 @@ struct Index {
     this.place = place;
     AppStore.setPlace(place);
     this.refreshDerived();
+    this.recenterMap();
     this.tick();
     this.refreshRemote();
     this.rescheduleReminders();
+  }
+
+  // ---- 位置地图 ----
+
+  /** 地图中心复位到观测点：换城市、跟随 GPS 更新坐标后都要复位。 */
+  private recenterMap(): void {
+    const layer: MapLayer = MapTilesLogic.layerFor(this.place.latitude, this.place.longitude);
+    const point: number[] = MapTilesLogic.displayPoint(layer, this.place.latitude, this.place.longitude);
+    this.mapCenterLat = point[0];
+    this.mapCenterLon = point[1];
+    this.refreshMap();
+  }
+
+  /** 重算视口内的瓦片；中心、缩放、视口尺寸任一变化后调用。 */
+  private refreshMap(): void {
+    if (this.mapWpx <= 0 || this.mapHpx <= 0) {
+      return;
+    }
+    const layer: MapLayer = MapTilesLogic.layerFor(this.place.latitude, this.place.longitude);
+    this.mapAttribution = layer.attribution;
+    this.mapTiles = MapTilesLogic.visibleTiles(layer, this.mapCenterLat, this.mapCenterLon,
+      this.mapZoom, this.mapWpx, this.mapHpx);
+  }
+
+  private zoomMapBy(delta: number): void {
+    const next: number = MapTilesLogic.clampZoom(this.mapZoom + delta);
+    if (next === this.mapZoom) {
+      return;
+    }
+    this.mapZoom = next;
+    this.refreshMap();
   }
 
   private rescheduleReminders(): void {
@@ -691,6 +735,85 @@ struct Index {
     .cardStyle()
   }
 
+  /**
+   * 位置地图：与 Android 的 MapCard 同款——标题 + 坐标、190 高的地图、底图来源。
+   * 境内用高德栅格瓦片（中文路网），境外用 OpenStreetMap；标点固定在地图中心，
+   * 支持双指缩放与双击放大（页面本身可上下滚动，所以不做拖动平移）。
+   */
+  @Builder
+  mapCard() {
+    Column() {
+      Row() {
+        Text('位置地图')
+          .fontSize(13)
+          .fontColor(SUBTLE_COLOR)
+          .layoutWeight(1)
+        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+          .fontSize(11)
+          .fontColor(SUBTLE_COLOR)
+      }
+      .width('100%')
+
+      Stack({ alignContent: Alignment.Center }) {
+        ForEach(this.mapTiles, (tile: MapTile) => {
+          Image(tile.url)
+            .width(px2vp(TILE_PX))
+            .height(px2vp(TILE_PX))
+            .objectFit(ImageFit.Fill)
+            .draggable(false)
+            .position({ x: px2vp(tile.leftPx), y: px2vp(tile.topPx) })
+        }, (tile: MapTile) => `${tile.url}`)
+        // 标点：始终落在视口正中，对应上面的坐标。
+        Column()
+          .width(16)
+          .height(16)
+          .borderRadius(8)
+          .backgroundColor('#FFFFFF')
+          .border({ width: 4, color: HERO_COLOR })
+          .shadow({ radius: 8, color: '#A6000000' })
+      }
+      .width('100%')
+      .height(190)
+      .clip(true)
+      .borderRadius(12)
+      .backgroundColor('#0F1830')
+      .margin({ top: 8 })
+      .onAreaChange((oldValue: Area, newValue: Area) => {
+        this.mapWpx = vp2px(Number(newValue.width));
+        this.mapHpx = vp2px(Number(newValue.height));
+        this.refreshMap();
+      })
+      .gesture(
+        GestureGroup(GestureMode.Parallel,
+          PinchGesture({ fingers: 2 })
+            .onActionStart(() => {
+              this.mapBaseZoom = this.mapZoom;
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              if (event.scale > 0) {
+                const next: number = MapTilesLogic.clampZoom(this.mapBaseZoom + Math.log2(event.scale));
+                if (next !== this.mapZoom) {
+                  this.mapZoom = next;
+                  this.refreshMap();
+                }
+              }
+            }),
+          TapGesture({ count: 2 })
+            .onAction(() => {
+              this.zoomMapBy(1);
+            })
+        )
+      )
+
+      Text(`${this.mapAttribution} · ${this.mapZoom} 级 · 双指缩放`)
+        .fontSize(10)
+        .fontColor('#5A6885')
+        .margin({ top: 6 })
+        .width('100%')
+    }
+    .cardStyle()
+  }
+
   /** 白昼进度：真太阳时在日出与日落之间的比例；没有日出日落时取 0.5。 */
   private daylightProgress(): number {
     const sunrise: number = this.snapshot.sunriseTrueSolarSeconds;
@@ -777,6 +900,7 @@ struct Index {
         Column({ space: 12 }) {
           this.heroCard()
           this.sunCard()
+          this.mapCard()
           Text(`v1.0.0 · 数据来源 Open-Meteo（CC BY 4.0）`)
             .fontSize(10)
             .fontColor('#5A6885')
