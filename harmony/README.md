@@ -83,6 +83,7 @@ harmony/
 
 1. 用 DevEco Studio 打开本目录（`harmony/`），等待 `Sync` 完成。
 2. `File → Project Structure → Signing Configs` 勾选 **Automatically generate signature**（需登录华为开发者账号；真机调试用调试证书即可）。
+   它会把材料写到 `~/.ohos/config/`，并把签名配置存到本工程的 **`.sign/sign-config.json5`**。
 3. 运行 `entry` 到真机或模拟器；或命令行：
 
 ```bash
@@ -99,12 +100,22 @@ hdc install entry/build/default/outputs/default/entry-default-signed.hap
 $env:DEVECO_SDK_HOME = 'D:\DevEco Studio\sdk'   # DevEco 安装目录下的 sdk
 ```
 
-没有签名时 `assembleHap` 也能过，只是产物未签名、无法安装（`entry-default-unsigned.hap`）。
+签名配置放在 `.sign/sign-config.json5`（**已在 `.gitignore` 里，不入库**：里面是 .p12 路径与口令），
+`build-profile.json5` 里只写名字引用它：
+
+```json5
+"products": [{ "name": "default", "signingConfig": "default", /* … */ }]
+```
+
+hvigor 的 `SignHap` 任务会自己去读这个文件，签出 `entry-default-signed.hap`；
+`node Tools/package-hap.js` 会优先取签名产物，输出 `dist/真太阳时-鸿蒙-<版本号>.hap`。
+没有 `.sign/` 时 `assembleHap` 仍然能过，只是提示 `Will skip sign`、产物是未签名的
+`entry-default-unsigned.hap`（模拟器才接受未签名包）。
 
 ### 交给别人做真机测试前要准备什么
 
-1. **必须先签名，且要用对方的设备**：仓库里没有签名配置，产物是未签名的 `entry-default-unsigned.hap`，
-   真机装不进去（模拟器才接受未签名包）。两条可行路线：
+1. **必须先签名，且要用对方的设备**：仓库里不含签名材料（`.sign/` 不入库），未配置签名时产物是
+   未签名的 `entry-default-unsigned.hap`，真机装不进去。两条可行路线：
    - **调试证书**（推荐给内部测试）：DevEco Studio → `File → Project Structure → Signing Configs`
      → 勾选 *Automatically generate signature*（需登录华为开发者账号）。它生成的调试 profile
      **只对 AGC「调试设备」列表里的 UDID 有效**，所以要让测试者先把设备 UDID 报给你（一个 profile
@@ -113,7 +124,12 @@ $env:DEVECO_SDK_HOME = 'D:\DevEco Studio\sdk'   # DevEco 安装目录下的 sdk
      不需要 UDID。适合发给不大方便配合抓 UDID 的人。
 2. **系统版本**：`compatibleSdkVersion` 是 `5.0.0(12)`，即 **HarmonyOS NEXT 5.0 及以上**。
    HarmonyOS 4.x（Android 内核那一代）和平板/手表等非手机设备装不了。
-3. **测试者要在设备上放行的几件事**：
+3. **本机连真机**：手机打开「设置 → 系统和更新 → 开发者选项 → **USB 调试**」，插上数据线后在手机上
+   点「允许调试」，电脑上 `hdc list targets` 要能看到设备（只有 `COM*` 说明手机还停在 MTP 模式，
+   `hdc` 看不见它，包也装不进去）。确认设备在线后再核对 UDID 是否在调试 profile 里：
+   `hdc shell bm get -u`，结果必须出现在 `.sign/sign-config.json5` 指向的 `.p7b` 的
+   `debug-info.device-ids` 里，否则安装会报「设备不在 profile 中」。
+4. **测试者要在设备上放行的几件事**：
    - **通知**：报时靠系统「代理提醒」，第一次进设置页（或打开报时开关）会弹「允许发送通知」，
      选了「不允许」就到点只响铃、通知栏不显示；之后要到「设置 → 通知」里手动打开。
    - **定位**：点「实时跟随GPS」时授权；若系统「位置」总开关没开，应用会直接提示去控制中心打开。
@@ -178,8 +194,12 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 - 包内结构已验证：`ets/widgets.abc`（25 KB，卡片已编译进去）、`resources/base/profile/form_config.json`、
   `resources/rawfile/chime500.wav` 与 `chime250.wav`、`module.json` 里 5 项权限齐全，
   `minAPIVersion = 50000012` —— `compatibleSdkVersion` 仍是 `5.0.0(12)`，用 API 26 SDK 编译但向下兼容 API 12
-- **未做**：真机/模拟器运行。本机没有调试证书（签名需登录华为账号，DevEco 里 `Project Structure → Signing Configs`
-  勾自动签名即可），模拟器镜像也没下载（`Device Manager` 里下 `HarmonyOS 7.0.1 B1` 镜像后即可启动 `Mate 90 Pro`）
+- **已做**：模拟器（HarmonyOS 6.0.0 / API 20，`HRM6`）跑通；真机签名链路已打通——
+  签名材料在 `~/.ohos/config/`（DevEco 自动签名生成），配置存 `.sign/sign-config.json5`（不入库），
+  `build-profile.json5` 的 product 用 `"signingConfig": "default"` 引用，`assembleHap` 直接产出
+  `entry-default-signed.hap`（`hap-sign-tool verify-app` 校验通过，profile 为 debug、含 1 个 UDID）
+- **未做**：真机实跑。手机插上后若 `hdc list targets` 只有 `COM*`，说明还没开 USB 调试（见
+  「交给别人做真机测试前要准备什么」第 3 条）
 
 ## 页面结构
 

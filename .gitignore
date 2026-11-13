@@ -32,3 +32,6 @@ design/drafts/
 
 # 发布产物（assembleRelease 自动生成的改名副本）
 dist/
+
+# 鸿蒙签名材料（含口令，绝不入库）
+harmony/.sign/

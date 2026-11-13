@@ -6,12 +6,16 @@
         "name": "default",
         "compatibleSdkVersion": "5.0.0(12)",
         "runtimeOS": "HarmonyOS",
+        // 签名配置不写在这里（那个文件要入库，口令是明文）；hvigor 会去读
+        // .sign/sign-config.json5（已在 .gitignore 里），这里只按名字引用。
+        "signingConfig": "default",
         "buildOption": {
           "strictMode": {
             "caseSensitiveCheck": true,
             "useNormalizedOHMUrl": true
           }
-        }
+        },
+        "targetSdkVersion": "26.0.1"
       }
     ],
     "buildModeSet": [
