@@ -58,6 +58,7 @@ struct SolarTimeCard {
   @LocalStorageProp('hourConds') hourConds: string[] = [];
   @LocalStorageProp('hourIcons') hourIcons: string[] = [];
   @LocalStorageProp('temperatureKey') temperatureKey: string = '';
+  @LocalStorageProp('inKeyTime') inKeyTime: boolean = false;
 
   private bandColor(): string {
     if (this.temperatureKey === 'cold') {
@@ -67,6 +68,16 @@ struct SolarTimeCard {
       return '#D9534F';
     }
     return GOLD;
+  }
+
+  /** 真太阳时的字色：落在关键时段里时用色条同色，其余为金色（同 Android 卡片）。 */
+  private solarColor(): string {
+    return this.inKeyTime ? this.bandColor() : GOLD;
+  }
+
+  /** 时间轴上代表当前时刻的圆点跟着真太阳时变色；时段外仍是白色。 */
+  private dotColor(): string {
+    return this.inKeyTime ? this.bandColor() : WHITE;
   }
 
   /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」。 */
@@ -183,7 +194,7 @@ struct SolarTimeCard {
           Text(this.solarTime)
             .fontSize(38)
             .fontWeight(FontWeight.Lighter)
-            .fontColor(GOLD)
+            .fontColor(this.solarColor())
             .maxLines(1)
             .width('100%')
           Text(this.coords)
@@ -238,7 +249,7 @@ struct SolarTimeCard {
             .radialGradient({
               center: ['50%', '50%'],
               radius: 5.5,
-              colors: [[WHITE, 0], [WHITE, 0.45], ['#00FFFFFF', 1]]
+              colors: [[this.dotColor(), 0], [this.dotColor(), 0.45], [`#00${this.dotColor().substring(1)}`, 1]]
             })
           Row().layoutWeight(this.remainingWeight())
         }
@@ -247,7 +258,6 @@ struct SolarTimeCard {
       }
       .width('100%')
       .height(11)
-      .padding({ left: 6, right: 6 })
       .margin({ top: 2 })
 
       Row() {

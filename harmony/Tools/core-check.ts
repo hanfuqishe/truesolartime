@@ -265,6 +265,15 @@ for (const item of equationCases) {
   equal('midnight band splits into three segments', 3, midnightSegments.length);
   equal('midnight band tail ends at 01:00', 60, midnightSegments[0].lengthMinutes);
   equal('midnight band head starts at 23:00', 1380, midnightSegments[2].startMinute);
+
+  // 真太阳时是否落在关键时间里（决定数字字色）
+  const colorBands = [new TakeBand(900, 1020), new TakeBand(1380, 60)];
+  check('inside band changes color', TakeTimeLogic.insideBands(colorBands, 16 * 3600));
+  check('outside band keeps gold', !TakeTimeLogic.insideBands(colorBands, 9 * 3600));
+  check('band start counts as inside', TakeTimeLogic.insideBands(colorBands, 900 * 60));
+  check('band end is outside', !TakeTimeLogic.insideBands(colorBands, 1020 * 60));
+  check('midnight band counts', TakeTimeLogic.insideBands(colorBands, 23 * 3600 + 1800));
+  check('no bands never inside', !TakeTimeLogic.insideBands([], 16 * 3600));
 }
 
 // ---- 天气 ----

@@ -146,6 +146,17 @@ export class TakeTimeLogic {
     return '';
   }
 
+  /** 真太阳时（当天秒数）是否落在某段关键时间里；与 Android 的 activeKeyColor 判定一致。 */
+  static insideBands(bands: TakeBand[], secondsOfDay: number): boolean {
+    const minuteOfDay: number = secondsOfDay / 60;
+    for (const band of bands) {
+      if (band.contains(minuteOfDay)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static temperatureFromKey(raw: string): TakeTemperature {
     if (raw === 'cold') {
       return TakeTemperature.COLD_OR_MILD;

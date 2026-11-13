@@ -82,6 +82,9 @@ struct Index {
   @State keyTimeState: string = '';
   @State segments: string[] = [];
   @State temperatureKey: string = '';
+  /** 关键时间的时段（分钟区间），与「当前是否落在时段内」分开存：后者要逐秒判定。 */
+  @State keyBands: TakeBand[] = [];
+  @State inKeyTime: boolean = false;
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
   /** 位置地图：视口内的瓦片、底图来源说明、缩放级别与地图中心（底图坐标系）。 */
@@ -175,6 +178,8 @@ struct Index {
     this.previousShichenIndex = shichenIndex;
     this.solarSecond = seconds;
     this.beijingSecond = Math.floor(SolarTimeMath.beijingSecondsOfDay(now)) % 86400;
+    // 关键时间的字色要按秒跟进（进入/离开时段的那一秒就变色），所以放在每秒的 tick 里算。
+    this.inKeyTime = TakeTimeLogic.insideBands(this.keyBands, seconds);
     // 太阳弧线上的圆点跟着真太阳时走，每秒重画一次。
     this.drawSunArc();
     // 分钟级别的数据每 30 秒重算一次，别让每秒的刷新去碰网络与字符串拼接。
@@ -271,17 +276,21 @@ struct Index {
     if (schedule === null || schedule.bands.length === 0) {
       this.keyTimeText = '';
       this.segments = [];
+      this.keyBands = [];
       this.temperatureKey = '';
+      this.inKeyTime = false;
       this.keyTimeState = KeyTimeService.remainingValidity() < 0 ? '尚未同步' : '数据已过期';
       return;
     }
     this.keyTimeText = schedule.bands
       .map((band: TakeBand): string => `${TimeFormat.clock(band.startMinute * 60)} – ${TimeFormat.clock(band.endMinute * 60)}`)
       .join('   ');
+    this.keyBands = schedule.bands;
     this.temperatureKey = TakeTimeLogic.temperatureToKey(schedule.temperature);
     this.segments = TakeTimeLogic.axisSegments(schedule.bands).map((segment: AxisSegment): string =>
       `${segment.lengthMinutes},${segment.bandIndex}`);
     this.keyTimeState = this.temperatureKey === 'cold' ? '冻或温' : (this.temperatureKey === 'hot' ? '热或温' : '');
+    this.inKeyTime = TakeTimeLogic.insideBands(this.keyBands, this.solarSecond);
   }
 
   private refreshRemote(): void {
@@ -400,6 +409,19 @@ struct Index {
       return HOT_COLOR;
     }
     return HERO_COLOR;
+  }
+
+  /**
+   * 真太阳时的字色：落在关键时间段里时跟随时段的冷暖配色，其余时间为金色
+   * —— 与 Android 卡片的 `activeKeyColor` 一致。
+   */
+  private solarColor(): string {
+    return this.inKeyTime ? this.bandColor() : HERO_COLOR;
+  }
+
+  /** 时间轴上代表当前时刻的圆点：跟着真太阳时一起变色（时段外仍是白色）。 */
+  private dotColor(): string {
+    return this.inKeyTime ? this.bandColor() : '#FFFFFF';
   }
 
   private sunSummary(): string {
@@ -532,18 +554,18 @@ struct Index {
             Text(TimeFormat.clock(this.solarSecond))
               .fontSize(42)
               .fontWeight(FontWeight.Lighter)
-              .fontColor(HERO_COLOR)
+              .fontColor(this.solarColor())
               .maxLines(1)
             Text(':')
               .fontSize(23)
               .fontWeight(FontWeight.Lighter)
-              .fontColor(HERO_COLOR)
+              .fontColor(this.solarColor())
               .maxLines(1)
               .margin({ bottom: 5 })
             Text(pad2(this.solarSecond % 60))
               .fontSize(23)
               .fontWeight(FontWeight.Lighter)
-              .fontColor(HERO_COLOR)
+              .fontColor(this.solarColor())
               .maxLines(1)
               .margin({ bottom: 5, left: 1 })
           }
@@ -603,7 +625,7 @@ struct Index {
             .radialGradient({
               center: ['50%', '50%'],
               radius: 5.5,
-              colors: [['#FFFFFFFF', 0], ['#FFFFFFFF', 0.45], ['#00FFFFFF', 1]]
+              colors: [[this.dotColor(), 0], [this.dotColor(), 0.45], [`#00${this.dotColor().substring(1)}`, 1]]
             })
           Row().layoutWeight(this.solarSecond < 86400 ? (86400 - this.solarSecond) / 60 : 0.1)
         }
@@ -612,7 +634,6 @@ struct Index {
       }
       .width('100%')
       .height(11)
-      .padding({ left: 6, right: 6 })
       .margin({ top: 10 })
 
       // 六格逐时预报

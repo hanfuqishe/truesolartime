@@ -67,6 +67,8 @@ export class CardData {
   hourIcons: string[] = [];
   /** "cold" / "hot" / ""，决定时间轴色条颜色。 */
   temperatureKey: string = '';
+  /** 真太阳时是否落在关键时间段里：落在里面时数字改用色条同色，与 Android 卡片一致。 */
+  inKeyTime: boolean = false;
 }
 
 export class CardService {
@@ -109,6 +111,7 @@ export class CardService {
     if (schedule !== null && schedule.bands.length > 0) {
       data.segments = CardService.encodeSegments(TakeTimeLogic.axisSegments(schedule.bands));
       data.temperatureKey = TakeTimeLogic.temperatureToKey(schedule.temperature);
+      data.inKeyTime = TakeTimeLogic.insideBands(schedule.bands, snapshot.trueSolarSeconds);
     }
     return data;
   }
