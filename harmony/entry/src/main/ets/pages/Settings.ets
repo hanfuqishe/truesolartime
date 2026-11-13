@@ -211,7 +211,7 @@ struct Settings {
               .fontColor(TEXT_COLOR)
               .margin({ top: 8 })
               .width('100%')
-            Button(this.locating ? '定位中…' : '使用当前位置')
+            Button(this.locating ? '定位中…' : '实时跟随GPS')
               .fontSize(13)
               .backgroundColor(CHIP_COLOR)
               .fontColor(TEXT_COLOR)
