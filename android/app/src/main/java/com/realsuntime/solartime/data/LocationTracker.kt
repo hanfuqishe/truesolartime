@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
 
@@ -53,6 +54,41 @@ class LocationTracker(context: Context) {
                 runCatching { manager.removeUpdates(listener) }
             }
         }
+    }
+
+    /**
+     * 取一次定位就停：桌面卡片在后台用这个（进程随时可能被回收，不能常驻监听）。
+     *
+     * @param timeoutMillis 超时后自动摘掉监听，避免进程里残留定位请求
+     * @return 取消函数
+     */
+    @SuppressLint("MissingPermission")
+    fun requestSingleFix(timeoutMillis: Long = 20_000L, onFix: (Location) -> Unit): () -> Unit {
+        if (!hasPermission()) return {}
+
+        val handler = Handler(Looper.getMainLooper())
+        var done = false
+        lateinit var stop: () -> Unit
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                if (done) return
+                done = true
+                stop()
+                onFix(location)
+            }
+        }
+        val providers = activeProviders()
+        providers.forEach { provider ->
+            runCatching { manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper()) }
+        }
+        stop = {
+            handler.removeCallbacksAndMessages(null)
+            providers.forEach { provider -> runCatching { manager.removeUpdates(listener) } }
+        }
+        if (providers.isNotEmpty()) {
+            handler.postDelayed({ if (!done) { done = true; stop() } }, timeoutMillis)
+        }
+        return stop
     }
 
     private fun activeProviders(): List<String> =

@@ -71,6 +71,9 @@ object WidgetUpdater {
     /** 外部应用（闹钟/天气）的解析结果缓存时长。 */
     private const val RESOLVE_TTL_MILLIS = 10L * 60 * 1000
 
+    /** 卡片可见时的定位节奏：每 5 分钟最多主动取一次（应用打开时由 MainViewModel 每分钟取一次）。 */
+    private const val GPS_FIX_INTERVAL_MILLIS = 5L * 60 * 1000
+
     /**
      * 桌面回报的高度（OPTION_APPWIDGET_MIN_HEIGHT）普遍小于实际可用的单元格高度
      * （实测 2 行回报 131dp、实际约 165dp；3 行回报 180dp、实际约 224dp），
@@ -505,6 +508,9 @@ object WidgetUpdater {
     private var alarmTarget: Intent? = null
     private var alarmResolvedAt = 0L
 
+    /** 是否已有一个「卡片侧」定位请求在路上：避免每分钟的刷新叠加请求。 */
+    private var gpsFixInFlight = false
+
     private fun weatherPendingIntent(context: Context, place: Place): PendingIntent? {
         val now = System.currentTimeMillis()
         if (now - weatherResolvedAt > RESOLVE_TTL_MILLIS) {
@@ -918,8 +924,13 @@ object WidgetUpdater {
     internal fun followsSystemFix(source: PlaceSource): Boolean = source != PlaceSource.MANUAL
 
     private fun resolveLocation(context: Context): LocationState {
-        val saved = AppSettings(context).place
+        val settings = AppSettings(context)
+        val saved = settings.place
         if (!followsSystemFix(saved.source)) return LocationState(saved, hasFix = true)
+
+        // 卡片可见时每 5 分钟主动取一次定位：整分 tick 每分钟都会跑到这里，
+        // 若每次都取会把定位唤醒放大到每分钟一次。
+        requestWidgetFixIfDue(context, settings)
 
         val fix = LocationTracker(context).lastKnownLocation()
         if (fix != null) {
@@ -933,6 +944,34 @@ object WidgetUpdater {
             fixNow = false,
         )
         return LocationState(saved, hasFix)
+    }
+
+    /**
+     * 桌面卡片侧的定位节奏：最多每 [GPS_FIX_INTERVAL_MILLIS] 取一次。
+     *
+     * 取到后写回设置（下次直接用 lastKnown），并整体重绘一次卡片。
+     * 进程随时可能被回收，所以「上次取定位的时刻」存在偏好里而不是内存里。
+     */
+    private fun requestWidgetFixIfDue(context: Context, settings: AppSettings) {
+        if (gpsFixInFlight) return
+        val now = System.currentTimeMillis()
+        if (now - settings.lastWidgetFixMillis < GPS_FIX_INTERVAL_MILLIS) return
+        settings.lastWidgetFixMillis = now
+        gpsFixInFlight = true
+        val app = context.applicationContext
+        LocationTracker(app).requestSingleFix { fix ->
+            gpsFixInFlight = false
+            val fresh = Place(
+                fix.latitude,
+                fix.longitude,
+                PlaceSource.GPS,
+                app.getString(R.string.gps_label),
+            )
+            AppSettings(app).place = fresh
+            DistrictResolver.requestRefresh(app, fresh)
+            WeatherRepository.requestRefresh(app, fresh)
+            refreshAll(app)
+        }
     }
 
     private fun openApp(context: Context): Intent =

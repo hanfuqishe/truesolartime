@@ -32,6 +32,8 @@ const MIN_OFFSET_MINUTES: number = -720;
 const MAX_OFFSET_MINUTES: number = 840;
 /** 逐时预报的格数（与版面一致）。 */
 const HOUR_CELLS: number = 6;
+/** 桌面卡片侧的定位节奏：每 5 分钟最多主动取一次。 */
+const CARD_GPS_INTERVAL_MILLIS: number = 5 * 60 * 1000;
 const MINUTES_PER_DAY: number = 1440;
 const BEIJING_OFFSET_SECONDS: number = SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000;
 
@@ -203,9 +205,15 @@ export class CardService {
     if (place.source !== PlaceSource.GPS) {
       return;
     }
+    // 卡片侧每 5 分钟最多主动取一次定位（应用打开时由 Index 自己按每分钟取）。
+    const now: number = Date.now();
+    if (now - AppStore.lastCardFixMillis() < CARD_GPS_INTERVAL_MILLIS) {
+      return;
+    }
     if (!(await LocationService.hasPermission())) {
       return;
     }
+    AppStore.setLastCardFixMillis(now);
     const point: GeoPoint | null = await LocationService.current();
     if (point === null) {
       return;

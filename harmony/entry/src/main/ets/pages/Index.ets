@@ -32,6 +32,8 @@ const NIGHT_BOTTOM_COLOR: string = '#151B2E';
 /** 白天橙色底上金色看不清，关键时段的色段也换成更暗的一档。 */
 const COLD_ON_DAY_COLOR: string = '#2E7D32';
 const HOT_ON_DAY_COLOR: string = '#B3261E';
+/** 应用在前台时的定位节奏：每分钟一次（桌面卡片是 5 分钟一次）。 */
+const GPS_INTERVAL_MILLIS: number = 60 * 1000;
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -102,6 +104,8 @@ struct Index {
   @State mapCenterLon: number = 0;
 
   private timerId: number = -1;
+  /** 上次前台取定位的时刻（毫秒），用于「每分钟一次」的节流。 */
+  private lastGpsMillis: number = 0;
   private previousSolarSecond: number = -1;
   private previousShichenIndex: number = -1;
   private lastDerivedMillis: number = 0;
@@ -148,7 +152,8 @@ struct Index {
   }
 
   /**
-   * 跟随 GPS 时，每次打开应用静默刷新一次坐标（不弹权限框；没授权就跳过）。
+   * 跟随 GPS 时的前台定位节奏：应用打开期间每分钟静默取一次（不弹权限框；没授权就跳过）。
+   * 桌面卡片走的是另一条路径，每 5 分钟一次，见 CardService.syncGpsPlace。
    */
   private syncGpsSilently(): void {
     if (this.place.source !== PlaceSource.GPS) {
@@ -165,6 +170,11 @@ struct Index {
         this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
       });
     });
+  }
+
+  /** 距离上次前台取定位是否已经满一分钟。 */
+  private gpsDue(): boolean {
+    return Date.now() - this.lastGpsMillis >= GPS_INTERVAL_MILLIS;
   }
 
   aboutToDisappear(): void {
@@ -187,6 +197,11 @@ struct Index {
     this.beijingSecond = Math.floor(SolarTimeMath.beijingSecondsOfDay(now)) % 86400;
     // 关键时间的字色要按秒跟进（进入/离开时段的那一秒就变色），所以放在每秒的 tick 里算。
     this.inKeyTime = TakeTimeLogic.insideBands(this.keyBands, seconds);
+    // 跟随 GPS 时前台每分钟取一次定位；桌面卡片侧是 5 分钟一次（CardService）。
+    if (this.place.source === PlaceSource.GPS && this.gpsDue()) {
+      this.lastGpsMillis = now;
+      this.syncGpsSilently();
+    }
     // 太阳弧线上的圆点跟着真太阳时走，每秒重画一次。
     this.drawSunArc();
     // 分钟级别的数据每 30 秒重算一次，别让每秒的刷新去碰网络与字符串拼接。

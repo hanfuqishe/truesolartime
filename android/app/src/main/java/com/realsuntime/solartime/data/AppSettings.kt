@@ -45,6 +45,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
         set(value) = prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply()
 
+    /** 上次为桌面卡片主动取 GPS 的时刻：卡片可见时最多 5 分钟取一次，避免每分钟都唤醒定位。 */
+    var lastWidgetFixMillis: Long
+        get() = prefs.getLong(KEY_LAST_WIDGET_FIX, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_WIDGET_FIX, value).apply()
+
     private companion object {
         const val KEY_LATITUDE = "latitude"
         const val KEY_LONGITUDE = "longitude"
@@ -55,5 +60,6 @@ class AppSettings(context: Context) {
         const val KEY_MAP_STYLE = "map_style"
         const val KEY_HOURLY_CHIME = "hourly_chime"
         const val KEY_LOCATION_ASKED = "location_permission_requested"
+        const val KEY_LAST_WIDGET_FIX = "last_widget_fix"
     }
 }

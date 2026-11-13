@@ -168,6 +168,17 @@ export class AppStore {
     store.flush();
   }
 
+  /** 上次为「桌面卡片」主动取 GPS 的时刻（毫秒）：卡片侧最多 5 分钟取一次。 */
+  static lastCardFixMillis(): number {
+    return AppStore.numberValue(AppStore.settingsStore(), 'last_card_fix', 0);
+  }
+
+  static setLastCardFixMillis(millis: number): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    store.putSync('last_card_fix', millis);
+    store.flush();
+  }
+
   // ---- 已发布的卡片 ----
 
   static formIds(): string[] {
