@@ -1,7 +1,5 @@
 package com.realsuntime.solartime.ui
 
-import android.appwidget.AppWidgetManager
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -35,11 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -51,12 +46,6 @@ import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetUpdater
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
-/** 等待启动器新增小组件实例的最长时间（用户还要在系统弹窗里确认）。 */
-private const val PIN_RESULT_TIMEOUT_MILLIS = 6_000L
-private const val PIN_POLL_INTERVAL_MILLIS = 300L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -72,7 +61,6 @@ fun SettingsSheet(
     onToggleReminders: (Boolean) -> Unit,
     onToggleKeyTimeChime: (Boolean) -> Unit,
     onSelectMapStyle: (MapStyle) -> Unit,
-    onAddWidget: () -> Boolean,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -111,10 +99,9 @@ fun SettingsSheet(
                 if (trackingGps) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text(stringResource(R.string.action_restart_gps))
-                } else {
-                    Text(stringResource(R.string.action_use_gps))
                 }
+                // 文案与鸿蒙版一致：跟随中也是「实时跟随GPS」，不改成「重新开始…」（点它本来就是重取一次定位）。
+                Text(stringResource(R.string.action_use_gps))
             }
 
             Spacer(Modifier.height(22.dp))
@@ -266,118 +253,6 @@ fun SettingsSheet(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = stringResource(R.string.section_widget),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.widget_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            val canPin = remember {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                    context.getSystemService(AppWidgetManager::class.java)
-                        ?.isRequestPinAppWidgetSupported == true
-            }
-            var pinHint by remember { mutableStateOf<String?>(null) }
-            var pinFailed by remember { mutableStateOf(false) }
-            // 已发出请求、结果未定的基准实例数；系统确认弹窗可能一直开着，
-            // 用户点「添加」之前不能判失败，所以要等回到前台再复核。
-            var pinBaseline by remember { mutableStateOf<Int?>(null) }
-            var pinSawPause by remember { mutableStateOf(false) }
-            val needsManualPin = remember {
-                WidgetUpdater.pinNeedsManualFallback(Build.MANUFACTURER, Build.BRAND)
-            }
-            fun settlePin(baseline: Int) {
-                val count = WidgetUpdater.pinnedCount(context)
-                pinnedWidgets = count
-                val added = count > baseline
-                pinHint = context.getString(
-                    if (added) {
-                        R.string.widget_pin_done
-                    } else if (needsManualPin) {
-                        R.string.widget_pin_manual
-                    } else {
-                        R.string.widget_pin_no_space
-                    },
-                )
-                pinFailed = !added
-            }
-            LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
-                if (pinBaseline != null) pinSawPause = true
-            }
-            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-                val baseline = pinBaseline ?: return@LifecycleEventEffect
-                pinBaseline = null
-                settlePin(baseline)
-            }
-            val scope = rememberCoroutineScope()
-            FilledTonalButton(
-                onClick = {
-                    val before = WidgetUpdater.pinnedCount(context)
-                    if (!onAddWidget()) {
-                        pinHint = context.getString(R.string.widget_pin_unsupported)
-                        pinFailed = true
-                        return@FilledTonalButton
-                    }
-                    // 请求已发出就先给个反馈，否则部分系统上「什么都不发生」，看起来像没反应。
-                    pinHint = context.getString(R.string.widget_pin_requested)
-                    pinFailed = false
-                    pinBaseline = before
-                    pinSawPause = false
-                    // 启动器只在真的加上去时才新增实例；用户可能还要在系统弹窗里确认，
-                    // 因此轮询一小段时间。超时也不算失败——弹窗还开着就交给 ON_RESUME 复核。
-                    scope.launch {
-                        val deadline = System.currentTimeMillis() + PIN_RESULT_TIMEOUT_MILLIS
-                        while (System.currentTimeMillis() < deadline) {
-                            delay(PIN_POLL_INTERVAL_MILLIS)
-                            if (WidgetUpdater.pinnedCount(context) > before) {
-                                pinBaseline = null
-                                pinnedWidgets = WidgetUpdater.pinnedCount(context)
-                                pinHint = context.getString(R.string.widget_pin_done)
-                                pinFailed = false
-                                return@launch
-                            }
-                        }
-                        // 全程没离开过前台 = 系统压根没弹窗（国产 ROM 上多半是没走通），
-                        // 直接引导手动添加；离开过就让用户确认完、回到前台时再判定。
-                        if (pinSawPause) return@launch
-                        pinBaseline = null
-                        settlePin(before)
-                    }
-                },
-                enabled = canPin,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (canPin) stringResource(R.string.action_add_to_home) else stringResource(R.string.widget_pin_unsupported))
-            }
-            pinHint?.let { hint ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (pinFailed) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                // 小米/华为等桌面可能直接忽略应用内的添加请求，这时常驻显示手动路径。
-                text = stringResource(
-                    if (needsManualPin) R.string.widget_pin_hint_manual else R.string.widget_pin_hint,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()

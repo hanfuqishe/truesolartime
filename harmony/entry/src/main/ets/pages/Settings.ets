@@ -13,6 +13,7 @@ import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore } from '../services/Store';
+import { AppInfo } from '../services/AppInfo';
 import { CardService } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
@@ -398,7 +399,7 @@ struct Settings {
           // 关于
           Column() {
             this.sectionTitle('关于')
-            Text('真太阳时 v1.0.0')
+            Text(`真太阳时 v${AppInfo.versionName()}`)
               .fontSize(12)
               .fontColor(this.palette.text)
               .margin({ top: 8 })

@@ -120,7 +120,7 @@ class WidgetUpdaterTest {
             temperature = TakeTemperature.COLD_OR_MILD,
         )
         // 16:00 在 15:00-17:00 之内 → 绿色（白天用暗一档）
-        assertEquals(KeyTimePalette.COLD, WidgetUpdater.activeKeyColor(schedule, 16 * 3600.0, isDay = true))
+        assertEquals(KeyTimePalette.COLD_INK, WidgetUpdater.activeKeyColor(schedule, 16 * 3600.0, isDay = true))
         // 13:00 不在 → 默认色（null）
         assertNull(WidgetUpdater.activeKeyColor(schedule, 13 * 3600.0, isDay = true))
         // 没有关键时间数据 → 默认色
@@ -145,7 +145,7 @@ class WidgetUpdaterTest {
             bands = listOf(TakeBand(600, 720)),
             temperature = TakeTemperature.HOT_OR_MILD,
         )
-        assertEquals(KeyTimePalette.HOT, WidgetUpdater.activeKeyColor(schedule, 11 * 3600.0, isDay = true))
+        assertEquals(KeyTimePalette.HOT_INK, WidgetUpdater.activeKeyColor(schedule, 11 * 3600.0, isDay = true))
         assertEquals(KeyTimePalette.HOT_NIGHT, WidgetUpdater.activeKeyColor(schedule, 11 * 3600.0, isDay = false))
     }
 

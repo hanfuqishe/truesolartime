@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 真太阳时桌面卡片，版面严格对齐 Android 版小组件（widget_solar_time_compact.xml）：
  *
  *   左栏：标准时间 + 地名 / 大号标准时间 / 日期与今日温度区间
@@ -63,6 +63,7 @@ struct SolarTimeCard {
   @LocalStorageProp('inKeyTime') inKeyTime: boolean = false;
   @LocalStorageProp('isDay') isDay: boolean = true;
 
+  /** 关键时段在时间轴上的色段与当前时刻圆点：白天用深一档，淡色在橙底上看不出边界。 */
   private bandColor(): string {
     if (this.temperatureKey === 'cold') {
       return this.isDay ? '#2E7D32' : '#4CAF7D';
@@ -73,14 +74,25 @@ struct SolarTimeCard {
     return this.solarAccent();
   }
 
+  /** 关键时段里真太阳时数字：白天用与淡金同浓度的淡绿／淡红。 */
+  private inkColor(): string {
+    if (this.temperatureKey === 'cold') {
+      return this.isDay ? '#BCF5CA' : '#4CAF7D';
+    }
+    if (this.temperatureKey === 'hot') {
+      return this.isDay ? '#FFC4C9' : '#D9534F';
+    }
+    return this.solarAccent();
+  }
+
   /** 真太阳时的强调色：白天橙色底上用淡金（比纯白暖一档），夜里用金色。 */
   private solarAccent(): string {
     return this.isDay ? DAY_ACCENT : GOLD;
   }
 
-  /** 真太阳时的字色：落在关键时段里时用色条同色，其余按昼夜取白／金。 */
+  /** 真太阳时的字色：落在关键时段里时跟随时段的冷暖配色，其余按昼夜取白／金。 */
   private solarColor(): string {
-    return this.inKeyTime ? this.bandColor() : this.solarAccent();
+    return this.inKeyTime ? this.inkColor() : this.solarAccent();
   }
 
   /** 时间轴上代表当前时刻的圆点跟着真太阳时变色；时段外仍是白色。 */

@@ -27,8 +27,8 @@ android {
         applicationId = "com.realsuntime.solartime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 41
-        versionName = "1.4.34"
+        versionCode = 42
+        versionName = "1.4.35"
         buildConfigField("String", "AMAP_API_KEY", "\"$amapApiKey\"")
         manifestPlaceholders["amapApiKey"] = amapApiKey
     }
@@ -99,18 +99,21 @@ dependencies {
 }
 
 /**
- * 每次 assembleRelease 之后，把 APK 另存一份为「真太阳时-<版本号>.apk」放到仓库根的 dist/，
+ * 每次 assembleRelease 之后，把 APK 另存一份为「真太阳时-安卓-<版本号>.apk」放到仓库根的 dist/，
  * 免去手工改名；dist/ 不入库（.gitignore 已忽略 *.apk）。
  */
-val releaseApkName = "真太阳时-${android.defaultConfig.versionName}.apk"
+val releaseApkName = "真太阳时-安卓-${android.defaultConfig.versionName}.apk"
 
 tasks.register<Copy>("renameReleaseApk") {
     group = "build"
-    description = "把 release APK 复制为「真太阳时-<版本号>.apk」"
+    description = "把 release APK 复制为「真太阳时-安卓-<版本号>.apk」"
     from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
-    into(rootProject.layout.projectDirectory.dir("dist"))
+    // 两个平台的发布产物放同一个 dist/（仓库根），方便一起提交应用商店。
+    into(rootProject.layout.projectDirectory.dir("../dist"))
     rename { releaseApkName }
     onlyIf { layout.buildDirectory.file("outputs/apk/release/app-release.apk").get().asFile.exists() }
+    // dist/ 里的文件常被手工清掉，别让「输出已存在」把这一步判成 up-to-date。
+    outputs.upToDateWhen { false }
 }
 
 tasks.matching { it.name == "assembleRelease" }.configureEach {

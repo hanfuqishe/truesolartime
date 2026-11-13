@@ -239,8 +239,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onToggleReminders = toggleReminders,
                 onToggleKeyTimeChime = toggleKeyTimeChime,
                 onSelectMapStyle = viewModel::setMapStyle,
-                onAddWidget = viewModel::requestPinWidget,
-            )
+                    )
         }
     }
 }
@@ -303,7 +302,8 @@ private fun HeroCard(
     // 关键时段的色段一直画出来（与桌面卡片一致），只有「当前正落在某个关键时段里」时才把
     // 真太阳时数字与时间轴圆点也换成该时段的配色。
     val bandTint = if (waitingForFix) null else HeroPalette.band(extras.temperature, isDay)
-    val solarColor = if (inKeyTime) bandTint ?: accent else accent
+    val inkTint = if (waitingForFix) null else HeroPalette.ink(extras.temperature, isDay)
+    val solarColor = if (inKeyTime) inkTint ?: accent else accent
     val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
@@ -433,9 +433,12 @@ private object HeroPalette {
     private val DAY_ACCENT: Color = Color(0xFFFFE6B4)
     private val COLD: Color = Color(0xFF4CAF7D)
     private val HOT: Color = Color(0xFFD9534F)
-    // 白天橙色底上亮绿/亮红太抢眼，暗一档反而更清楚（与 KeyTimePalette 的考量一致）。
-    private val COLD_ON_DAY: Color = Color(0xFF2E7D32)
-    private val HOT_ON_DAY: Color = Color(0xFFB3261E)
+    // 白天的数字用与淡金同浓度的淡绿/淡红，深绿/深红压在橙底上发闷。
+    private val COLD_INK_ON_DAY: Color = Color(0xFFBCF5CA)
+    private val HOT_INK_ON_DAY: Color = Color(0xFFFFC4C9)
+    // 时间轴上的色段、圆点仍用深一档，淡色在橙底上几乎看不出边界。
+    private val COLD_BAND_ON_DAY: Color = Color(0xFF2E7D32)
+    private val HOT_BAND_ON_DAY: Color = Color(0xFFB3261E)
 
     fun gradient(isDay: Boolean): List<Color> = if (isDay) {
         listOf(Color(0xFFF7A64B), Color(0xFFEA7A2C))
@@ -446,9 +449,17 @@ private object HeroPalette {
     /** 真太阳时的强调色：白天用白字，夜里用金色。 */
     fun accent(isDay: Boolean): Color = if (isDay) DAY_ACCENT else GOLD
 
+    /** 关键时段里真太阳时数字的颜色。 */
+    fun ink(temperature: TakeTemperature?, isDay: Boolean): Color? = when (temperature) {
+        TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_INK_ON_DAY else COLD
+        TakeTemperature.HOT_OR_MILD -> if (isDay) HOT_INK_ON_DAY else HOT
+        else -> null
+    }
+
+    /** 关键时段在时间轴上的色段与圆点颜色。 */
     fun band(temperature: TakeTemperature?, isDay: Boolean): Color? = when (temperature) {
-        TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_ON_DAY else COLD
-        TakeTemperature.HOT_OR_MILD -> if (isDay) HOT_ON_DAY else HOT
+        TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_BAND_ON_DAY else COLD
+        TakeTemperature.HOT_OR_MILD -> if (isDay) HOT_BAND_ON_DAY else HOT
         else -> null
     }
 }

@@ -12,6 +12,7 @@ import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
 import { router } from '@kit.ArkUI';
 import { weatherIcon } from '../common/WeatherIcon';
 import { AppStore } from '../services/Store';
+import { AppInfo } from '../services/AppInfo';
 import { CardService } from '../services/CardService';
 import { ChimePlayer } from '../services/ChimePlayer';
 import { DistrictService } from '../services/DistrictService';
@@ -31,9 +32,13 @@ const DAY_TOP_COLOR: string = '#F7A64B';
 const DAY_BOTTOM_COLOR: string = '#EA7A2C';
 const NIGHT_TOP_COLOR: string = '#2A3B5C';
 const NIGHT_BOTTOM_COLOR: string = '#151B2E';
-/** 白天橙色底上金色看不清，关键时段的色段也换成更暗的一档。 */
-const COLD_ON_DAY_COLOR: string = '#2E7D32';
-const HOT_ON_DAY_COLOR: string = '#B3261E';
+/**
+ * 关键时段：数字用与淡金同浓度的淡绿／淡红，色段仍用深一档（淡色在橙底上几乎看不出边界）。
+ */
+const COLD_INK_ON_DAY_COLOR: string = '#BCF5CA';
+const HOT_INK_ON_DAY_COLOR: string = '#FFC4C9';
+const COLD_BAND_ON_DAY_COLOR: string = '#2E7D32';
+const HOT_BAND_ON_DAY_COLOR: string = '#B3261E';
 /** 应用在前台时的定位节奏：每分钟一次（桌面卡片是 5 分钟一次）。 */
 const GPS_INTERVAL_MILLIS: number = 60 * 1000;
 
@@ -464,13 +469,26 @@ struct Index {
     return this.isDayTheme() ? '#E6FFFFFF' : this.palette.subtle;
   }
 
+  /** 关键时段在时间轴上的色段与当前时刻圆点的颜色。 */
   private bandColor(): string {
     const day: boolean = this.isDayTheme();
     if (this.temperatureKey === 'cold') {
-      return day ? COLD_ON_DAY_COLOR : COLD_COLOR;
+      return day ? COLD_BAND_ON_DAY_COLOR : COLD_COLOR;
     }
     if (this.temperatureKey === 'hot') {
-      return day ? HOT_ON_DAY_COLOR : HOT_COLOR;
+      return day ? HOT_BAND_ON_DAY_COLOR : HOT_COLOR;
+    }
+    return this.solarAccent();
+  }
+
+  /** 关键时段里真太阳时数字的颜色。 */
+  private inkColor(): string {
+    const day: boolean = this.isDayTheme();
+    if (this.temperatureKey === 'cold') {
+      return day ? COLD_INK_ON_DAY_COLOR : COLD_COLOR;
+    }
+    if (this.temperatureKey === 'hot') {
+      return day ? HOT_INK_ON_DAY_COLOR : HOT_COLOR;
     }
     return this.solarAccent();
   }
@@ -480,7 +498,7 @@ struct Index {
    * —— 与 Android 卡片的 `activeKeyColor` 一致。
    */
   private solarColor(): string {
-    return this.inKeyTime ? this.bandColor() : this.solarAccent();
+    return this.inKeyTime ? this.inkColor() : this.solarAccent();
   }
 
   /** 时间轴上代表当前时刻的圆点：跟着真太阳时一起变色（时段外仍是白色）。 */
@@ -994,7 +1012,7 @@ struct Index {
           this.heroCard()
           this.sunCard()
           this.mapCard()
-          Text(`v1.0.0 · 数据来源 Open-Meteo（CC BY 4.0）`)
+          Text(`v${AppInfo.versionName()} · 数据来源 Open-Meteo（CC BY 4.0）`)
             .fontSize(10)
             .fontColor(this.palette.subtle)
             .margin({ top: 4, bottom: 8 })

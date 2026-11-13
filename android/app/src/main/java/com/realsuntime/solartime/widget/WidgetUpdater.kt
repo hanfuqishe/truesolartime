@@ -366,7 +366,7 @@ object WidgetUpdater {
         }
         // 关键时间本身就按真太阳时算，和轴上的点同一套刻度，不用再换算。
         // 色带与圆点跟着昼夜换档：白天暗一档、夜间亮一档；时段外圆点是白色。
-        val bandColor = KeyTimePalette.of(schedule?.temperature, isDay) ?: 0
+        val bandColor = KeyTimePalette.band(schedule?.temperature, isDay) ?: 0
         val bitmap = WidgetAxis.render(
             context = context,
             widthPx = widthPx,
@@ -449,7 +449,7 @@ object WidgetUpdater {
         if (schedule == null) return null
         val minuteOfDay = solarSecondsOfDay / 60.0
         val inside = schedule.bands.any { it.contains(minuteOfDay) }
-        return if (inside) KeyTimePalette.of(schedule.temperature, isDay) else null
+        return if (inside) KeyTimePalette.ink(schedule.temperature, isDay) else null
     }
 
     /** 时辰 + 时初／时正，与首页大卡片一致（如「午时 · 初」）。 */
