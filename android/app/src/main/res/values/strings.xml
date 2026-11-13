@@ -4,14 +4,6 @@
 
     <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
     <string name="action_settings">Settings</string>
-    <string name="gps_waiting">Locating…</string>
-    <string name="hero_title_tracking">Local true solar time · updated every minute</string>
-    <string name="hero_title">Local true solar time</string>
-    <string name="beijing_time_title">Beijing time</string>
-    <string name="offset_faster">True solar time runs %1$s ahead of Beijing time</string>
-    <string name="offset_slower">True solar time runs %1$s behind Beijing time</string>
-    <string name="longitude_correction">Longitude %1$s</string>
-    <string name="equation_of_time">Equation of time %1$s</string>
     <string name="sun_section_title">Sun position · Beijing time</string>
     <string name="altitude">Altitude %1$.1f°</string>
     <string name="sunrise">Sunrise</string>
@@ -20,8 +12,6 @@
     <string name="daylight_line">Daylight %1$s　true solar %2$s – %3$s</string>
     <string name="polar_day">Midnight sun: the sun never sets. Noon (Beijing time) %1$s</string>
     <string name="polar_night">Polar night: the sun never rises. Noon (Beijing time) %1$s</string>
-    <string name="shichen_summary">%1$s · %2$s (quarter %3$s)</string>
-    <string name="shichen_countdown">%1$s　%2$s in %3$s</string>
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
     <string name="map_auto_selected">auto-selected by region</string>
@@ -140,6 +130,9 @@
     <string name="weather_heavy_snow">Heavy snow</string>
     <string name="weather_thunder">Thunderstorm</string>
     <string name="weather_temp">%1$d°</string>
+    <string name="hero_shichen">%1$s · %2$s</string>
+    <string name="hero_weather">%1$s %2$s</string>
+    <string name="hero_temp_range">%1$d°~%2$d°</string>
     <string name="weather_hour">%1$d:00</string>
     <string name="weather_now">Now</string>
     <string name="weather_attribution">Weather data © Open-Meteo.com (CC BY 4.0)</string>

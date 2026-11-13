@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -54,6 +56,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,12 +69,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.realsuntime.solartime.BuildConfig
 import com.realsuntime.solartime.MainViewModel
 import com.realsuntime.solartime.R
+import com.realsuntime.solartime.data.TakeBand
+import com.realsuntime.solartime.data.TakeTemperature
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.ChimeAlarm
+import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,6 +99,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     val snapshot = remember(now, place) {
         SolarTimeSnapshot.compute(now, place.latitude, place.longitude)
+    }
+
+    // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好。
+    val heroExtras = remember(place, now.epochSecond / 30) {
+        loadHeroExtras(context, now)
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -174,14 +185,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
             HeroCard(
                 snapshot = snapshot,
-                placeLabel = place.label,
                 districtName = districtName,
-                trackingGps = trackingGps,
+                coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                 waitingForFix = waitingForFix,
+                extras = heroExtras,
             )
-            Spacer(Modifier.height(14.dp))
-
-            BeijingCard(snapshot = snapshot)
             Spacer(Modifier.height(14.dp))
 
             SunCard(snapshot = snapshot)
@@ -251,200 +259,259 @@ private fun Header(onOpenSettings: () -> Unit) {
 @Composable
 private fun HeroCard(
     snapshot: SolarSnapshot,
-    placeLabel: String,
     districtName: String?,
-    trackingGps: Boolean,
+    coordinates: String,
     waitingForFix: Boolean,
+    extras: HeroExtras,
 ) {
-    val gradient = if (snapshot.isDay) {
-        listOf(Color(0xFFF7A64B), Color(0xFFEA7A2C))
-    } else {
-        listOf(Color(0xFF2A3B5C), Color(0xFF151B2E))
-    }
-    val onHero = Color.White
-    val nextShichen = TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12)
-    val quarterText = TimeText.shichenQuarter(LocalContext.current, snapshot.shichenQuarter)
-    val statusLabel = if (waitingForFix) stringResource(R.string.gps_waiting) else placeLabel
+    val context = LocalContext.current
+    val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
+    // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
+    val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
+    val bandColor = if (inKeyTime) HeroPalette.band(extras.temperature) else null
+    val solarColor = bandColor ?: HeroPalette.GOLD
+    val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(Brush.linearGradient(gradient))
-            .padding(22.dp),
+            .clip(RoundedCornerShape(18.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF2A3B5C), Color(0xFF151B2E))))
+            .padding(16.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // 左：标准时间（与桌面卡片一致，用北京时间）
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.widget_label_civil),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = HeroPalette.LABEL,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = districtName ?: "",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = HeroPalette.LABEL_DIM,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                    HeroClock(
+                        text = TimeFormat.clock(snapshot.beijingTime),
+                        seconds = snapshot.beijingTime.second,
+                        color = Color.White,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .padding(start = 12.dp, end = 12.dp, top = 3.dp)
+                        .width(1.dp)
+                        .height(58.dp)
+                        .background(Color(0x33FFFFFF)),
+                )
+
+                // 右：真太阳时（逐秒刷新）
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.widget_label_solar),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = HeroPalette.LABEL,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = stringResource(
+                                R.string.hero_shichen,
+                                snapshot.shichenName,
+                                TimeText.shichenHalf(context, snapshot.secondHalf),
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = HeroPalette.LABEL_DIM,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                    if (waitingForFix) {
+                        HeroClock(text = "--:--", seconds = null, color = solarColor)
+                    } else {
+                        HeroClock(
+                            text = "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                            seconds = snapshot.trueSolarTime.second,
+                            color = solarColor,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // 日期/天气与经纬度同一行：日期行吃满剩余宽度，经纬度贴右。
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    // 有反查结果时直接显示行政区划（如「上海市宝山区」），否则回退到原来的说明文字。
-                    text = districtName?.takeIf { it.isNotBlank() }
-                        ?: if (trackingGps) stringResource(R.string.hero_title_tracking) else stringResource(R.string.hero_title),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = onHero.copy(alpha = 0.85f),
+                    text = dateTail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    // 占满标签左边的所有空间，标签自然贴到右边。
                     modifier = Modifier.weight(1f),
                 )
-                Surface(
-                    color = onHero.copy(alpha = 0.18f),
-                    shape = RoundedCornerShape(50),
-                ) {
-                    Text(
-                        text = statusLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = onHero,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                }
+                Text(
+                    text = coordinates,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HeroPalette.LABEL_DIM,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(10.dp))
 
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    // 跟随 GPS 但还没有有效定位时，真太阳时无从计算，先显示占位。
-                    text = if (waitingForFix) {
-                        "--:--"
-                    } else {
-                        "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute)
-                    },
-                    style = TextStyle(
-                        fontSize = 72.sp,
-                        fontWeight = FontWeight.Light,
-                        letterSpacing = (-2).sp,
-                        fontFeatureSettings = "tnum",
-                    ),
-                    color = onHero,
-                )
-                if (!waitingForFix) {
-                    Text(
-                        // 秒是「下标」样式，冒号也要跟着小一号，否则读起来像「21:27 50」。
-                        text = ":%02d".format(snapshot.trueSolarTime.second),
-                        style = TextStyle(
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Medium,
-                            fontFeatureSettings = "tnum",
-                        ),
-                        color = onHero.copy(alpha = 0.75f),
-                        modifier = Modifier.padding(start = 6.dp, bottom = 12.dp),
-                    )
-                }
-            }
+            // 0–24 时时间轴：与桌面卡片、鸿蒙版同款（1vp 细线 + 柔化圆点）
+            HeroAxis(
+                solarSecondsOfDay = if (waitingForFix) 0.0 else solarSeconds,
+                bands = if (waitingForFix) emptyList() else extras.bands,
+                bandColor = bandColor,
+                dotColor = bandColor ?: HeroPalette.DOT,
+            )
 
-            Spacer(Modifier.height(16.dp))
-
-            if (waitingForFix) {
-                Text(
-                    text = stringResource(R.string.widget_waiting_gps),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = onHero.copy(alpha = 0.85f),
-                )
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(CircleShape)
-                            .background(onHero.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = snapshot.shichenName.take(1),
-                            style = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Medium),
-                            color = onHero,
-                        )
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = stringResource(
-                                R.string.shichen_summary,
-                                TimeText.shichenName(LocalContext.current, snapshot.shichenIndex),
-                                TimeText.shichenHalf(LocalContext.current, snapshot.secondHalf),
-                                quarterText,
-                            ),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = onHero,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.shichen_countdown,
-                                snapshot.shichenRange,
-                                TimeText.shichenName(LocalContext.current, (snapshot.shichenIndex + 1) % 12),
-                                TimeFormat.countdown(snapshot.secondsToNextShichen),
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = onHero.copy(alpha = 0.8f),
-                        )
-                    }
-                }
+            if (!waitingForFix && extras.hourly.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                HeroHourly(extras.hourly)
             }
         }
     }
 }
 
+/** 大卡片用的配色：底色固定深蓝、真太阳时金色，关键时段沿用鸿蒙版的冷暖色。 */
+private object HeroPalette {
+    val GOLD: Color = Color(0xFFF5D68A)
+    val LABEL: Color = Color(0xCCFFFFFF)
+    val LABEL_DIM: Color = Color(0xB3FFFFFF)
+    val DOT: Color = Color.White
+    private val COLD: Color = Color(0xFF4CAF7D)
+    private val HOT: Color = Color(0xFFD9534F)
+
+    fun band(temperature: TakeTemperature?): Color? = when (temperature) {
+        TakeTemperature.COLD_OR_MILD -> COLD
+        TakeTemperature.HOT_OR_MILD -> HOT
+        else -> null
+    }
+}
+
+/** 时间轴：1vp 轨道 + 关键时段的色段 + 当前时刻的柔化圆点。 */
 @Composable
-private fun BeijingCard(snapshot: SolarSnapshot) {
-    val context = LocalContext.current
-    val faster = snapshot.offsetSeconds >= 0
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.beijing_time_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = TimeText.dateWithWeekday(context, snapshot.beijingDate),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun HeroAxis(
+    solarSecondsOfDay: Double,
+    bands: List<TakeBand>,
+    bandColor: Color?,
+    dotColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier.fillMaxWidth().height(11.dp)) {
+        val middle = size.height / 2f
+        val thickness = 1.dp.toPx()
+        drawRect(
+            color = Color(0x40FFFFFF),
+            topLeft = Offset(0f, middle - thickness / 2f),
+            size = Size(size.width, thickness),
+        )
+        if (bandColor != null) {
+            WidgetAxis.spans(bands).forEach { span ->
+                val left = size.width * (span.startMinutes / MINUTES_PER_DAY).toFloat()
+                val right = size.width * (span.endMinutes / MINUTES_PER_DAY).toFloat()
+                drawRect(
+                    color = bandColor,
+                    topLeft = Offset(left, middle - thickness / 2f),
+                    size = Size(right - left, thickness),
                 )
             }
-            Spacer(Modifier.height(4.dp))
+        }
+        val radius = 5.5.dp.toPx()
+        val center = Offset(
+            x = (size.width * (solarSecondsOfDay / SECONDS_PER_DAY).toFloat()).coerceIn(0f, size.width),
+            y = middle,
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(dotColor, dotColor.copy(alpha = 0.45f), dotColor.copy(alpha = 0f)),
+                center = center,
+                radius = radius,
+            ),
+            radius = radius,
+            center = center,
+        )
+    }
+}
+
+/** 六格逐时预报：时刻、天气图标、天气名称，与桌面卡片同一套取数规则。 */
+@Composable
+private fun HeroHourly(cells: List<HourCell>) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        cells.forEach { cell ->
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = cell.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HeroPalette.LABEL_DIM,
+                    maxLines = 1,
+                )
+                Image(
+                    painter = painterResource(cell.iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.padding(top = 3.dp).size(22.dp),
+                )
+                Text(
+                    text = cell.condition,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HeroPalette.LABEL_DIM,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+            }
+        }
+    }
+}
+
+private const val MINUTES_PER_DAY: Double = 24.0 * 60.0
+private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
+
+@Composable
+private fun HeroClock(text: String, seconds: Int?, color: Color) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = text,
+            style = TextStyle(
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Light,
+                fontFeatureSettings = "tnum",
+            ),
+            color = color,
+            maxLines = 1,
+        )
+        if (seconds != null) {
             Text(
-                text = TimeFormat.clockWithSeconds(snapshot.beijingTime),
+                text = ":%02d".format(seconds),
                 style = TextStyle(
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.Light,
                     fontFeatureSettings = "tnum",
                 ),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = stringResource(
-                    if (faster) R.string.offset_faster else R.string.offset_slower,
-                    TimeText.minutesSeconds(context, snapshot.offsetSeconds),
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = stringResource(
-                    R.string.longitude_correction,
-                    TimeText.signedDuration(context, snapshot.longitudeOffsetSeconds),
-                ) + "　" + stringResource(
-                    R.string.equation_of_time,
-                    TimeText.signedDuration(context, snapshot.equationOfTimeSeconds),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = color,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 1.dp, bottom = 5.dp),
             )
         }
     }

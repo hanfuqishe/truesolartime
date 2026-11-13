@@ -4,14 +4,6 @@
 
     <string name="screen_subtitle">以太阳经过当地子午线的时刻为正午</string>
     <string name="action_settings">设置</string>
-    <string name="gps_waiting">GPS 定位中…</string>
-    <string name="hero_title_tracking">当地真太阳时 · 每分钟更新</string>
-    <string name="hero_title">当地真太阳时</string>
-    <string name="beijing_time_title">北京时间</string>
-    <string name="offset_faster">真太阳时比北京时间快 %1$s</string>
-    <string name="offset_slower">真太阳时比北京时间慢 %1$s</string>
-    <string name="longitude_correction">经度修正 %1$s</string>
-    <string name="equation_of_time">均时差 %1$s</string>
     <string name="sun_section_title">太阳位置 · 北京时间</string>
     <string name="altitude">高度角 %1$.1f°</string>
     <string name="sunrise">日出</string>
@@ -20,8 +12,6 @@
     <string name="daylight_line">白昼 %1$s　真太阳时 %2$s – %3$s</string>
     <string name="polar_day">极昼：太阳整日不落，正午（北京时间）%1$s</string>
     <string name="polar_night">极夜：太阳整日不出，正午（北京时间）%1$s</string>
-    <string name="shichen_summary">%1$s · %2$s%3$s刻</string>
-    <string name="shichen_countdown">%1$s　距%2$s %3$s</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地图</string>
     <string name="map_auto_selected">按所在地区自动选择</string>
@@ -140,6 +130,9 @@
     <string name="weather_heavy_snow">大雪</string>
     <string name="weather_thunder">雷雨</string>
     <string name="weather_temp">%1$d°</string>
+    <string name="hero_shichen">%1$s · %2$s</string>
+    <string name="hero_weather">%1$s %2$s</string>
+    <string name="hero_temp_range">%1$d°~%2$d°</string>
     <string name="weather_hour">%1$d时</string>
     <string name="weather_now">现在</string>
     <string name="weather_attribution">天气数据 © Open-Meteo.com（CC BY 4.0）</string>

@@ -4,14 +4,6 @@
 
     <string name="screen_subtitle">以太陽經過當地子午線的時刻為正午</string>
     <string name="action_settings">設定</string>
-    <string name="gps_waiting">GPS 定位中…</string>
-    <string name="hero_title_tracking">當地真太陽時 · 每分鐘更新</string>
-    <string name="hero_title">當地真太陽時</string>
-    <string name="beijing_time_title">北京時間</string>
-    <string name="offset_faster">真太陽時比北京時間快 %1$s</string>
-    <string name="offset_slower">真太陽時比北京時間慢 %1$s</string>
-    <string name="longitude_correction">經度修正 %1$s</string>
-    <string name="equation_of_time">均時差 %1$s</string>
     <string name="sun_section_title">太陽位置 · 北京時間</string>
     <string name="altitude">高度角 %1$.1f°</string>
     <string name="sunrise">日出</string>
@@ -20,8 +12,6 @@
     <string name="daylight_line">白晝 %1$s　真太陽時 %2$s – %3$s</string>
     <string name="polar_day">極晝：太陽整日不落，正午（北京時間）%1$s</string>
     <string name="polar_night">極夜：太陽整日不出，正午（北京時間）%1$s</string>
-    <string name="shichen_summary">%1$s · %2$s%3$s刻</string>
-    <string name="shichen_countdown">%1$s　距%2$s %3$s</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地圖</string>
     <string name="map_auto_selected">依所在地區自動選擇</string>
@@ -140,6 +130,9 @@
     <string name="weather_heavy_snow">大雪</string>
     <string name="weather_thunder">雷雨</string>
     <string name="weather_temp">%1$d°</string>
+    <string name="hero_shichen">%1$s · %2$s</string>
+    <string name="hero_weather">%1$s %2$s</string>
+    <string name="hero_temp_range">%1$d°~%2$d°</string>
     <string name="weather_hour">%1$d時</string>
     <string name="weather_now">現在</string>
     <string name="weather_attribution">天氣資料 © Open-Meteo.com（CC BY 4.0）</string>
