@@ -33,6 +33,8 @@ function isBand(item: string): boolean {
 }
 
 const GOLD: string = '#FFC65C';
+/** 白天橙底上的真太阳时：淡金，比纯白暖一档，又不至于和底色糊在一起。 */
+const DAY_ACCENT: string = '#FFE6B4';
 const WHITE: string = '#FFFFFF';
 const TEXT_DIM: string = '#B3FFFFFF';
 const TEXT_LABEL: string = '#CCFFFFFF';
@@ -71,9 +73,9 @@ struct SolarTimeCard {
     return this.solarAccent();
   }
 
-  /** 真太阳时的强调色：白天橙色底上用白字，夜里用金色。 */
+  /** 真太阳时的强调色：白天橙色底上用淡金（比纯白暖一档），夜里用金色。 */
   private solarAccent(): string {
-    return this.isDay ? WHITE : GOLD;
+    return this.isDay ? DAY_ACCENT : GOLD;
   }
 
   /** 真太阳时的字色：落在关键时段里时用色条同色，其余按昼夜取白／金。 */

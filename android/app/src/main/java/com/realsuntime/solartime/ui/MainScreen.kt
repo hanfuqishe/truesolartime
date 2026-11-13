@@ -429,6 +429,8 @@ private object HeroPalette {
     val LABEL_DIM: Color = Color(0xB3FFFFFF)
     val DOT: Color = Color.White
     private val GOLD: Color = Color(0xFFF5D68A)
+    /** 白天橙底上的真太阳时：淡金，比纯白暖一档，又不至于和底色糊在一起。 */
+    private val DAY_ACCENT: Color = Color(0xFFFFE6B4)
     private val COLD: Color = Color(0xFF4CAF7D)
     private val HOT: Color = Color(0xFFD9534F)
     // 白天橙色底上亮绿/亮红太抢眼，暗一档反而更清楚（与 KeyTimePalette 的考量一致）。
@@ -442,7 +444,7 @@ private object HeroPalette {
     }
 
     /** 真太阳时的强调色：白天用白字，夜里用金色。 */
-    fun accent(isDay: Boolean): Color = if (isDay) Color.White else GOLD
+    fun accent(isDay: Boolean): Color = if (isDay) DAY_ACCENT else GOLD
 
     fun band(temperature: TakeTemperature?, isDay: Boolean): Color? = when (temperature) {
         TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_ON_DAY else COLD

@@ -131,10 +131,10 @@ object WidgetUpdater {
     private const val COORD_GAP_DP = 8f
 
     /**
-     * 真太阳时的强调色，与首页大卡片一致：白天（橙底）用白字，夜间用金色。
+     * 真太阳时的强调色，与首页大卡片一致：白天（橙底）用淡金，夜间用金色。
      * 进入关键时间段时另改用 KeyTimePalette 的绿或红。
      */
-    private const val SOLAR_TIME_COLOR_DAY = 0xFFFFFFFF.toInt()
+    private const val SOLAR_TIME_COLOR_DAY = 0xFFFFE6B4.toInt()
     private const val SOLAR_TIME_COLOR_NIGHT = 0xFFF5D68A.toInt()
 
     /** 还没有有效 GPS 定位时真太阳时的占位符。 */

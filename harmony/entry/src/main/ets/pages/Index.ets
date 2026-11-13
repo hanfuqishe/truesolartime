@@ -22,6 +22,8 @@ import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
 
 const HERO_COLOR: string = '#F5D68A';
+/** 白天橙底上的真太阳时：淡金，比纯白暖一档，又不至于和底色糊在一起。 */
+const DAY_ACCENT: string = '#FFE6B4';
 const COLD_COLOR: string = '#4CAF7D';
 const HOT_COLOR: string = '#D9534F';
 /** 大卡片按昼夜换底色：白天暖橙，夜里深蓝（与 Android 卡片同一套配色）。 */
@@ -452,8 +454,9 @@ struct Index {
   }
 
   /** 真太阳时在白天用白字（橙色底上金色看不清），夜里用金色。 */
+  /** 真太阳时在白天用淡金（橙底上纯白太冷、金色又偏糊），夜里用金色。 */
   private solarAccent(): string {
-    return this.isDayTheme() ? '#FFFFFF' : HERO_COLOR;
+    return this.isDayTheme() ? DAY_ACCENT : HERO_COLOR;
   }
 
   /** 逐时预报的小字：白天橙色底上要更白一些，夜里沿用弱化色。 */
