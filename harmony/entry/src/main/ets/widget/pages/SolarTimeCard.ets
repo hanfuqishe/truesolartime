@@ -157,7 +157,7 @@ struct SolarTimeCard {
           this.labelRow('标准时间', this.city)
           TextClock()
             .fontSize(38)
-            .fontWeight(FontWeight.Lighter)
+            .fontWeight(FontWeight.Medium)
             .fontColor(WHITE)
           Row() {
             Text(this.dateTail())
@@ -199,7 +199,7 @@ struct SolarTimeCard {
           this.labelRow('真太阳时', this.shichen)
           Text(this.solarTime)
             .fontSize(38)
-            .fontWeight(FontWeight.Lighter)
+            .fontWeight(FontWeight.Medium)
             .fontColor(this.solarColor())
             .maxLines(1)
             .width('100%')
