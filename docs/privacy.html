@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>真太阳时 · 隐私政策</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    line-height: 1.85;
+    color: #1f2329;
+    background: #fffdf9;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .5px; }
+  .sub { color: #6b7280; font-size: 14px; margin-bottom: 32px; }
+  h2 {
+    font-size: 18px; margin: 36px 0 12px;
+    padding-left: 10px; border-left: 4px solid #d97706;
+  }
+  p, li { font-size: 15px; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #fdf6ec; font-weight: 600; }
+  code {
+    background: #f3f4f6; padding: 2px 6px; border-radius: 4px;
+    font-size: 13px; font-family: ui-monospace, Consolas, monospace;
+  }
+  .box {
+    background: #fdf6ec; border: 1px solid #f0d9b5;
+    border-radius: 8px; padding: 14px 18px; margin: 18px 0;
+  }
+  .box strong { color: #b45309; }
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 13px; }
+  a { color: #b45309; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #12161f; color: #e5e7eb; }
+    h2 { border-left-color: #f0b45a; }
+    th { background: #1b2130; }
+    th, td { border-color: #2c3444; }
+    .box { background: #1b2130; border-color: #3a4356; }
+    code { background: #1b2130; }
+    a { color: #f0b45a; }
+  }
+</style>
+</head>
+<body>
+
+<h1>真太阳时 · 隐私政策</h1>
+<div class="sub">
+  适用应用：真太阳时（TrueSolarTime）<br>
+  应用包名：<code>com.realsuntime.solartime</code><br>
+  生效日期：2026 年 11 月 13 日
+</div>
+
+<div class="box">
+  <strong>一句话概括：</strong>真太阳时是一个纯本地计算的时间工具。
+  我们不收集您的任何个人身份信息，不设账号体系，不上传您的数据到我们的服务器；
+  您的位置只用于在本机计算太阳位置，仅在有需要时才随网络请求发往第三方天气 / 地图服务。
+</div>
+
+<h2>一、我们收集哪些信息</h2>
+
+<h3>1. 位置信息（经度、纬度）</h3>
+<p>
+  真太阳时的计算依赖当地经度——太阳经过当地子午线的时刻，就是当地的真正正午。
+  因此应用需要知道您所在位置的经纬度。获取方式有两种，由您选择：
+</p>
+<ul>
+  <li><strong>使用定位</strong>：经您授权后读取设备定位（含粗略定位）。坐标仅在本机内存与本地缓存中使用。</li>
+  <li><strong>手动输入 / 选择城市</strong>：您可以直接选择内置城市或手动填写经纬度，此时完全不涉及系统定位。</li>
+</ul>
+<p>
+  经纬度<strong>不会</strong>上传到我们自建的服务器（我们也没有这样的服务器）。
+  但在您开启联网功能时，为了取得天气与地图，经纬度会作为必要参数发送给下列第三方服务。
+</p>
+
+<h3>2. 应用设置与缓存（仅存储在您的设备上）</h3>
+<table>
+  <tr><th>内容</th><th>用途</th><th>存储位置</th></tr>
+  <tr><td>所选城市 / 手动经纬度</td><td>记住您的观测点</td><td>设备本地</td></tr>
+  <tr><td>天气数据缓存</td><td>减少重复请求、离线可读</td><td>设备本地</td></tr>
+  <tr><td>行政区划名称缓存</td><td>减少逆地理编码请求</td><td>设备本地</td></tr>
+  <tr><td>提醒、时辰提示音等开关</td><td>保持您的偏好</td><td>设备本地</td></tr>
+</table>
+<p>以上数据均存放于鸿蒙系统的应用私有目录（Preferences），随卸载一并删除，不会同步到任何服务器。</p>
+
+<h3>3. 我们不会收集的信息</h3>
+<ul>
+  <li>不收集姓名、手机号、邮箱、身份证等身份信息；</li>
+  <li>不收集通讯录、短信、通话记录、相册、麦克风、摄像头内容；</li>
+  <li>不收集 IMEI、OAID、MAC 地址等设备唯一标识；</li>
+  <li>不做用户画像，不投放广告，不接入任何广告 SDK 或统计分析 SDK。</li>
+</ul>
+
+<h2>二、应用申请的权限及用途</h2>
+<table>
+  <tr><th>权限</th><th>用途</th><th>是否必须</th></tr>
+  <tr>
+    <td><code>ohos.permission.LOCATION</code><br><code>ohos.permission.APPROXIMATELY_LOCATION</code></td>
+    <td>获取当前位置的经纬度，用于计算真太阳时、日出日落与太阳高度角</td>
+    <td>否。拒绝授权后可手动选择城市或输入坐标</td>
+  </tr>
+  <tr>
+    <td><code>ohos.permission.INTERNET</code></td>
+    <td>请求天气数据、加载地图瓦片</td>
+    <td>否。无网络时应用仍可完成太阳时计算</td>
+  </tr>
+  <tr>
+    <td><code>ohos.permission.GET_NETWORK_INFO</code></td>
+    <td>判断当前网络状态，决定是否发起请求、是否使用缓存</td>
+    <td>否</td>
+  </tr>
+  <tr>
+    <td><code>ohos.permission.PUBLISH_AGENT_REMINDER</code></td>
+    <td>发布时辰交接提醒（如交子时、交午时），由系统代理发送，应用不在前台也能到点通知</td>
+    <td>否。可在设置中关闭</td>
+  </tr>
+</table>
+
+<h2>三、第三方服务</h2>
+<p>
+  应用在联网时会把<strong>经纬度</strong>（不含任何账号或设备标识）作为请求参数发送给以下服务。
+  这些服务由第三方独立运营，其数据处理行为适用各自的隐私政策：
+</p>
+<table>
+  <tr><th>服务方</th><th>用途</th><th>发送内容</th><th>隐私政策</th></tr>
+  <tr>
+    <td>Open-Meteo</td>
+    <td>获取实时天气与逐时预报（温度、天气现象）</td>
+    <td>经纬度</td>
+    <td><a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener">open-meteo.com/en/terms</a></td>
+  </tr>
+  <tr>
+    <td>高德地图（AutoNavi）</td>
+    <td>加载境内矢量地图与卫星影像瓦片</td>
+    <td>地图瓦片坐标（含所在区域经纬度）</td>
+    <td><a href="https://lbs.amap.com/home/privacy/" target="_blank" rel="noopener">lbs.amap.com/home/privacy</a></td>
+  </tr>
+  <tr>
+    <td>OpenStreetMap</td>
+    <td>加载境外地图瓦片；境外坐标的行政区划反查（Nominatim）</td>
+    <td>地图瓦片坐标、经纬度</td>
+    <td><a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener">osmfoundation.org/wiki/Privacy_Policy</a></td>
+  </tr>
+</table>
+<p>
+  应用内「关键时间说明」等少数链接会以系统浏览器打开外部网页（例如中医时辰资料站），
+  这属于您主动点击跳转，应用本身不上传任何数据。
+</p>
+
+<h2>四、信息的共享、转让与公开披露</h2>
+<ul>
+  <li><strong>不共享</strong>：除上述为实现功能所必需的第三方请求外，我们不会向任何公司、组织或个人共享您的信息。</li>
+  <li><strong>不转让</strong>：不发生任何数据资产转让。</li>
+  <li><strong>不公开披露</strong>：不对外公布任何用户数据。</li>
+  <li>仅在法律法规要求、司法机关或行政机关依法提出要求时，才可能依法提供——但由于我们不持有用户数据，实际上无从提供。</li>
+</ul>
+
+<h2>五、数据存储与安全</h2>
+<ul>
+  <li>所有缓存与设置均存放于本机应用私有目录，受鸿蒙系统沙箱保护，其他应用无法读取。</li>
+  <li>网络传输使用 HTTPS 加密。</li>
+  <li>我们不设服务器，因此不存在“服务器端数据泄露”的风险面。</li>
+</ul>
+
+<h2>六、您的权利</h2>
+<ul>
+  <li><strong>撤回定位授权</strong>：在系统「设置 → 应用 → 真太阳时 → 权限」中关闭位置权限，之后可改用手动选择城市。</li>
+  <li><strong>清除本地数据</strong>：在应用「设置」页重新选择城市或清除缓存；卸载应用将删除全部本地数据。</li>
+  <li><strong>关闭联网</strong>：关闭网络后应用仍可正常计算真太阳时，只是不再显示天气与地图。</li>
+  <li><strong>关闭提醒</strong>：在应用「设置」页关闭时辰交接提醒。</li>
+</ul>
+
+<h2>七、未成年人保护</h2>
+<p>
+  本应用是时间计算工具，不含社交、支付、内容分发功能，不面向未成年人单独收集任何信息。
+  若未成年人在监护人指导下使用，我们同样不收集其个人信息。
+</p>
+
+<h2>八、政策更新</h2>
+<p>
+  本政策如有变更，将在本页面更新并修改「生效日期」。
+  若变更涉及信息收集范围的实质性扩大，我们会在应用内以显著方式提示。
+</p>
+
+<h2>九、联系我们</h2>
+<p>
+  对本政策有任何疑问、意见或投诉，可通过以下方式联系开发者：
+</p>
+<ul>
+  <li>GitHub Issues：<a href="https://github.com/hanfuqishe/truesolartime/issues" target="_blank" rel="noopener">github.com/hanfuqishe/truesolartime/issues</a></li>
+  <li>项目主页：<a href="https://github.com/hanfuqishe/truesolartime" target="_blank" rel="noopener">github.com/hanfuqishe/truesolartime</a></li>
+</ul>
+
+<footer>
+  真太阳时（com.realsuntime.solartime）· 隐私政策 · 生效日期 2026-11-13
+</footer>
+
+</body>
+</html>
