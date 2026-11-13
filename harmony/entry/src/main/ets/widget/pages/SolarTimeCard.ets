@@ -48,6 +48,7 @@ struct SolarTimeCard {
   @LocalStorageProp('shichen') shichen: string = '';
   @LocalStorageProp('dateText') dateText: string = '';
   @LocalStorageProp('temperatureRange') temperatureRange: string = '';
+  @LocalStorageProp('weatherSummary') weatherSummary: string = '';
   @LocalStorageProp('solarTime') solarTime: string = '';
   @LocalStorageProp('coords') coords: string = '';
   @LocalStorageProp('segments') segments: string[] = [];
@@ -66,6 +67,18 @@ struct SolarTimeCard {
       return '#D9534F';
     }
     return GOLD;
+  }
+
+  /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」。 */
+  private dateTail(): string {
+    const parts: string[] = [this.dateText];
+    if (this.weatherSummary.length > 0) {
+      parts.push(this.weatherSummary);
+    }
+    if (this.temperatureRange.length > 0) {
+      parts.push(this.temperatureRange);
+    }
+    return parts.join(' · ');
   }
 
   private passedWeight(): number {
@@ -130,7 +143,7 @@ struct SolarTimeCard {
             .fontWeight(FontWeight.Lighter)
             .fontColor(WHITE)
           Row() {
-            Text(this.temperatureRange.length > 0 ? `${this.dateText} · ${this.temperatureRange}` : this.dateText)
+            Text(this.dateTail())
               .fontSize(8)
               .fontColor(TEXT_DIM)
               .maxLines(1)
@@ -160,9 +173,9 @@ struct SolarTimeCard {
 
         Column()
           .width(1)
-          .height(52)
+          .height(42)
           .backgroundColor(DIVIDER)
-          .margin({ left: 10, right: 10 })
+          .margin({ left: 10, right: 10, top: 4 })
 
         // 右：真太阳时（快照，随卡片刷新更新；卡片里秒走不起来，所以只显示到分钟）
         Column() {
@@ -178,6 +191,8 @@ struct SolarTimeCard {
             .fontColor(TEXT_DIM)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .textAlign(TextAlign.End)
             .margin({ top: 1 })
         }
         .layoutWeight(1)
@@ -192,7 +207,7 @@ struct SolarTimeCard {
         })
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .alignItems(VerticalAlign.Top)
 
       // 0–24 时时间轴：与 Android 的 WidgetAxis 同款——1vp 细线 + 边缘柔化的圆点
       Stack() {

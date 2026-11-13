@@ -90,8 +90,20 @@ export class TimeFormat {
     return `${MONTHS_EN[month - 1]} ${day} · ${WEEKDAYS_EN[weekday]}`;
   }
 
-  /** 例如 "39.9042°N  116.4074°E"。 */
-  static coordinates(latitude: number, longitude: number): string {
+  /** 紧凑日期 + 星期，例如 "11月13日 周五" / "Nov 13 Fri"，给卡片那行窄字用。 */
+  static dateCompact(epochMillis: number, language: string): string {
+    const date: Date = new Date(epochMillis + SolarTimeMath.BEIJING_OFFSET_MILLIS);
+    const month: number = date.getUTCMonth() + 1;
+    const day: number = date.getUTCDate();
+    const weekday: number = date.getUTCDay();
+    if (isChinese(language)) {
+      const name: string = WEEKDAYS_ZH[(weekday + 6) % 7];
+      return `${month}月${day}日 周${name.slice(2)}`;
+    }
+    return `${MONTHS_EN[month - 1]} ${day} ${WEEKDAYS_EN[weekday].slice(0, 3)}`;
+  }
+
+  /** 例如 "39.9042°N  116.4074°E"。 */  static coordinates(latitude: number, longitude: number): string {
     const lat: string = `${Math.abs(latitude).toFixed(4)}°${latitude >= 0 ? 'N' : 'S'}`;
     const lon: string = `${Math.abs(longitude).toFixed(4)}°${longitude >= 0 ? 'E' : 'W'}`;
     return `${lat}  ${lon}`;

@@ -227,7 +227,7 @@ struct Index {
       dayStartUtc + 86400000,
       SolarTimeMath.BEIJING_OFFSET_MILLIS
     );
-    this.weatherRange = range === null ? '' : `${range[0]}° ~ ${range[1]}°`;
+    this.weatherRange = range === null ? '' : `${range[0]}~${range[1]}°`;
     // 六格逐时预报（首格标「现在」并用实时天气码），与桌面卡片同一套取数规则。
     const hourLabelList: string[] = [];
     const conditions: string[] = [];
@@ -308,6 +308,18 @@ struct Index {
     ).catch((error: BusinessError) => {
       console.warn(`reschedule failed: ${error.code} ${error.message}`);
     });
+  }
+
+  /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」。 */
+  private dateTail(): string {
+    const parts: string[] = [TimeFormat.dateCompact(Date.now(), this.language)];
+    if (this.weatherTemperature !== '--' && this.weatherText.length > 0) {
+      parts.push(`${this.weatherTemperature} ${this.weatherText}`);
+    }
+    if (this.weatherRange.length > 0) {
+      parts.push(this.weatherRange);
+    }
+    return parts.join(' · ');
   }
 
   private placeLabel(place: Place): string {
@@ -442,21 +454,15 @@ struct Index {
           }
           .width('100%')
           .alignItems(VerticalAlign.Bottom)
-          Text(TimeFormat.dateWithWeekday(Date.now(), this.language))
-            .fontSize(10)
-            .fontColor('#B3FFFFFF')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 2 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
         Column()
           .width(1)
-          .height(78)
+          .height(58)
           .backgroundColor('#33FFFFFF')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: 12, right: 12, top: 3 })
 
         // 右：真太阳时（逐秒刷新）
         Column() {
@@ -499,13 +505,24 @@ struct Index {
             .fontColor('#B3FFFFFF')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .textAlign(TextAlign.End)
             .margin({ top: 2 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .alignItems(VerticalAlign.Top)
+
+      // 日期 + 当日天气与温度区间：整行显示，不受中间分隔线与栏宽限制
+      Text(this.dateTail())
+        .fontSize(10)
+        .fontColor('#B3FFFFFF')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .margin({ top: 6 })
 
       // 0–24 时时间轴：与桌面卡片、Android WidgetAxis 同款（1vp 细线 + 柔化圆点）
       Stack() {
@@ -560,36 +577,21 @@ struct Index {
       .width('100%')
       .margin({ top: 8 })
 
-      // 天气：原先「天气」卡的内容并进来，避免重复卡片
+      // 时差构成与时辰进度：原先「时差构成」卡的内容并进来
       Row() {
-        Text(this.weatherTemperature)
-          .fontSize(11)
-          .fontColor(TEXT_COLOR)
-        Text(this.weatherText)
-          .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
-          .margin({ left: 4, right: 4 })
-        Text(this.weatherRange.length > 0 ? `今日 ${this.weatherRange}` : '')
-          .fontSize(11)
+        Text(`经度修正 ${TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language)} · ` +
+          `均时差 ${TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language)}`)
+          .fontSize(10)
           .fontColor(SUBTLE_COLOR)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text(`第 ${this.snapshot.shichenQuarter} 刻`)
-          .fontSize(11)
+          .fontSize(10)
           .fontColor(SUBTLE_COLOR)
       }
       .width('100%')
       .margin({ top: 4 })
-
-      // 时差构成：原先「时差构成」卡的内容并进来
-      Text(`经度修正 ${TimeFormat.signedDuration(this.snapshot.longitudeOffsetSeconds, this.language)} · ` +
-        `均时差 ${TimeFormat.signedDuration(this.snapshot.equationOfTimeSeconds, this.language)}`)
-        .fontSize(10)
-        .fontColor(SUBTLE_COLOR)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
 
       // 六格逐时预报
       Row() {

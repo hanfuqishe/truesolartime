@@ -44,6 +44,8 @@ export class CardData {
   dateText: string = '';
   /** 今日温度区间，例如「2° / 12°」。 */
   temperatureRange: string = '';
+  /** 当前天气摘要，例如「6° 晴」。 */
+  weatherSummary: string = '';
   /** 真太阳时「HH:mm」。 */
   solarTime: string = '';
   /** 真太阳时的秒，两位。 */
@@ -78,7 +80,7 @@ export class CardService {
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);
     data.shichen = snapshot.shichenName;
-    data.dateText = TimeFormat.dateWithWeekday(now, language);
+    data.dateText = TimeFormat.dateCompact(now, language);
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);
@@ -94,10 +96,13 @@ export class CardService {
       SolarTimeMath.BEIJING_OFFSET_MILLIS
     );
     if (range !== null) {
-      data.temperatureRange = `${range[0]}° ~ ${range[1]}°`;
+      data.temperatureRange = `${range[0]}~${range[1]}°`;
     }
 
     const weather: WeatherSnapshot | null = WeatherService.cached();
+    data.weatherSummary = weather === null
+      ? ''
+      : `${weather.temperatureC}° ${WeatherLogic.conditionLabel(weather.code, language)}`;
     CardService.fillHourly(data, now, weather === null ? -1 : weather.code, language);
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
