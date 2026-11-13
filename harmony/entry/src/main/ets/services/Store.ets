@@ -179,6 +179,17 @@ export class AppStore {
     store.flush();
   }
 
+  /** 地图底图：「自动」/ OSM / 高德矢量 / 高德卫星，见 core/MapTiles 的 MAP_STYLE_OPTIONS。 */
+  static mapStyle(): string {
+    return AppStore.stringValue(AppStore.settingsStore(), 'map_style', 'auto');
+  }
+
+  static setMapStyle(key: string): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    store.putSync('map_style', key);
+    store.flush();
+  }
+
   /** 上次为「桌面卡片」主动取 GPS 的时刻（毫秒）：卡片侧最多 5 分钟取一次。 */
   static lastCardFixMillis(): number {
     return AppStore.numberValue(AppStore.settingsStore(), 'last_card_fix', 0);

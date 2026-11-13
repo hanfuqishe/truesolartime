@@ -8,6 +8,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { router } from '@kit.ArkUI';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
+import { MAP_STYLE_OPTIONS, MapStyleOption } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
@@ -34,6 +35,8 @@ struct Settings {
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
   @State keepScreenOn: boolean = true;
+  /** 地图底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
+  @State mapStyleKey: string = 'auto';
   @State locating: boolean = false;
   @State manualLatitude: string = '';
   @State manualLongitude: string = '';
@@ -59,6 +62,7 @@ struct Settings {
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
     this.keepScreenOn = AppStore.keepScreenOn();
+    this.mapStyleKey = AppStore.mapStyle();
     this.manualLatitude = this.place.latitude.toFixed(4);
     this.manualLongitude = this.place.longitude.toFixed(4);
     const labels: string[] = [];
@@ -358,6 +362,40 @@ struct Settings {
             }
             .width('100%')
             .margin({ top: 4 })
+          }
+          .cardStyle()
+    .backgroundColor(this.palette.card)
+
+          // 地图底图：与 Android 设置面板同一组选项
+          Column() {
+            this.sectionTitle('地图底图')
+            Text('自动：境内用高德，境外用 OpenStreetMap')
+              .fontSize(10)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 4 })
+              .width('100%')
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(MAP_STYLE_OPTIONS, (option: MapStyleOption) => {
+                Text(option.label)
+                  .fontSize(12)
+                  .fontColor(option.key === this.mapStyleKey ? this.palette.onAccent : this.palette.text)
+                  .backgroundColor(option.key === this.mapStyleKey ? this.palette.accent : this.palette.chip)
+                  .borderRadius(14)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .margin({ right: 8, top: 8 })
+                  .onClick(() => {
+                    this.mapStyleKey = option.key;
+                    AppStore.setMapStyle(option.key);
+                  })
+              }, (option: MapStyleOption) => option.key)
+            }
+            .width('100%')
+            .margin({ top: 4 })
+            Text('选中后返回首页生效')
+              .fontSize(10)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 4 })
+              .width('100%')
           }
           .cardStyle()
     .backgroundColor(this.palette.card)

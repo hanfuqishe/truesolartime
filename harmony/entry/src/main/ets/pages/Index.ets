@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
-import { DEFAULT_ZOOM, MapLayer, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
+import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
@@ -110,6 +110,8 @@ struct Index {
   @State mapZoom: number = DEFAULT_ZOOM;
   @State mapCenterLat: number = 0;
   @State mapCenterLon: number = 0;
+  /** 设置页里选的底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
+  @State mapStyleKey: string = 'auto';
 
   private timerId: number = -1;
   /** 上次前台取定位的时刻（毫秒），用于「每分钟一次」的节流。 */
@@ -167,6 +169,7 @@ struct Index {
     this.place = AppStore.place();
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
+    this.mapStyleKey = AppStore.mapStyle();
     this.recenterMap();
   }
 
@@ -365,9 +368,15 @@ struct Index {
 
   // ---- 位置地图 ----
 
+  /** 当前设置下的底图图层（自动＝境内高德、境外 OSM）。 */
+  private mapLayer(): MapLayer {
+    const style: MapStyle = MapTilesLogic.styleFromKey(this.mapStyleKey);
+    return MapTilesLogic.layerForStyle(style, this.place.latitude, this.place.longitude);
+  }
+
   /** 地图中心复位到观测点：换城市、跟随 GPS 更新坐标后都要复位。 */
   private recenterMap(): void {
-    const layer: MapLayer = MapTilesLogic.layerFor(this.place.latitude, this.place.longitude);
+    const layer: MapLayer = this.mapLayer();
     const point: number[] = MapTilesLogic.displayPoint(layer, this.place.latitude, this.place.longitude);
     this.mapCenterLat = point[0];
     this.mapCenterLon = point[1];
@@ -379,7 +388,7 @@ struct Index {
     if (this.mapWpx <= 0 || this.mapHpx <= 0) {
       return;
     }
-    const layer: MapLayer = MapTilesLogic.layerFor(this.place.latitude, this.place.longitude);
+    const layer: MapLayer = this.mapLayer();
     this.mapAttribution = layer.attribution;
     this.mapTiles = MapTilesLogic.visibleTiles(layer, this.mapCenterLat, this.mapCenterLon,
       this.mapZoom, this.mapWpx, this.mapHpx);

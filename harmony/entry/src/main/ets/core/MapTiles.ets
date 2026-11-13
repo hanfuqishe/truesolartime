@@ -16,14 +16,44 @@ export const DEFAULT_ZOOM: number = 12;
 
 const EARTH_AXIS: number = 6378245.0;
 const ECCENTRICITY: number = 0.00669342162296594323;
-/** 高德瓦片节点，轮流使用以免单个域名被限流。 */
+/** 高德瓦片节点，轮流使用以免单个域名被限流。矢量图与卫星图各有一套节点。 */
 const AMAP_HOSTS: string[] = ['webrd01', 'webrd02', 'webrd03', 'webrd04'];
+const AMAP_SATELLITE_HOSTS: string[] = ['webst01', 'webst02', 'webst03', 'webst04'];
 
 /** 底图坐标系：高德是 GCJ-02，OSM 是 WGS-84。 */
 export enum MapDatum {
   WGS84 = 0,
   GCJ02 = 1
 }
+
+/** 设置页里可选的底图，与 Android 端 `MapStyle` 一一对应（AUTO / OSM / 高德矢量 / 高德卫星）。 */
+export enum MapStyle {
+  AUTO = 0,
+  OSM = 1,
+  AMAP_VECTOR = 2,
+  AMAP_SATELLITE = 3
+}
+
+/** 一个可选项：存进偏好的稳定标识、按钮文案与对应的底图。 */
+export class MapStyleOption {
+  key: string;
+  label: string;
+  style: MapStyle;
+
+  constructor(key: string, label: string, style: MapStyle) {
+    this.key = key;
+    this.label = label;
+    this.style = style;
+  }
+}
+
+/** 顺序与 Android 设置面板一致。 */
+export const MAP_STYLE_OPTIONS: MapStyleOption[] = [
+  new MapStyleOption('auto', '自动', MapStyle.AUTO),
+  new MapStyleOption('osm', 'OpenStreetMap', MapStyle.OSM),
+  new MapStyleOption('amap-vector', '高德矢量', MapStyle.AMAP_VECTOR),
+  new MapStyleOption('amap-satellite', '高德卫星', MapStyle.AMAP_SATELLITE)
+];
 
 export class MapLayer {
   /** 用于拼接瓦片地址与缓存的稳定标识。 */
@@ -39,6 +69,7 @@ export class MapLayer {
 }
 
 const AMAP_LAYER: MapLayer = new MapLayer('amap-vector', MapDatum.GCJ02, '底图 © 高德地图');
+const AMAP_SATELLITE_LAYER: MapLayer = new MapLayer('amap-satellite', MapDatum.GCJ02, '底图 © 高德地图');
 const OSM_LAYER: MapLayer = new MapLayer('osm', MapDatum.WGS84, '地图数据 © OpenStreetMap 贡献者');
 
 /** 一块待绘制的瓦片：左上角相对视口左上角的偏移（像素）。 */
@@ -63,6 +94,30 @@ export class MapTilesLogic {
   /** 自动选图：境内高德，境外 OSM。 */
   static layerFor(latitude: number, longitude: number): MapLayer {
     return MapTilesLogic.isInChina(latitude, longitude) ? AMAP_LAYER : OSM_LAYER;
+  }
+
+  /** 偏好里的标识 → 底图；认不出的标识按「自动」处理（旧版本升上来时就是这个默认值）。 */
+  static styleFromKey(key: string): MapStyle {
+    for (const option of MAP_STYLE_OPTIONS) {
+      if (option.key === key) {
+        return option.style;
+      }
+    }
+    return MapStyle.AUTO;
+  }
+
+  /** 按设置里选定的底图取图层：自动仍是境内高德、境外 OSM。 */
+  static layerForStyle(style: MapStyle, latitude: number, longitude: number): MapLayer {
+    if (style === MapStyle.OSM) {
+      return OSM_LAYER;
+    }
+    if (style === MapStyle.AMAP_VECTOR) {
+      return AMAP_LAYER;
+    }
+    if (style === MapStyle.AMAP_SATELLITE) {
+      return AMAP_SATELLITE_LAYER;
+    }
+    return MapTilesLogic.layerFor(latitude, longitude);
   }
 
   /** WGS-84 → GCJ-02；境外原样返回。 */
@@ -147,6 +202,11 @@ export class MapTilesLogic {
 
   static tileUrl(layer: MapLayer, zoom: number, tileX: number, tileY: number): string {
     if (layer.datum === MapDatum.GCJ02) {
+      if (layer.name === 'amap-satellite') {
+        const satelliteHost: string = AMAP_SATELLITE_HOSTS[(tileX + tileY) % AMAP_SATELLITE_HOSTS.length];
+        return `https://${satelliteHost}.is.autonavi.com/appmaptile?style=6&size=1&scale=1` +
+          `&x=${tileX}&y=${tileY}&z=${zoom}`;
+      }
       const host: string = AMAP_HOSTS[(tileX + tileY) % AMAP_HOSTS.length];
       return `https://${host}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8` +
         `&x=${tileX}&y=${tileY}&z=${zoom}`;

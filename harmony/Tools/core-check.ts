@@ -15,7 +15,7 @@ import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './cor
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place } from './core/Place';
-import { MapTilesLogic, MapDatum, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
+import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
 let passed = 0;
 const failures: string[] = [];
@@ -459,6 +459,23 @@ for (const item of equationCases) {
   const osmTile = MapTilesLogic.visibleTiles(tokyo, 35.6812, 139.7671, 12, widthPx, heightPx)[0];
   check('osm tile url', osmTile.url.indexOf('tile.openstreetmap.org/12/') > 0);
   check('zoom clamped', MapTilesLogic.clampZoom(1) === MIN_ZOOM && MapTilesLogic.clampZoom(99) === MAX_ZOOM);
+
+  // 设置页可选的底图：自动按位置判断，其余三种强制指定。
+  check('style key auto', MapTilesLogic.styleFromKey('auto') === MapStyle.AUTO);
+  check('style key satellite', MapTilesLogic.styleFromKey('amap-satellite') === MapStyle.AMAP_SATELLITE);
+  check('unknown style key falls back to auto', MapTilesLogic.styleFromKey('nope') === MapStyle.AUTO);
+  check('option keys match styles', MAP_STYLE_OPTIONS.length === 4
+    && MapTilesLogic.styleFromKey(MAP_STYLE_OPTIONS[2].key) === MapStyle.AMAP_VECTOR);
+  const forcedOsm = MapTilesLogic.layerForStyle(MapStyle.OSM, 31.2304, 121.4737);
+  check('osm forced inside china', forcedOsm.datum === MapDatum.WGS84 && forcedOsm.name === 'osm');
+  const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
+  check('satellite forced outside china', forcedSatellite.datum === MapDatum.GCJ02
+    && forcedSatellite.name === 'amap-satellite');
+  const satelliteTile = MapTilesLogic.visibleTiles(forcedSatellite, 31.2304, 121.4737, 12, widthPx, heightPx)[0];
+  check('satellite tile url', satelliteTile.url.indexOf('webst0') > 0 && satelliteTile.url.indexOf('style=6') > 0);
+  check('auto layer still follows place',
+    MapTilesLogic.layerForStyle(MapStyle.AUTO, 31.2304, 121.4737).name === 'amap-vector'
+    && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
