@@ -6,6 +6,7 @@
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { router } from '@kit.ArkUI';
+import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
@@ -35,12 +36,18 @@ struct Settings {
   @State manualLongitude: string = '';
   @State error: string = '';
   @State hint: string = '';
+  /** 通知权限相关的提示，显示在「提醒」卡片里。 */
+  @State reminderHint: string = '';
   private context: common.UIAbilityContext | null = null;
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
     this.reload();
+    // 开关已经打开但用户从没同意过通知（比如旧版本升级上来）：进设置页时补一次请求。
+    if (this.shichenReminders || this.keyTimeChime) {
+      this.ensureNotifications();
+    }
   }
 
   private reload(): void {
@@ -106,6 +113,27 @@ struct Settings {
     if (leave) {
       router.back();
     }
+  }
+
+  /** 代理提醒以通知的形式出现：打开开关时顺带要一次通知权限，否则到点时只会静默。 */
+  private ensureNotifications(): void {
+    const context: common.UIAbilityContext | null = this.context;
+    if (context === null) {
+      return;
+    }
+    notificationManager.isNotificationEnabled().then((enabled: boolean) => {
+      if (enabled) {
+        this.reminderHint = '';
+        return;
+      }
+      notificationManager.requestEnableNotification(context).then(() => {
+        this.reminderHint = '';
+      }).catch(() => {
+        this.reminderHint = '未允许通知：到点仍会响铃，但通知栏里看不到提醒。可到「设置 → 通知」里为本应用打开。';
+      });
+    }).catch(() => {
+      // 查询失败就跳过，发布提醒时系统还会再问一次。
+    });
   }
 
   private reschedule(): void {
@@ -337,12 +365,18 @@ struct Settings {
               (value: boolean) => {
                 this.shichenReminders = value;
                 AppStore.setShichenReminders(value);
+                if (value) {
+                  this.ensureNotifications();
+                }
                 this.reschedule();
               })
             this.switchRow('关键时间报时', '每进入一段关键时间响一次（500 ms）', this.keyTimeChime,
               (value: boolean) => {
                 this.keyTimeChime = value;
                 AppStore.setKeyTimeChime(value);
+                if (value) {
+                  this.ensureNotifications();
+                }
                 this.reschedule();
               })
             Text('提醒由系统代理发出：应用不在前台也会到点通知；打开应用时只响铃、不留通知。')
@@ -350,6 +384,13 @@ struct Settings {
               .fontColor('#5A6885')
               .margin({ top: 12 })
               .width('100%')
+            if (this.reminderHint.length > 0) {
+              Text(this.reminderHint)
+                .fontSize(10)
+                .fontColor('#D9534F')
+                .margin({ top: 8 })
+                .width('100%')
+            }
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
