@@ -108,25 +108,6 @@ struct SolarTimeCard {
   }
 
   @Builder
-  labelRow(label: string, tail: string) {
-    Row() {
-      Text(label)
-        .fontSize(10)
-        .fontColor(TEXT_LABEL)
-        .maxLines(1)
-      Text(tail)
-        .fontSize(10)
-        .fontColor(TEXT_DIM)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .textAlign(TextAlign.End)
-        .layoutWeight(1)
-        .margin({ left: 6 })
-    }
-    .width('100%')
-  }
-
-  @Builder
   hourCell(label: string, icon: string, condition: string) {
     Column() {
       Text(label)
@@ -154,7 +135,21 @@ struct SolarTimeCard {
       Row() {
         // 左：标准时间（交给 TextClock 自走）
         Column() {
-          this.labelRow('标准时间', this.city)
+          Row() {
+            Text('标准时间')
+              .fontSize(10)
+              .fontColor(TEXT_LABEL)
+              .maxLines(1)
+            Text(this.city)
+              .fontSize(10)
+              .fontColor(TEXT_DIM)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ left: 6 })
+          }
+          .width('100%')
           TextClock()
             .fontSize(38)
             .fontWeight(FontWeight.Medium)
@@ -196,7 +191,21 @@ struct SolarTimeCard {
 
         // 右：真太阳时（快照，随卡片刷新更新；卡片里秒走不起来，所以只显示到分钟）
         Column() {
-          this.labelRow('真太阳时', this.shichen)
+          Row() {
+            Text('真太阳时')
+              .fontSize(10)
+              .fontColor(TEXT_LABEL)
+              .maxLines(1)
+            Text(this.shichen)
+              .fontSize(10)
+              .fontColor(TEXT_DIM)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ left: 6 })
+          }
+          .width('100%')
           Text(this.solarTime)
             .fontSize(38)
             .fontWeight(FontWeight.Medium)

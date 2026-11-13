@@ -203,6 +203,12 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
    由以下时机刷新：系统定时刷新（`updateDuration: 1`，即 30 分钟）、
    打开应用（`EntryAbility.onForeground` 里推一次）。
    代价：不打开应用时，右栏最多滞后 30 分钟。这是卡片能力本身的边界，不是实现偷懒。
+
+   > **卡片里别用 `@Builder` 按值传参渲染会变的数据。** `@Builder labelRow(label, tail)` 的两个
+   > 参数在首次构建时就被复制下来，那时卡片刚创建、LocalStorage 还是空的，之后推过来的地名与
+   > 时辰不会刷新 —— 表现就是「标准时间」「真太阳时」右侧一直空白（天气、日期、逐时那些直接
+   > 写在 `build()` 里、绑 `this.xxx` 的反而正常）。改法：在 `build()` 里直接写
+   > `Text(this.city)` / `Text(this.shichen)`，让 `@LocalStorageProp` 的更新能落到这两个 Text 上。
 2. **报时用系统代理提醒**：鸿蒙不允许第三方应用自建精确闹钟。这里用 `reminderAgentManager`
    提前发布未来 12 个时辰交接（24 小时）与未来 2 天关键时间起点的提醒，由系统代发通知并响铃 ——
    应用不必常驻，代价是**通知栏会留下一条到点通知**（Android 端是只响铃不通知）。
