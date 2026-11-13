@@ -289,7 +289,7 @@ struct Settings {
           }
           .cardStyle()
 
-          // 常用城市
+          // 常用城市：只是快捷定位入口，不按当前坐标高亮（当前坐标未必落在这些点上）
           Column() {
             this.sectionTitle('常用城市')
             Flex({ wrap: FlexWrap.Wrap }) {
@@ -298,8 +298,8 @@ struct Settings {
                   ? this.presetLabels[index]
                   : TimeFormat.coordinates(preset.latitude, preset.longitude))
                   .fontSize(12)
-                  .fontColor(this.place.sameLocation(preset) ? PAGE_COLOR : TEXT_COLOR)
-                  .backgroundColor(this.place.sameLocation(preset) ? HERO_COLOR : CHIP_COLOR)
+                  .fontColor(TEXT_COLOR)
+                  .backgroundColor(CHIP_COLOR)
                   .borderRadius(14)
                   .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                   .margin({ right: 8, top: 8 })

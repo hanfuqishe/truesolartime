@@ -69,7 +69,6 @@ struct Index {
   @State language: string = 'zh-Hans';
   @State place: Place = Place.DEFAULT;
   @State placeName: string = '';
-  @State presetLabels: string[] = [];
   @State district: string = '';
   @State districtFull: string = '';
   @State weatherTemperature: string = '--';
@@ -203,12 +202,6 @@ struct Index {
     this.districtFull = DistrictService.cachedName();
     this.district = DistrictService.cachedShortName();
     this.placeName = this.placeLabel(this.place);
-
-    const labels: string[] = [];
-    for (const preset of Place.PRESETS) {
-      labels.push(this.placeLabel(preset));
-    }
-    this.presetLabels = labels;
 
     const weather: WeatherSnapshot | null = WeatherService.cached();
     if (weather !== null) {
