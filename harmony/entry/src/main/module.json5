@@ -33,21 +33,28 @@
         ]
       }
     ],
-    "extensionAbilities": [
-      {
-        "name": "SolarTimeFormAbility",
-        "srcEntry": "./ets/entryformability/SolarTimeFormAbility.ets",
-        "label": "$string:form_label",
-        "description": "$string:form_desc",
-        "type": "form",
-        "metadata": [
-          {
-            "name": "ohos.extension.form",
-            "resource": "$profile:form_config"
-          }
-        ]
-      }
-    ],
+    // 桌面卡片暂时关掉入口：鸿蒙的 ArkTS 卡片做不到「分钟级自走」的非本地时间（TextClock 忽略
+    // format/timeZoneOffset、卡片内禁用定时器、updateDuration 最小 30 分钟、互动卡片激活态只有
+    // 3500ms），卡片上的真太阳时只能靠推送刷新，会滞后最多 30 分钟。
+    // 代码（entryformability / widget / CardService）都还在，系统能力补齐后把下面这段 extensionAbility
+    // 恢复回来就能重新开放：
+    //
+    // "extensionAbilities": [
+    //   {
+    //     "name": "SolarTimeFormAbility",
+    //     "srcEntry": "./ets/entryformability/SolarTimeFormAbility.ets",
+    //     "label": "$string:form_label",
+    //     "description": "$string:form_desc",
+    //     "type": "form",
+    //     "metadata": [
+    //       {
+    //         "name": "ohos.extension.form",
+    //         "resource": "$profile:form_config"
+    //       }
+    //     ]
+    //   }
+    // ],
+    "extensionAbilities": [],
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"
