@@ -69,6 +69,8 @@ export class CardData {
   temperatureKey: string = '';
   /** 真太阳时是否落在关键时间段里：落在里面时数字改用色条同色，与 Android 卡片一致。 */
   inKeyTime: boolean = false;
+  /** 白天／夜间：卡片底色与真太阳时的强调色都用它切换。 */
+  isDay: boolean = true;
 }
 
 export class CardService {
@@ -83,6 +85,7 @@ export class CardService {
     data.city = CardService.cityName(place.latitude, place.longitude, language);
     data.shichen = snapshot.shichenName;
     data.dateText = TimeFormat.dateCompact(now, language);
+    data.isDay = snapshot.isDay();
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);

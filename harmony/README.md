@@ -30,6 +30,7 @@ harmony/
 │   ├── src/main/
 │   │   ├── module.json5          入口 Ability、FormExtensionAbility、权限
 │   │   ├── ets/
+│   │   │   ├── common/           白天／夜间两套主题（Theme.ets）与天气图标映射
 │   │   │   ├── core/             纯逻辑（不带系统 API，可用 tsc 编译验证）
 │   │   │   │   ├── SolarTimeMath.ets   均时差、赤纬、真太阳时、日出日落、高度角
 │   │   │   │   ├── MapTiles.ets        位置地图：GCJ-02 偏移、Web Mercator 瓦片拼接
@@ -158,6 +159,7 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 
 - **首页**：顶部标题 + 地名 + 「设置」按钮；下面是
   1. 大卡片（与桌面卡片同款版面，逐秒刷新，含时间轴与六格逐时预报；底色按昼夜切换：白天暖橙 + 白字、夜里深蓝 + 金字）；
+     整个页面也是两套主题（`common/Theme.ets`）：白天米白纸面 + 白卡片 + 深字，夜里 #0B1220 底 + #16203A 卡片 + 浅字；
   2. 太阳卡：虚线弧 + 地平线 + 柔光圆点标出当前太阳位置（对齐 Android 的 `SunArc`），
      底下是日出/上中天/日落与白昼时长；
   3. 位置地图卡：坐标 + 瓦片地图 + 底图来源（对齐 Android 的 `MapCard`，可双指/双击缩放）；

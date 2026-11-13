@@ -59,20 +59,26 @@ struct SolarTimeCard {
   @LocalStorageProp('hourIcons') hourIcons: string[] = [];
   @LocalStorageProp('temperatureKey') temperatureKey: string = '';
   @LocalStorageProp('inKeyTime') inKeyTime: boolean = false;
+  @LocalStorageProp('isDay') isDay: boolean = true;
 
   private bandColor(): string {
     if (this.temperatureKey === 'cold') {
-      return '#4CAF7D';
+      return this.isDay ? '#2E7D32' : '#4CAF7D';
     }
     if (this.temperatureKey === 'hot') {
-      return '#D9534F';
+      return this.isDay ? '#B3261E' : '#D9534F';
     }
-    return GOLD;
+    return this.solarAccent();
   }
 
-  /** 真太阳时的字色：落在关键时段里时用色条同色，其余为金色（同 Android 卡片）。 */
+  /** 真太阳时的强调色：白天橙色底上用白字，夜里用金色。 */
+  private solarAccent(): string {
+    return this.isDay ? WHITE : GOLD;
+  }
+
+  /** 真太阳时的字色：落在关键时段里时用色条同色，其余按昼夜取白／金。 */
   private solarColor(): string {
-    return this.inKeyTime ? this.bandColor() : GOLD;
+    return this.inKeyTime ? this.bandColor() : this.solarAccent();
   }
 
   /** 时间轴上代表当前时刻的圆点跟着真太阳时变色；时段外仍是白色。 */
@@ -286,7 +292,12 @@ struct SolarTimeCard {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Start)
     .borderRadius(22)
-    .linearGradient({ angle: 315, colors: [['#2A3B5C', 0], ['#151B2E', 1]] })
+    .linearGradient({
+      angle: 315,
+      colors: this.isDay
+        ? [['#F7A64B', 0], ['#EA7A2C', 1]]
+        : [['#2A3B5C', 0], ['#151B2E', 1]]
+    })
     .onClick(() => {
       // 空白处 / 时间轴 → 打开本应用
       postCardAction(this, {

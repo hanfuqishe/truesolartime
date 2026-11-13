@@ -16,18 +16,14 @@ import { DistrictService } from '../services/DistrictService';
 import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, LocationAttempt } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
-
-const HERO_COLOR: string = '#F5D68A';
-const TEXT_COLOR: string = '#E8EDF7';
-const SUBTLE_COLOR: string = '#9AA7BF';
-const CARD_COLOR: string = '#16203A';
-const PAGE_COLOR: string = '#0B1220';
-const CHIP_COLOR: string = '#24304F';
+import { AppPalette, paletteFor } from '../common/Theme';
 
 @Entry
 @Component
 struct Settings {
   @State place: Place = Place.DEFAULT;
+  /** 与首页同一套白天／夜间主题。 */
+  @State palette: AppPalette = paletteFor(true);
   @State placeName: string = '';
   @State presetLabels: string[] = [];
   @State shichenReminders: boolean = false;
@@ -57,6 +53,8 @@ struct Settings {
       labels.push(this.cityLabel(preset));
     }
     this.presetLabels = labels;
+    const altitude: number = SolarTimeMath.solarAltitudeDegrees(Date.now(), this.place.latitude, this.place.longitude);
+    this.palette = paletteFor(altitude > -0.833);
   }
 
   private labelOf(place: Place): string {
@@ -153,7 +151,6 @@ struct Settings {
   @Styles
   cardStyle() {
     .width('100%')
-    .backgroundColor(CARD_COLOR)
     .borderRadius(18)
     .padding(16)
   }
@@ -162,7 +159,7 @@ struct Settings {
   sectionTitle(title: string) {
     Text(title)
       .fontSize(13)
-      .fontColor(HERO_COLOR)
+      .fontColor(this.palette.accent)
       .width('100%')
   }
 
@@ -172,10 +169,10 @@ struct Settings {
       Column() {
         Text(title)
           .fontSize(14)
-          .fontColor(TEXT_COLOR)
+          .fontColor(this.palette.text)
         Text(desc)
           .fontSize(10)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
           .margin({ top: 2 })
       }
       .alignItems(HorizontalAlign.Start)
@@ -194,7 +191,7 @@ struct Settings {
       Row() {
         Text('‹')
           .fontSize(26)
-          .fontColor(TEXT_COLOR)
+          .fontColor(this.palette.text)
           .width(40)
           .onClick(() => {
             router.back();
@@ -202,11 +199,11 @@ struct Settings {
         Text('设置')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
-          .fontColor(TEXT_COLOR)
+          .fontColor(this.palette.text)
           .layoutWeight(1)
         Text(this.placeName)
           .fontSize(12)
-          .fontColor(HERO_COLOR)
+          .fontColor(this.palette.accent)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -220,13 +217,13 @@ struct Settings {
             this.sectionTitle('当前位置')
             Text(`${this.placeName}　${TimeFormat.coordinates(this.place.latitude, this.place.longitude)}`)
               .fontSize(12)
-              .fontColor(TEXT_COLOR)
+              .fontColor(this.palette.text)
               .margin({ top: 8 })
               .width('100%')
             Button(this.locating ? '定位中…' : '实时跟随GPS')
               .fontSize(13)
-              .backgroundColor(CHIP_COLOR)
-              .fontColor(TEXT_COLOR)
+              .backgroundColor(this.palette.chip)
+              .fontColor(this.palette.text)
               .width('100%')
               .height(38)
               .margin({ top: 12 })
@@ -236,12 +233,13 @@ struct Settings {
             if (this.hint.length > 0) {
               Text(this.hint)
                 .fontSize(10)
-                .fontColor(SUBTLE_COLOR)
+                .fontColor(this.palette.subtle)
                 .margin({ top: 8 })
                 .width('100%')
             }
           }
           .cardStyle()
+    .backgroundColor(this.palette.card)
 
           // 手动坐标
           Column() {
@@ -249,8 +247,8 @@ struct Settings {
             Row() {
               TextInput({ text: this.manualLatitude, placeholder: '纬度' })
                 .type(InputType.NUMBER_DECIMAL)
-                .backgroundColor('#0F1830')
-                .fontColor(TEXT_COLOR)
+                .backgroundColor(this.palette.chip)
+                .fontColor(this.palette.text)
                 .layoutWeight(1)
                 .onChange((value: string) => {
                   this.manualLatitude = value;
@@ -258,8 +256,8 @@ struct Settings {
                 })
               TextInput({ text: this.manualLongitude, placeholder: '经度' })
                 .type(InputType.NUMBER_DECIMAL)
-                .backgroundColor('#0F1830')
-                .fontColor(TEXT_COLOR)
+                .backgroundColor(this.palette.chip)
+                .fontColor(this.palette.text)
                 .layoutWeight(1)
                 .margin({ left: 8 })
                 .onChange((value: string) => {
@@ -278,8 +276,8 @@ struct Settings {
             }
             Button('应用')
               .fontSize(13)
-              .backgroundColor(HERO_COLOR)
-              .fontColor(PAGE_COLOR)
+              .backgroundColor(this.palette.accent)
+              .fontColor(this.palette.onAccent)
               .width('100%')
               .height(38)
               .margin({ top: 10 })
@@ -288,6 +286,7 @@ struct Settings {
               })
           }
           .cardStyle()
+    .backgroundColor(this.palette.card)
 
           // 常用城市：只是快捷定位入口，不按当前坐标高亮（当前坐标未必落在这些点上）
           Column() {
@@ -298,8 +297,8 @@ struct Settings {
                   ? this.presetLabels[index]
                   : TimeFormat.coordinates(preset.latitude, preset.longitude))
                   .fontSize(12)
-                  .fontColor(TEXT_COLOR)
-                  .backgroundColor(CHIP_COLOR)
+                  .fontColor(this.palette.text)
+                  .backgroundColor(this.palette.chip)
                   .borderRadius(14)
                   .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                   .margin({ right: 8, top: 8 })
@@ -312,6 +311,7 @@ struct Settings {
             .margin({ top: 4 })
           }
           .cardStyle()
+    .backgroundColor(this.palette.card)
 
           // 提醒
           Column() {
@@ -335,24 +335,25 @@ struct Settings {
               .width('100%')
           }
           .cardStyle()
+    .backgroundColor(this.palette.card)
 
           // 关于
           Column() {
             this.sectionTitle('关于')
             Text('真太阳时 v1.0.0')
               .fontSize(12)
-              .fontColor(TEXT_COLOR)
+              .fontColor(this.palette.text)
               .margin({ top: 8 })
               .width('100%')
             Text('左侧是当地标准时间（跟随系统 12/24 小时制），右侧是以太阳为准的真太阳时：' +
               '经度每差 1° 相当于 4 分钟，再叠加均时差。')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.palette.subtle)
               .margin({ top: 6 })
               .width('100%')
             Text('数据来源：天气 Open-Meteo（CC BY 4.0）；区划名：系统逆地理编码 / OSM Nominatim。')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.palette.subtle)
               .margin({ top: 6 })
               .width('100%')
             Text(`北京时区偏移 ${SolarTimeMath.BEIJING_OFFSET_MILLIS / 3600000} 小时`)
@@ -362,6 +363,7 @@ struct Settings {
               .width('100%')
           }
           .cardStyle()
+    .backgroundColor(this.palette.card)
         }
         .width('100%')
         .padding({ left: 16, right: 16, bottom: 24 })
@@ -372,6 +374,6 @@ struct Settings {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(PAGE_COLOR)
+    .backgroundColor(this.palette.page)
   }
 }

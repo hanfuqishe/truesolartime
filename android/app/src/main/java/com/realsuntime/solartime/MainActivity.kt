@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.realsuntime.solartime.data.MapConfig
 import com.realsuntime.solartime.ui.MainScreen
-import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -14,10 +13,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MapConfig.init(this)
         enableEdgeToEdge()
+        // 主题由 MainScreen 按「白天／夜间」选（见 TrueSolarTimeTheme 调用处）。
         setContent {
-            TrueSolarTimeTheme {
-                MainScreen()
-            }
+            MainScreen()
         }
     }
 }

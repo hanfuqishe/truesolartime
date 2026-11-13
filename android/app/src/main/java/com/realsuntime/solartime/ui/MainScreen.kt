@@ -76,6 +76,7 @@ import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
@@ -169,64 +170,67 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-        ) {
-            Header(onOpenSettings = { showSettings = true })
-            Spacer(Modifier.height(12.dp))
+    // 主题跟着太阳走：白天浅色，夜晚整体换深色（不再看系统的深色开关）。
+    TrueSolarTimeTheme(darkTheme = !snapshot.isDay) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+            ) {
+                Header(onOpenSettings = { showSettings = true })
+                Spacer(Modifier.height(12.dp))
 
-            HeroCard(
-                snapshot = snapshot,
-                districtName = districtName,
-                coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
-                waitingForFix = waitingForFix,
-                extras = heroExtras,
-            )
-            Spacer(Modifier.height(14.dp))
+                HeroCard(
+                    snapshot = snapshot,
+                    districtName = districtName,
+                    coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                    waitingForFix = waitingForFix,
+                    extras = heroExtras,
+                )
+                Spacer(Modifier.height(14.dp))
 
-            SunCard(snapshot = snapshot)
-            Spacer(Modifier.height(14.dp))
+                SunCard(snapshot = snapshot)
+                Spacer(Modifier.height(14.dp))
 
-            MapCard(place = place, mapStyle = mapStyle)
-            Spacer(Modifier.height(14.dp))
+                MapCard(place = place, mapStyle = mapStyle)
+                Spacer(Modifier.height(14.dp))
 
-            Text(
-                text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(28.dp))
+                Text(
+                    text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(28.dp))
+            }
         }
-    }
 
-    if (showSettings) {
-        SettingsSheet(
-            place = place,
-            trackingGps = trackingGps,
-            remindersEnabled = remindersEnabled,
-            keyTimeChimeEnabled = keyTimeChimeEnabled,
-            mapStyle = mapStyle,
-            onDismiss = { showSettings = false },
-            onRequestGps = {
-                showSettings = false
-                requestGps()
-            },
-            onApplyManual = { lat, lon, label -> viewModel.applyManualPlace(lat, lon, label) },
-            onToggleReminders = toggleReminders,
-            onToggleKeyTimeChime = toggleKeyTimeChime,
-            onSelectMapStyle = viewModel::setMapStyle,
-            onAddWidget = viewModel::requestPinWidget,
-        )
+        if (showSettings) {
+            SettingsSheet(
+                place = place,
+                trackingGps = trackingGps,
+                remindersEnabled = remindersEnabled,
+                keyTimeChimeEnabled = keyTimeChimeEnabled,
+                mapStyle = mapStyle,
+                onDismiss = { showSettings = false },
+                onRequestGps = {
+                    showSettings = false
+                    requestGps()
+                },
+                onApplyManual = { lat, lon, label -> viewModel.applyManualPlace(lat, lon, label) },
+                onToggleReminders = toggleReminders,
+                onToggleKeyTimeChime = toggleKeyTimeChime,
+                onSelectMapStyle = viewModel::setMapStyle,
+                onAddWidget = viewModel::requestPinWidget,
+            )
+        }
     }
 }
 

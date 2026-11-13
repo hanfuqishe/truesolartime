@@ -31,22 +31,22 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFFFB870),
-    onPrimary = Color(0xFF4A2600),
-    primaryContainer = Color(0xFF6A3B00),
-    onPrimaryContainer = Color(0xFFFFDDB8),
-    secondary = Color(0xFFD9C4A8),
-    onSecondary = Color(0xFF3B2F1F),
-    secondaryContainer = Color(0xFF52443A),
-    onSecondaryContainer = Color(0xFFF6E4CC),
-    background = Color(0xFF151210),
-    onBackground = Color(0xFFEDE0D6),
-    surface = Color(0xFF1D1916),
-    onSurface = Color(0xFFEDE0D6),
-    surfaceVariant = Color(0xFF3A2F27),
-    onSurfaceVariant = Color(0xFFD8C6B8),
-    outline = Color(0xFF9F8D80),
-    outlineVariant = Color(0xFF4A3F37),
+    primary = Color(0xFFF5D68A),
+    onPrimary = Color(0xFF0B1220),
+    primaryContainer = Color(0xFF24304F),
+    onPrimaryContainer = Color(0xFFF5D68A),
+    secondary = Color(0xFF9AA7BF),
+    onSecondary = Color(0xFF0B1220),
+    secondaryContainer = Color(0xFF24304F),
+    onSecondaryContainer = Color(0xFFE8EDF7),
+    background = Color(0xFF0B1220),
+    onBackground = Color(0xFFE8EDF7),
+    surface = Color(0xFF16203A),
+    onSurface = Color(0xFFE8EDF7),
+    surfaceVariant = Color(0xFF24304F),
+    onSurfaceVariant = Color(0xFF9AA7BF),
+    outline = Color(0xFF3A4763),
+    outlineVariant = Color(0xFF24304F),
 )
 
 private val AppTypography = Typography(

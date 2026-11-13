@@ -1,4 +1,4 @@
-﻿import { common } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DEFAULT_ZOOM, MapLayer, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
@@ -19,12 +19,9 @@ import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, GeoPoint } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
 import { WeatherService } from '../services/WeatherService';
+import { AppPalette, paletteFor } from '../common/Theme';
 
 const HERO_COLOR: string = '#F5D68A';
-const TEXT_COLOR: string = '#E8EDF7';
-const SUBTLE_COLOR: string = '#9AA7BF';
-const CARD_COLOR: string = '#16203A';
-const PAGE_COLOR: string = '#0B1220';
 const COLD_COLOR: string = '#4CAF7D';
 const HOT_COLOR: string = '#D9534F';
 /** 大卡片按昼夜换底色：白天暖橙，夜里深蓝（与 Android 卡片同一套配色）。 */
@@ -76,6 +73,8 @@ struct Index {
   /** 北京时间当天秒数，每秒更新。 */
   @State beijingSecond: number = 0;
   @State language: string = 'zh-Hans';
+  /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
+  @State palette: AppPalette = paletteFor(true);
   @State place: Place = Place.DEFAULT;
   @State placeName: string = '';
   @State district: string = '';
@@ -224,6 +223,7 @@ struct Index {
     const now: number = Date.now();
     this.language = language;
     this.snapshot = SolarTimeSnapshot.compute(now, this.place.latitude, this.place.longitude, language);
+    this.palette = paletteFor(this.isDayTheme());
     this.districtFull = DistrictService.cachedName();
     this.district = DistrictService.cachedShortName();
     this.placeName = this.placeLabel(this.place);
@@ -409,18 +409,23 @@ struct Index {
     }
   }
 
+  /** 是否按白天主题绘制：白天浅色纸面 + 橙卡，夜间整体深蓝。 */
+  private isDayTheme(): boolean {
+    return this.snapshot.isDay();
+  }
+
   /** 真太阳时在白天用白字（橙色底上金色看不清），夜里用金色。 */
   private solarAccent(): string {
-    return this.snapshot.isDay() ? '#FFFFFF' : HERO_COLOR;
+    return this.isDayTheme() ? '#FFFFFF' : HERO_COLOR;
   }
 
   /** 逐时预报的小字：白天橙色底上要更白一些，夜里沿用弱化色。 */
   private hourlyTextColor(): string {
-    return this.snapshot.isDay() ? '#E6FFFFFF' : SUBTLE_COLOR;
+    return this.isDayTheme() ? '#E6FFFFFF' : this.palette.subtle;
   }
 
   private bandColor(): string {
-    const day: boolean = this.snapshot.isDay();
+    const day: boolean = this.isDayTheme();
     if (this.temperatureKey === 'cold') {
       return day ? COLD_ON_DAY_COLOR : COLD_COLOR;
     }
@@ -458,7 +463,6 @@ struct Index {
   @Styles
   cardStyle() {
     .width('100%')
-    .backgroundColor(CARD_COLOR)
     .borderRadius(18)
     .padding(16)
   }
@@ -470,10 +474,10 @@ struct Index {
         Text('真太阳时')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
-          .fontColor(TEXT_COLOR)
+          .fontColor(this.palette.text)
         Text('以太阳经过当地子午线的时刻为正午')
           .fontSize(12)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 2 })
@@ -482,16 +486,15 @@ struct Index {
       .layoutWeight(1)
       Text(this.locationBadge())
         .fontSize(12)
-        .fontColor(HERO_COLOR)
+        .fontColor(this.palette.accent)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ right: 10 })
-      Text('设置')
-        .fontSize(12)
-        .fontColor(TEXT_COLOR)
-        .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-        .backgroundColor('#24304F')
-        .borderRadius(12)
+        .margin({ right: 6 })
+      // 与 Android 一致：齿轮图标按钮，不再用「设置」文字
+      SymbolGlyph($r('sys.symbol.gearshape_fill'))
+        .fontSize(22)
+        .fontColor([this.palette.text])
+        .padding(6)
         .onClick(() => {
           router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
             console.warn(`open settings failed: ${error.code} ${error.message}`);
@@ -688,7 +691,7 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .linearGradient({
       angle: 315,
-      colors: this.snapshot.isDay()
+      colors: this.isDayTheme()
         ? [[DAY_TOP_COLOR, 0], [DAY_BOTTOM_COLOR, 1]]
         : [[NIGHT_TOP_COLOR, 0], [NIGHT_BOTTOM_COLOR, 1]]
     })
@@ -701,11 +704,11 @@ struct Index {
       Row() {
         Text('太阳')
           .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
           .layoutWeight(1)
         Text(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`)
           .fontSize(11)
-          .fontColor(HERO_COLOR)
+          .fontColor(this.palette.accent)
       }
       .width('100%')
 
@@ -728,10 +731,10 @@ struct Index {
           Column() {
             Text('日出')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.sunriseBeijingSeconds))
               .fontSize(17)
-              .fontColor(TEXT_COLOR)
+              .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
           .layoutWeight(1)
@@ -739,10 +742,10 @@ struct Index {
           Column() {
             Text('上中天')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.solarNoonBeijingSeconds))
               .fontSize(17)
-              .fontColor(TEXT_COLOR)
+              .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
           .layoutWeight(1)
@@ -750,10 +753,10 @@ struct Index {
           Column() {
             Text('日落')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.sunsetBeijingSeconds))
               .fontSize(17)
-              .fontColor(TEXT_COLOR)
+              .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
           .layoutWeight(1)
@@ -766,18 +769,19 @@ struct Index {
           : '--'} · 真太阳时 ${TimeFormat.clock(this.snapshot.sunriseTrueSolarSeconds)} / ` +
           `${TimeFormat.clock(this.snapshot.sunsetTrueSolarSeconds)}`)
           .fontSize(10)
-          .fontColor('#5A6885')
+          .fontColor(this.palette.subtle)
           .margin({ top: 8 })
           .width('100%')
       } else {
         Text(this.sunSummary())
           .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
           .margin({ top: 8 })
           .width('100%')
       }
     }
     .cardStyle()
+    .backgroundColor(this.palette.card)
   }
 
   /**
@@ -791,11 +795,11 @@ struct Index {
       Row() {
         Text('位置地图')
           .fontSize(13)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
           .layoutWeight(1)
         Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
           .fontSize(11)
-          .fontColor(SUBTLE_COLOR)
+          .fontColor(this.palette.subtle)
       }
       .width('100%')
 
@@ -814,14 +818,14 @@ struct Index {
           .height(16)
           .borderRadius(8)
           .backgroundColor('#FFFFFF')
-          .border({ width: 4, color: HERO_COLOR })
+          .border({ width: 4, color: this.palette.accent })
           .shadow({ radius: 8, color: '#A6000000' })
       }
       .width('100%')
       .height(190)
       .clip(true)
       .borderRadius(12)
-      .backgroundColor('#0F1830')
+      .backgroundColor(this.palette.chip)
       .margin({ top: 8 })
       .onAreaChange((oldValue: Area, newValue: Area) => {
         this.mapWpx = vp2px(Number(newValue.width));
@@ -852,11 +856,12 @@ struct Index {
 
       Text(`${this.mapAttribution} · ${this.mapZoom} 级 · 双指缩放`)
         .fontSize(10)
-        .fontColor('#5A6885')
+        .fontColor(this.palette.subtle)
         .margin({ top: 6 })
         .width('100%')
     }
     .cardStyle()
+    .backgroundColor(this.palette.card)
   }
 
   /** 白昼进度：真太阳时在日出与日落之间的比例；没有日出日落时取 0.5。 */
@@ -901,7 +906,7 @@ struct Index {
     const endX: number = width * 0.94;
     const controlX: number = width / 2;
     const controlY: number = -height * 0.42;
-    const trackColor: string = '#3A4763';
+    const trackColor: string = this.palette.divider;
 
     ctx.clearRect(0, 0, width, height);
 
@@ -948,7 +953,7 @@ struct Index {
           this.mapCard()
           Text(`v1.0.0 · 数据来源 Open-Meteo（CC BY 4.0）`)
             .fontSize(10)
-            .fontColor('#5A6885')
+            .fontColor(this.palette.subtle)
             .margin({ top: 4, bottom: 8 })
         }
         .width('100%')
@@ -960,6 +965,6 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(PAGE_COLOR)
+    .backgroundColor(this.palette.page)
   }
 }
