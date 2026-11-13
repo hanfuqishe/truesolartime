@@ -240,6 +240,8 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 - 卡片每次刷新（`CardService.refresh`，含系统 30 分钟定时与打开应用触发的推送）在组装数据前
   重新取一次定位，坐标变化才写回偏好并顺带刷新天气、区划名。
 
+处于该模式时，首页右上角（设置按钮左侧）显示「GPS」而不是地名，提示坐标是自动跟随的。
+
 这条与 Android 卡片每次 `buildViews` 都调 `LocationTracker.lastKnownLocation()` 的行为一致。
 取不到定位（没授权、无信号）时保留上一次的坐标，不会把位置清空。
 

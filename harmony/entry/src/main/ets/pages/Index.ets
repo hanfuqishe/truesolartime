@@ -322,6 +322,11 @@ struct Index {
     return parts.join(' · ');
   }
 
+  /** 右上角的位置标识：跟随 GPS 时显示「GPS」，其余情况显示当前地名。 */
+  private locationBadge(): string {
+    return this.place.source === PlaceSource.GPS ? 'GPS' : this.placeName;
+  }
+
   /** 地名：优先完整区划名（市+区），其次区县名，最后退回城市名。 */
   private districtLabel(): string {
     if (this.districtFull.length > 0) {
@@ -397,7 +402,7 @@ struct Index {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      Text(this.placeName)
+      Text(this.locationBadge())
         .fontSize(12)
         .fontColor(HERO_COLOR)
         .maxLines(1)
