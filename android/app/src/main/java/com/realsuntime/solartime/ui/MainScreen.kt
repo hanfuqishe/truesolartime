@@ -539,7 +539,7 @@ private fun HeroClock(text: String, seconds: Int?, color: Color) {
             text = text,
             style = TextStyle(
                 fontSize = 42.sp,
-                fontWeight = FontWeight.Light,
+                fontWeight = FontWeight.Medium,
                 fontFeatureSettings = "tnum",
             ),
             color = color,
@@ -550,7 +550,7 @@ private fun HeroClock(text: String, seconds: Int?, color: Color) {
                 text = ":%02d".format(seconds),
                 style = TextStyle(
                     fontSize = 23.sp,
-                    fontWeight = FontWeight.Light,
+                    fontWeight = FontWeight.Medium,
                     fontFeatureSettings = "tnum",
                 ),
                 color = color,

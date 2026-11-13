@@ -677,15 +677,16 @@ object WidgetUpdater {
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
 
-        // 秒数用等宽字体，与 style 里的 WidgetClockSecondChrono 保持一致：
-        // 等宽下「0:」与「00」同宽，于是按「00」的宽度裁剪就恰好切在冒号之后。
+        // 秒数用等宽数字（tabular figures），与 style 里的 WidgetClockSecondChrono 保持一致：
+        // 数字等宽，「0:」与「00」的宽度关系固定，于是按「00」的宽度裁剪就恰好切在冒号之后。
         val secondsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.MONOSPACE
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            fontFeatureSettings = "tnum"
             textSize = spToPx(SECOND_TEXT_SP, metrics)
         }
         val secondsBlockPx = secondsPaint.measureText(SECOND_SAMPLE)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
             textSize = spToPx(SECOND_TEXT_SP, metrics)
         }
