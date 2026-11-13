@@ -109,6 +109,9 @@ struct Index {
   private previousSolarSecond: number = -1;
   private previousShichenIndex: number = -1;
   private lastDerivedMillis: number = 0;
+  /** 上次看到的天气／区划名版本号；一变就立刻重算，不用等 30 秒的节流。 */
+  private weatherRevision: number = -1;
+  private districtRevision: number = -1;
   private context: common.UIAbilityContext | null = null;
   private sunSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private sunCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.sunSettings);
@@ -124,6 +127,8 @@ struct Index {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
     this.reloadSettings();
+    this.weatherRevision = WeatherService.revision();
+    this.districtRevision = DistrictService.revision();
     this.refreshDerived();
     this.lastDerivedMillis = Date.now();
     this.tick();
@@ -140,6 +145,9 @@ struct Index {
       return;
     }
     this.reloadSettings();
+    this.weatherRevision = WeatherService.revision();
+    this.districtRevision = DistrictService.revision();
+    this.lastDerivedMillis = Date.now();
     this.refreshDerived();
     this.refreshRemote();
   }
@@ -204,6 +212,16 @@ struct Index {
     }
     // 太阳弧线上的圆点跟着真太阳时走，每秒重画一次。
     this.drawSunArc();
+    // 天气／区划名刚一更新（例如刚在设置页换了城市）就立刻反映到界面上，不等 30 秒的节流。
+    const weatherRevision: number = WeatherService.revision();
+    const districtRevision: number = DistrictService.revision();
+    if (weatherRevision !== this.weatherRevision || districtRevision !== this.districtRevision) {
+      this.weatherRevision = weatherRevision;
+      this.districtRevision = districtRevision;
+      this.lastDerivedMillis = now;
+      this.refreshDerived();
+      return;
+    }
     // 分钟级别的数据每 30 秒重算一次，别让每秒的刷新去碰网络与字符串拼接。
     if (now - this.lastDerivedMillis >= 30000) {
       this.lastDerivedMillis = now;

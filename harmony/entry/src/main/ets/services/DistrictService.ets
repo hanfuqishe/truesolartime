@@ -20,6 +20,13 @@ const USER_AGENT: string = 'TrueSolarTime-HarmonyOS/1.0';
 export class DistrictService {
   private static inFlight: boolean = false;
 
+  /** 每反查到一次新名字就 +1，供界面判断「区划名换了」。 */
+  private static revisionCount: number = 0;
+
+  static revision(): number {
+    return DistrictService.revisionCount;
+  }
+
   /** 系统语言，例如 "zh-Hans-CN" / "en-US"。 */
   static language(): string {
     try {
@@ -64,6 +71,7 @@ export class DistrictService {
         return false;
       }
       AppStore.saveDistrict(names.full, names.short, language, place.latitude, place.longitude, CACHE_SCHEMA);
+      DistrictService.revisionCount++;
       return true;
     } finally {
       DistrictService.inFlight = false;

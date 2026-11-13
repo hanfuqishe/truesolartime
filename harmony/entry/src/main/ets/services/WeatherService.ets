@@ -15,6 +15,13 @@ const TIMEOUT_MILLIS: number = 8000;
 export class WeatherService {
   private static inFlight: boolean = false;
 
+  /** 每成功写进一次缓存就 +1；界面靠它发现「天气换过了」，不必每秒去读偏好。 */
+  private static revisionCount: number = 0;
+
+  static revision(): number {
+    return WeatherService.revisionCount;
+  }
+
   /** 最近一次成功取到的实时天气（6 小时内、且属于当前这个地点），用于显示。 */
   static cached(place: Place): WeatherSnapshot | null {
     const cached: CachedWeather = AppStore.weather();
@@ -92,6 +99,7 @@ export class WeatherService {
         place.latitude,
         place.longitude
       );
+      WeatherService.revisionCount++;
       return true;
     } finally {
       WeatherService.inFlight = false;

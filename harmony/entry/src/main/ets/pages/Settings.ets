@@ -79,7 +79,7 @@ struct Settings {
     return TimeFormat.coordinates(place.latitude, place.longitude);
   }
 
-  private applyPlace(place: Place): void {
+  private applyPlace(place: Place, leave: boolean = false): void {
     AppStore.setPlace(place);
     this.place = place;
     this.placeName = this.labelOf(place);
@@ -88,7 +88,8 @@ struct Settings {
     this.error = '';
     this.hint = '已保存，返回首页生效';
     this.reschedule();
-    // 手工换地点后缓存里的天气属于旧坐标：不等 30 分钟窗口，立刻取一次，并顺手更新区划名。
+    // 换了地点，缓存里的天气就属于旧坐标了（显示层按距离判定为无效，立刻只剩占位符）：
+    // 不等 30 分钟窗口，马上取一次新地点的天气，并顺手更新区划名。
     WeatherService.refreshIfNeeded(place, true).then((updated: boolean) => {
       if (updated) {
         CardService.refresh().catch((error: BusinessError) => {
@@ -101,6 +102,10 @@ struct Settings {
     DistrictService.refreshIfNeeded(place).catch((error: BusinessError) => {
       console.warn(`district refresh failed: ${error.code} ${error.message}`);
     });
+    // 常用城市与「实时跟随GPS」都是一步到位的选择，选完直接回首页看结果。
+    if (leave) {
+      router.back();
+    }
   }
 
   private reschedule(): void {
@@ -140,7 +145,7 @@ struct Settings {
           : '暂时取不到位置，请稍后再试，也可手动输入坐标';
         return;
       }
-      this.applyPlace(new Place(attempt.point.latitude, attempt.point.longitude, PlaceSource.GPS, '', ''));
+      this.applyPlace(new Place(attempt.point.latitude, attempt.point.longitude, PlaceSource.GPS, '', ''), true);
     } finally {
       this.locating = false;
     }
@@ -315,7 +320,7 @@ struct Settings {
                   .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                   .margin({ right: 8, top: 8 })
                   .onClick(() => {
-                    this.applyPlace(preset);
+                    this.applyPlace(preset, true);
                   })
               }, (preset: Place) => `${preset.latitude}-${preset.longitude}`)
             }
