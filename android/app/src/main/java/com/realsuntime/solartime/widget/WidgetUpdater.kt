@@ -123,6 +123,9 @@ object WidgetUpdater {
     private const val SECOND_TEXT_SP = 23f
     private const val DATE_TEXT_SP = 11f
     private const val MIN_DATE_TEXT_SP = 8f
+    /** 日期行右侧经纬度的字号与它和日期之间的间隙。 */
+    private const val COORD_TEXT_SP = 10f
+    private const val COORD_GAP_DP = 8f
 
     /**
      * 真太阳时的强调色，与首页大卡片一致：白天（橙底）用白字，夜间用金色。
@@ -261,7 +264,7 @@ object WidgetUpdater {
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
-            applyClockSizing(context, widthDp, date, compact, this)
+            applyClockSizing(context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude), compact, this)
             bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
@@ -655,7 +658,14 @@ object WidgetUpdater {
      * 高度只用于选择布局（桌面回报的高度并不可靠），不参与字号计算，
      * 免得把字缩得过小、留下大片空白。
      */
-    private fun applyClockSizing(context: Context, widthDp: Int, date: String, compact: Boolean, views: RemoteViews) {
+    private fun applyClockSizing(
+        context: Context,
+        widthDp: Int,
+        date: String,
+        coordinates: String,
+        compact: Boolean,
+        views: RemoteViews,
+    ) {
         val metrics = context.resources.displayMetrics
         val density = metrics.density
         val totalWidthPx = (if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP) * density
@@ -697,7 +707,11 @@ object WidgetUpdater {
         views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
         views.setTextViewTextSize(R.id.widget_solar_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
 
-        // 日期行（含最高/最低气温）同样按宽度收缩，免得窄尺寸时被截成半截。
+        // 日期与经纬度同一行：日期占满剩余宽度，同样按可用宽度收缩，免得窄尺寸时被截成半截。
+        val coordPx = spToPx(COORD_TEXT_SP, metrics)
+        paint.textSize = coordPx
+        val coordsWidthPx = if (coordinates.isEmpty()) 0f else paint.measureText(coordinates) + COORD_GAP_DP * density
+        val dateAvailablePx = totalWidthPx - chromeDp * density - coordsWidthPx
         val datePx = spToPx(DATE_TEXT_SP, metrics)
         paint.textSize = datePx
         val dateRatio = paint.measureText(date) / datePx
@@ -705,7 +719,7 @@ object WidgetUpdater {
             R.id.widget_civil_date,
             TypedValue.COMPLEX_UNIT_PX,
             fitTextSizePx(
-                availableWidthPx = columnWidthPx,
+                availableWidthPx = dateAvailablePx,
                 widthRatio = dateRatio,
                 minPx = spToPx(MIN_DATE_TEXT_SP, metrics),
                 maxPx = datePx,

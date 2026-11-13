@@ -47,8 +47,9 @@ function floorMod(value: number, modulus: number): number {
 }
 
 export class WeatherLogic {
-  /** 缓存有效期 30 分钟；位置移动超过 5 km 也重新取数。 */
+  /** 取数的刷新间隔 30 分钟；位置移动超过 5 km 也重新取数。 */
   static readonly TTL_MILLIS: number = 30 * 60 * 1000;
+  /** 显示用的保留时限（与小时预报一致）：刷新失败时继续显示最近一次取到的数据。 */
   static readonly HOURLY_MAX_AGE_MILLIS: number = 6 * 60 * 60 * 1000;
   static readonly MOVE_THRESHOLD_KM: number = 5.0;
 

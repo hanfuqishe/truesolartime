@@ -15,14 +15,14 @@ const TIMEOUT_MILLIS: number = 8000;
 export class WeatherService {
   private static inFlight: boolean = false;
 
-  /** 30 分钟内的实时天气；没有或已过期返回 null。 */
+  /** 最近一次成功取到的实时天气（6 小时内），用于显示；是否要重新取数由 needsRefresh 判断。 */
   static cached(): WeatherSnapshot | null {
     const cached: CachedWeather = AppStore.weather();
     if (cached.fetchedMillis <= 0 || cached.schema !== SCHEMA) {
       return null;
     }
     const age: number = Date.now() - cached.fetchedMillis;
-    if (!(age >= 0 && age <= WeatherLogic.TTL_MILLIS)) {
+    if (!(age >= 0 && age <= WeatherLogic.HOURLY_MAX_AGE_MILLIS)) {
       return null;
     }
     return new WeatherSnapshot(cached.temperatureC, cached.code);

@@ -46,7 +46,17 @@ object WeatherRepository {
     /** 缓存格式版本；请求参数变化（如新增 past_days）时递增，强制重新取数。 */
     private const val SCHEMA = 2
 
+    /** 需要重新取数的时限：超过它就发起一次网络请求（不是「超过它就不显示」）。 */
     private const val TTL_MILLIS = 30L * 60 * 1000
+
+    /**
+     * 显示用的时限：与小时预报一样保留 6 小时。
+     *
+     * 只按 30 分钟取舍的话，一旦取数失败（夜间 Doze、闹钟被冻结、网络刚醒还没通），
+     * 卡片上的「当前天气」会整块消失几十分钟，只剩日期与温度区间；这里改为继续显示
+     * 最近一次成功取到的天气，等下一次刷新覆盖。
+     */
+    private const val DISPLAY_MAX_AGE_MILLIS = 6L * 60 * 60 * 1000
 
     /** 小时预报最多沿用这么久（超过就当作没有数据）。 */
     private const val HOURLY_MAX_AGE_MILLIS = 6L * 60 * 60 * 1000
@@ -58,7 +68,7 @@ object WeatherRepository {
         val prefs = prefs(context)
         if (!prefs.contains(KEY_TEMP)) return null
         val age = System.currentTimeMillis() - prefs.getLong(KEY_TIME, 0L)
-        if (age !in 0..TTL_MILLIS) return null
+        if (age !in 0..DISPLAY_MAX_AGE_MILLIS) return null
         return Snapshot(prefs.getInt(KEY_TEMP, 0), prefs.getInt(KEY_CODE, 0))
     }
 

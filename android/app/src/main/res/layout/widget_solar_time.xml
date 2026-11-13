@@ -118,15 +118,6 @@
                     android:text="00"
                     tools:ignore="HardcodedText" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/widget_civil_date"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:maxLines="1"
-                android:textColor="#B3FFFFFF"
-                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -204,18 +195,37 @@
                     android:visibility="invisible"
                     tools:ignore="HardcodedText" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/widget_coordinates"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:maxLines="1"
-                android:textColor="#B3FFFFFF"
-                android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
 
+    <!-- 日期与经纬度同一行：日期吃满剩余宽度，经纬度贴右。
+         竖分隔线在上面的两栏行里，不会再伸进这一行。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_civil_date"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="#B3FFFFFF"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/widget_coordinates"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:maxLines="1"
+            android:textColor="#B3FFFFFF"
+            android:textSize="10sp" />
+    </LinearLayout>
     <!-- 真太阳时 0–24 时的时间轴：彩色段是「服用时间」，白点是当前时刻；位图由 WidgetAxis 绘制。 -->
     <ImageView
         android:id="@+id/widget_axis"
