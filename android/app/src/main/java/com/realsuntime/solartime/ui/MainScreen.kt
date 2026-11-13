@@ -71,6 +71,7 @@ import com.realsuntime.solartime.MainViewModel
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
+import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -183,7 +184,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp),
             ) {
-                Header(onOpenSettings = { showSettings = true })
+                Header(
+                    badge = if (place.source == PlaceSource.GPS) {
+                        stringResource(R.string.location_badge_gps)
+                    } else {
+                        districtName.orEmpty()
+                    },
+                    onOpenSettings = { showSettings = true },
+                )
                 Spacer(Modifier.height(12.dp))
 
                 HeroCard(
@@ -234,8 +242,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 }
 
+/**
+ * 顶部：标题、副标题，右侧是位置标识与设置按钮。
+ *
+ * 位置标识与鸿蒙版一致：跟随 GPS 时显示「GPS」，指定坐标时显示反查到的行政区划。
+ */
 @Composable
-private fun Header(onOpenSettings: () -> Unit) {
+private fun Header(badge: String, onOpenSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -252,6 +265,16 @@ private fun Header(onOpenSettings: () -> Unit) {
                 text = stringResource(R.string.screen_subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (badge.isNotBlank()) {
+            Text(
+                text = badge,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = 6.dp),
             )
         }
         IconButton(onClick = onOpenSettings) {
