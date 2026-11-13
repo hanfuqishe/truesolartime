@@ -8,20 +8,18 @@ import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.util.TypedValue
 import com.realsuntime.solartime.data.TakeBand
-import com.realsuntime.solartime.data.TakeTemperature
 
 /**
  * 小组件里那条横线：真太阳时 0–24 时的时间轴。
  *
- * 轴线上按「关键时间」涂色带（冻或温用绿色、热或温用红色），并在当前真太阳时的位置打一个点。
+ * 轴线上按「关键时间」涂色带（冻或温用绿色、热或温用红色），并在当前真太阳时的位置打一个点；
+ * 色带与圆点的颜色由调用方按昼夜选档（见 [KeyTimePalette]）。
  * 小组件只能放系统控件，位置又得随刷新变化，所以整条轴在 App 进程里画成位图再贴上去。
  */
 object WidgetAxis {
 
     private const val MINUTES_PER_DAY = 24 * 60
     private const val AXIS_COLOR = 0x40FFFFFF
-    private const val DOT_CORE = 0xFFFFFFFF.toInt()
-    private const val DOT_EDGE = 0x00FFFFFF
 
     /** 时间轴上的一个色带区间，单位是「真太阳时的当日分钟」，[endMinutes] 恒大于 [startMinutes]。 */
     data class SolarSpan(val startMinutes: Double, val endMinutes: Double)
@@ -52,6 +50,8 @@ object WidgetAxis {
      *
      * @param solarSecondsOfDay 当前真太阳时的当日秒数，null 表示还没有定位、不画点也不画色带
      * @param bands 关键时间（直接当作真太阳时）；为空时只画轴线
+     * @param bandColor 关键时段色带的颜色（0 表示不着色），由调用方按昼夜选档
+     * @param dotColor 当前时刻圆点的颜色（时段内与色带同色，其余为白）
      */
     fun render(
         context: Context,
@@ -59,9 +59,12 @@ object WidgetAxis {
         heightPx: Int,
         solarSecondsOfDay: Long?,
         bands: List<TakeBand>,
-        temperature: TakeTemperature?,
+        bandColor: Int,
+        dotColor: Int,
     ): Bitmap? {
         if (widthPx <= 0 || heightPx <= 0) return null
+        val dotCore = dotColor
+        val dotEdge = dotColor and 0x00FFFFFF
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val centerY = heightPx / 2f
@@ -78,7 +81,6 @@ object WidgetAxis {
         canvas.drawLine(inset, centerY, widthPx - inset, centerY, paint)
 
         if (solarSecondsOfDay != null) {
-            val bandColor = KeyTimePalette.of(temperature) ?: 0
             if (bandColor != 0 && bands.isNotEmpty()) {
                 // 与轴线等宽，只换颜色：色带是提示，不该比时间本身更抢眼。
                 paint.color = bandColor
@@ -97,7 +99,7 @@ object WidgetAxis {
                 x,
                 centerY,
                 dotRadius,
-                intArrayOf(DOT_CORE, DOT_CORE, DOT_EDGE),
+                intArrayOf(dotCore, dotCore, dotEdge),
                 floatArrayOf(0f, 0.45f, 1f),
                 Shader.TileMode.CLAMP,
             )

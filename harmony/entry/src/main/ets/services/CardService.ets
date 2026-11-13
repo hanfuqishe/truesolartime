@@ -83,7 +83,7 @@ export class CardService {
     const data: CardData = new CardData();
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);
-    data.shichen = snapshot.shichenName;
+    data.shichen = `${snapshot.shichenName} · ${snapshot.shichenHalf}`;
     data.dateText = TimeFormat.dateCompact(now, language);
     data.isDay = snapshot.isDay();
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);

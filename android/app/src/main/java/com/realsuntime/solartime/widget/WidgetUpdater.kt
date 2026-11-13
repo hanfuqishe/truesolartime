@@ -124,8 +124,12 @@ object WidgetUpdater {
     private const val DATE_TEXT_SP = 11f
     private const val MIN_DATE_TEXT_SP = 8f
 
-    /** 真太阳时的默认颜色；进入关键时间段时改用 KeyTimePalette 里的绿或红。 */
-    private const val SOLAR_TIME_COLOR = 0xFFFFC65C.toInt()
+    /**
+     * 真太阳时的强调色，与首页大卡片一致：白天（橙底）用白字，夜间用金色。
+     * 进入关键时间段时另改用 KeyTimePalette 的绿或红。
+     */
+    private const val SOLAR_TIME_COLOR_DAY = 0xFFFFFFFF.toInt()
+    private const val SOLAR_TIME_COLOR_NIGHT = 0xFFF5D68A.toInt()
 
     /** 还没有有效 GPS 定位时真太阳时的占位符。 */
     private const val SOLAR_PLACEHOLDER = "--:--"
@@ -245,7 +249,7 @@ object WidgetUpdater {
         // 关键时间只在刷新时读一次：时间轴着色与真太阳时的数字都要用。
         val keyTime = TakeTimeRepository.schedule(context)
         val solarSecondsOfDay = solarSeconds.toDouble()
-        val keyColor = if (location.hasFix) activeKeyColor(keyTime, solarSecondsOfDay) else null
+        val keyColor = if (location.hasFix) activeKeyColor(keyTime, solarSecondsOfDay, isDay) else null
         // 再矮就连逐时行都放不下，先让位给时钟。
         val showHourly = effectiveHeightDp <= 0f || effectiveHeightDp >= MIN_HEIGHT_WITH_HOURLY_DP
         val layout = if (compact) R.layout.widget_solar_time_compact else R.layout.widget_solar_time
@@ -258,7 +262,7 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             applyClockSizing(context, widthDp, date, compact, this)
-            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, this)
+            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
             setTextViewText(R.id.widget_civil_date, date)
@@ -298,11 +302,11 @@ object WidgetUpdater {
                 setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
-                applySolarColor(keyColor ?: SOLAR_TIME_COLOR, this)
-                setTextViewText(R.id.widget_solar_shichen, TimeText.shichenName(context, shichenIndex))
+                applySolarColor(keyColor ?: defaultSolarColor(isDay), this)
+                setTextViewText(R.id.widget_solar_shichen, shichenText(context, solarSecondsOfDay))
                 setTextViewText(
                     R.id.widget_city_wide_shichen,
-                    TimeText.shichenName(context, shichenIndex),
+                    shichenText(context, solarSecondsOfDay),
                 )
                 setTextViewText(
                     R.id.widget_coordinates,
@@ -313,7 +317,7 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_solar_time, SOLAR_PLACEHOLDER)
                 setViewVisibility(R.id.widget_solar_colon, View.GONE)
                 setViewVisibility(R.id.widget_solar_sec, View.GONE)
-                applySolarColor(SOLAR_TIME_COLOR, this)
+                applySolarColor(defaultSolarColor(isDay), this)
                 setTextViewText(R.id.widget_solar_shichen, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
@@ -335,6 +339,7 @@ object WidgetUpdater {
         hasFix: Boolean,
         solarOffsetMillis: Long,
         schedule: TakeTimeSchedule?,
+        isDay: Boolean,
         views: RemoteViews,
     ) {
         val density = context.resources.displayMetrics.density
@@ -354,13 +359,20 @@ object WidgetUpdater {
             null
         }
         // 关键时间本身就按真太阳时算，和轴上的点同一套刻度，不用再换算。
+        // 色带与圆点跟着昼夜换档：白天暗一档、夜间亮一档；时段外圆点是白色。
+        val bandColor = KeyTimePalette.of(schedule?.temperature, isDay) ?: 0
         val bitmap = WidgetAxis.render(
             context = context,
             widthPx = widthPx,
             heightPx = heightPx,
             solarSecondsOfDay = solarSeconds,
             bands = schedule?.bands.orEmpty(),
-            temperature = schedule?.temperature,
+            bandColor = bandColor,
+            dotColor = if (solarSeconds != null && bandColor != 0 && insideKeyTime(schedule, solarSeconds)) {
+                bandColor
+            } else {
+                0xFFFFFFFF.toInt()
+            },
         )
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.widget_axis, bitmap)
@@ -422,12 +434,34 @@ object WidgetUpdater {
         }
     }
 
-    /** 当前真太阳时若落在某段关键时间里，就取那一段的配色；否则返回 null（用默认金色）。 */
-    internal fun activeKeyColor(schedule: TakeTimeSchedule?, solarSecondsOfDay: Double): Int? {
+    /** 当前真太阳时若落在某段关键时间里，就取那一段的配色；否则返回 null（用默认色）。 */
+    internal fun activeKeyColor(
+        schedule: TakeTimeSchedule?,
+        solarSecondsOfDay: Double,
+        isDay: Boolean,
+    ): Int? {
         if (schedule == null) return null
         val minuteOfDay = solarSecondsOfDay / 60.0
         val inside = schedule.bands.any { it.contains(minuteOfDay) }
-        return if (inside) KeyTimePalette.of(schedule.temperature) else null
+        return if (inside) KeyTimePalette.of(schedule.temperature, isDay) else null
+    }
+
+    /** 时辰 + 时初／时正，与首页大卡片一致（如「午时 · 初」）。 */
+    private fun shichenText(context: Context, solarSecondsOfDay: Double): String {
+        val name = TimeText.shichenName(context, Shichen.indexOf(solarSecondsOfDay))
+        val half = TimeText.shichenHalf(context, Shichen.halfLabel(solarSecondsOfDay) == "正")
+        return context.getString(R.string.hero_shichen, name, half)
+    }
+
+    /** 真太阳时的默认色：白天白字、夜间金色，与首页大卡片一致。 */
+    private fun defaultSolarColor(isDay: Boolean): Int =
+        if (isDay) SOLAR_TIME_COLOR_DAY else SOLAR_TIME_COLOR_NIGHT
+
+    /** 当前真太阳时是否落在某段关键时间里（时间轴圆点用同一判定）。 */
+    private fun insideKeyTime(schedule: TakeTimeSchedule?, solarSecondsOfDay: Long): Boolean {
+        if (schedule == null) return false
+        val minuteOfDay = solarSecondsOfDay / 60.0
+        return schedule.bands.any { it.contains(minuteOfDay) }
     }
 
     private fun applySolarColor(color: Int, views: RemoteViews) {
@@ -893,14 +927,33 @@ object WidgetUpdater {
         }
 
     /** 日期行；还没有有效定位时不带气温（那份气温属于别的城市）。 */
+    /**
+     * 日期 + 当日天气与温度区间，与首页大卡片同一行结构：
+     * 「11月13日 周五 · 17° 小雨 · 14°~19°」。没有天气数据时退化成只剩日期。
+     */
     private fun dateText(context: Context, civil: ZonedDateTime, place: Place, hasFix: Boolean): String {
         val date = TimeText.dateShortWithWeekday(context, civil.toLocalDate())
         if (!hasFix) return date
+        val parts = ArrayList<String>(3)
+        parts += date
+        val cached = WeatherRepository.cached(context)
+        if (cached != null) {
+            val condition = WeatherRepository.conditionOf(cached.code)
+            parts += context.getString(
+                R.string.hero_weather,
+                context.getString(R.string.weather_temp, cached.temperatureC),
+                TimeText.conditionLabel(context, condition),
+            )
+        }
         val range = WeatherRepository.temperatureRange(
             WeatherRepository.hourly(context),
             civil.toLocalDate(),
             civil.zone,
-        ) ?: return date
-        return context.getString(R.string.date_high_low, date, range.second, range.first)
+        )
+        if (range != null) {
+            // temperatureRange 返回的是 (最高, 最低)，显示顺序按「低 ~ 高」。
+            parts += context.getString(R.string.hero_temp_range, range.second, range.first)
+        }
+        return parts.joinToString(" · ")
     }
 }
