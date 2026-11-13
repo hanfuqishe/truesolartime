@@ -266,10 +266,12 @@ private fun HeroCard(
 ) {
     val context = LocalContext.current
     val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
+    val isDay = snapshot.isDay
     // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
     val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
-    val bandColor = if (inKeyTime) HeroPalette.band(extras.temperature) else null
-    val solarColor = bandColor ?: HeroPalette.GOLD
+    val accent = HeroPalette.accent(isDay)
+    val bandColor = if (inKeyTime) HeroPalette.band(extras.temperature, isDay) else null
+    val solarColor = bandColor ?: accent
     val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
@@ -278,7 +280,7 @@ private fun HeroCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF2A3B5C), Color(0xFF151B2E))))
+            .background(Brush.linearGradient(HeroPalette.gradient(isDay)))
             .padding(16.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -348,8 +350,7 @@ private fun HeroCard(
                             seconds = snapshot.trueSolarTime.second,
                             color = solarColor,
                         )
-                    }
-                }
+                    }                }
             }
 
             Spacer(Modifier.height(6.dp))
@@ -382,7 +383,6 @@ private fun HeroCard(
                 bandColor = bandColor,
                 dotColor = bandColor ?: HeroPalette.DOT,
             )
-
             if (!waitingForFix && extras.hourly.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 HeroHourly(extras.hourly)
@@ -391,18 +391,30 @@ private fun HeroCard(
     }
 }
 
-/** 大卡片用的配色：底色固定深蓝、真太阳时金色，关键时段沿用鸿蒙版的冷暖色。 */
+/** 大卡片用的配色：白天暖橙底、白字；夜里深蓝底、金色真太阳时。 */
 private object HeroPalette {
-    val GOLD: Color = Color(0xFFF5D68A)
     val LABEL: Color = Color(0xCCFFFFFF)
     val LABEL_DIM: Color = Color(0xB3FFFFFF)
     val DOT: Color = Color.White
+    private val GOLD: Color = Color(0xFFF5D68A)
     private val COLD: Color = Color(0xFF4CAF7D)
     private val HOT: Color = Color(0xFFD9534F)
+    // 白天橙色底上亮绿/亮红太抢眼，暗一档反而更清楚（与 KeyTimePalette 的考量一致）。
+    private val COLD_ON_DAY: Color = Color(0xFF2E7D32)
+    private val HOT_ON_DAY: Color = Color(0xFFB3261E)
 
-    fun band(temperature: TakeTemperature?): Color? = when (temperature) {
-        TakeTemperature.COLD_OR_MILD -> COLD
-        TakeTemperature.HOT_OR_MILD -> HOT
+    fun gradient(isDay: Boolean): List<Color> = if (isDay) {
+        listOf(Color(0xFFF7A64B), Color(0xFFEA7A2C))
+    } else {
+        listOf(Color(0xFF2A3B5C), Color(0xFF151B2E))
+    }
+
+    /** 真太阳时的强调色：白天用白字，夜里用金色。 */
+    fun accent(isDay: Boolean): Color = if (isDay) Color.White else GOLD
+
+    fun band(temperature: TakeTemperature?, isDay: Boolean): Color? = when (temperature) {
+        TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_ON_DAY else COLD
+        TakeTemperature.HOT_OR_MILD -> if (isDay) HOT_ON_DAY else HOT
         else -> null
     }
 }

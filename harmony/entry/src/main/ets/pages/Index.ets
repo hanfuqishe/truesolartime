@@ -27,6 +27,14 @@ const CARD_COLOR: string = '#16203A';
 const PAGE_COLOR: string = '#0B1220';
 const COLD_COLOR: string = '#4CAF7D';
 const HOT_COLOR: string = '#D9534F';
+/** 大卡片按昼夜换底色：白天暖橙，夜里深蓝（与 Android 卡片同一套配色）。 */
+const DAY_TOP_COLOR: string = '#F7A64B';
+const DAY_BOTTOM_COLOR: string = '#EA7A2C';
+const NIGHT_TOP_COLOR: string = '#2A3B5C';
+const NIGHT_BOTTOM_COLOR: string = '#151B2E';
+/** 白天橙色底上金色看不清，关键时段的色段也换成更暗的一档。 */
+const COLD_ON_DAY_COLOR: string = '#2E7D32';
+const HOT_ON_DAY_COLOR: string = '#B3261E';
 
 function pad2(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
@@ -401,22 +409,33 @@ struct Index {
     }
   }
 
+  /** 真太阳时在白天用白字（橙色底上金色看不清），夜里用金色。 */
+  private solarAccent(): string {
+    return this.snapshot.isDay() ? '#FFFFFF' : HERO_COLOR;
+  }
+
+  /** 逐时预报的小字：白天橙色底上要更白一些，夜里沿用弱化色。 */
+  private hourlyTextColor(): string {
+    return this.snapshot.isDay() ? '#E6FFFFFF' : SUBTLE_COLOR;
+  }
+
   private bandColor(): string {
+    const day: boolean = this.snapshot.isDay();
     if (this.temperatureKey === 'cold') {
-      return COLD_COLOR;
+      return day ? COLD_ON_DAY_COLOR : COLD_COLOR;
     }
     if (this.temperatureKey === 'hot') {
-      return HOT_COLOR;
+      return day ? HOT_ON_DAY_COLOR : HOT_COLOR;
     }
-    return HERO_COLOR;
+    return this.solarAccent();
   }
 
   /**
-   * 真太阳时的字色：落在关键时间段里时跟随时段的冷暖配色，其余时间为金色
+   * 真太阳时的字色：落在关键时间段里时跟随时段的冷暖配色，其余时间按昼夜取白／金
    * —— 与 Android 卡片的 `activeKeyColor` 一致。
    */
   private solarColor(): string {
-    return this.inKeyTime ? this.bandColor() : HERO_COLOR;
+    return this.inKeyTime ? this.bandColor() : this.solarAccent();
   }
 
   /** 时间轴上代表当前时刻的圆点：跟着真太阳时一起变色（时段外仍是白色）。 */
@@ -642,7 +661,7 @@ struct Index {
           Column() {
             Text(label)
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.hourlyTextColor())
               .maxLines(1)
             Image(weatherIcon(index < this.hourIcons.length ? this.hourIcons[index] : 'unknown'))
               .width(22)
@@ -651,7 +670,7 @@ struct Index {
               .margin({ top: 3 })
             Text(index < this.hourConds.length ? this.hourConds[index] : '')
               .fontSize(10)
-              .fontColor(SUBTLE_COLOR)
+              .fontColor(this.hourlyTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .margin({ top: 1 })
@@ -667,7 +686,12 @@ struct Index {
     .padding(16)
     .borderRadius(18)
     .alignItems(HorizontalAlign.Start)
-    .linearGradient({ angle: 315, colors: [['#2A3B5C', 0], ['#151B2E', 1]] })
+    .linearGradient({
+      angle: 315,
+      colors: this.snapshot.isDay()
+        ? [[DAY_TOP_COLOR, 0], [DAY_BOTTOM_COLOR, 1]]
+        : [[NIGHT_TOP_COLOR, 0], [NIGHT_BOTTOM_COLOR, 1]]
+    })
   }
 
   /** 太阳弧线：与 Android 的 SunArc 同款——虚线弧 + 地平线 + 柔光圆点标出当前太阳位置。 */
