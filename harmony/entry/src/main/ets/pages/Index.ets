@@ -938,6 +938,9 @@ struct Index {
       return;
     }
     const ctx: CanvasRenderingContext2D = this.sunCtx;
+    // Android 的 SunArc 画在 Compose Canvas 上，线宽与虚线间隔都是**像素**；
+    // 这里的 Canvas 用 vp，所以统一按屏幕密度换算，两边看起来才是同一套虚线。
+    const density: number = vp2px(1);
     const horizonY: number = height * 0.88;
     const startX: number = width * 0.06;
     const endX: number = width * 0.94;
@@ -950,8 +953,8 @@ struct Index {
     ctx.beginPath();
     ctx.moveTo(startX, horizonY);
     ctx.quadraticCurveTo(controlX, controlY, endX, horizonY);
-    ctx.setLineDash([10, 10]);
-    ctx.lineWidth = 2.5;
+    ctx.setLineDash([10 / density, 10 / density]);
+    ctx.lineWidth = 2.5 / density;
     ctx.strokeStyle = trackColor;
     ctx.stroke();
 
@@ -959,7 +962,7 @@ struct Index {
     ctx.setLineDash([]);
     ctx.moveTo(0, horizonY);
     ctx.lineTo(width, horizonY);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / density;
     ctx.strokeStyle = trackColor;
     ctx.stroke();
 
@@ -972,12 +975,12 @@ struct Index {
     if (isDay) {
       ctx.beginPath();
       ctx.fillStyle = '#2EFFB300';
-      ctx.arc(sunX, sunY, 20, 0, Math.PI * 2);
+      ctx.arc(sunX, sunY, 20 / density, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.beginPath();
     ctx.fillStyle = sunColor;
-    ctx.arc(sunX, sunY, 7, 0, Math.PI * 2);
+    ctx.arc(sunX, sunY, 7 / density, 0, Math.PI * 2);
     ctx.fill();
   }
   build() {
