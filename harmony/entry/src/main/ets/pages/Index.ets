@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
+import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { Shichen } from '../core/Shichen';
@@ -44,6 +45,8 @@ const COLD_INK_ON_NIGHT_COLOR: string = '#A6E4C3';
 const HOT_INK_ON_NIGHT_COLOR: string = '#F0A9A6';
 const COLD_BAND_ON_DAY_COLOR: string = '#2E7D32';
 const HOT_BAND_ON_DAY_COLOR: string = '#B3261E';
+/** 没有名字可用时的占位符：半角减号（与 Android 的 `city_unknown` 一致，不用全角「—」）。 */
+const CITY_UNKNOWN: string = '-';
 /** 应用在前台时的定位节奏：每分钟一次（桌面卡片是 5 分钟一次）。 */
 const GPS_INTERVAL_MILLIS: number = 60 * 1000;
 /**
@@ -138,7 +141,7 @@ struct Index {
   @State placeName: string = '';
   @State district: string = '';
   @State districtFull: string = '';
-  @State weatherTemperature: string = '--';
+  @State weatherTemperature: string = WeatherLogic.PLACEHOLDER;
   @State weatherText: string = '';
   @State weatherRange: string = '';
   @State hourLabels: string[] = [];
@@ -339,16 +342,19 @@ struct Index {
     this.snapshot = SolarTimeSnapshot.compute(now, this.place.latitude, this.place.longitude, language,
       this.zoneOffsetSeconds());
     this.palette = paletteFor(this.isDayTheme());
-    this.districtFull = DistrictService.cachedName();
-    this.district = DistrictService.cachedShortName();
-    this.placeName = this.placeLabel(this.place);
+    // 区划名只在「缓存坐标仍属于当前观测点（≤ 5 km）」时才算数：换了城市就立刻变空，
+    // 新名字回来之前卡片退回预设城市名 / 减号，不会挂着上一个城市的区划名。
+    const names: DistrictNames | null = DistrictService.cachedNamesFor(this.place);
+    this.districtFull = names === null ? '' : names.full;
+    this.district = names === null ? '' : names.short;
+    this.placeName = this.presetName();
 
     const weather: WeatherSnapshot | null = WeatherService.cached(this.place);
     if (weather !== null) {
       this.weatherTemperature = `${weather.temperatureC}°`;
       this.weatherText = WeatherLogic.conditionLabel(weather.code, language);
     } else {
-      this.weatherTemperature = '--';
+      this.weatherTemperature = WeatherLogic.PLACEHOLDER;
       this.weatherText = '';
     }
 
@@ -509,25 +515,31 @@ struct Index {
 
   private dateTail(): string {
     const parts: string[] = [TimeFormat.dateCompact(Date.now(), this.language)];
-    const hasWeather: boolean = this.weatherTemperature !== '--' && this.weatherText.length > 0;
+    const hasWeather: boolean = this.weatherTemperature !== WeatherLogic.PLACEHOLDER && this.weatherText.length > 0;
     if (hasWeather) {
       parts.push(`${this.weatherTemperature} ${this.weatherText}`);
     }
     if (this.weatherRange.length > 0) {
       parts.push(this.weatherRange);
     }
-    if (!hasWeather && this.weatherRange.length === 0) {
+    if (!hasWeather) {
       parts.push(WeatherLogic.PLACEHOLDER);
     }
     return parts.join(' · ');
   }
 
-  /** 右上角的位置标识：跟随 GPS 时显示「GPS」，其余情况显示当前地名。 */
+  /** 右上角的位置标识：跟随 GPS 时显示「GPS」，其余情况显示当前地名（与 Android 的 Header.badge 一致）。 */
   private locationBadge(): string {
-    return this.place.source === PlaceSource.GPS ? 'GPS' : this.placeName;
+    return this.place.source === PlaceSource.GPS ? 'GPS' : this.districtLabel();
   }
 
-  /** 地名：优先完整区划名（市+区），其次区县名，最后退回城市名。 */
+  /**
+   * 地名，三段式（与 Android `MainScreen.cityText` 一致）：
+   *
+   * ① 反查到的行政区划名优先（缓存坐标超过 5 km 就算没有，见 DistrictService.cachedNamesFor）；
+   * ② 反查还没回来 / 失败时，只有**预设城市**才回退到城市名（如「纽约」）；
+   * ③ 手工坐标与 GPS 定位没有名字可用，显示半角减号，等反查结果到了再换成区划名。
+   */
   private districtLabel(): string {
     if (this.districtFull.length > 0) {
       return this.districtFull;
@@ -535,15 +547,23 @@ struct Index {
     if (this.district.length > 0) {
       return this.district;
     }
-    return this.placeName;
+    return this.placeName.length > 0 ? this.placeName : CITY_UNKNOWN;
   }
 
-  private placeLabel(place: Place): string {
-    const city: NearbyCity | null = CityIndex.nearest(place.latitude, place.longitude, DistrictService.language());
-    if (city !== null) {
-      return city.name;
+  /**
+   * 预设城市名：只有「常用城市」点选的坐标才有名字可用，手工坐标 / GPS 一律返回空串。
+   * 内置城市自带 label；境外城市按坐标查离线城市表（随界面语言变化）。
+   */
+  private presetName(): string {
+    const preset: Place | null = Place.presetOf(this.place);
+    if (preset === null) {
+      return '';
     }
-    return TimeFormat.coordinates(place.latitude, place.longitude);
+    if (preset.label.length > 0) {
+      return preset.label;
+    }
+    const city: NearbyCity | null = CityIndex.nearest(preset.latitude, preset.longitude, DistrictService.language());
+    return city === null ? '' : city.name;
   }
 
   /** 轻提示；UIContext 的 PromptAction 可能抛异常，这里统一兜住。 */

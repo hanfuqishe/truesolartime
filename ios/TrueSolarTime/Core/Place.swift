@@ -19,6 +19,19 @@ struct Place: Equatable {
         SolarTimeMath.standardZoneOffsetSeconds(countryCode: countryCode, longitude: longitude)
     }
 
+    /// 预设城市名：只有从「常用城市」里点选的城市才有名字可用，手工坐标 / GPS 一律没有。
+    ///
+    /// 与 Android 的 `place.labelResName != nil` 是同一个判定：手工输入的 `label` 是「手动设置」、
+    /// GPS 的是「GPS · 精度 12 米」，都是占位词，不能当城市名显示在卡片上（那种情况显示「-」）。
+    var presetLabel: String? {
+        if source == .preset { return label }
+        guard source != .gps else { return nil }
+        let match = Place.presets.first {
+            abs($0.latitude - latitude) < 1e-6 && abs($0.longitude - longitude) < 1e-6
+        }
+        return match?.label
+    }
+
     static let shanghai = Place(latitude: 31.2304, longitude: 121.4737, source: .preset, label: "上海", countryCode: "cn")
 
     /// 常用城市，便于在无定位权限时快速切换。

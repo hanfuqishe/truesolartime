@@ -22,22 +22,21 @@ struct ContentView: View {
 
                     HeroCard(
                         snapshot: model.snapshot,
-                        placeLabel: model.place.label,
-                        districtName: model.districtName,
-                        trackingGps: model.trackingGps,
-                        waitingForFix: model.waitingForFix,
+                        districtName: cityText,
                         weather: model.weather,
                         keyBands: model.keyTime?.bands ?? [],
-                        bandColor: HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
-                        inkColor: inKeyTime
+                        // 定位还没回来时先不画旧地点的关键时段色段与字色（与 Android 的 waitingForFix 判定一致）。
+                        bandColor: model.waitingForFix
+                            ? nil
+                            : HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
+                        inkColor: (inKeyTime && !model.waitingForFix)
                             ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
                             : nil,
                         inKeyTime: inKeyTime,
                         coordinates: TimeFormat.coordinates(
                             latitude: model.place.latitude,
                             longitude: model.place.longitude
-                        ),
-                        weatherNote: model.weather == nil ? model.weatherStatus : nil
+                        )
                     )
 
 
@@ -83,6 +82,21 @@ struct ContentView: View {
                 model.handleBecameActive()
             }
         }
+    }
+
+    /// 卡片上那一行城市名，三段式（与 Android `MainScreen.cityText` 一致）：
+    ///
+    /// ① 反查到的行政区划名优先（`DistrictStore` 带 5 km 校验：换了城市就当作没有缓存）；
+    /// ② 反查尚未返回 / 失败时，只有**预设城市**才回退显示预设城市名（如「纽约」）；
+    /// ③ 手工坐标与 GPS 定位没有名字可用（label 是「手动设置」这类占位词），显示半角「-」。
+    private var cityText: String {
+        if let district = model.districtName?.full, !district.isEmpty {
+            return district
+        }
+        if let preset = model.place.presetLabel, !preset.isEmpty {
+            return preset
+        }
+        return "-"
     }
 
     /// 当前真太阳时是否落在某个关键时段内。

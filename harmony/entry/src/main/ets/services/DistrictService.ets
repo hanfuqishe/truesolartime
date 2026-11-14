@@ -13,6 +13,8 @@ import { AppStore, CachedDistrict } from './Store';
 import { HttpUtil } from './HttpUtil';
 
 const CACHE_SCHEMA: number = 1;
+/** 新坐标与上次反查坐标相距超过该距离，缓存里的名字就不再算数。 */
+const MOVE_THRESHOLD_KM: number = 5.0;
 const NOMINATIM_URL: string = 'https://nominatim.openstreetmap.org/reverse';
 const TIMEOUT_MILLIS: number = 10000;
 /** 遵守 OSM 使用条款：可识别的 UA + 结果缓存。 */
@@ -45,6 +47,40 @@ export class DistrictService {
   static cachedShortName(): string {
     const cached: CachedDistrict = AppStore.district();
     return cached.short.length > 0 ? cached.short : cached.full;
+  }
+
+  /**
+   * 缓存里的区划名，但**只在与 place 还算同一个地方时才认**（[MOVE_THRESHOLD_KM] 以内）。
+   *
+   * 换城市后、新名字还没查回来（或这次查询失败）时返回 null，界面就不显示旧城市，
+   * 避免「切到纽约，卡片还写着上海市黄浦区」—— 与 Android 的 `cachedNamesFor` 一致。
+   */
+  static cachedNamesFor(place: Place): DistrictNames | null {
+    const cached: CachedDistrict = AppStore.district();
+    if (cached.full.length === 0) {
+      return null;
+    }
+    if (isNaN(cached.latitude) || isNaN(cached.longitude)) {
+      return null;
+    }
+    const moved: number = CityIndex.distanceKm(cached.latitude, cached.longitude, place.latitude, place.longitude);
+    if (moved > MOVE_THRESHOLD_KM) {
+      return null;
+    }
+    const short: string = cached.short.length > 0 ? cached.short : cached.full;
+    return new DistrictNames(cached.full, short, cached.countryCode);
+  }
+
+  /** 同 cachedNamesFor，只取带上级的全名（如「上海市黄浦区」）。 */
+  static cachedNameFor(place: Place): string {
+    const names: DistrictNames | null = DistrictService.cachedNamesFor(place);
+    return names === null ? '' : names.full;
+  }
+
+  /** 同 cachedNamesFor，只取区县短名。 */
+  static cachedShortNameFor(place: Place): string {
+    const names: DistrictNames | null = DistrictService.cachedNamesFor(place);
+    return names === null ? '' : names.short;
   }
 
   /** 坐标超过 5 km 才重查。 */

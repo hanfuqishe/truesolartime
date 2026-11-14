@@ -25,6 +25,9 @@ import { ReminderService } from '../services/ReminderService';
 import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
 
+/** 没有名字可用时的占位符：半角减号（与首页卡片、Android 的 `city_unknown` 一致）。 */
+const CITY_UNKNOWN: string = '-';
+
 @Entry
 @Component
 struct Settings {
@@ -75,24 +78,40 @@ struct Settings {
     this.palette = paletteFor(altitude > -0.833);
   }
 
+  /**
+   * 当前位置的名字，三段式（与首页卡片、Android `MainScreen.cityText` 一致）：
+   * ① 反查到的区划名；② 反查未回/失败时只有预设城市才回退到城市名；③ 都没有就显示半角减号。
+   */
   private labelOf(place: Place): string {
-    const district: string = place.sameLocation(AppStore.place()) ? DistrictService.cachedShortName() : '';
+    const district: string = place.sameLocation(AppStore.place()) ? DistrictService.cachedShortNameFor(place) : '';
     if (district.length > 0) {
       return district;
     }
     return this.cityLabel(place);
   }
 
-  /** 常用城市按钮上的名字：固定用城市名，不跟随逆地理结果（否则「上海」会变成「黄浦区」）。 */
+  /**
+   * 常用城市按钮上的名字：固定用城市名，不跟随逆地理结果（否则「上海」会变成「黄浦区」）。
+   *
+   * 非预设点（手工坐标 / GPS）没有名字可用，返回半角减号 —— 与首页卡片一致，
+   * 不再拿「最近的城市名」冒充当前位置。
+   */
   private cityLabel(place: Place): string {
+    const preset: Place | null = Place.presetOf(place);
+    if (preset === null) {
+      return CITY_UNKNOWN;
+    }
+    const name: string = this.cityNameOf(preset);
+    return name.length > 0 ? name : CITY_UNKNOWN;
+  }
+
+  /** 预设城市的名字：内置城市先看 label，境外城市按坐标查离线城市表（随界面语言变化）。 */
+  private cityNameOf(place: Place): string {
     if (place.label.length > 0) {
       return place.label;
     }
     const city: NearbyCity | null = CityIndex.nearest(place.latitude, place.longitude, DistrictService.language());
-    if (city !== null) {
-      return city.name;
-    }
-    return TimeFormat.coordinates(place.latitude, place.longitude);
+    return city === null ? '' : city.name;
   }
 
   private applyPlace(place: Place, leave: boolean = false): void {

@@ -77,4 +77,22 @@ export class Place {
   sameLocation(other: Place): boolean {
     return Math.abs(this.latitude - other.latitude) < 1e-6 && Math.abs(this.longitude - other.longitude) < 1e-6;
   }
+
+  /**
+   * 该观测点若正好是「常用城市」里的某个预设点，返回那个预设点；手工坐标与 GPS 返回 null。
+   *
+   * 等价于 Android 的 `Place.labelResName != null`：预设城市才有城市名可显示，
+   * 手工输入 / GPS 定位只能等逆地理结果，等不到就显示占位符。
+   */
+  static presetOf(place: Place): Place | null {
+    if (place.source === PlaceSource.GPS) {
+      return null;
+    }
+    for (const preset of Place.PRESETS) {
+      if (place.sameLocation(preset)) {
+        return preset;
+      }
+    }
+    return null;
+  }
 }

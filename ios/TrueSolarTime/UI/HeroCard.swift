@@ -12,10 +12,8 @@ import UIKit
 struct HeroCard: View {
 
     let snapshot: SolarSnapshot
-    let placeLabel: String
-    let districtName: DistrictNames?
-    let trackingGps: Bool
-    let waitingForFix: Bool
+    /// 卡片左上角那一行城市名：调用方已经按三段式算好（区划名 → 预设城市名 → 「-」），这里只管显示。
+    let districtName: String
     let weather: WeatherSnapshot?
     /// 关键时间色段（0–24 时轴上的着色）。
     let keyBands: [TakeBand]
@@ -27,8 +25,6 @@ struct HeroCard: View {
     let inKeyTime: Bool
     /// 「39.9042°N 116.4074°E」，由调用方算好传入。
     let coordinates: String
-    /// 天气取不到时的说明（例如「请求超时（15 秒）」）；有天气数据时为 nil。
-    let weatherNote: String?
 
     /// 卡片宽度：先用「屏宽 − 左右内边距」当首帧估值，随后由 GeometryReader 量出的真实值覆盖。
     /// 若初值给 0，第一帧会按极小宽度算出超大字号，看起来就是卡片被撑出屏幕。
@@ -99,7 +95,7 @@ struct HeroCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 4)
-                Text(districtText)
+                Text(districtName)
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
@@ -183,10 +179,10 @@ struct HeroCard: View {
             if let range = WeatherParsing.temperatureRange(weather.hourly, date: Date(), timeZone: .current) {
                 parts.append("\(range.low)~\(range.high)°")
             }
-        } else if let weatherNote, !weatherNote.isEmpty {
-            parts.append(weatherNote)
         } else {
-            parts.append("--")
+            // 没有天气数据就显示半角减号（与 Android 的 `weather_unknown` 一致）。
+            // 失败原因不占卡片：设置页「诊断」里有完整说明。
+            parts.append("-")
         }
         return parts.joined(separator: " · ")
     }
@@ -201,14 +197,6 @@ struct HeroCard: View {
 
     private var clockHeight: CGFloat {
         HeroClockMetrics.mainSize(availableWidth: columnWidth) * 1.25
-    }
-
-    private var districtText: String {
-        if waitingForFix { return "定位中…" }
-        if let districtName {
-            return districtName.full.count <= 12 ? districtName.full : districtName.short
-        }
-        return placeLabel
     }
 }
 
@@ -384,15 +372,17 @@ struct HourlyRow: View {
             if points.isEmpty {
                 ForEach(0..<slots, id: \.self) { index in
                     VStack(spacing: 3) {
-                        Text(index == 0 ? "现在" : "--")
+                        Text(index == 0 ? "现在" : "-")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
                             .frame(height: labelSlotHeight)
-                        Text("--")
-                            .font(.system(size: 16))
+                        // 无数据不用问号（看起来像出错），用一条横线占位；与 Android 的
+                        // `ic_wx_unknown`（一条短横线）、鸿蒙的 `wx_unknown.svg` 一致。
+                        Image(systemName: "minus")
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.45))
                             .frame(height: iconSlotHeight)
-                        Text("--")
+                        Text("-")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
                             .frame(height: labelSlotHeight)

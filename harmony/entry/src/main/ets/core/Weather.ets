@@ -54,8 +54,8 @@ export class WeatherLogic {
   /** 取数失败后的重试间隔：成功是 30 分钟一拍，失败时 5 分钟就再试一次。 */
   static readonly RETRY_AFTER_FAILURE_MILLIS: number = 5 * 60 * 1000;
   static readonly MOVE_THRESHOLD_KM: number = 5.0;
-  /** 没有有效天气时天气位显示的占位符。 */
-  static readonly PLACEHOLDER: string = '--';
+  /** 没有有效天气时天气位显示的占位符：半角减号（与 Android 的 `weather_unknown` 一致）。 */
+  static readonly PLACEHOLDER: string = '-';
 
   static buildUrl(latitude: number, longitude: number): string {
     return 'https://api.open-meteo.com/v1/forecast' +
