@@ -121,6 +121,18 @@ struct SettingsView: View {
 
                     Divider()
 
+                    section(title: "诊断") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            diagnosticLine(title: "天气", value: WeatherStore.shared.diagnosticsSummary())
+                            diagnosticLine(title: "区划名", value: districtSummary)
+                            diagnosticLine(title: "关键时间", value: keyTimeSummary)
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
                     section(title: "关于计算") {
                         Text("真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。")
                             .font(.system(size: 12))
@@ -177,6 +189,29 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    // MARK: - 诊断
+
+    private func diagnosticLine(title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(title)
+                .frame(width: 56, alignment: .leading)
+            Text(value)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var districtSummary: String {
+        guard let names = model.districtName else { return "暂无" }
+        return names.full
+    }
+
+    private var keyTimeSummary: String {
+        guard let schedule = model.keyTime else { return "暂无" }
+        let bands = schedule.bands.map { $0.text }.joined(separator: "、")
+        let temperature = schedule.temperature?.label ?? "温度未标注"
+        return bands.isEmpty ? temperature : "\(bands) · \(temperature)"
     }
 
     private var keepScreenOnBinding: Binding<Bool> {
