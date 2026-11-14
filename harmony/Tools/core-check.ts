@@ -309,9 +309,18 @@ for (const item of equationCases) {
     8 * 3600 * 1000
   );
   check('temperature range', range !== null && range[0] === 20 && range[1] === 20, `${range}`);
-  check('refresh when stale', WeatherLogic.shouldRefresh(31 * 60 * 1000, 0));
-  check('refresh when moved', WeatherLogic.shouldRefresh(60 * 1000, 6));
-  check('no refresh when fresh and still', !WeatherLogic.shouldRefresh(60 * 1000, 1));
+  check('refresh when stale', WeatherLogic.shouldRefresh(31 * 60 * 1000, 0, 6 * 60 * 1000));
+  check('refresh when moved', WeatherLogic.shouldRefresh(60 * 1000, 6, 0));
+  check('no refresh when fresh and still', !WeatherLogic.shouldRefresh(60 * 1000, 1, 0));
+
+  // 1.4.39：失败后 5 分钟内不重复请求，超过 5 分钟再试；旧数据最长保留 24 小时
+  check('no retry within 5 minutes', !WeatherLogic.shouldRefresh(31 * 60 * 1000, 0, 60 * 1000));
+  check('retry after 5 minutes', WeatherLogic.shouldRefresh(31 * 60 * 1000, 0, 6 * 60 * 1000));
+  // TTL 只管「多久去取一次」；旧数据仍然可以继续显示，最长 24 小时（显示窗口）
+  check('refresh after ttl when retry allowed', WeatherLogic.shouldRefresh(6 * 60 * 60 * 1000, 0, 60 * 60 * 1000));
+  check('display window is 24h', WeatherLogic.HOURLY_MAX_AGE_MILLIS === 24 * 60 * 60 * 1000);
+  check('just-attempted is throttled even when ancient', !WeatherLogic.shouldRefresh(25 * 60 * 60 * 1000, 0, 0));
+  check('ancient data refreshes once the 5-min throttle is over', WeatherLogic.shouldRefresh(25 * 60 * 60 * 1000, 0, 6 * 60 * 1000));
   equal(
     'open-meteo url',
     'https://api.open-meteo.com/v1/forecast?latitude=39.9042&longitude=116.4074' +
