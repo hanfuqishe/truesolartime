@@ -118,14 +118,12 @@ expect("伦敦 → OpenStreetMap", MapStyle.auto.effective(latitude: 48.8566, lo
 expect("手动指定不覆盖", MapStyle.amapSatellite.effective(latitude: 48.8566, longitude: 2.3522) == .amapSatellite)
 
 print("== 成都正午（北京时间）==")
-let chengdu = SolarTimeSnapshot.compute(date: date("2026-11-03T04:00:00Z"), latitude: 30.5728, longitude: 104.0668)
-print("  [诊断] 成都 standardOffsetSeconds=\(chengdu.standardOffsetSeconds) standardTime=\(chengdu.standardTime.clock) solarNoonStandard=\(chengdu.solarNoonStandard?.clockWithSeconds ?? "-") solarNoonBeijing=\(chengdu.solarNoonBeijing?.clockWithSeconds ?? "-")")
-print("  [诊断] approx(104.0668)=\(SolarTimeMath.approxZoneOffsetSeconds(longitude: 104.0668)) standardZone(nil,104.0668)=\(SolarTimeMath.standardZoneOffsetSeconds(countryCode: nil, longitude: 104.0668)) utcLabel=\(chengdu.utcLabel)")
+let chengdu = SolarTimeSnapshot.compute(date: date("2026-11-03T04:00:00Z"), latitude: 30.5728, longitude: 104.0668, countryCode: "cn")
 if let noon = chengdu.solarNoonBeijing {
     expect("成都真太阳时正午为 12:00", chengdu.solarNoonBeijing != nil && abs(minutesBetween(TimeOfDay(secondsOfDay: SolarTimeMath.trueSolarSecondsOfDay(SolarTimeMath.sunTimes(containing: date("2026-11-03T04:00:00Z"), latitude: 30.5728, longitude: 104.0668).solarNoon, longitude: 104.0668)), TimeOfDay(hour: 12, minute: 0, second: 0))) < 0.1)
     expect("成都正午落在北京时间 12:40–12:55", (TimeOfDay(hour: 12, minute: 40, second: 0).secondsOfDay...TimeOfDay(hour: 12, minute: 55, second: 0).secondsOfDay).contains(noon.secondsOfDay), "actual=\(noon.clockWithSeconds)")
 }
-let beijingCity = SolarTimeSnapshot.compute(date: date("2026-11-03T04:00:00Z"), latitude: 39.9042, longitude: 116.4074)
+let beijingCity = SolarTimeSnapshot.compute(date: date("2026-11-03T04:00:00Z"), latitude: 39.9042, longitude: 116.4074, countryCode: "cn")
 if let noon = beijingCity.solarNoonBeijing {
     expect("北京正午落在北京时间 11:50–12:05", (TimeOfDay(hour: 11, minute: 50, second: 0).secondsOfDay...TimeOfDay(hour: 12, minute: 5, second: 0).secondsOfDay).contains(noon.secondsOfDay), "actual=\(noon.clockWithSeconds)")
 }

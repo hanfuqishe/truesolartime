@@ -205,13 +205,14 @@ enum SolarTimeMath {
         return normalized - secondsPerDay / 2
     }
 
-    /// 某个「当地标准日期」的 0 点对应的 UTC 时刻。
+    /// 「某瞬间所在当地标准日期」对应的**UTC 零点**。
     ///
-    /// 之前这里固定按东八区取日期，境外观测点在跨日附近会取到相邻一天的日出日落。
+    /// 日出/日落/正午的分钟数公式是「相对 UTC 零点」的，所以基准必须取
+    /// 那个 UTC 零点，而不是「当地零点对应的 UTC 时刻」（后者会整体偏掉一个时区）。
     static func startOfLocalDayInUTC(_ date: Date, offsetSeconds: Int) -> Date {
         let local = date.timeIntervalSince1970 + Double(offsetSeconds)
-        let dayStartLocal = (local / secondsPerDay).rounded(.down) * secondsPerDay
-        return Date(timeIntervalSince1970: dayStartLocal - Double(offsetSeconds))
+        let dayStartUTC = (local / secondsPerDay).rounded(.down) * secondsPerDay
+        return Date(timeIntervalSince1970: dayStartUTC)
     }
 
     /// 计算某瞬间所属「当地标准日期」当天的日出、日落与正午。
