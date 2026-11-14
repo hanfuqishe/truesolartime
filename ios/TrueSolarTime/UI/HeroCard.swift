@@ -144,11 +144,29 @@ struct HeroCard: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 4)
-            Text(coordinates)
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
+            // 空间不够同时显示「日期/天气」与经纬度时，隐藏经纬度（优先保住日期与天气）。
+            // 与安卓 `SmallRowLayout.shouldShowTrailing`、鸿蒙 `coordinatesFit` 同一套规则。
+            if showsCoordinates {
+                Text(coordinates)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
         }
+    }
+
+    /// 这一行可用的内容宽度（卡片内宽）。
+    private var rowContentWidth: CGFloat {
+        max(cardWidth - cardPadding * 2, 0)
+    }
+
+    /// 日期/天气与经纬度能否并排：两者自然宽度 + 8pt 间距放得下才显示经纬度。
+    private var showsCoordinates: Bool {
+        guard !coordinates.isEmpty, rowContentWidth > 0 else { return false }
+        let font = UIFont.systemFont(ofSize: 11)
+        let dateWidth = (dateWeatherText as NSString).size(withAttributes: [.font: font]).width
+        let coordWidth = (coordinates as NSString).size(withAttributes: [.font: font]).width
+        return dateWidth + coordWidth + 8 <= rowContentWidth
     }
 
 

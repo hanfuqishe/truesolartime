@@ -125,6 +125,8 @@ struct Index {
   @State contentWidth: number = 0;
   /** 大卡片里时钟那一栏的实测宽度（vp）；时间字号按它反推，做到撑满栏宽。 */
   @State clockColumnWidth: number = 0;
+  /** 日期/天气那一行的可用宽度（vp）；空间不够时用来决定是否隐藏经纬度。 */
+  @State dateRowWidth: number = 0;
   /** 「每 1fp 占多少 vp」的缓存，避免每次重建都去量文本。 */
   private clockRatioCache: number = 0;
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
@@ -477,6 +479,27 @@ struct Index {
   }
 
   /** 日期 + 当日天气与温度区间，例如「11 月 12 日 · 星期四 · 6° 晴 · 2° ~ 12°」；没有天气时留占位符。 */
+  /**
+   * 日期/天气与经纬度同排时的取舍：空间不够就**隐藏右侧经纬度**，优先保住日期与天气。
+   * 与安卓 `SmallRowLayout.shouldShowTrailing` 同一套规则。
+   */
+  private coordinatesFit(dateText: string, coordText: string): boolean {
+    if (coordText.length === 0 || this.dateRowWidth <= 0) {
+      return false;
+    }
+    const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
+    const size: number = this.cs(10);
+    const dateWidth: number = utils.measureTextSize({
+      textContent: dateText,
+      fontSize: size + 'fp'
+    }).width as number;
+    const coordWidth: number = utils.measureTextSize({
+      textContent: coordText,
+      fontSize: size + 'fp'
+    }).width as number;
+    return dateWidth + coordWidth + vp2px(8) <= vp2px(this.dateRowWidth);
+  }
+
   private dateTail(): string {
     const parts: string[] = [TimeFormat.dateCompact(Date.now(), this.language)];
     const hasWeather: boolean = this.weatherTemperature !== '--' && this.weatherText.length > 0;
@@ -750,15 +773,23 @@ struct Index {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
-          .fontSize(this.cs(10))
-          .fontColor('#B3FFFFFF')
-          .maxLines(1)
-          .textAlign(TextAlign.End)
-          .margin({ left: 8 })
+        if (this.coordinatesFit(this.dateTail(), TimeFormat.coordinates(this.place.latitude, this.place.longitude))) {
+          Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+            .fontSize(this.cs(10))
+            .fontColor('#B3FFFFFF')
+            .maxLines(1)
+            .textAlign(TextAlign.End)
+            .margin({ left: 8 })
+        }
       }
       .width('100%')
       .margin({ top: 6 })
+      .onAreaChange((oldValue: Area, newValue: Area) => {
+        const width: number = Number(newValue.width);
+        if (Math.abs(width - this.dateRowWidth) > 1) {
+          this.dateRowWidth = width;
+        }
+      })
 
       // 0–24 时时间轴：与桌面卡片、Android WidgetAxis 同款（1vp 细线 + 柔化圆点）
       Stack() {
