@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">真太陽時</string>
+    <string name="app_name">真太陽時時鐘</string>
 
     <string name="screen_subtitle">以太陽經過當地子午線的時刻為正午</string>
     <string name="action_settings">設定</string>

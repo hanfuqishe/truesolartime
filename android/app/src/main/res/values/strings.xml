@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">True Solar Time</string>
+    <string name="app_name">True Solar Clock</string>
 
     <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
     <string name="action_settings">Settings</string>

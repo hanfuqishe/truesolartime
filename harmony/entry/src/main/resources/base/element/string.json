@@ -2,7 +2,7 @@
   "string": [
     {
       "name": "app_name",
-      "value": "真太阳时"
+      "value": "真太阳时时钟"
     },
     {
       "name": "module_desc",
@@ -14,7 +14,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "真太阳时"
+      "value": "真太阳时时钟"
     },
     {
       "name": "reason_location",
@@ -22,7 +22,7 @@
     },
     {
       "name": "form_label",
-      "value": "真太阳时卡片"
+      "value": "真太阳时时钟卡片"
     },
     {
       "name": "form_desc",
@@ -30,7 +30,7 @@
     },
     {
       "name": "form_display_name",
-      "value": "真太阳时"
+      "value": "真太阳时时钟"
     }
   ]
 }

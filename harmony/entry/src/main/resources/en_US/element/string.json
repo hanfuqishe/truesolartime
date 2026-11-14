@@ -2,7 +2,7 @@
   "string": [
     {
       "name": "app_name",
-      "value": "True Solar Time"
+      "value": "True Solar Clock"
     },
     {
       "name": "module_desc",
@@ -14,7 +14,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "True Solar Time"
+      "value": "True Solar Clock"
     },
     {
       "name": "reason_location",
@@ -22,7 +22,7 @@
     },
     {
       "name": "form_label",
-      "value": "True Solar Time card"
+      "value": "True Solar Clock card"
     },
     {
       "name": "form_desc",
@@ -30,7 +30,7 @@
     },
     {
       "name": "form_display_name",
-      "value": "True Solar Time"
+      "value": "True Solar Clock"
     }
   ]
 }

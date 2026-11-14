@@ -601,7 +601,7 @@ struct Index {
   header() {
     Row() {
       Column() {
-        Text('真太阳时')
+        Text('真太阳时时钟')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
@@ -702,7 +702,7 @@ struct Index {
         // 右：真太阳时（逐秒刷新）
         Column() {
           Row() {
-            Text('真太阳时')
+            Text('真太阳时时钟')
               .fontSize(this.cs(12))
               .fontColor('#CCFFFFFF')
             Text(`${this.snapshot.shichenName} · ${this.snapshot.shichenHalf}`)
