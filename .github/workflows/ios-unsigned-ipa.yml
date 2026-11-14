@@ -1,11 +1,16 @@
 name: iOS 未签名包
 
-# **只手动触发**：不随推送运行，避免每次改 iOS 都跑一遍 macOS runner（占并发、也吵）。
-# 日常改动的编译验证交给 `.github/workflows/ios-core-checks.yml`（约 40 秒；公开仓库的 macOS 分钟免费）。
-# 用法：GitHub → Actions → 「iOS 未签名包」→ Run workflow → 下载 artifact 里的 ipa，
-# 在 Windows 上用 Sideloadly / AltStore 配自己的 Apple ID 签名装到 iPhone。
+# 改到 iOS 代码就自动编译出包（公开仓库的 macOS 分钟免费，编译也快，约 2 分钟），
+# 同时保留手动触发以便随时重出包。别的平台（android/、harmony/、docs 等）的提交不会触发，
+# 免得跑无意义的构建。
+# 产物：artifact `TrueSolarTime-unsigned-ipa`，下载后用 Sideloadly / AltStore 配自己的
+# Apple ID 签名装到 iPhone。
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
 
 jobs:
   build:
