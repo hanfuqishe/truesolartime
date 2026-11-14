@@ -81,6 +81,12 @@ harmony/
 | DevEco Studio 5.0.3+ | API 12（5.0.0） | 本工程最低要求，也是 `compatibleSdkVersion` 的取值 |
 | DevEco Studio 5.1.x / 6.x 及更新版本 | API 更高 | **可以直接打开本工程**，详见下节 |
 
+> **上架必须用 Release 版 DevEco Studio 构建。** 华为应用市场会读取包里的
+> `pack.info → apiVersion.releaseType`，若为 `Beta1`（Beta/Preview 版 IDE 自带的就是 Beta SDK）
+> 会报「您的应用使用了 HarmonyOS beta 版本的 API」并要求整改。
+> 当前工程就是由 DevEco Studio 26.0.0.865（SDK `HarmonyOS 26.0.0`、`releaseType: Release`）构建的，
+> 对应 `targetSdkVersion: "26.0.0"`。判断方法：看 `<IDE>\sdk\default\sdk-pkg.json` 里的 `releaseType`。
+
 ### 首次构建
 
 1. 用 DevEco Studio 打开本目录（`harmony/`），等待 `Sync` 完成。
