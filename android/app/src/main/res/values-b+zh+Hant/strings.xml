@@ -7,11 +7,11 @@
     <string name="sun_section_title">太陽位置 · 當地時間</string>
     <string name="altitude">高度角 %1$.1f°</string>
     <string name="sunrise">日出</string>
-    <string name="solar_noon">正午</string>
+    <string name="solar_noon">上中天</string>
     <string name="sunset">日落</string>
     <string name="daylight_line">白晝 %1$s　真太陽時 %2$s – %3$s</string>
-    <string name="polar_day">極晝：太陽整日不落，正午（當地時間）%1$s</string>
-    <string name="polar_night">極夜：太陽整日不出，正午（當地時間）%1$s</string>
+    <string name="polar_day">極晝：太陽整日不落，上中天（當地標準時間）%1$s</string>
+    <string name="polar_night">極夜：太陽整日不出，上中天（當地標準時間）%1$s</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地圖</string>
     <string name="map_auto_selected">依所在地區自動選擇</string>

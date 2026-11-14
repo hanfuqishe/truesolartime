@@ -7,11 +7,11 @@
     <string name="sun_section_title">Sun position · local time</string>
     <string name="altitude">Altitude %1$.1f°</string>
     <string name="sunrise">Sunrise</string>
-    <string name="solar_noon">Noon</string>
+    <string name="solar_noon">Solar noon</string>
     <string name="sunset">Sunset</string>
     <string name="daylight_line">Daylight %1$s　true solar %2$s – %3$s</string>
-    <string name="polar_day">Midnight sun: the sun never sets. Noon (local time) %1$s</string>
-    <string name="polar_night">Polar night: the sun never rises. Noon (local time) %1$s</string>
+    <string name="polar_day">Midnight sun: the sun never sets. Solar noon (local time) %1$s</string>
+    <string name="polar_night">Polar night: the sun never rises. Solar noon (local time) %1$s</string>
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
     <string name="map_auto_selected">auto-selected by region</string>
