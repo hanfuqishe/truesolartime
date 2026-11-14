@@ -68,6 +68,10 @@ struct HeroCard: View {
             RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
                 .fill(snapshot.isDay ? Theme.dayGradient : Theme.nightGradient)
         )
+        // 兜底：万一某个子视图算大了，也不许露到圆角卡片外面。
+        .clipShape(
+            RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
+        )
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: HeroCardWidthKey.self, value: proxy.size.width)
@@ -344,9 +348,10 @@ struct HourlyRow: View {
                         Text(index == 0 ? "现在" : "--")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
-                        Image(systemName: "questionmark")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.white.opacity(0.5))
+                        Text("--")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .frame(height: 22)
                         Text("--")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
