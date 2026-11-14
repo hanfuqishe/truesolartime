@@ -18,10 +18,16 @@
 | 进入关键时间报时 | 500 ms 3200 Hz 蜂鸣 | 本地通知 + `chime500.wav`（同样 3200 Hz / 500 ms） |
 | 时辰交接提醒 | 准时 250 ms 蜂鸣 | 本地通知 + `chime250.wav`，准时触发 |
 | 屏幕常亮开关 | ✅ | ✅ 1.4.39 同步（`isIdleTimerDisabled`） |
-| **时区表（观测地法定时区 + UTC−5 这类标签）** | ✅ | ❌ 仍写死北京时间（UTC+8） |
+| 时区表（观测地法定时区 + `UTC−5` 这类标签） | ✅ | ✅ 1.4.39 同步（`Core/ZoneTable.swift`，多时区国家按经度分段） |
+| 天气图标 | 自绘矢量 `ic_wx_*.xml`（14 个） | **SF Symbols**（`.multicolor`）—— 有意不一致，见下 |
 | 平板两栏布局 | ✅ | ❌ iPhone-only |
 | 桌面小组件 | ✅ 5×2 可缩放 | ❌ 见文末说明 |
 | 地图底图切换 | 高德/OSM/卫星 | MapKit + 同样的瓦片 |
+
+> **天气图标为什么两端不一样**：iOS 用 Apple 的 SF Symbols，Android/鸿蒙用项目自绘的
+> `ic_wx_*.xml`（24×24，太阳 `#FFC65C`、云 `#E7EAF2`/`#C4CCDB`、雨 `#7FB6FF`、雪 `#D3E9FF`、雷 `#FFD24A`）。
+> 这是**有意的**：图标语言跟随各平台规范，iOS 侧不追求与 Android 像素级一致。
+> 若将来要统一，把 Android 的 `pathData` 转成 SwiftUI `Path` 生成 `WeatherIcons.swift` 即可（工作量主要在弧线转贝塞尔）。
 
 > iOS 的提醒走系统通知（用户需允许通知），不能像 Android 那样在锁屏下自播蜂鸣。
 > **桌面小组件需要 WidgetKit 扩展**：要在 Xcode 里新增 extension target，并共享数据（App Group 需要付费开发者账号），因此单独安排，尚未实现。
