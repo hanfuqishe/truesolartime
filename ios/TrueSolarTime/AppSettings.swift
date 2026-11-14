@@ -8,6 +8,7 @@ struct AppSettings {
         static let longitude = "longitude"
         static let placeSource = "place_source"
         static let placeLabel = "place_label"
+        static let placeCountry = "place_country"
         static let reminders = "shichen_reminders"
         static let keyTimeChime = "keytime_chime"
         static let mapStyle = "map_style"
@@ -23,11 +24,13 @@ struct AppSettings {
             let longitude = defaults.object(forKey: Key.longitude) as? Double
             let source = (defaults.string(forKey: Key.placeSource)).flatMap(PlaceSource.init(rawValue:)) ?? .preset
             let label = defaults.string(forKey: Key.placeLabel)
+            let country = defaults.string(forKey: Key.placeCountry)
             return Place(
                 latitude: latitude ?? Place.shanghai.latitude,
                 longitude: longitude ?? Place.shanghai.longitude,
                 source: source,
-                label: label ?? Place.shanghai.label
+                label: label ?? Place.shanghai.label,
+                countryCode: country
             )
         }
         nonmutating set {
@@ -35,6 +38,7 @@ struct AppSettings {
             defaults.set(newValue.longitude, forKey: Key.longitude)
             defaults.set(newValue.source.rawValue, forKey: Key.placeSource)
             defaults.set(newValue.label, forKey: Key.placeLabel)
+            defaults.set(newValue.countryCode, forKey: Key.placeCountry)
         }
     }
 

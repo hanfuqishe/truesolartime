@@ -92,6 +92,13 @@ enum SolarTimeMath {
         (longitude - beijingLongitude) * 240.0
     }
 
+    /// 经度修正：当地经度相对**所在时区中央经线**的时差，单位秒。
+    ///
+    /// 时区偏移 offset 对应的中央经线是 offset / 240 度（+8 → 120°E，−5 → 75°W）。
+    static func longitudeOffsetSecondsForZone(longitude: Double, offsetSeconds: Int) -> Double {
+        longitude * 240.0 - Double(offsetSeconds)
+    }
+
     /// 太阳高度角，单位度（不含大气折射修正）。
     static func solarAltitudeDegrees(_ date: Date, latitude: Double, longitude: Double) -> Double {
         let position = solarPosition(date)
@@ -166,6 +173,101 @@ enum SolarTimeMath {
         dayComponents.day = components.day
         dayComponents.hour = 0
         return utcCalendar.date(from: dayComponents) ?? date
+    }
+
+    // MARK: - 当地标准时区（与 Android 版口径一致）
+
+    /// 表里查不到国家时的近似：按经度每 15° 取整。
+    static func approxZoneOffsetSeconds(longitude: Double) -> Int {
+        Int(((longitude / 15.0).rounded()) * 3600.0)
+    }
+
+    /// 观测点的标准时区偏移（秒）：先查国家表，查不到按经度近似。
+    static func standardZoneOffsetSeconds(countryCode: String?, longitude: Double) -> Int {
+        ZoneTable.offsetSeconds(
+            countryCode: countryCode,
+            longitude: longitude,
+            fallbackSeconds: approxZoneOffsetSeconds(longitude: longitude)
+        )
+    }
+
+    /// 某瞬间在给定标准时区偏移下的当天秒数。
+    static func localSecondsOfDay(_ date: Date, offsetSeconds: Int) -> Double {
+        normalizeSeconds(date.timeIntervalSince1970 + Double(offsetSeconds))
+    }
+
+    /// 真太阳时相对「当地标准时间」的偏差，单位秒，范围 (-43200, 43200]。
+    static func offsetFromLocalSeconds(_ date: Date, longitude: Double, offsetSeconds: Int) -> Double {
+        let delta = trueSolarSecondsOfDay(date, longitude: longitude)
+            - localSecondsOfDay(date, offsetSeconds: offsetSeconds)
+        var normalized = (delta + secondsPerDay * 1.5).truncatingRemainder(dividingBy: secondsPerDay)
+        if normalized <= 0 { normalized += secondsPerDay }
+        return normalized - secondsPerDay / 2
+    }
+
+    /// 某个「当地标准日期」的 0 点对应的 UTC 时刻。
+    ///
+    /// 之前这里固定按东八区取日期，境外观测点在跨日附近会取到相邻一天的日出日落。
+    static func startOfLocalDayInUTC(_ date: Date, offsetSeconds: Int) -> Date {
+        let local = date.timeIntervalSince1970 + Double(offsetSeconds)
+        let dayStartLocal = (local / secondsPerDay).rounded(.down) * secondsPerDay
+        return Date(timeIntervalSince1970: dayStartLocal - Double(offsetSeconds))
+    }
+
+    /// 计算某瞬间所属「当地标准日期」当天的日出、日落与正午。
+    static func sunTimes(
+        containing date: Date,
+        latitude: Double,
+        longitude: Double,
+        offsetSeconds: Int
+    ) -> SunTimes {
+        let midnightUTC = startOfLocalDayInUTC(date, offsetSeconds: offsetSeconds)
+        let reference = midnightUTC.addingTimeInterval(12 * 3600)
+        let position = solarPosition(reference)
+        let equationOfTimeMinutes = position.equationOfTimeSeconds / 60.0
+
+        let lat = latitude * rad
+        let dec = position.declinationDegrees * rad
+        let solarNoonMinutes = 720.0 - 4.0 * longitude - equationOfTimeMinutes
+        let solarNoon = midnightUTC.addingTimeInterval(solarNoonMinutes * 60)
+
+        let cosHourAngle = cos(sunriseZenithDegrees * rad) / (cos(lat) * cos(dec)) - tan(lat) * tan(dec)
+        if cosHourAngle > 1.0 || cosHourAngle < -1.0 {
+            return SunTimes(
+                sunrise: nil,
+                sunset: nil,
+                solarNoon: solarNoon,
+                polar: cosHourAngle > 1.0 ? .polarNight : .midnightSun
+            )
+        }
+
+        let hourAngleDegrees = acos(cosHourAngle) * deg
+        let sunriseMinutes = 720.0 - 4.0 * (longitude + hourAngleDegrees) - equationOfTimeMinutes
+        let sunsetMinutes = 720.0 + 4.0 * (hourAngleDegrees - longitude) - equationOfTimeMinutes
+
+        return SunTimes(
+            sunrise: midnightUTC.addingTimeInterval(sunriseMinutes * 60),
+            sunset: midnightUTC.addingTimeInterval(sunsetMinutes * 60),
+            solarNoon: solarNoon,
+            polar: .normal
+        )
+    }
+
+    /// 把「某天当地真太阳时的第几分钟」换算成系统时刻（供本地通知排期用）。
+    static func date(
+        trueSolarMinuteOfDay: Double,
+        on day: Date,
+        longitude: Double,
+        offsetSeconds: Int
+    ) -> Date {
+        let midnightUTC = startOfLocalDayInUTC(day, offsetSeconds: offsetSeconds)
+        let target = trueSolarMinuteOfDay * 60 - longitude * 240.0
+        var guess = midnightUTC.addingTimeInterval(target)
+        for _ in 0..<2 {
+            let equationOfTime = solarPosition(guess).equationOfTimeSeconds
+            guess = midnightUTC.addingTimeInterval(target - equationOfTime)
+        }
+        return guess
     }
 
     private static func normalizeDegrees(_ value: Double) -> Double {

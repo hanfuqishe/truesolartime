@@ -13,6 +13,7 @@ final class DistrictStore {
     private enum Key {
         static let full = "district.full"
         static let short = "district.short"
+        static let country = "district.country"
         static let latitude = "district.latitude"
         static let longitude = "district.longitude"
         static let fetchedAt = "district.fetched_at"
@@ -28,7 +29,7 @@ final class DistrictStore {
     func cachedNames() -> DistrictNames? {
         guard let full = defaults.string(forKey: Key.full) else { return nil }
         let short = defaults.string(forKey: Key.short) ?? full
-        return DistrictNames(full: full, short: short)
+        return DistrictNames(full: full, short: short, countryCode: defaults.string(forKey: Key.country))
     }
 
     /// 需要且允许时反查一次；成功后在主线程回调。
@@ -55,13 +56,19 @@ final class DistrictStore {
         let county = mark.subLocality ?? mark.subAdministrativeArea
         let city = mark.locality ?? mark.subAdministrativeArea
         let region = mark.administrativeArea
+        let country = mark.isoCountryCode?.lowercased()
 
+        var names: DistrictNames?
         if DistrictNaming.prefersChinese(Locale.current.languageCode ?? "en") {
-            if let names = DistrictNaming.joinChinese(county: county, city: city, region: region) {
-                return names
-            }
+            names = DistrictNaming.joinChinese(county: county, city: city, region: region)
         }
-        return DistrictNaming.compose(parts: [county, city, region])
+        if names == nil {
+            names = DistrictNaming.compose(parts: [county, city, region])
+        }
+        guard var resolved = names else { return nil }
+        // 国家码用来查标准时区（`ZoneTable`），反查不到时保持 nil，由经度近似兜底。
+        resolved.countryCode = (country?.count == 2) ? country : nil
+        return resolved
     }
 
     private func needsRefresh(_ place: Place) -> Bool {
@@ -77,6 +84,7 @@ final class DistrictStore {
     private func save(place: Place, names: DistrictNames) {
         defaults.set(names.full, forKey: Key.full)
         defaults.set(names.short, forKey: Key.short)
+        defaults.set(names.countryCode, forKey: Key.country)
         defaults.set(place.latitude, forKey: Key.latitude)
         defaults.set(place.longitude, forKey: Key.longitude)
         defaults.set(Date().timeIntervalSince1970, forKey: Key.fetchedAt)

@@ -89,7 +89,7 @@ struct HeroCard: View {
     private var standardColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text("UTC+8")
+                Text(snapshot.utcLabel)
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 4)

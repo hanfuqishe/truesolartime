@@ -5,6 +5,8 @@ import Foundation
 struct DistrictNames: Equatable {
     let full: String
     let short: String
+    /// ISO 3166-1 alpha-2（小写），用于查标准时区；反查不到时为 nil。
+    var countryCode: String? = nil
 }
 
 /// 把反查到的各级行政区划拼成显示名。纯逻辑，便于自检。

@@ -26,13 +26,22 @@ struct TimeOfDay: Equatable {
     var clockWithSeconds: String { String(format: "%02d:%02d:%02d", hour, minute, second) }
 }
 
-/// 某一瞬间、某一地点的完整太阳时快照，UI 只消费这个对象。
+/// 某一瞬间、某地点的完整太阳时快照，UI 只消费这个对象。
+///
+/// 「标准时间」一律指**观测地的法定标准时**（`ZoneTable` 给出的偏移），不再固定东八区。
 struct SolarSnapshot {
     let trueSolarTime: TimeOfDay
-    let beijingTime: TimeOfDay
-    let beijingDateText: String
-    /// 真太阳时比北京时间快多少秒，可正可负。
+    /// 当地标准时间。
+    let standardTime: TimeOfDay
+    /// 当地标准日期，例如「11月14日 周六」。
+    let standardDateText: String
+    /// 标准时区偏移（秒），例如 +28800 / -18000 / +19800（印度 +5:30）。
+    let standardOffsetSeconds: Int
+    /// 时区标签，例如「UTC+8」「UTC−5」「UTC+5:30」。
+    let utcLabel: String
+    /// 真太阳时比当地标准时间快多少秒，可正可负。
     let offsetSeconds: Double
+    /// 经度修正：当地经度相对所在时区中央经线的时差，单位秒。
     let longitudeOffsetSeconds: Double
     let equationOfTimeSeconds: Double
     let shichenIndex: Int
@@ -41,9 +50,10 @@ struct SolarSnapshot {
     let shichenHalf: String
     let shichenQuarter: Int
     let secondsToNextShichen: Int
-    let sunriseBeijing: TimeOfDay?
-    let sunsetBeijing: TimeOfDay?
-    let solarNoonBeijing: TimeOfDay?
+    /// 日出/日落/上中天，当地标准时。
+    let sunriseStandard: TimeOfDay?
+    let sunsetStandard: TimeOfDay?
+    let solarNoonStandard: TimeOfDay?
     let sunriseTrueSolar: TimeOfDay?
     let sunsetTrueSolar: TimeOfDay?
     let daylightSeconds: Int?
@@ -53,15 +63,47 @@ struct SolarSnapshot {
     var isDay: Bool { altitudeDegrees > -0.833 }
 
     var nextShichenName: String { Shichen.name((shichenIndex + 1) % 12) }
+
+    /// 兼容旧代码里的命名（`beijingTime` = 现在会随观测地变化的标准时间）。
+    var beijingTime: TimeOfDay { standardTime }
+    var beijingDateText: String { standardDateText }
+    var sunriseBeijing: TimeOfDay? { sunriseStandard }
+    var sunsetBeijing: TimeOfDay? { sunsetStandard }
+    var solarNoonBeijing: TimeOfDay? { solarNoonStandard }
 }
 
 enum SolarTimeSnapshot {
 
-    static func compute(date: Date, latitude: Double, longitude: Double) -> SolarSnapshot {
-        let trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(date, longitude: longitude)
-        let sunTimes = SolarTimeMath.sunTimes(containing: date, latitude: latitude, longitude: longitude)
+    static func compute(
+        date: Date,
+        latitude: Double,
+        longitude: Double,
+        countryCode: String? = nil
+    ) -> SolarSnapshot {
+        let offsetSeconds = SolarTimeMath.standardZoneOffsetSeconds(
+            countryCode: countryCode,
+            longitude: longitude
+        )
+        return compute(date: date, latitude: latitude, longitude: longitude, offsetSeconds: offsetSeconds)
+    }
 
-        let beijingTime = timeOfDayInBeijing(date)
+    static func compute(
+        date: Date,
+        latitude: Double,
+        longitude: Double,
+        offsetSeconds: Int
+    ) -> SolarSnapshot {
+        let trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(date, longitude: longitude)
+        let sunTimes = SolarTimeMath.sunTimes(
+            containing: date,
+            latitude: latitude,
+            longitude: longitude,
+            offsetSeconds: offsetSeconds
+        )
+
+        let standardTime = TimeOfDay(
+            secondsOfDay: SolarTimeMath.localSecondsOfDay(date, offsetSeconds: offsetSeconds)
+        )
         let shichenIndex = Shichen.index(of: trueSolarSeconds)
 
         let daylightSeconds: Int? = {
@@ -69,12 +111,26 @@ enum SolarTimeSnapshot {
             return Int(sunset.timeIntervalSince(sunrise).rounded())
         }()
 
+        func standard(_ instant: Date?) -> TimeOfDay? {
+            guard let instant else { return nil }
+            return TimeOfDay(secondsOfDay: SolarTimeMath.localSecondsOfDay(instant, offsetSeconds: offsetSeconds))
+        }
+
         return SolarSnapshot(
             trueSolarTime: TimeOfDay(secondsOfDay: trueSolarSeconds),
-            beijingTime: beijingTime,
-            beijingDateText: TimeFormat.dateWithWeekday(date),
-            offsetSeconds: SolarTimeMath.offsetFromBeijingSeconds(date, longitude: longitude),
-            longitudeOffsetSeconds: SolarTimeMath.longitudeOffsetSeconds(longitude),
+            standardTime: standardTime,
+            standardDateText: TimeFormat.dateWithWeekday(date, offsetSeconds: offsetSeconds),
+            standardOffsetSeconds: offsetSeconds,
+            utcLabel: TimeFormat.utcOffsetLabel(seconds: offsetSeconds),
+            offsetSeconds: SolarTimeMath.offsetFromLocalSeconds(
+                date,
+                longitude: longitude,
+                offsetSeconds: offsetSeconds
+            ),
+            longitudeOffsetSeconds: SolarTimeMath.longitudeOffsetSecondsForZone(
+                longitude: longitude,
+                offsetSeconds: offsetSeconds
+            ),
             equationOfTimeSeconds: SolarTimeMath.solarPosition(date).equationOfTimeSeconds,
             shichenIndex: shichenIndex,
             shichenName: Shichen.name(shichenIndex),
@@ -82,9 +138,9 @@ enum SolarTimeSnapshot {
             shichenHalf: Shichen.halfLabel(trueSolarSeconds),
             shichenQuarter: Shichen.quarterOfHalf(trueSolarSeconds),
             secondsToNextShichen: Int(Shichen.secondsToNextShichen(trueSolarSeconds).rounded()),
-            sunriseBeijing: sunTimes.sunrise.map { timeOfDayInBeijing($0) },
-            sunsetBeijing: sunTimes.sunset.map { timeOfDayInBeijing($0) },
-            solarNoonBeijing: timeOfDayInBeijing(sunTimes.solarNoon),
+            sunriseStandard: standard(sunTimes.sunrise),
+            sunsetStandard: standard(sunTimes.sunset),
+            solarNoonStandard: standard(sunTimes.solarNoon),
             sunriseTrueSolar: sunTimes.sunrise.map {
                 TimeOfDay(secondsOfDay: SolarTimeMath.trueSolarSecondsOfDay($0, longitude: longitude))
             },
@@ -97,7 +153,12 @@ enum SolarTimeSnapshot {
         )
     }
 
+    /// 兼容旧调用（东八区），供 Scripts/main.swift 的数值自检继续使用。
     static func timeOfDayInBeijing(_ date: Date) -> TimeOfDay {
-        TimeOfDay(secondsOfDay: SolarTimeMath.beijingSecondsOfDay(date))
+        timeOfDay(date, offsetSeconds: Int(SolarTimeMath.beijingOffsetSeconds))
+    }
+
+    static func timeOfDay(_ date: Date, offsetSeconds: Int) -> TimeOfDay {
+        TimeOfDay(secondsOfDay: SolarTimeMath.localSecondsOfDay(date, offsetSeconds: offsetSeconds))
     }
 }

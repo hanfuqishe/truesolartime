@@ -48,6 +48,17 @@ enum TimeFormat {
         )
     }
 
+    /// 「UTC+8」「UTC−5」「UTC+5:30」——负号用 U+2212，和安卓界面一致。
+    static func utcOffsetLabel(seconds: Int) -> String {
+        let sign = seconds < 0 ? "−" : "+"
+        let absolute = abs(seconds)
+        let hours = absolute / 3600
+        let minutes = (absolute % 3600) / 60
+        return minutes == 0
+            ? "UTC\(sign)\(hours)"
+            : String(format: "UTC%@%d:%02d", sign, hours, minutes)
+    }
+
     static func coordinates(latitude: Double, longitude: Double) -> String {
         String(
             format: "%.4f°%@  %.4f°%@",

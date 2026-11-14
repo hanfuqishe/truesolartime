@@ -11,6 +11,13 @@ struct Place: Equatable {
     var longitude: Double
     var source: PlaceSource
     var label: String
+    /// 逆地理编码得到的 ISO 3166-1 alpha-2（小写），例如 "cn" / "us"；未知为 nil。
+    var countryCode: String?
+
+    /// 观测地的法定标准时区偏移（秒）。查不到国家时按经度每 15° 近似。
+    var standardOffsetSeconds: Int {
+        SolarTimeMath.standardZoneOffsetSeconds(countryCode: countryCode, longitude: longitude)
+    }
 
     static let shanghai = Place(latitude: 31.2304, longitude: 121.4737, source: .preset, label: "上海")
 

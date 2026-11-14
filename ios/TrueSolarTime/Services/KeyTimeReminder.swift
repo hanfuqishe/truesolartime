@@ -149,6 +149,11 @@ final class KeyTimeReminder {
 
     /// 求「真太阳时为 `trueSolarMinuteOfDay` 分」对应的系统时刻，落在 `day` 所在的那一天。
     private func systemDate(trueSolarMinuteOfDay: Double, near day: Date, place: Place) -> Date? {
-        SolarTimeMath.date(trueSolarMinuteOfDay: trueSolarMinuteOfDay, on: day, longitude: place.longitude)
+        SolarTimeMath.date(
+            trueSolarMinuteOfDay: trueSolarMinuteOfDay,
+            on: day,
+            longitude: place.longitude,
+            offsetSeconds: place.standardOffsetSeconds
+        )
     }
 }

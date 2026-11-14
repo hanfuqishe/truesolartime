@@ -43,7 +43,7 @@ final class AppModel: ObservableObject {
     }
 
     var snapshot: SolarSnapshot {
-        SolarTimeSnapshot.compute(date: now, latitude: place.latitude, longitude: place.longitude)
+        SolarTimeSnapshot.compute(date: now, latitude: place.latitude, longitude: place.longitude, countryCode: place.countryCode)
     }
 
     // MARK: - 时钟
@@ -154,7 +154,9 @@ final class AppModel: ObservableObject {
             self?.weather = snapshot
         }
         DistrictStore.shared.requestRefresh(place: currentPlace) { [weak self] names in
-            self?.districtName = names
+            guard let self else { return }
+            self.districtName = names
+            self.adoptCountryCodeIfNeeded(names.countryCode)
         }
         KeyTimeStore.shared.requestRefresh { [weak self] schedule in
             guard let self else { return }
@@ -162,6 +164,18 @@ final class AppModel: ObservableObject {
             // 关键时间可能刚更新，重排「进入关键时间」报时。
             self.rescheduleReminders()
         }
+    }
+
+    /// 区划名反查带回国家码时写进 `place`：标准时区由它决定（`ZoneTable`），
+    /// 变了就落盘并立刻重算界面（左栏时间与 UTC 标签、日出日落时刻）。
+    private func adoptCountryCodeIfNeeded(_ countryCode: String?) {
+        guard let countryCode, countryCode.count == 2 else { return }
+        guard place.countryCode != countryCode else { return }
+        var updated = place
+        updated.countryCode = countryCode
+        place = updated
+        settings.place = updated
+        rescheduleReminders()
     }
 
     /// 按当前开关把通知重新排一遍（关掉的会先被清掉）。
