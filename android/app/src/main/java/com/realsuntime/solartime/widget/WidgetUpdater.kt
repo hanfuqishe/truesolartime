@@ -25,6 +25,7 @@ import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.ui.SmallRowLayout
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.data.TakeTimeSchedule
@@ -895,21 +896,32 @@ object WidgetUpdater {
         val coordNaturalWidth = if (coordinates.isEmpty()) 0f else measureTextWidth(coordinates, coordNaturalDp, metrics)
         val dateGapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
         val rowAvailablePx = totalWidthPx - chromeDp * density
-        val neededPx = dateNaturalWidth + coordNaturalWidth + dateGapPx
-        val smallScale = if (neededPx <= rowAvailablePx || neededPx <= 0f) {
+        // 空间不够同时显示「日期/天气」和经纬度时，**优先保住日期与天气，把经纬度整条隐藏**。
+        // 宁可少一个次要信息，也不要让日期被压缩成省略号。
+        val showCoordinates = SmallRowLayout.shouldShowTrailing(
+            leadingWidthPx = dateNaturalWidth,
+            trailingWidthPx = coordNaturalWidth,
+            gapPx = dateGapPx,
+            availablePx = rowAvailablePx,
+        )
+        val dateScale = if (dateNaturalWidth <= rowAvailablePx) {
             1f
         } else {
-            (rowAvailablePx / neededPx).coerceIn(MIN_SMALL_TEXT_SCALE, 1f)
+            (rowAvailablePx / dateNaturalWidth).coerceIn(MIN_SMALL_TEXT_SCALE, 1f)
         }
-        views.setTextViewTextSize(R.id.widget_civil_date, TypedValue.COMPLEX_UNIT_DIP, dateNaturalDp * smallScale)
-        if (coordinates.isNotEmpty()) {
-            views.setTextViewTextSize(R.id.widget_coordinates, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp * smallScale)
+        views.setTextViewTextSize(R.id.widget_civil_date, TypedValue.COMPLEX_UNIT_DIP, dateNaturalDp * dateScale)
+        views.setViewVisibility(
+            R.id.widget_coordinates,
+            if (showCoordinates) View.VISIBLE else View.GONE,
+        )
+        if (showCoordinates) {
+            views.setTextViewTextSize(R.id.widget_coordinates, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp)
         }
         Log.d(
             TAG,
-            "smallText date=${"%.2f".format(Locale.ROOT, dateNaturalDp * smallScale)}dp " +
-                "coord=${"%.2f".format(Locale.ROOT, coordNaturalDp * smallScale)}dp " +
-                "scale=${"%.3f".format(Locale.ROOT, smallScale)} " +
+            "smallText date=${"%.2f".format(Locale.ROOT, dateNaturalDp * dateScale)}dp " +
+                "coord=${if (showCoordinates) "%.2f".format(Locale.ROOT, coordNaturalDp) else "hidden"} " +
+                "scale=${"%.3f".format(Locale.ROOT, dateScale)} " +
                 "dateW=${dateNaturalWidth.toInt()} coordW=${coordNaturalWidth.toInt()} avail=${rowAvailablePx.toInt()}",
         )
     }

@@ -505,22 +505,49 @@ private fun HeroCard(
             Spacer(Modifier.height(6.dp))
 
             // 日期/天气与经纬度同一行：日期行吃满剩余宽度，经纬度贴右。
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 放不下「日期/天气」与经纬度两者时，优先保住日期与天气，把右侧经纬度隐藏。
+            // 宽度用 onSizeChanged 取（不能用 BoxWithConstraints：卡片在 IntrinsicSize.Max 里，
+            // SubcomposeLayout 参与固有测量会抛异常），再用 TextMeasurer 量两者自然宽度。
+            var statsRowWidthPx by remember { mutableStateOf(0f) }
+            val rowMeasurer = rememberTextMeasurer()
+            val labelStyle = MaterialTheme.typography.labelSmall
+            val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
+            val dateWidthPx = rowMeasurer.measure(dateTail, labelStyle).size.width.toFloat()
+            val coordWidthPx = if (coordinates.isEmpty()) {
+                0f
+            } else {
+                rowMeasurer.measure(coordinates, labelStyle).size.width.toFloat()
+            }
+            val showCoordinates = SmallRowLayout.shouldShowTrailing(
+                leadingWidthPx = dateWidthPx,
+                trailingWidthPx = coordWidthPx,
+                gapPx = gapPx,
+                availablePx = statsRowWidthPx,
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { statsRowWidthPx = it.width.toFloat() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     text = dateTail,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = labelStyle,
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    text = coordinates,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = HeroPalette.LABEL_DIM,
-                    maxLines = 1,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+                if (showCoordinates) {
+                    Text(
+                        text = coordinates,
+                        style = labelStyle,
+                        color = HeroPalette.LABEL_DIM,
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(10.dp))
