@@ -104,6 +104,49 @@ class WidgetUpdaterTest {
         assertTrue(plan.wide)
     }
 
+    // ---- 对齐随档位变化（与首页三级退化一致：贴右 → 居中 → 靠左）----
+
+    @Test
+    fun rightAlignsTheCityWhileBothLabelsFit() {
+        // 0 级：左栏里还能同时显示「标准时间」与「真太阳时」→ 贴右
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("上海市宝山区", "宝山区"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertEquals(WidgetUpdater.CityAlign.END, plan.align)
+    }
+
+    @Test
+    fun centersTheCityWhenItTakesTheCivilLabelSlot() {
+        // 1 级：让出「标准时间」标签的位置，仍在这一栏里 → 居中
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州", "克孜勒苏柯尔克孜自治州"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertFalse(plan.showCivilLabel)
+        assertEquals(WidgetUpdater.CityAlign.CENTER, plan.align)
+    }
+
+    @Test
+    fun leftAlignsTheCityWhenItSpansBothColumns() {
+        // 2 级：跨栏、连「真太阳时」标签也让出 → 靠左
+        val plan = WidgetUpdater.planCityLabel(
+            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州阿图什市", "阿图什市"),
+            fallback = "",
+            maxNarrow = 10,
+            maxNoLabel = 14,
+            maxWide = 30,
+        )
+        assertTrue(plan.wide)
+        assertEquals(WidgetUpdater.CityAlign.START, plan.align)
+    }
+
     @Test
     fun keepsBothLabelsForOfflineFallbackNames() {
         val plan = WidgetUpdater.planCityLabel(null, fallback = "乌鲁木齐", maxNarrow = 10, maxNoLabel = 14, maxWide = 30)

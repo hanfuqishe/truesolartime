@@ -441,28 +441,75 @@ private fun HeroCard(
             .padding(16.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // 顶部这一行（`UTC+8`、行政区划、右列「真太阳时」）怎么排：空间不够时按三级退化，
+            // 规则在 SmallRowLayout.cityRowTier 里（纯函数，有单测）。
+            // 左列宽只能用 onSizeChanged 取（不能用 BoxWithConstraints：卡片在 IntrinsicSize.Max 里，
+            // SubcomposeLayout 参与固有测量会抛异常），再拿 TextMeasurer 量各段文本的自然宽度。
+            var cityRowWidthPx by remember { mutableStateOf(0f) }
+            val cityRowMeasurer = rememberTextMeasurer()
+            val cityRowStyle = MaterialTheme.typography.labelMedium
+            val cityRowGapPx = with(LocalDensity.current) { 8.dp.toPx() }
+            val utcLabel = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds)
+            val cityLabel = districtName ?: ""
+            val solarLabel = stringResource(R.string.widget_label_solar)
+            val utcWidthPx = cityRowMeasurer.measure(utcLabel, cityRowStyle).size.width.toFloat()
+            val cityWidthPx = if (cityLabel.isEmpty()) {
+                0f
+            } else {
+                cityRowMeasurer.measure(cityLabel, cityRowStyle).size.width.toFloat()
+            }
+            // 「真太阳时」的宽度连同它与右侧时辰之间的间距一起算：标签一藏，腾出来的就是这一整块。
+            val solarLabelWidthPx =
+                cityRowMeasurer.measure(solarLabel, cityRowStyle).size.width.toFloat() + cityRowGapPx
+            val cityRowTier = SmallRowLayout.cityRowTier(
+                wUtc = utcWidthPx,
+                wCity = cityWidthPx,
+                wLabel = solarLabelWidthPx,
+                available = cityRowWidthPx,
+                gap = cityRowGapPx,
+            )
+
             Row(modifier = Modifier.fillMaxWidth()) {
                 // 左：当地标准时间（所在地的法定时区，标签直接写成 UTC+8 这种形式；
                 // 中国境内就是北京时间，出国或手工指定外地坐标时换成当地标准时）
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // 城市名固定在左上角、从左往右排：城市名过长时先省略自己，
-                        // 不把 UTC+8 挤走（weight(fill = false) 让它只吃需要的那点宽度）。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { cityRowWidthPx = it.width.toFloat() },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // `UTC+8` 固定在左上角，行政区划紧随其后、但在左半列内右对齐（贴着分隔线）。
+                        // 优先级：保留城市名 > 保留「真太阳时」 > 保留 UTC，见 cityRowTier。
+                        if (cityRowTier < 2) {
+                            Text(
+                                text = utcLabel,
+                                style = cityRowStyle,
+                                color = HeroPalette.LABEL,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(
-                            text = districtName ?: "",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = cityLabel,
+                            style = cityRowStyle,
                             color = HeroPalette.LABEL_DIM,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Start,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = HeroPalette.LABEL,
-                            maxLines = 1,
+                            // 地址越长、让出的东西越多，对齐就越往左走：0 级贴右 → 1 级居中 → 2 级靠左。
+                            textAlign = when (cityRowTier) {
+                                0 -> TextAlign.End
+                                1 -> TextAlign.Center
+                                else -> TextAlign.Start
+                            },
+                            modifier = when (cityRowTier) {
+                                // 0 级贴右、1 级居中：两种都要吃满 UTC 之后的剩余宽度，
+                                // 否则 fill = false 会让 Text 缩成内容宽，`TextAlign.Center`
+                                // 就没有可移动的余量了（真机上看着还是贴着 UTC）。
+                                0, 1 -> Modifier.weight(1f)
+                                // 2 级：UTC 让位，城市名从最左开始占满整列，超出省略
+                                else -> Modifier.fillMaxWidth()
+                            },
                         )
                     }
                     HeroClock(
@@ -483,11 +530,15 @@ private fun HeroCard(
                 // 右：真太阳时（逐秒刷新）
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(R.string.widget_label_solar),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = HeroPalette.LABEL,
-                        )
+                        // 城市名太长时先让出这四个字（1 级起隐藏），时辰照旧显示在右端。
+                        if (cityRowTier < 1) {
+                            Text(
+                                text = solarLabel,
+                                style = cityRowStyle,
+                                color = HeroPalette.LABEL,
+                                maxLines = 1,
+                            )
+                        }
                         Spacer(Modifier.weight(1f))
                         Text(
                             text = stringResource(

@@ -15,6 +15,7 @@ import android.text.TextPaint
 import android.util.DisplayMetrics
 import android.util.Log
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.widget.RemoteViews
 import com.realsuntime.solartime.MainActivity
@@ -363,6 +364,10 @@ object WidgetUpdater {
             val wideName = location.hasFix && city.wide
             setTextViewText(R.id.widget_city, if (location.hasFix && !city.wide) city.text else "")
             setTextViewText(R.id.widget_city_wide, if (wideName) city.text else "")
+            // 对齐跟着档位走（与首页一致）：0 级贴右 → 1 级居中 → 2 级靠左。
+            // TextView#setGravity 带 @RemotableViewMethod，可以交给宿主进程执行。
+            setInt(R.id.widget_city, "setGravity", gravityFor(city.align))
+            setInt(R.id.widget_city_wide, "setGravity", gravityFor(city.align))
             setViewVisibility(R.id.widget_city, if (location.hasFix && !city.wide) View.VISIBLE else View.GONE)
             setViewVisibility(R.id.widget_wide_row, if (wideName) View.VISIBLE else View.GONE)
             setViewVisibility(R.id.widget_solar_shichen, if (wideName) View.GONE else View.VISIBLE)
@@ -542,6 +547,21 @@ object WidgetUpdater {
     }
 
     /**
+     * 地名在卡片上怎么水平对齐：地址越长、让出的东西越多，对齐就越往左走。
+     *
+     * 与首页大卡片的三级退化一一对应（`SmallRowLayout.cityRowTier`）：
+     * 0 级贴右、1 级居中、2 级靠左。
+     */
+    internal enum class CityAlign { END, CENTER, START }
+
+    /** [CityAlign] → TextView 的 gravity（只动水平方向，纵向仍是默认的顶部）。 */
+    private fun gravityFor(align: CityAlign): Int = when (align) {
+        CityAlign.END -> Gravity.END
+        CityAlign.CENTER -> Gravity.CENTER_HORIZONTAL
+        CityAlign.START -> Gravity.START
+    }
+
+    /**
      * 地名的三级显示：先按现状塞进左栏；塞不下就把「标准时间」标签让出来；
      * 还塞不下就连「真太阳时」的标签一起让出来，改成横跨两栏的一行。
      *
@@ -554,7 +574,18 @@ object WidgetUpdater {
         val wide: Boolean,
         val showCivilLabel: Boolean,
         val showSolarLabel: Boolean,
-    )
+    ) {
+        /**
+         * 对齐方式直接从既有档位（[wide] / [showCivilLabel]）推导，不另存一份状态：
+         * 跨栏（2 级）靠左、让出「标准时间」标签（1 级）居中、两者都还在（0 级）贴右。
+         */
+        val align: CityAlign
+            get() = when {
+                wide -> CityAlign.START
+                !showCivilLabel -> CityAlign.CENTER
+                else -> CityAlign.END
+            }
+    }
 
     internal fun planCityLabel(
         names: DistrictResolver.DistrictNames?,
