@@ -16,6 +16,7 @@ import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.widget.KeyTimeChime
 import com.realsuntime.solartime.widget.WidgetUpdater
 import kotlinx.coroutines.delay
@@ -168,8 +169,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updatePlace(Place(latitude, longitude, PlaceSource.MANUAL, label), userChosen = true)
     }
 
+    /**
+     * 选中常用城市。
+     *
+     * 不能只传经纬度和名字：预设城市自带的 [Place.countryCode] 是**当场**算出标准时区的依据
+     * （见 [LocalZone.standardOffsetSeconds]），丢了它就又得等逆地理编码。名字同时写进 label
+     * 与 labelResName —— 前者给地图标注用，后者保证换系统语言时跟着变。
+     */
     fun usePreset(preset: Place) {
-        applyManualPlace(preset.latitude, preset.longitude, preset.label)
+        stopGpsTracking()
+        updatePlace(
+            preset.copy(source = PlaceSource.MANUAL, label = TimeText.placeLabel(app, preset)),
+            userChosen = true,
+        )
     }
 
     fun setRemindersEnabled(enabled: Boolean) {

@@ -16,6 +16,8 @@ class AppSettings(context: Context) {
                 ?: PlaceSource.DEFAULT,
             label = prefs.getString(KEY_LABEL, null) ?: Place.DEFAULT.label,
             labelResName = prefs.getString(KEY_LABEL_RES, null) ?: Place.DEFAULT.labelResName,
+            // 空串表示「不知道」（GPS / 手动坐标），按 null 读出来让调用方回退逆地理编码。
+            countryCode = prefs.getString(KEY_PLACE_COUNTRY, null)?.takeIf { it.isNotEmpty() },
         )
         set(value) {
             prefs.edit()
@@ -24,6 +26,8 @@ class AppSettings(context: Context) {
                 .putString(KEY_SOURCE, value.source.name)
                 .putString(KEY_LABEL, value.label)
                 .putString(KEY_LABEL_RES, value.labelResName)
+                // SharedPreferences 存不了 null，用空串表示未知。
+                .putString(KEY_PLACE_COUNTRY, value.countryCode.orEmpty())
                 .apply()
         }
 
@@ -61,6 +65,7 @@ class AppSettings(context: Context) {
         const val KEY_SOURCE = "place_source"
         const val KEY_LABEL = "place_label"
         const val KEY_LABEL_RES = "place_label_res"
+        const val KEY_PLACE_COUNTRY = "place_country"
         const val KEY_REMINDERS = "shichen_reminders"
         const val KEY_MAP_STYLE = "map_style"
         const val KEY_HOURLY_CHIME = "hourly_chime"

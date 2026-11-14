@@ -63,6 +63,8 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
     onRequestGps: () -> Unit,
     onApplyManual: (Double, Double, String) -> Unit,
+    /** 选中常用城市：整个 [Place] 传出去，国家码与资源名才不会丢。 */
+    onSelectPreset: (Place) -> Unit,
     onToggleReminders: (Boolean) -> Unit,
     onToggleKeyTimeChime: (Boolean) -> Unit,
     onToggleKeepScreenOn: (Boolean) -> Unit,
@@ -200,7 +202,7 @@ fun SettingsSheet(
                 Place.PRESETS.forEach { preset ->
                     AssistChip(
                         onClick = {
-                            onApplyManual(preset.latitude, preset.longitude, TimeText.placeLabel(context, preset))
+                            onSelectPreset(preset)
                             onDismiss()
                         },
                         label = { Text(TimeText.placeLabel(context, preset)) },

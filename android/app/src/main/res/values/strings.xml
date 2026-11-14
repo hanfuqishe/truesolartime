@@ -57,6 +57,16 @@
     <string name="city_urumqi">Urumqi</string>
     <string name="city_lhasa">Lhasa</string>
     <string name="city_hongkong">Hong Kong</string>
+    <string name="city_honolulu">Honolulu</string>
+    <string name="city_los_angeles">Los Angeles</string>
+    <string name="city_new_york">New York</string>
+    <string name="city_london">London</string>
+    <string name="city_paris">Paris</string>
+    <string name="city_dubai">Dubai</string>
+    <string name="city_new_delhi">New Delhi</string>
+    <string name="city_tokyo">Tokyo</string>
+    <string name="city_singapore">Singapore</string>
+    <string name="city_sydney">Sydney</string>
 
     <string name="map_style_auto">Auto</string>
     <string name="map_style_osm">OpenStreetMap</string>

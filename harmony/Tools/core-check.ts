@@ -15,6 +15,7 @@ import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './cor
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place } from './core/Place';
+import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
 let passed = 0;
@@ -407,9 +408,37 @@ for (const item of equationCases) {
 // ---- 观测点 ----
 {
   check('default place is Beijing', Place.DEFAULT.labelKey === 'city_beijing' && Place.DEFAULT.latitude === 39.9042);
-  equal('ten presets', 10, Place.PRESETS.length);
+  equal('twenty presets', 20, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
+
+  // 预设城市自带国家码：选中后就能当场按 ZoneTable 算出标准时区（与 Android ZoneTableTest 对齐）。
+  let everyPresetHasCountry: boolean = true;
+  for (const preset of Place.PRESETS) {
+    if (preset.countryCode.length !== 2) {
+      everyPresetHasCountry = false;
+    }
+  }
+  check('every preset carries a country code', everyPresetHasCountry);
+  equal('china preset stays utc+8', 8 * 3600,
+    ZoneTable.offsetSeconds(Place.PRESETS[8].countryCode, Place.PRESETS[8].longitude, 0));
+
+  // 后 10 个境外城市按 UTC 偏移从西到东：檀香山 −10 … 悉尼 +10。
+  const overseasMinutes: number[] = [-600, -480, -300, 0, 60, 240, 330, 540, 480, 600];
+  let overseasOffsetsOk: boolean = true;
+  let overseasNamesOk: boolean = true;
+  for (let i = 0; i < overseasMinutes.length; i++) {
+    const preset: Place = Place.PRESETS[10 + i];
+    if (ZoneTable.offsetSeconds(preset.countryCode, preset.longitude, 0) !== overseasMinutes[i] * 60) {
+      overseasOffsetsOk = false;
+    }
+    // 名字由 Settings.cityLabel 查 CityIndex 得到：查不到就只能显示经纬度了。
+    if (CityIndex.nearest(preset.latitude, preset.longitude, 'zh') === null) {
+      overseasNamesOk = false;
+    }
+  }
+  check('overseas presets resolve by country code', overseasOffsetsOk);
+  check('overseas presets have a city name', overseasNamesOk);
 }
 
 // ---- 位置地图瓦片 ----

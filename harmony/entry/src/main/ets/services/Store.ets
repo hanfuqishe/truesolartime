@@ -126,10 +126,12 @@ export class AppStore {
     const longitude: number = AppStore.numberValue(store, 'longitude', Place.DEFAULT.longitude);
     const sourceValue: number = AppStore.numberValue(store, 'place_source', PlaceSource.DEFAULT);
     const label: string = AppStore.stringValue(store, 'place_label', '');
+    // 预设城市自带的国家码：读出来才能「选中即按表算时区」。空串表示未知（GPS / 手动坐标）。
+    const countryCode: string = AppStore.stringValue(store, 'place_country', '');
     const source: PlaceSource =
       sourceValue === PlaceSource.GPS ? PlaceSource.GPS
         : (sourceValue === PlaceSource.MANUAL ? PlaceSource.MANUAL : PlaceSource.DEFAULT);
-    return new Place(latitude, longitude, source, label, '');
+    return new Place(latitude, longitude, source, label, '', countryCode);
   }
 
   static setPlace(place: Place): void {
@@ -138,6 +140,7 @@ export class AppStore {
     store.putSync('longitude', place.longitude);
     store.putSync('place_source', place.source);
     store.putSync('place_label', place.label);
+    store.putSync('place_country', place.countryCode);
     store.flush();
   }
 

@@ -341,6 +341,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     requestGps()
                 },
                 onApplyManual = { lat, lon, label -> viewModel.applyManualPlace(lat, lon, label) },
+                onSelectPreset = viewModel::usePreset,
                 onToggleReminders = toggleReminders,
                 onToggleKeyTimeChime = toggleKeyTimeChime,
                 onSelectMapStyle = viewModel::setMapStyle,

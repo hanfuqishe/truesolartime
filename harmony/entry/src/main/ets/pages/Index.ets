@@ -254,9 +254,13 @@ struct Index {
 
   // ---- 数据 ----
 
-  /** 观测点的标准时区偏移（秒）：优先查国家表，查不到按经度近似。 */
+  /** 观测点的标准时区偏移（秒）：优先用预设城市自带的国家码，其次逆地理结果，最后按经度近似。 */
   private zoneOffsetSeconds(): number {
-    return ZoneTable.offsetSeconds(AppStore.district().countryCode, this.place.longitude,
+    // 预设城市的国家码随城市一起内置，选中就能当场算出时区，不必等（也可能失败的）逆地理编码。
+    const countryCode: string = this.place.countryCode.length > 0
+      ? this.place.countryCode
+      : AppStore.district().countryCode;
+    return ZoneTable.offsetSeconds(countryCode, this.place.longitude,
       SolarTimeMath.standardZoneOffsetSeconds(this.place.latitude, this.place.longitude));
   }
 

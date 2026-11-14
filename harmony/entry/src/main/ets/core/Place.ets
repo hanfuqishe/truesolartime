@@ -16,28 +16,49 @@ export class Place {
   label: string;
   /** 内置城市的多语言资源键，例如 "city_beijing"。 */
   labelKey: string;
+  /**
+   * 内置城市所属国家/地区（ISO 3166-1 alpha-2，小写），例如 `cn` / `hk` / `us`。
+   *
+   * 有了它，选中预设城市后 ZoneTable 能**当场**算出标准时区，不必等逆地理编码回来。
+   * 空串表示未知（GPS / 手动坐标），由逆地理结果补。
+   */
+  countryCode: string;
 
-  constructor(latitude: number, longitude: number, source: PlaceSource, label: string, labelKey: string) {
+  constructor(latitude: number, longitude: number, source: PlaceSource, label: string, labelKey: string,
+      countryCode: string = '') {
     this.latitude = latitude;
     this.longitude = longitude;
     this.source = source;
     this.label = label;
     this.labelKey = labelKey;
+    this.countryCode = countryCode;
   }
 
-  static readonly DEFAULT: Place = new Place(39.9042, 116.4074, PlaceSource.DEFAULT, '', 'city_beijing');
+  static readonly DEFAULT: Place = new Place(39.9042, 116.4074, PlaceSource.DEFAULT, '', 'city_beijing', 'cn');
 
   static readonly PRESETS: Place[] = [
-    new Place(39.9042, 116.4074, PlaceSource.MANUAL, '', 'city_beijing'),
-    new Place(31.2304, 121.4737, PlaceSource.MANUAL, '', 'city_shanghai'),
-    new Place(23.1291, 113.2644, PlaceSource.MANUAL, '', 'city_guangzhou'),
-    new Place(22.5431, 114.0579, PlaceSource.MANUAL, '', 'city_shenzhen'),
-    new Place(30.5728, 104.0668, PlaceSource.MANUAL, '', 'city_chengdu'),
-    new Place(34.3416, 108.9398, PlaceSource.MANUAL, '', 'city_xian'),
-    new Place(45.8038, 126.5350, PlaceSource.MANUAL, '', 'city_harbin'),
-    new Place(43.8256, 87.6168, PlaceSource.MANUAL, '', 'city_urumqi'),
-    new Place(29.6520, 91.1721, PlaceSource.MANUAL, '', 'city_lhasa'),
-    new Place(22.3193, 114.1694, PlaceSource.MANUAL, '', 'city_hongkong')
+    new Place(39.9042, 116.4074, PlaceSource.MANUAL, '', 'city_beijing', 'cn'),
+    new Place(31.2304, 121.4737, PlaceSource.MANUAL, '', 'city_shanghai', 'cn'),
+    new Place(23.1291, 113.2644, PlaceSource.MANUAL, '', 'city_guangzhou', 'cn'),
+    new Place(22.5431, 114.0579, PlaceSource.MANUAL, '', 'city_shenzhen', 'cn'),
+    new Place(30.5728, 104.0668, PlaceSource.MANUAL, '', 'city_chengdu', 'cn'),
+    new Place(34.3416, 108.9398, PlaceSource.MANUAL, '', 'city_xian', 'cn'),
+    new Place(45.8038, 126.5350, PlaceSource.MANUAL, '', 'city_harbin', 'cn'),
+    new Place(43.8256, 87.6168, PlaceSource.MANUAL, '', 'city_urumqi', 'cn'),
+    new Place(29.6520, 91.1721, PlaceSource.MANUAL, '', 'city_lhasa', 'cn'),
+    new Place(22.3193, 114.1694, PlaceSource.MANUAL, '', 'city_hongkong', 'hk'),
+    // 境外常用城市：按 UTC 偏移从西到东排。名字由 Settings.cityLabel 查 CityIndex 得到
+    // （core/CityIndex 里都有这些城市），所以 label 与 labelKey 留空，随界面语言变化。
+    new Place(21.3069, -157.8583, PlaceSource.MANUAL, '', '', 'us'),   // 檀香山
+    new Place(34.0522, -118.2437, PlaceSource.MANUAL, '', '', 'us'),   // 洛杉矶
+    new Place(40.7128, -74.0060, PlaceSource.MANUAL, '', '', 'us'),    // 纽约
+    new Place(51.5074, -0.1278, PlaceSource.MANUAL, '', '', 'gb'),     // 伦敦
+    new Place(48.8566, 2.3522, PlaceSource.MANUAL, '', '', 'fr'),      // 巴黎
+    new Place(25.2048, 55.2708, PlaceSource.MANUAL, '', '', 'ae'),     // 迪拜
+    new Place(28.6139, 77.2090, PlaceSource.MANUAL, '', '', 'in'),     // 新德里
+    new Place(35.6762, 139.6503, PlaceSource.MANUAL, '', '', 'jp'),    // 东京
+    new Place(1.3521, 103.8198, PlaceSource.MANUAL, '', '', 'sg'),     // 新加坡
+    new Place(-33.8688, 151.2093, PlaceSource.MANUAL, '', '', 'au')    // 悉尼
   ];
 
   static readonly MIN_LATITUDE: number = -90.0;

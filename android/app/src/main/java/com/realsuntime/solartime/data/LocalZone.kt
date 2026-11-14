@@ -25,7 +25,10 @@ object LocalZone {
      * 用于「换个地方就是另一个时区」这类粗判断；界面显示请用 [offsetSeconds]（含夏令时）。
      */
     fun standardOffsetSeconds(context: Context, place: Place): Int = ZoneTable.offsetSeconds(
-        countryCode = DistrictResolver.cachedCountryCode(context, place),
+        // 预设城市自带国家码，**优先用它**：选中纽约就能立刻按表算出 −5，不必等（也可能永远
+        // 不会成功的）逆地理编码。只有 GPS / 手动坐标（countryCode 为空）才去认缓存里的国家码。
+        countryCode = place.countryCode?.takeUnless { it.isBlank() }
+            ?: DistrictResolver.cachedCountryCode(context, place),
         longitude = place.longitude,
         fallbackSeconds = SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude),
     )

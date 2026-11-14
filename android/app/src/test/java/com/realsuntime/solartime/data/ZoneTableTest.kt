@@ -65,4 +65,35 @@ class ZoneTableTest {
         assertFalse(ZoneTable.knows("zz"))
         assertFalse(ZoneTable.knows(null))
     }
+
+    @Test
+    fun presetsCarryCountryCodesThatResolveToTheirRealOffsets() {
+        // 每个预设城市都必须带国家码：选中后标准时区靠它当场查表，不依赖逆地理编码。
+        for (preset in Place.PRESETS) {
+            assertTrue("${preset.labelResName} 缺少国家码", preset.countryCode != null)
+            assertTrue("${preset.countryCode} 不在表里", ZoneTable.knows(preset.countryCode))
+        }
+        // 20 个常用城市：前 10 个是中国境内（含香港），后 10 个按 UTC 偏移从西到东排列。
+        assertEquals(20, Place.PRESETS.size)
+        val expected = listOf(
+            -10 * 3600, // 檀香山
+            -8 * 3600,  // 洛杉矶
+            -5 * 3600,  // 纽约
+            0,          // 伦敦
+            3600,       // 巴黎
+            4 * 3600,   // 迪拜
+            5 * 3600 + 30 * 60, // 新德里
+            9 * 3600,   // 东京
+            8 * 3600,   // 新加坡
+            10 * 3600,  // 悉尼
+        )
+        val overseas = Place.PRESETS.drop(10)
+        assertEquals(expected.size, overseas.size)
+        for ((index, preset) in overseas.withIndex()) {
+            assertEquals(
+                expected[index],
+                ZoneTable.offsetSeconds(preset.countryCode, preset.longitude, fallback),
+            )
+        }
+    }
 }

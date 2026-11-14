@@ -110,8 +110,12 @@ export class CardService {
     const language: string = DistrictService.language();
     const place = AppStore.place();
     const now: number = Date.now();
+    // 与首页同一口径：预设城市自带的国家码优先，其次逆地理结果（卡片与首页不能算出两个时区）。
+    const countryCode: string = place.countryCode.length > 0
+      ? place.countryCode
+      : AppStore.district().countryCode;
     const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language,
-      ZoneTable.offsetSeconds(AppStore.district().countryCode, place.longitude,
+      ZoneTable.offsetSeconds(countryCode, place.longitude,
         SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)));
     const data: CardData = new CardData();
 
@@ -124,7 +128,7 @@ export class CardService {
     // 左栏标签要和 Android 一致显示 UTC 偏移：这里必须用**法定时区**的偏移，
     // 不是下面那个 trueSolarOffset（那是真太阳时相对当地标准时的差，北京会算出 +8:01）。
     const zoneSeconds: number = ZoneTable.offsetSeconds(
-      AppStore.district().countryCode,
+      countryCode,
       place.longitude,
       SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)
     );
