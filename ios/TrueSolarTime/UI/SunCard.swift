@@ -60,6 +60,8 @@ struct SunCard: View {
 
 private struct SunTimeItem: View {
 
+    @Environment(\.palette) private var palette
+
     let label: String
     let time: TimeOfDay?
 
@@ -77,6 +79,8 @@ private struct SunTimeItem: View {
 }
 
 private struct SunArc: View {
+
+    @Environment(\.palette) private var palette
 
     let progress: Double
     let isDay: Bool
