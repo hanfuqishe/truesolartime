@@ -302,6 +302,29 @@ let mumbaiZone = SolarTimeSnapshot.compute(
 )
 expect("孟买 UTC 标签 UTC+5:30", mumbaiZone.utcLabel == "UTC+5:30", "得到 \(mumbaiZone.utcLabel)")
 
+// MARK: - 内置城市列表的时区（含境外城市，供真机切换验证）
+
+let expectedPresets: [(String, Int)] = [
+    ("北京", 28_800), ("上海", 28_800), ("广州", 28_800), ("深圳", 28_800),
+    ("成都", 28_800), ("西安", 28_800), ("哈尔滨", 28_800), ("乌鲁木齐", 28_800),
+    ("拉萨", 28_800), ("香港", 28_800),
+    ("檀香山", -36_000), ("洛杉矶", -28_800), ("纽约", -18_000),
+    ("伦敦", 0), ("巴黎", 3_600), ("迪拜", 14_400),
+    ("新德里", 19_800), ("东京", 32_400), ("新加坡", 28_800), ("悉尼", 36_000)
+]
+for (label, expected) in expectedPresets {
+    guard let preset = Place.presets.first(where: { $0.label == label }) else {
+        expect("内置城市 \(label) 存在", false, "列表里没有这个城市")
+        continue
+    }
+    expect(
+        "内置城市 \(label) 时区偏移 \(expected)",
+        preset.standardOffsetSeconds == expected,
+        "得到 \(preset.standardOffsetSeconds)（\(TimeFormat.utcOffsetLabel(seconds: preset.standardOffsetSeconds))）"
+    )
+}
+expect("内置城市数量 ≥ 20", Place.presets.count >= 20, "实际 \(Place.presets.count)")
+
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")
