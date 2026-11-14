@@ -18,11 +18,11 @@ const TIMEOUT_MILLIS: number = 10000;
 /**
  * 「关键时间」（服用时间）功能开关。
  *
- * 该功能会抓取第三方网页（duosuccess.com）并解析其时段内容。
- * 出于内容合规与版权考虑，上架版本暂不启用；代码保留，改动此常量即可恢复。
- * 关闭时不发起任何网络请求，界面也不会出现时间轴。
+ * 打开后会抓取第三方网页（duosuccess.com）的「Take Time」时段并解析成时间轴：
+ * 首页轴线上的彩色时段、真太阳时落在关键时段时的配色、以及到点报时都依赖它。
+ * 每天只在 01:00–05:00 之间挑一个随机时刻联网同步一次，成功后缓存 7 天。
  */
-export const KEY_TIME_FEATURE_ENABLED: boolean = false;
+export const KEY_TIME_FEATURE_ENABLED: boolean = true;
 
 /** 本地日期键，例如 "2026-11-02"。 */
 export function localDayKey(epochMillis: number): string {

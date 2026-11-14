@@ -27,8 +27,8 @@ android {
         applicationId = "com.realsuntime.solartime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 45
-        versionName = "1.4.38"
+        versionCode = 46
+        versionName = "1.4.39"
         buildConfigField("String", "AMAP_API_KEY", "\"$amapApiKey\"")
         manifestPlaceholders["amapApiKey"] = amapApiKey
     }

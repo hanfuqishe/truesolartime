@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.realsuntime.solartime",
     "vendor": "realsuntime",
-    "versionCode": 1043800,
-    "versionName": "1.4.38",
+    "versionCode": 1043900,
+    "versionName": "1.4.39",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
