@@ -517,12 +517,19 @@ object WidgetUpdater {
      * 而不是把名字截成「克孜勒苏柯尔克孜自治…」。
      */
     private fun cityLabel(context: Context, place: Place, widthDp: Int, compact: Boolean): CityLabelPlan {
-        val fallback = CityIndex.nearest(
-            place.latitude,
-            place.longitude,
-            Locale.getDefault().language,
-        )?.name.orEmpty()
-        val names = DistrictResolver.cachedNames(context)
+        // 兜底名与首页保持同一优先级：预设城市名优先，其次才用离线城市表里最近的城市。
+        // 这样「点选纽约」时首页与桌面卡片写的是同一个名字。
+        val presetLabel = place.labelResName?.let { TimeText.placeLabel(context, place) }.orEmpty()
+        val fallback = presetLabel.ifEmpty {
+            CityIndex.nearest(
+                place.latitude,
+                place.longitude,
+                Locale.getDefault().language,
+            )?.name.orEmpty()
+        }
+        // 与首页同一口径：缓存里的区划名只在与当前地点相距 ≤5 km 时才认，
+        // 换城市后立刻失效，绝不拿上一个城市的地名凑数。
+        val names = DistrictResolver.cachedNamesFor(context, place)
         val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnDp = (totalWidthDp - chromeDp) / 2f
