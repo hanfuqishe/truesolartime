@@ -34,9 +34,15 @@ enum TimeFormat {
         return String(format: "%02d:%02d:%02d", safe / 3600, (safe % 3600) / 60, safe % 60)
     }
 
+    /// 兼容旧调用（东八区）。
     static func dateWithWeekday(_ date: Date) -> String {
+        dateWithWeekday(date, offsetSeconds: Int(SolarTimeMath.beijingOffsetSeconds))
+    }
+
+    /// 「11 月 14 日 · 星期六」，按**观测地标准时区**取日期。
+    static func dateWithWeekday(_ date: Date, offsetSeconds: Int) -> String {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: Int(SolarTimeMath.beijingOffsetSeconds)) ?? .current
+        calendar.timeZone = TimeZone(secondsFromGMT: offsetSeconds) ?? .current
         let components = calendar.dateComponents([.month, .day, .weekday], from: date)
         let weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
         let weekdayIndex = (components.weekday ?? 1) - 1
