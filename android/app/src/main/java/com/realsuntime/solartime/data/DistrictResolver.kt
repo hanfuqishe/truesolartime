@@ -275,7 +275,12 @@ object DistrictResolver {
 
     /** Nominatim 的 address 字段由细到粗挑出「区县／市／省」三级。 */
     internal fun namesFromNominatim(address: JSONObject): List<String?> {
-        fun field(key: String) = address.optString(key).trim().ifEmpty { null }
+        // OSM 在 accept-language 含中文时会返回「简体;繁体」这种多语言值（如「纽约;紐約」），
+        // 只取第一个；否则卡片上会变成「Manhattan, 紐…」这种被省略号吃掉的怪样子。
+        fun field(key: String) = address.optString(key)
+            .substringBefore(';')
+            .trim()
+            .ifEmpty { null }
         return listOf(
             // 「区县」优先：中国的区/县在 OSM 里可能记在 city_district、district 或 borough 上。
             field("city_district") ?: field("district") ?: field("borough"),
