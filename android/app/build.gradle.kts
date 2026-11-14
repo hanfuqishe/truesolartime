@@ -19,6 +19,20 @@ val amapProperties = Properties().apply {
 }
 val amapApiKey = amapProperties.getProperty("apiKey", amapProperties.getProperty("webKey", ""))
 
+// ---- 版本号：读 version.properties，打包成功后自动递增修订号 ----
+data class AppVersion(val major: Int, val minor: Int, val patch: Int, val androidCode: Int)
+
+val versionFile = rootProject.file("../version.properties")  // android/ 的上一级就是仓库根目录
+val versionProps = Properties()
+if (versionFile.exists()) {
+    versionFile.inputStream().use { stream -> versionProps.load(stream) }
+}
+val appVersion = AppVersion(
+    major = versionProps.getProperty("major", "1").toInt(),
+    minor = versionProps.getProperty("minor", "4").toInt(),
+    patch = versionProps.getProperty("patch", "0").toInt(),
+    androidCode = versionProps.getProperty("androidCode", "1").toInt(),
+)
 android {
     namespace = "com.realsuntime.solartime"
     compileSdk = 35
@@ -27,8 +41,10 @@ android {
         applicationId = "com.realsuntime.solartime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 48
-        versionName = "1.4.41"
+        // 版本号来自仓库根目录的 version.properties（三端共享主/次版本号），
+        // 每次打包成功后由下面的 assembleRelease 钩子自动把修订号 +1。
+        versionCode = appVersion.androidCode
+        versionName = "${appVersion.major}.${appVersion.minor}.${appVersion.patch}"
         buildConfigField("String", "AMAP_API_KEY", "\"$amapApiKey\"")
         manifestPlaceholders["amapApiKey"] = amapApiKey
     }
@@ -118,4 +134,17 @@ tasks.register<Copy>("renameReleaseApk") {
 
 tasks.matching { it.name == "assembleRelease" }.configureEach {
     finalizedBy("renameReleaseApk")
+}
+
+// assembleRelease 成功后把修订号与 versionCode 各 +1，下次打包自动用新号。
+// 只在与 release 打包相关任务真正跑过时才递增，日常 testReleaseUnitTest 不动版本。
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        versionProps.setProperty("patch", (appVersion.patch + 1).toString())
+        versionProps.setProperty("androidCode", (appVersion.androidCode + 1).toString())
+        versionFile.writer().use { w ->
+            versionProps.store(w, "Android bump after release build")
+        }
+        logger.lifecycle("版本号已递增 -> ${appVersion.major}.${appVersion.minor}.${appVersion.patch + 1}")
+    }
 }
