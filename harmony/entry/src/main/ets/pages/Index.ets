@@ -38,7 +38,7 @@ const NIGHT_BOTTOM_COLOR: string = '#151B2E';
  * 关键时段：数字用与淡金同浓度的淡绿／淡红，色段仍用深一档（淡色在橙底上几乎看不出边界）。
  */
 const COLD_INK_ON_DAY_COLOR: string = '#86E3A6';
-const HOT_INK_ON_DAY_COLOR: string = '#FF9BA1';
+const HOT_INK_ON_DAY_COLOR: string = '#B3261E';
 const COLD_BAND_ON_DAY_COLOR: string = '#2E7D32';
 const HOT_BAND_ON_DAY_COLOR: string = '#B3261E';
 /** 应用在前台时的定位节奏：每分钟一次（桌面卡片是 5 分钟一次）。 */

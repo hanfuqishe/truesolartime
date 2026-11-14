@@ -23,7 +23,7 @@ enum HeroPalette {
 
     /// 白天的数字用与淡金同浓度的淡绿/淡红，深绿/深红压在橙底上发闷。
     static let coldInkOnDay = Color(hex: 0x86E3A6)
-    static let hotInkOnDay = Color(hex: 0xFF9BA1)
+    static let hotInkOnDay = Color(hex: 0xB3261E)
 
     /// 时间轴上的色段与圆点仍用深一档，淡色在橙底上几乎看不出边界。
     static let coldBandOnDay = Color(hex: 0x2E7D32)
