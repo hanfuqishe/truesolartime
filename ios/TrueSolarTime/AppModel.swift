@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var keyTime: TakeTimeSchedule?
     @Published private(set) var districtName: DistrictNames?
     @Published private(set) var keepScreenOn: Bool = false
+    /// 天气取不到时给界面看的说明（成功时为空串）。
+    @Published private(set) var weatherStatus: String = ""
     @Published var message: String?
 
     private let settings = AppSettings()
@@ -48,7 +50,13 @@ final class AppModel: ObservableObject {
 
     private func startClock() {
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            self?.now = Date()
+            guard let self else { return }
+            self.now = Date()
+            WeatherStore.shared.watchdog()
+            let status = self.weather == nil ? WeatherStore.shared.diagnosticsSummary() : ""
+            if status != self.weatherStatus {
+                self.weatherStatus = status
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         clockTimer = timer

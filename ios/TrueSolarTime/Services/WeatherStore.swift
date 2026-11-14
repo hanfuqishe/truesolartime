@@ -36,6 +36,8 @@ final class WeatherStore {
 
     private var inFlight = false
     private var retriedOnce = false
+    /// 本次请求开始时刻，用于「已 N 秒」与卡死看门狗。
+    private var attemptStartedAt: Date?
 
     /// 最近一次失败原因（成功时为 nil）。
     private(set) var lastErrorDescription: String?
@@ -75,6 +77,7 @@ final class WeatherStore {
 
         inFlight = true
         retriedOnce = false
+        attemptStartedAt = Date()
         markAttempt()
         fetch(url: url, place: place, completion: completion)
     }
@@ -164,6 +167,18 @@ final class WeatherStore {
         }
     }
 
+    /// 每秒由界面调用一次：请求卡住超过 40 秒就复位，避免 `inFlight` 永远为 true、
+    /// 后续刷新全被 `guard !inFlight` 挡掉（真机上出现过一直停在「正在请求…」的现象）。
+    func watchdog() {
+        guard inFlight, let startedAt = attemptStartedAt else { return }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed > 40 else { return }
+        inFlight = false
+        attemptStartedAt = nil
+        lastErrorDescription = "请求无响应（已等 \(Int(elapsed)) 秒）"
+        lastFinishedAt = Date()
+    }
+
     /// 设置页「诊断」用的一行描述。
     func diagnosticsSummary() -> String {
         let now = Date()
@@ -179,7 +194,14 @@ final class WeatherStore {
         if let lastErrorDescription {
             return "无数据：\(lastErrorDescription)"
         }
-        return inFlight ? "正在请求…" : "无数据：尚未请求成功"
+        if inFlight {
+            if let startedAt = attemptStartedAt {
+                let elapsed = Int(Date().timeIntervalSince(startedAt))
+                return "正在请求…（已 \(elapsed) 秒）"
+            }
+            return "正在请求…"
+        }
+        return "无数据：尚未请求成功"
     }
 
     private func decodeHourly() -> [WeatherHour] {

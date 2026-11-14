@@ -23,6 +23,8 @@ struct HeroCard: View {
     let keyHighlight: Color?
     /// 「39.9042°N 116.4074°E」，由调用方算好传入。
     let coordinates: String
+    /// 天气取不到时的说明（例如「请求超时（15 秒）」）；有天气数据时为 nil。
+    let weatherNote: String?
 
     /// 卡片宽度：先用「屏宽 − 左右内边距」当首帧估值，随后由 GeometryReader 量出的真实值覆盖。
     /// 若初值给 0，第一帧会按极小宽度算出超大字号，看起来就是卡片被撑出屏幕。
@@ -152,6 +154,8 @@ struct HeroCard: View {
             if let range = WeatherParsing.temperatureRange(weather.hourly, date: Date(), timeZone: .current) {
                 parts.append("\(range.low)~\(range.high)°")
             }
+        } else if let weatherNote, !weatherNote.isEmpty {
+            parts.append(weatherNote)
         } else {
             parts.append("--")
         }

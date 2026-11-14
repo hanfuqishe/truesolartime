@@ -25,7 +25,8 @@ struct ContentView: View {
                         coordinates: TimeFormat.coordinates(
                             latitude: model.place.latitude,
                             longitude: model.place.longitude
-                        )
+                        ),
+                        weatherNote: model.weather == nil ? model.weatherStatus : nil
                     )
 
                     KeyTimeCard(
