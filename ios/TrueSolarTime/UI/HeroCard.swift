@@ -326,6 +326,12 @@ struct HourlyRow: View {
     let isDay: Bool
 
     private let slots = 6
+    /// 天气图标的固定槽高。
+    ///
+    /// 不同 SF Symbol（太阳/云/雨）的自带高度并不一致，不给固定高度时
+    /// 下面那行温度会被图标顶得高低不齐 —— 所以三行都钉在统一高度上。
+    private let iconSlotHeight: CGFloat = 22
+    private let labelSlotHeight: CGFloat = 13
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -335,13 +341,16 @@ struct HourlyRow: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(1)
+                        .frame(height: labelSlotHeight)
                     Image(systemName: point.condition.symbol(isDay: isDayOfHour(point)))
                         .font(.system(size: 20))
                         .symbolRenderingMode(.multicolor)
+                        .frame(height: iconSlotHeight)
                     Text("\(point.temperatureC)°")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.75))
                         .monospacedDigit()
+                        .frame(height: labelSlotHeight)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -352,13 +361,15 @@ struct HourlyRow: View {
                         Text(index == 0 ? "现在" : "--")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
+                            .frame(height: labelSlotHeight)
                         Text("--")
                             .font(.system(size: 16))
                             .foregroundStyle(.white.opacity(0.45))
-                            .frame(height: 22)
+                            .frame(height: iconSlotHeight)
                         Text("--")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
+                            .frame(height: labelSlotHeight)
                     }
                     .frame(maxWidth: .infinity)
                 }
