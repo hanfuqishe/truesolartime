@@ -23,24 +23,46 @@ final class DistrictStore {
     private let defaults = UserDefaults.standard
     private let geocoder = CLGeocoder()
     private var inFlight = false
+    /// 请求代号：切换城市时自增，用来丢弃迟到的旧结果。
+    private var generation = 0
 
     private init() {}
 
-    func cachedNames() -> DistrictNames? {
+    /// 读缓存的地名。
+    ///
+    /// 传入 `place` 时会核对缓存对应的坐标：换了城市（相距超过 5 km）就当作没有缓存，
+    /// 避免切到纽约后卡片上还挂着北京上一次的「北京市东城区」。
+    func cachedNames(for place: Place? = nil) -> DistrictNames? {
         guard let full = defaults.string(forKey: Key.full) else { return nil }
+        if let place, defaults.object(forKey: Key.latitude) != nil {
+            let lat = defaults.double(forKey: Key.latitude)
+            let lon = defaults.double(forKey: Key.longitude)
+            let moved = DistrictNaming.distanceKm(lat, lon, place.latitude, place.longitude)
+            if moved > DistrictNaming.moveThresholdKm { return nil }
+        }
         let short = defaults.string(forKey: Key.short) ?? full
         return DistrictNames(full: full, short: short, countryCode: defaults.string(forKey: Key.country))
     }
 
     /// 需要且允许时反查一次；成功后在主线程回调。
+    ///
+    /// 连续切换城市时：旧请求会被取消，并用「代号」把迟到的旧结果丢掉，
+    /// 否则会出现「切到纽约，卡片却回填北京的地名」。
     func requestRefresh(place: Place, completion: ((DistrictNames) -> Void)? = nil) {
-        guard !inFlight, !geocoder.isGeocoding else { return }
         guard needsRefresh(place) else { return }
+
+        if inFlight {
+            geocoder.cancelGeocode()
+            inFlight = false
+        }
+        generation += 1
+        let currentGeneration = generation
 
         inFlight = true
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
         geocoder.reverseGeocodeLocation(location, preferredLocale: AppLanguage.geocoderLocale) { [weak self] placemarks, _ in
             guard let self else { return }
+            guard currentGeneration == self.generation else { return }
             self.inFlight = false
             guard let mark = placemarks?.first else { return }
             guard let names = Self.names(from: mark) else { return }

@@ -32,9 +32,9 @@ final class AppModel: ObservableObject {
         remindersEnabled = settings.remindersEnabled
         keyTimeChimeEnabled = settings.keyTimeChimeEnabled
         mapStyle = settings.mapStyle
-        weather = WeatherStore.shared.cached()
+        weather = WeatherStore.shared.cached(for: settings.place)
         keyTime = KeyTimeStore.shared.schedule()
-        districtName = DistrictStore.shared.cachedNames()
+        districtName = DistrictStore.shared.cachedNames(for: settings.place)
         keepScreenOn = settings.keepScreenOn
         applyKeepScreenOn()
         startClock()
@@ -137,8 +137,18 @@ final class AppModel: ObservableObject {
         settings.place = newPlace
         place = newPlace
 
-        let moved = abs(newPlace.longitude - previous.longitude) > 0.01 ||
-            abs(newPlace.latitude - previous.latitude) > 0.01
+        let moved = DistrictNaming.distanceKm(
+            previous.latitude, previous.longitude,
+            newPlace.latitude, newPlace.longitude
+        ) > DistrictNaming.moveThresholdKm
+
+        if moved {
+            // 换了城市：立刻把上一个地点的地名/天气撤掉，别让卡片挂着旧地址。
+            // 新地址查到之前，`districtName` 为 nil，卡片退回显示城市名（preset 的 label）。
+            districtName = DistrictStore.shared.cachedNames(for: newPlace)
+            weather = WeatherStore.shared.cached(for: newPlace)
+        }
+
         if moved || previous.source != newPlace.source {
             refreshData()
             rescheduleReminders()

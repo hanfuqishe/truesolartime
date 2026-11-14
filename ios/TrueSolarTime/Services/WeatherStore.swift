@@ -47,8 +47,17 @@ final class WeatherStore {
     private init() {}
 
     /// 缓存里的快照；超过 24 小时才返回 nil。
-    func cached() -> WeatherSnapshot? {
+    ///
+    /// 传入 `place` 时会核对缓存对应的坐标：换城市（> 5 km）就当没有缓存，
+    /// 免得切到别的城市后还显示上一个城市的气温。
+    func cached(for place: Place? = nil) -> WeatherSnapshot? {
         guard defaults.object(forKey: Key.temperature) != nil else { return nil }
+        if let place, defaults.object(forKey: Key.latitude) != nil {
+            let lat = defaults.double(forKey: Key.latitude)
+            let lon = defaults.double(forKey: Key.longitude)
+            let moved = DistrictNaming.distanceKm(lat, lon, place.latitude, place.longitude)
+            if moved > DistrictNaming.moveThresholdKm { return nil }
+        }
         let age = Date().timeIntervalSince1970 - defaults.double(forKey: Key.fetchedAt)
         guard age >= 0, age <= hourlyMaxAgeSeconds else { return nil }
         return WeatherSnapshot(
