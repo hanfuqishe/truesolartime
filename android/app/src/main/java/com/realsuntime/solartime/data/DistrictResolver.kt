@@ -1,5 +1,6 @@
 package com.realsuntime.solartime.data
 
+import com.realsuntime.solartime.solar.SolarTimeMath
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
@@ -112,6 +113,25 @@ object DistrictResolver {
     fun cachedName(context: Context): String? = cachedNames(context)?.full
 
     /**
+     * 缓存里的区划名，但**只在与 [place] 还算同一个地方时才认**（[MOVE_THRESHOLD_KM] 以内）。
+     *
+     * 换个城市后、新名字还没查回来（或这次查询失败）时返回 null，界面就不显示旧城市，
+     * 避免「切到纽约，卡片还写着上海市黄浦区」。
+     */
+    fun cachedNameFor(context: Context, place: Place): String? = cachedNamesFor(context, place)?.full
+
+    /** 同 [cachedNameFor]，但要完整名字/短名/国家码。 */
+    fun cachedNamesFor(context: Context, place: Place): DistrictNames? {
+        val names = cachedNames(context) ?: return null
+        val prefs = prefs(context)
+        val lat = prefs.getFloat(KEY_LAT, Float.NaN).toDouble()
+        val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
+        if (lat.isNaN() || lon.isNaN()) return null
+        val moved = CityIndex.distanceKm(lat, lon, place.latitude, place.longitude)
+        return if (moved >= 0 && moved <= MOVE_THRESHOLD_KM) names else null
+    }
+
+    /**
      * 缓存下来的国家码，但**只在与 [place] 还算同一个地方时才认**。
      *
      * 名字沿用旧值只是显示问题（下一个查询回来就换掉），国家码却是拿来算时区的：从上海手工
@@ -162,7 +182,10 @@ object DistrictResolver {
             val app = context.applicationContext
             // 兜底：任何一步卡住（后台线程没回调）都不要让 inFlight 一直是 true。
             handler.postDelayed({ inFlight.set(false) }, LOOKUP_TIMEOUT_MILLIS)
-            if (prefersChineseNames(app)) {
+            // 中文界面优先高德（区县名更细），但高德只认真实中国境内的坐标；
+            // 境外城市用它必然查不到，于是永远不显示区划名 —— 这种情况改走 OSM。
+            val inChina = SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+            if (prefersChineseNames(app) && inChina) {
                 if (!startAmap(app, place)) inFlight.set(false)
             } else {
                 startNominatim(app, place)

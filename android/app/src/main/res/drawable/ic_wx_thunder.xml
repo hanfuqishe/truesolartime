@@ -4,11 +4,20 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- 左上角的太阳与光芒，云会盖住一部分，形成「雷阵雨」的感觉 -->
+    <path
+        android:pathData="M13.80,6.20L15.60,6.20M12.39,9.59L13.67,10.87M9.00,11.00L9.00,12.80M5.61,9.59L4.33,10.87M4.20,6.20L2.40,6.20M5.61,2.81L4.33,1.53M9.00,1.40L9.00,-0.40M12.39,2.81L13.67,1.53"
+        android:strokeColor="#FFC65C"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.2" />
+    <path
+        android:fillColor="#FFC65C"
+        android:pathData="M5.2,6.2a3.8,3.8 0 1,0 7.6,0a3.8,3.8 0 1,0 -7.6,0" />
     <group
-        android:scaleX="0.8200"
-        android:scaleY="0.8200"
-        android:translateX="2.00"
-        android:translateY="-3.78">
+        android:scaleX="0.7600"
+        android:scaleY="0.7600"
+        android:translateX="3.20"
+        android:translateY="-1.40">
         <path
             android:fillColor="#C4CCDB"
             android:pathData="M19.35,10.04C18.67,6.59 15.64,4 12,4 9.11,4 6.6,5.64 5.35,8.04 2.34,8.36 0,10.91 0,14c0,3.31 2.69,6 6,6h13c2.76,0 5,-2.24 5,-5 0,-2.64 -2.05,-4.78 -4.65,-4.96z" />

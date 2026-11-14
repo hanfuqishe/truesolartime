@@ -4,14 +4,10 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- 无数据时的占位：一条短横线（不用问号，避免看起来像「出错」） -->
     <path
-        android:pathData="M9.6,9.4a2.4,2.4 0 1,1 3.4,2.2c-0.8,0.4 -1.0,1.1 -1.0,1.9"
+        android:pathData="M7.5,12L16.5,12"
         android:strokeColor="#AEB8C6"
         android:strokeLineCap="round"
-        android:strokeWidth="1.7" />
-    <path
-        android:pathData="M12,16.6L12,16.7"
-        android:strokeColor="#AEB8C6"
-        android:strokeLineCap="round"
-        android:strokeWidth="2.0" />
+        android:strokeWidth="1.8" />
 </vector>

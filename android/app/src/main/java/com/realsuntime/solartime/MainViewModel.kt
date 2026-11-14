@@ -61,7 +61,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
     /** 反查到的行政区划（如「上海市宝山区」）；没有时首页仍显示「当地真太阳时」。 */
-    private val _districtName = MutableStateFlow(DistrictResolver.cachedName(application))
+    private val _districtName = MutableStateFlow(
+        DistrictResolver.cachedNameFor(application, settings.place),
+    )
     val districtName: StateFlow<String?> = _districtName.asStateFlow()
 
     /**
@@ -86,7 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 _now.value = Instant.now()
                 // 区县反查在后台跑完会写缓存；这里读的是内存里的 prefs，代价可忽略。
-                _districtName.value = DistrictResolver.cachedName(application)
+                _districtName.value = DistrictResolver.cachedNameFor(application, _place.value)
                 _zoneOffsetSeconds.value = LocalZone.offsetSeconds(application, _place.value, _now.value)
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
@@ -228,6 +230,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val previous = _place.value
         settings.place = place
         _place.value = place
+        // 换地点后旧区划名立即失效：查不到新名字之前，卡片上不显示城市
+        _districtName.value = DistrictResolver.cachedNameFor(getApplication(), place)
         // 换地点后时区可能整个变掉（例如从上海切到纽约），当拍就跟上，不必等下一秒的 tick。
         _zoneOffsetSeconds.value = LocalZone.offsetSeconds(getApplication(), place, Instant.now())
 
