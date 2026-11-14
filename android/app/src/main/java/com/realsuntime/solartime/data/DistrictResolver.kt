@@ -221,13 +221,20 @@ object DistrictResolver {
     /** 非中文界面：查 OSM 的本地语言地名，失败再退回高德的中文名。 */
     private fun startNominatim(app: Context, place: Place) {
         ioExecutor.execute {
+            // 境外网络偶发抖动：失败就再试一次，仍失败才回退高德/留空
             val names = runCatching { queryNominatim(place, currentLanguage(app)) }.getOrNull()
+                ?: runCatching { queryNominatim(place, currentLanguage(app)) }.getOrNull()
             handler.post {
                 if (names != null) {
                     save(app, place, names)
                     WidgetUpdater.refreshAll(app)
                     inFlight.set(false)
-                } else if (!startAmap(app, place)) {
+                    return@post
+                }
+                // 境外坐标绝不能回退到高德：它对国外点会返回毫不相干的中国地名
+                // （实测纽约坐标拿到了「哈尔滨市松北区」）。中国境内才走高德兜底。
+                val inChina = SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+                if (!inChina || !startAmap(app, place)) {
                     inFlight.set(false)
                 }
             }
@@ -242,15 +249,16 @@ object DistrictResolver {
         val url = Uri.parse(NOMINATIM_URL).buildUpon()
             .appendQueryParameter("format", "jsonv2")
             .appendQueryParameter("addressdetails", "1")
-            .appendQueryParameter("zoom", "14")
+            // zoom=18：给到街区级，境外也能取到「区」这一层；zoom=14 时只有城市级
+            .appendQueryParameter("zoom", "18")
             .appendQueryParameter("lat", "%.6f".format(Locale.US, place.latitude))
             .appendQueryParameter("lon", "%.6f".format(Locale.US, place.longitude))
             .appendQueryParameter("accept-language", language)
             .build()
         val connection = (URL(url.toString()).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 8_000
-            readTimeout = 8_000
+            connectTimeout = 12_000
+            readTimeout = 12_000
             setRequestProperty("User-Agent", USER_AGENT)
             setRequestProperty("Accept", "application/json")
         }
@@ -271,7 +279,7 @@ object DistrictResolver {
         return listOf(
             // 「区县」优先：中国的区/县在 OSM 里可能记在 city_district、district 或 borough 上。
             field("city_district") ?: field("district") ?: field("borough"),
-            field("suburb") ?: field("neighbourhood"),
+            field("suburb") ?: field("quarter") ?: field("neighbourhood"),
             field("city") ?: field("town") ?: field("village") ?: field("municipality"),
             field("county"),
             field("state") ?: field("province") ?: field("region"),
