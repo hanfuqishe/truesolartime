@@ -123,13 +123,33 @@ final class AppModel: ObservableObject {
 
     // MARK: - 位置
 
-    func applyManualPlace(latitude: Double, longitude: Double, label: String) {
+    /// 手动指定坐标。
+    ///
+    /// `countryCode` 一定要带上：内置城市都已知国家，靠它直接查 `ZoneTable` 得到法定时区；
+    /// 丢了它就只能按经度近似（德里 77.2°E 会被算成 UTC+5，正确是 UTC+5:30）。
+    func applyManualPlace(
+        latitude: Double,
+        longitude: Double,
+        label: String,
+        countryCode: String? = nil
+    ) {
         stopGpsTracking()
-        updatePlace(Place(latitude: latitude, longitude: longitude, source: .manual, label: label))
+        updatePlace(Place(
+            latitude: latitude,
+            longitude: longitude,
+            source: .manual,
+            label: label,
+            countryCode: countryCode
+        ))
     }
 
     func usePreset(_ preset: Place) {
-        applyManualPlace(latitude: preset.latitude, longitude: preset.longitude, label: preset.label)
+        applyManualPlace(
+            latitude: preset.latitude,
+            longitude: preset.longitude,
+            label: preset.label,
+            countryCode: preset.countryCode
+        )
     }
 
     private func updatePlace(_ newPlace: Place) {

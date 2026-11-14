@@ -304,6 +304,27 @@ expect("孟买 UTC 标签 UTC+5:30", mumbaiZone.utcLabel == "UTC+5:30", "得到 
 
 // MARK: - 内置城市列表的时区（含境外城市，供真机切换验证）
 
+// 回归：预设城市一定要把国家码带进 Place。
+// 之前在 `usePreset` 里只传了经纬度和名字，国家码丢了，德里就被按经度近似算成 UTC+5。
+if let delhi = Place.presets.first(where: { $0.label == "新德里" }) {
+    let withoutCountry = Place(
+        latitude: delhi.latitude,
+        longitude: delhi.longitude,
+        source: .manual,
+        label: delhi.label
+    )
+    expect(
+        "丢掉国家码会退化成 UTC+5（历史 bug）",
+        TimeFormat.utcOffsetLabel(seconds: withoutCountry.standardOffsetSeconds) == "UTC+5",
+        "得到 \(TimeFormat.utcOffsetLabel(seconds: withoutCountry.standardOffsetSeconds))"
+    )
+    expect(
+        "预设自带的 countryCode 让德里是 UTC+5:30",
+        TimeFormat.utcOffsetLabel(seconds: delhi.standardOffsetSeconds) == "UTC+5:30",
+        "得到 \(TimeFormat.utcOffsetLabel(seconds: delhi.standardOffsetSeconds))"
+    )
+}
+
 let expectedPresets: [(String, Int)] = [
     ("北京", 28_800), ("上海", 28_800), ("广州", 28_800), ("深圳", 28_800),
     ("成都", 28_800), ("西安", 28_800), ("哈尔滨", 28_800), ("乌鲁木齐", 28_800),
