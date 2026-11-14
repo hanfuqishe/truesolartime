@@ -1,7 +1,8 @@
 name: iOS Core 数值自检
 
 # 手动触发，或在改到 iOS Core/脚本时跑一次。
-# 只用 `swiftc` 编译 Core + Scripts/main.swift，不需要 Xcode、也不打包，几十秒就能出结果。
+# 只用 `swiftc` 编译 Core + Scripts/main.swift，不打包，约 40 秒出结果；
+# 说明：它跑在 macos-15 上（swiftc 由 Xcode 提供），**公开仓库的 macOS 分钟免费**，不占额度。
 on:
   workflow_dispatch:
   push:

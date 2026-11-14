@@ -1,7 +1,7 @@
 name: iOS 未签名包
 
 # **只手动触发**：不随推送运行，避免每次改 iOS 都跑一遍 macOS runner（占并发、也吵）。
-# 日常改动的编译验证交给 `.github/workflows/ios-core-checks.yml`（Linux runner，几十秒）。
+# 日常改动的编译验证交给 `.github/workflows/ios-core-checks.yml`（约 40 秒；公开仓库的 macOS 分钟免费）。
 # 用法：GitHub → Actions → 「iOS 未签名包」→ Run workflow → 下载 artifact 里的 ipa，
 # 在 Windows 上用 Sideloadly / AltStore 配自己的 Apple ID 签名装到 iPhone。
 on:
