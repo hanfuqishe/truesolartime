@@ -24,8 +24,9 @@ struct HeroCard: View {
     /// 「39.9042°N 116.4074°E」，由调用方算好传入。
     let coordinates: String
 
-    /// 卡片宽度（由 GeometryReader 量出来，用于反推时间字号）。
-    @State private var cardWidth: CGFloat = 0
+    /// 卡片宽度：先用「屏宽 − 左右内边距」当首帧估值，随后由 GeometryReader 量出的真实值覆盖。
+    /// 若初值给 0，第一帧会按极小宽度算出超大字号，看起来就是卡片被撑出屏幕。
+    @State private var cardWidth: CGFloat = UIScreen.main.bounds.width - 40
 
     private let cardPadding: CGFloat = 18
     private let columnGap: CGFloat = 12
@@ -192,16 +193,29 @@ enum HeroClockMetrics {
     private static let probe: CGFloat = 100
 
     private static let mainProbeWidth: CGFloat = {
-        let font = UIFont.monospacedDigitSystemFont(ofSize: probe, weight: .medium)
+        let font = probeFont(size: probe)
         return ("00:00" as NSString).size(withAttributes: [.font: font]).width
     }()
 
     private static let secondsProbeWidth: CGFloat = {
-        let font = UIFont.monospacedDigitSystemFont(ofSize: probe / 2, weight: .medium)
+        let font = probeFont(size: probe / 2)
         return (":00" as NSString).size(withAttributes: [.font: font]).width
     }()
 
-    private static let gapWidth: CGFloat = 1
+    private static let gapWidth: CGFloat = 0
+
+    /// 探针字体必须和 SwiftUI 里 `.system(size:weight:design:.rounded).monospacedDigit()` 一致，
+    /// 否则量出来的比例会偏小、字号偏大，最终把文字顶出卡片。
+    /// （`kNumberSpacingType = 6`、`kMonospacedNumbersSelector = 0`，用字面量避免多引一个 CoreText。）
+    static func probeFont(size: CGFloat) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: .medium)
+        let rounded = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        let features: [[UIFontDescriptor.FeatureKey: Int]] = [
+            [.type: 6, .selector: 0]
+        ]
+        let described = rounded.addingAttributes([.featureSettings: features])
+        return UIFont(descriptor: described, size: size)
+    }
 
     /// 每 1pt 字号占多少宽度。
     static var widthRatio: CGFloat {
@@ -212,7 +226,7 @@ enum HeroClockMetrics {
     static func mainSize(availableWidth: CGFloat) -> CGFloat {
         guard availableWidth > 0, widthRatio > 0 else { return 42 }
         let fitted = availableWidth / widthRatio * 0.97
-        return min(max(fitted, 18), 80)
+        return min(max(fitted, 16), 68)
     }
 }
 
@@ -228,23 +242,26 @@ struct FittingClock: View {
         let mainSize = HeroClockMetrics.mainSize(availableWidth: availableWidth)
         let secondsSize = mainSize / 2
 
-        HStack(alignment: .firstTextBaseline, spacing: 1) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(main)
                 .font(.system(size: mainSize, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(color)
                 .lineLimit(1)
-                .fixedSize()
+                .minimumScaleFactor(0.4)
+                .allowsTightening(true)
             Text(":" + seconds)
                 .font(.system(size: secondsSize, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(color.opacity(0.85))
                 .lineLimit(1)
-                .fixedSize()
+                .minimumScaleFactor(0.4)
+                .allowsTightening(true)
                 .baselineOffset(mainSize * 0.06)
         }
-        .frame(height: mainSize * 1.25, alignment: .bottom)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // 关键：宽度必须由外层给定。用 `fixedSize()` + intrinsic 宽度会让卡片被内容撑到屏幕外。
+        .frame(width: availableWidth, alignment: .leading)
+        .frame(height: mainSize * 1.18, alignment: .bottom)
     }
 }
 
