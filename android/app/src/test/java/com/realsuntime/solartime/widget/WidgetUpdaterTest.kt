@@ -44,116 +44,134 @@ class WidgetUpdaterTest {
         )
     }
 
+    // ---- 顶部标签行：地名四档（与首页 SmallRowLayout.cityRowTier 一一对应）----
+    // 统一取值：档 0 上限 12 个字宽（em）、档 1 上限 17、档 2 上限 21；再宽就是档 3。
+    // 档 0 贴右 → 档 1 居中（收起「真太阳时」）→ 档 2 贴左（再收起 UTC）→ 档 3 同档 2 + 省略号。
+
+    /** n 个字宽的纯汉字地名：每个汉字正好 1 em，用来卡边界值。 */
+    private fun cjkEm(n: Int): String = "汉".repeat(n)
+
+    private fun planFor(
+        full: String,
+        short: String = full,
+        tier0: Float = 12f,
+        tier1: Float = 17f,
+        tier2: Float = 21f,
+    ) = WidgetUpdater.planCityLabel(
+        DistrictResolver.DistrictNames(full, short),
+        fallback = "",
+        maxTier0 = tier0,
+        maxTier1 = tier1,
+        maxTier2 = tier2,
+    )
+
     @Test
-    fun keepsLabelsWhenTheNameFitsTheColumn() {
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("上海市宝山区", "宝山区"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
-        assertEquals("上海市宝山区", plan.text)
-        assertFalse(plan.wide)
-        assertTrue(plan.showCivilLabel)
+    fun cityTextEmCountsFullWidthAsOneAndLatinAsNarrower() {
+        // 汉字 = 1 个字宽，拉丁字母 = 0.55，空格 = 0.3
+        assertEquals(4f, WidgetUpdater.cityTextEm("真太阳时"), 0.001f)
+        assertEquals(2.2f, WidgetUpdater.cityTextEm("UTC+"), 0.001f)
+        // 24 个拉丁字符 + 2 个汉字 + 4 个空格 ≈ 16.4 个字宽：
+        // 以拉丁字母为主的长名字比同字数的汉字串窄得多，分档看宽度而不是字符数。
+        val ny = WidgetUpdater.cityTextEm("Manhattan, 纽约, New York County")
+        assertEquals(16.4f, ny, 0.01f)
+        assertTrue(ny < WidgetUpdater.cityTextEm(cjkEm(22)))
+    }
+
+    @Test
+    fun cityRowBudgetsFollowTheSameGeometryAsTheHeroCard() {
+        // 400dp 的卡片、常规内边距 14dp：整行 372dp = 33.82 个字宽，左右两半各 16.91。
+        val budgets = WidgetUpdater.cityRowBudgets(400f, compact = false)
+        assertEquals(13.09f, budgets.tier0, 0.02f)
+        assertEquals(24.55f, budgets.tier1, 0.02f)
+        assertEquals(28.36f, budgets.tier2, 0.02f)
+        // 档 0 的上限确实来自「左半」：比档 1 窄得多，同一段地名会先在档 0 放不下。
+        assertTrue(budgets.tier0 < budgets.tier1)
+        assertTrue(budgets.tier1 < budgets.tier2)
+        // 极窄的卡片连右半都装不下「真太阳时 + 时辰」：档 0 不可能成立。
+        assertTrue(WidgetUpdater.cityRowBudgets(120f, compact = false).tier0 < 0f)
+        // 没量到宽度时按默认 5x2 卡片宽估算，给出的上限仍然可用。
+        assertTrue(WidgetUpdater.cityRowBudgets(0f, compact = true).tier1 > 0f)
+    }
+
+    @Test
+    fun tierZeroKeepsBothLabelsAndAlignsRight() {
+        val plan = planFor("上海市黄浦区")
+        assertEquals("上海市黄浦区", plan.text)
+        assertEquals(0, plan.tier)
+        assertTrue(plan.showUtc)
         assertTrue(plan.showSolarLabel)
-    }
-
-    @Test
-    fun givesUpTheCivilLabelFirst() {
-        // 12 字：左栏放不下（10），让出「标准时间」后（14）放得下
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州", "克孜勒苏柯尔克孜自治州"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
-        assertEquals("克孜勒苏柯尔克孜自治州", plan.text)
-        assertFalse(plan.wide)
-        assertFalse(plan.showCivilLabel)
-        assertTrue(plan.showSolarLabel)
-    }
-
-    @Test
-    fun spansBothColumnsWhenStillTooLong() {
-        // 15 字：让出「标准时间」也不够，连「真太阳时」一起让出，改成跨栏一行
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州阿图什市", "阿图什市"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
-        assertEquals("克孜勒苏柯尔克孜自治州阿图什市", plan.text)
-        assertTrue(plan.wide)
-        assertFalse(plan.showCivilLabel)
-        assertFalse(plan.showSolarLabel)
-    }
-
-    @Test
-    fun fallsBackToDistrictWhenEvenTheWideRowOverflows() {
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("某个特别特别特别长的自治州某某自治县", "某某自治县"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 12,
-        )
-        assertEquals("某某自治县", plan.text)
-        assertTrue(plan.wide)
-    }
-
-    // ---- 对齐随档位变化（与首页三级退化一致：贴右 → 居中 → 靠左）----
-
-    @Test
-    fun rightAlignsTheCityWhileBothLabelsFit() {
-        // 0 级：左栏里还能同时显示「标准时间」与「真太阳时」→ 贴右
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("上海市宝山区", "宝山区"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
         assertEquals(WidgetUpdater.CityAlign.END, plan.align)
     }
 
     @Test
-    fun centersTheCityWhenItTakesTheCivilLabelSlot() {
-        // 1 级：让出「标准时间」标签的位置，仍在这一栏里 → 居中
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州", "克孜勒苏柯尔克孜自治州"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
-        assertFalse(plan.showCivilLabel)
+    fun tierZeroAtExactFitBoundary() {
+        // 正好 12 个字宽：UTC + 地区 + 真太阳时 + 时辰 都还放得下
+        assertEquals(0, planFor(cjkEm(12)).tier)
+    }
+
+    @Test
+    fun tierOneJustOverTheTierZeroBoundary() {
+        // 13 个字宽：收起「真太阳时」，地区在 UTC 与时辰之间居中（UTC 还在）
+        val plan = planFor(cjkEm(13))
+        assertEquals(1, plan.tier)
+        assertTrue(plan.showUtc)
+        assertFalse(plan.showSolarLabel)
         assertEquals(WidgetUpdater.CityAlign.CENTER, plan.align)
     }
 
     @Test
-    fun leftAlignsTheCityWhenItSpansBothColumns() {
-        // 2 级：跨栏、连「真太阳时」标签也让出 → 靠左
-        val plan = WidgetUpdater.planCityLabel(
-            DistrictResolver.DistrictNames("克孜勒苏柯尔克孜自治州阿图什市", "阿图什市"),
-            fallback = "",
-            maxNarrow = 10,
-            maxNoLabel = 14,
-            maxWide = 30,
-        )
-        assertTrue(plan.wide)
+    fun tierOneAtExactFitBoundary() {
+        assertEquals(1, planFor(cjkEm(17)).tier)
+    }
+
+    @Test
+    fun tierTwoJustOverTheTierOneBoundary() {
+        // 18 个字宽：连 UTC 也收起，地区贴左、时辰仍贴整行最右
+        val plan = planFor(cjkEm(18))
+        assertEquals(2, plan.tier)
+        assertFalse(plan.showUtc)
+        assertFalse(plan.showSolarLabel)
         assertEquals(WidgetUpdater.CityAlign.START, plan.align)
     }
 
     @Test
-    fun keepsBothLabelsForOfflineFallbackNames() {
-        val plan = WidgetUpdater.planCityLabel(null, fallback = "乌鲁木齐", maxNarrow = 10, maxNoLabel = 14, maxWide = 30)
+    fun tierTwoAtExactFitBoundary() {
+        assertEquals(2, planFor(cjkEm(21)).tier)
+    }
+
+    @Test
+    fun tierThreeKeepsTheFullNameAndEllipsizes() {
+        // 22 个字宽：连「地区 + 时辰」都放不下 —— 保持贴左，交给 ellipsize 的省略号，
+        // 不再退成区县短名（与首页档 3 一致）。
+        val long = cjkEm(22)
+        val plan = planFor(long, short = "十九")
+        assertEquals(3, plan.tier)
+        assertEquals(long, plan.text)
+        assertEquals(WidgetUpdater.CityAlign.START, plan.align)
+        assertFalse(plan.showUtc)
+        assertFalse(plan.showSolarLabel)
+    }
+
+    @Test
+    fun latinHeavyNameIsJudgedByWidthNotCharacterCount() {
+        // 29 个字符，但只有约 16.4 个字宽：按宽度是档 1，而不是按字符数（29 字）判成档 3。
+        assertEquals(1, planFor("Manhattan, 纽约, New York County").tier)
+    }
+
+    @Test
+    fun offlineFallbackNameUsesTierZero() {
+        val plan = WidgetUpdater.planCityLabel(
+            null,
+            fallback = "乌鲁木齐",
+            maxTier0 = 12f,
+            maxTier1 = 17f,
+            maxTier2 = 21f,
+        )
         assertEquals("乌鲁木齐", plan.text)
-        assertTrue(plan.showCivilLabel)
+        assertEquals(0, plan.tier)
+        assertTrue(plan.showUtc)
         assertTrue(plan.showSolarLabel)
-        assertFalse(plan.wide)
+        assertEquals(WidgetUpdater.CityAlign.END, plan.align)
     }
 
     @Test

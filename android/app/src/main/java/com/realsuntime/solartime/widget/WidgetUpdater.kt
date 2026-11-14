@@ -126,13 +126,45 @@ object WidgetUpdater {
 
     private const val TEXT_GAP_DP = 2f
 
-    /** 地名那一行：字号与左侧「标准时间」标签的宽度（4 个汉字）估算用。 */
+    /** 地名那一行（顶部标签行）的字号：11dp，与布局里的小字一致。 */
     private const val CITY_TEXT_DP = 11f
-    private const val CITY_LABEL_CHARS = 4
-    private const val CITY_LABEL_GAP_DP = 6f
 
-    /** 跨栏显示地名时，右端要给「时辰」两个字留出的宽度。 */
-    private const val CITY_WIDE_END_RESERVE_DP = 26f
+    /**
+     * 顶部标签行里三段固定文本的估算宽度：`UTC+8`（5 个拉丁字符）、`真太阳时`（4 个汉字）、
+     * 时辰（如「辰时 · 初」：3 个汉字外加一个分隔点与空格）。
+     */
+    private const val UTC_LABEL_DP = 34f
+    private const val SOLAR_LABEL_DP = 4f * CITY_TEXT_DP
+    private const val SHICHEN_DP = 52f
+
+    /** 顶部标签行里相邻两段文本之间的间距（与布局里的 marginStart/End 一致）。 */
+    private const val CITY_LABEL_GAP_DP = 8f
+
+    /** 汉字/全角字符与拉丁字符的字宽比例（单位都是「字号」）。 */
+    private const val FULL_WIDTH_EM = 1.0f
+    private const val LATIN_EM = 0.55f
+    private const val SPACE_EM = 0.30f
+
+    /**
+     * 一段文本大约占几个「字号」宽（1.0 = 一个汉字）。
+     *
+     * RemoteViews 里拿不到文本的真实测量宽度（没有 `TextMeasurer`），只能按字符估：
+     * 汉字/假名等全角字符算 1 个字宽，拉丁字母数字算 0.55，空格算 0.3。
+     * 首页是按实测像素分档的，这里按同一套口径近似 —— 于是「Manhattan, 纽约, New York County」
+     * 这种以拉丁字母为主的长名字不会被 29 个字符误判成最窄的一档。
+     */
+    internal fun cityTextEm(text: String): Float {
+        var em = 0f
+        for (ch in text) {
+            em += when {
+                ch == ' ' -> SPACE_EM
+                // CJK 部首扩展及以后：汉字、假名、韩文、全角标点等
+                ch.code >= 0x2E80 -> FULL_WIDTH_EM
+                else -> LATIN_EM
+            }
+        }
+        return em
+    }
 
     /** 时间轴的左右内边距（与布局里 widget_root 的 paddingStart/End 一致）与高度。 */
     private const val AXIS_PADDING_DP = 14f
@@ -352,32 +384,27 @@ object WidgetUpdater {
             }
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
-            // 左栏标签直接写 UTC 偏移（如「UTC+8」），与首页一致：一个卡片上「标准时间」
-            // 到底是哪个时区的，一眼就能看出来。
+            // 顶部标签行（整行一个逻辑单元）：`UTC+8` 直接写偏移，与首页一致 —— 一张卡片上
+            // 「标准时间」到底是哪个时区的，一眼就能看出来。地区按四档退化（见 planCityLabel），
+            // 时辰在下面的 hasFix 分支里写入。
             setTextViewText(
-                R.id.widget_label_civil,
+                R.id.widget_top_utc,
                 TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds),
             )
             setTextViewText(R.id.widget_civil_date, date)
             val city = cityLabel(context, place, widthDp, compact)
-            // 地名放不下时才用「整行」：那一行里地名在左、时辰在右，右边那一栏的时辰就不必再显示。
-            val wideName = location.hasFix && city.wide
-            setTextViewText(R.id.widget_city, if (location.hasFix && !city.wide) city.text else "")
-            setTextViewText(R.id.widget_city_wide, if (wideName) city.text else "")
-            // 对齐跟着档位走（与首页一致）：0 级贴右 → 1 级居中 → 2 级靠左。
+            setTextViewText(R.id.widget_city, if (location.hasFix) city.text else "")
+            // 对齐跟着档位走（与首页一致）：0 档贴右 → 1 档居中 → 2/3 档贴左；
+            // 档 3 的省略号由布局里的 ellipsize="end" + maxLines="1" 保证。
             // TextView#setGravity 带 @RemotableViewMethod，可以交给宿主进程执行。
             setInt(R.id.widget_city, "setGravity", gravityFor(city.align))
-            setInt(R.id.widget_city_wide, "setGravity", gravityFor(city.align))
-            setViewVisibility(R.id.widget_city, if (location.hasFix && !city.wide) View.VISIBLE else View.GONE)
-            setViewVisibility(R.id.widget_wide_row, if (wideName) View.VISIBLE else View.GONE)
-            setViewVisibility(R.id.widget_solar_shichen, if (wideName) View.GONE else View.VISIBLE)
-            // 名字太长时先把标签的位置让出去，版面才装得下完整地名。
+            // 档 1 起收起「真太阳时」，档 2 起连 UTC 一起收起：把位置让给长地名。
             setViewVisibility(
-                R.id.widget_label_civil,
-                if (city.showCivilLabel) View.VISIBLE else View.GONE,
+                R.id.widget_top_utc,
+                if (city.showUtc) View.VISIBLE else View.GONE,
             )
             setViewVisibility(
-                R.id.widget_label_solar,
+                R.id.widget_top_solar,
                 if (city.showSolarLabel) View.VISIBLE else View.GONE,
             )
             if (location.hasFix) {
@@ -400,11 +427,7 @@ object WidgetUpdater {
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
                 applySolarColor(keyColor ?: defaultSolarColor(isDay), this)
-                setTextViewText(R.id.widget_solar_shichen, shichenText(context, solarSecondsOfDay))
-                setTextViewText(
-                    R.id.widget_city_wide_shichen,
-                    shichenText(context, solarSecondsOfDay),
-                )
+                setTextViewText(R.id.widget_top_shichen, shichenText(context, solarSecondsOfDay))
                 setTextViewText(
                     R.id.widget_coordinates,
                     TimeText.coordinates(context, place.latitude, place.longitude),
@@ -415,7 +438,7 @@ object WidgetUpdater {
                 setViewVisibility(R.id.widget_solar_colon, View.GONE)
                 setViewVisibility(R.id.widget_solar_sec, View.GONE)
                 applySolarColor(defaultSolarColor(isDay), this)
-                setTextViewText(R.id.widget_solar_shichen, "")
+                setTextViewText(R.id.widget_top_shichen, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
             bindSunRow(context, place, now, zone, showSunRow && location.hasFix, this)
@@ -518,7 +541,7 @@ object WidgetUpdater {
     }
 
     /**
-     * 那一行能显示的地名：名字越长，依次让出「标准时间」「真太阳时」标签的位置，
+     * 那一行能显示的地名：名字越长，依次让出「真太阳时」「UTC」的位置，
      * 而不是把名字截成「克孜勒苏柯尔克孜自治…」。
      */
     private fun cityLabel(context: Context, place: Place, widthDp: Int, compact: Boolean): CityLabelPlan {
@@ -536,21 +559,46 @@ object WidgetUpdater {
         // 换城市后立刻失效，绝不拿上一个城市的地名凑数。
         val names = DistrictResolver.cachedNamesFor(context, place)
         val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
-        val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
-        val columnDp = (totalWidthDp - chromeDp) / 2f
+        val budgets = cityRowBudgets(totalWidthDp, compact)
+        return planCityLabel(names, fallback, budgets.tier0, budgets.tier1, budgets.tier2)
+    }
+
+    /**
+     * 顶部标签行留给地名的宽度上限（单位：字号 em，1.0 = 一个汉字宽），三档一一对应首页
+     * `SmallRowLayout.cityRowTier` 的判定：
+     *
+     * - [tier0]：档 0 —— 与首页同一套几何，地区要能塞进**左半**（整行一半减去 UTC 与间距）。
+     *   右半连「真太阳时 + 时辰」都装不下时档 0 不可能成立，这里返回负数，让所有地名退到档 1。
+     * - [tier1]：收起「真太阳时」后，UTC + 地区 + 时辰 装进整行。
+     * - [tier2]：再收起 UTC，地区 + 时辰 装进整行（再宽就是档 3：贴左 + 省略号）。
+     */
+    internal data class CityRowBudgets(val tier0: Float, val tier1: Float, val tier2: Float)
+
+    internal fun cityRowBudgets(widthDp: Float, compact: Boolean): CityRowBudgets {
+        val totalWidthDp = if (widthDp > 0f) widthDp else DEFAULT_WIDGET_WIDTH_DP
         val paddingDp = if (compact) 10f else 14f
-        val maxNarrow = ((columnDp - CITY_LABEL_CHARS * CITY_TEXT_DP - CITY_LABEL_GAP_DP) / CITY_TEXT_DP).toInt()
-        val maxNoLabel = ((columnDp - CITY_LABEL_GAP_DP) / CITY_TEXT_DP).toInt()
-        // 跨栏时可用的宽度：整条轴减去左右内边距，再给右端的「时辰」留出位置。
-        val maxWide = ((totalWidthDp - paddingDp * 2f - CITY_WIDE_END_RESERVE_DP) / CITY_TEXT_DP).toInt()
-        return planCityLabel(names, fallback, maxNarrow, maxNoLabel, maxWide)
+        // 整行可用宽度：卡片宽度减去左右内边距（顶行横跨整行，不再按栏宽算），
+        // 再换算成「字号」数（1.0 = 一个汉字宽）。
+        val rowEm = (totalWidthDp - paddingDp * 2f) / CITY_TEXT_DP
+        val utcEm = UTC_LABEL_DP / CITY_TEXT_DP
+        val solarLabelEm = SOLAR_LABEL_DP / CITY_TEXT_DP
+        val shichenEm = SHICHEN_DP / CITY_TEXT_DP
+        val gapEm = CITY_LABEL_GAP_DP / CITY_TEXT_DP
+        val halfEm = rowEm / 2f
+        // 档 0 要求右半装得下「真太阳时 + 时辰」，与首页两半等宽一致。
+        val rightHalfFits = solarLabelEm + shichenEm + gapEm <= halfEm
+        return CityRowBudgets(
+            tier0 = if (rightHalfFits) halfEm - utcEm - gapEm else -1f,
+            tier1 = rowEm - utcEm - shichenEm - 2f * gapEm,
+            tier2 = rowEm - shichenEm - gapEm,
+        )
     }
 
     /**
      * 地名在卡片上怎么水平对齐：地址越长、让出的东西越多，对齐就越往左走。
      *
-     * 与首页大卡片的三级退化一一对应（`SmallRowLayout.cityRowTier`）：
-     * 0 级贴右、1 级居中、2 级靠左。
+     * 与首页大卡片顶部那一行的四档一一对应（`SmallRowLayout.cityRowTier`）：
+     * 档 0 贴右、档 1 居中、档 2/3 贴左。
      */
     internal enum class CityAlign { END, CENTER, START }
 
@@ -562,46 +610,56 @@ object WidgetUpdater {
     }
 
     /**
-     * 地名的三级显示：先按现状塞进左栏；塞不下就把「标准时间」标签让出来；
-     * 还塞不下就连「真太阳时」的标签一起让出来，改成横跨两栏的一行。
+     * 地名的四档显示（与首页大卡片顶部那一行同一套语义）。
      *
-     * @param maxNarrow 有「标准时间」标签时能放的字数
-     * @param maxNoLabel 让出「标准时间」后的字数
-     * @param maxWide 连「真太阳时」也让出后的字数
+     * 顶行横跨整行：`UTC+8` 在左、地区居中、时辰在右。
+     *
+     * - **档 0**：`UTC` 与「真太阳时」都还在，地区在**左半**（UTC 到「真太阳时」之间）**贴右**；
+     * - **档 1**：收起「真太阳时」，地区在 UTC 与时辰之间**居中**；
+     * - **档 2**：再收起 UTC，地区**贴左**；
+     * - **档 3**：同档 2，地区尾部用省略号（布局里的 `ellipsize="end"` + `maxLines="1"`）。
+     *
+     * 任何档位时辰都保留、且始终贴整行最右。
+     *
+     * @param maxTier0 收起任何标签之前地名能占的「字号」数（1.0 = 一个汉字宽）
+     * @param maxTier1 收起「真太阳时」之后地名能占的字号数
+     * @param maxTier2 连 UTC 一起收起之后地名能占的字号数（再宽就是档 3）
      */
     internal data class CityLabelPlan(
         val text: String,
-        val wide: Boolean,
-        val showCivilLabel: Boolean,
-        val showSolarLabel: Boolean,
+        val tier: Int,
     ) {
-        /**
-         * 对齐方式直接从既有档位（[wide] / [showCivilLabel]）推导，不另存一份状态：
-         * 跨栏（2 级）靠左、让出「标准时间」标签（1 级）居中、两者都还在（0 级）贴右。
-         */
+        /** 档 0/1 还显示 UTC，档 2 起收起。 */
+        val showUtc: Boolean get() = tier <= 1
+
+        /** 只有档 0 还显示「真太阳时」这四个字。 */
+        val showSolarLabel: Boolean get() = tier == 0
+
         val align: CityAlign
-            get() = when {
-                wide -> CityAlign.START
-                !showCivilLabel -> CityAlign.CENTER
-                else -> CityAlign.END
+            get() = when (tier) {
+                0 -> CityAlign.END
+                1 -> CityAlign.CENTER
+                else -> CityAlign.START
             }
     }
 
     internal fun planCityLabel(
         names: DistrictResolver.DistrictNames?,
         fallback: String,
-        maxNarrow: Int,
-        maxNoLabel: Int,
-        maxWide: Int,
+        maxTier0: Float,
+        maxTier1: Float,
+        maxTier2: Float,
     ): CityLabelPlan {
-        if (names == null) return CityLabelPlan(fallback, wide = false, showCivilLabel = true, showSolarLabel = true)
+        // 还没有反查到区划名（离线、或新坐标还没查回来）：写兜底名，按最宽松的档 0 排。
+        if (names == null) return CityLabelPlan(fallback, tier = 0)
         val full = names.full
+        val em = cityTextEm(full)
         return when {
-            full.length <= maxNarrow -> CityLabelPlan(full, false, true, true)
-            full.length <= maxNoLabel -> CityLabelPlan(full, false, false, true)
-            // 跨栏后仍然放不下就用区县名，交给 TextView 的省略号兜底。
-            full.length <= maxWide -> CityLabelPlan(full, true, false, false)
-            else -> CityLabelPlan(names.short, true, false, false)
+            em <= maxTier0 -> CityLabelPlan(full, tier = 0)
+            em <= maxTier1 -> CityLabelPlan(full, tier = 1)
+            em <= maxTier2 -> CityLabelPlan(full, tier = 2)
+            // 仍放不下：保持贴左，交给 TextView 的省略号兜底（与首页档 3 一致）。
+            else -> CityLabelPlan(full, tier = 3)
         }
     }
 
