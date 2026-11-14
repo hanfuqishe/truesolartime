@@ -107,6 +107,20 @@ struct SettingsView: View {
 
                     Divider()
 
+                    section(title: "屏幕") {
+                        Toggle(isOn: keepScreenOnBinding) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("屏幕常亮")
+                                    .font(.system(size: 15))
+                                Text("应用打开期间不自动熄屏（会更耗电）")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Divider()
+
                     section(title: "关于计算") {
                         Text("真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。")
                             .font(.system(size: 12))
@@ -162,6 +176,13 @@ struct SettingsView: View {
                     }
                 }
             }
+        )
+    }
+
+    private var keepScreenOnBinding: Binding<Bool> {
+        Binding(
+            get: { model.keepScreenOn },
+            set: { model.setKeepScreenOn($0) }
         )
     }
 

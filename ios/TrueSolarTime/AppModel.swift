@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import CoreLocation
+import UIKit
 
 /// 界面状态与业务逻辑。所有方法都在主线程调用（Timer、定位回调均由主 RunLoop 驱动）。
 final class AppModel: ObservableObject {
@@ -15,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var weather: WeatherSnapshot?
     @Published private(set) var keyTime: TakeTimeSchedule?
     @Published private(set) var districtName: DistrictNames?
+    @Published private(set) var keepScreenOn: Bool = false
     @Published var message: String?
 
     private let settings = AppSettings()
@@ -31,6 +33,8 @@ final class AppModel: ObservableObject {
         weather = WeatherStore.shared.cached()
         keyTime = KeyTimeStore.shared.schedule()
         districtName = DistrictStore.shared.cachedNames()
+        keepScreenOn = settings.keepScreenOn
+        applyKeepScreenOn()
         startClock()
         refreshData()
         rescheduleReminders()
@@ -174,6 +178,18 @@ final class AppModel: ObservableObject {
         keyTimeChimeEnabled = enabled
         settings.keyTimeChimeEnabled = enabled
         rescheduleReminders()
+    }
+
+    /// 屏幕常亮开关（与 Android 的同名开关一致）：写设置并立即作用于系统。
+    func setKeepScreenOn(_ enabled: Bool) {
+        keepScreenOn = enabled
+        settings.keepScreenOn = enabled
+        applyKeepScreenOn()
+    }
+
+    /// 把设置同步到系统的「自动熄屏」标志。
+    private func applyKeepScreenOn() {
+        UIApplication.shared.isIdleTimerDisabled = keepScreenOn
     }
 
     func setMapStyle(_ style: MapStyle) {

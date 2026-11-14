@@ -12,6 +12,7 @@ struct AppSettings {
         static let keyTimeChime = "keytime_chime"
         static let mapStyle = "map_style"
         static let locationAsked = "location_permission_requested"
+        static let keepScreenOn = "keep_screen_on"
     }
 
     private let defaults = UserDefaults.standard
@@ -51,6 +52,12 @@ struct AppSettings {
     var mapStyle: MapStyle {
         get { MapStyle(rawValue: defaults.string(forKey: Key.mapStyle) ?? "") ?? .auto }
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.mapStyle) }
+    }
+
+    /// 屏幕常亮：应用在前台时不自动熄屏（与 Android 的「屏幕常亮」开关一致）。
+    var keepScreenOn: Bool {
+        get { defaults.bool(forKey: Key.keepScreenOn) }
+        nonmutating set { defaults.set(newValue, forKey: Key.keepScreenOn) }
     }
 
     /// 定位权限只自动申请一次，避免每次启动都弹窗。
