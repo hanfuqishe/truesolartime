@@ -84,7 +84,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("真太阳时")
+                Text("真太阳时时钟")
                     .font(.system(size: 26, weight: .semibold))
                 Text("以太阳经过当地子午线的时刻为正午")
                     .font(.system(size: 12))
