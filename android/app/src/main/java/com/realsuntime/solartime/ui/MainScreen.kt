@@ -139,10 +139,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     val context = LocalContext.current
 
-    // 卡片上的城市：反查到的区划名优先；查不到就回退到预设/城市名；
-    // 手工输入或 GPS 坐标没有名字可用时显示减号，不留空白。
+    // 卡片上的城市：
+    // ① 反查到的行政区划优先；
+    // ② 反查还没回来/失败时，只有「预设城市」才回退到城市名；
+    // ③ 手工坐标与 GPS 定位没有城市名可用（标签是「手动设置」这类占位词，不该显示），
+    //    一律显示减号，等反查结果到了再换成区划名。
     val cityText = districtName?.takeIf { it.isNotBlank() }
-        ?: TimeText.placeLabel(context, place).takeIf { it.isNotBlank() }
+        ?: place.labelResName?.let { TimeText.placeLabel(context, place) }?.takeIf { it.isNotBlank() }
         ?: stringResource(R.string.city_unknown)
     val snackbarHostState = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
