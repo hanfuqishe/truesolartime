@@ -27,6 +27,7 @@ struct ContentView: View {
                         inkColor: inKeyTime
                             ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
                             : nil,
+                        inKeyTime: inKeyTime,
                         coordinates: TimeFormat.coordinates(
                             latitude: model.place.latitude,
                             longitude: model.place.longitude

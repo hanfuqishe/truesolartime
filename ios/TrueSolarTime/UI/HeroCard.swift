@@ -23,6 +23,8 @@ struct HeroCard: View {
     let bandColor: Color?
     /// 真太阳时落在关键时段内时的字色（同色系、白天淡一档）；不在时段内传 nil。
     let inkColor: Color?
+    /// 当前真太阳时是否落在某个关键时段内（决定圆点是否用色段颜色）。
+    let inKeyTime: Bool
     /// 「39.9042°N 116.4074°E」，由调用方算好传入。
     let coordinates: String
     /// 天气取不到时的说明（例如「请求超时（15 秒）」）；有天气数据时为 nil。
@@ -57,7 +59,8 @@ struct HeroCard: View {
             HeroAxis(
                 bands: keyBands,
                 bandColor: bandColor,
-                dotColor: bandColor ?? HeroPalette.dot,
+                // 只有「当前正落在关键时段内」时圆点才跟着色段变色，否则保持白色
+                dotColor: inKeyTime ? (bandColor ?? HeroPalette.dot) : HeroPalette.dot,
                 position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400
             )
             .frame(height: 11)
