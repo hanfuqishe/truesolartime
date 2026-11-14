@@ -23,7 +23,7 @@ struct SunCard: View {
             if snapshot.polar == .normal {
                 HStack {
                     SunTimeItem(label: "日出", time: snapshot.sunriseBeijing)
-                    SunTimeItem(label: "正午", time: snapshot.solarNoonBeijing)
+                    SunTimeItem(label: "上中天", time: snapshot.solarNoonBeijing)
                     SunTimeItem(label: "日落", time: snapshot.sunsetBeijing)
                 }
 
@@ -34,8 +34,8 @@ struct SunCard: View {
             } else {
                 Text(
                     snapshot.polar == .midnightSun
-                        ? "极昼：太阳整日不落，正午（北京时间）\(TimeFormat.clock(snapshot.solarNoonBeijing))"
-                        : "极夜：太阳整日不出，正午（北京时间）\(TimeFormat.clock(snapshot.solarNoonBeijing))"
+                        ? "极昼：太阳整日不落，上中天（当地标准时间）\(TimeFormat.clock(snapshot.solarNoonBeijing))"
+                        : "极夜：太阳整日不出，上中天（当地标准时间）\(TimeFormat.clock(snapshot.solarNoonBeijing))"
                 )
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)

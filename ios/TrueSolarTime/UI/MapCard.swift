@@ -24,7 +24,7 @@ struct MapCard: View {
             }
 
             MapViewRepresentable(place: place, style: resolvedStyle)
-                .frame(height: 190)
+                .aspectRatio(4.0 / 3.0, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .padding(.top, 10)
 

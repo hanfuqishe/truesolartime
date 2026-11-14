@@ -1,5 +1,14 @@
 import SwiftUI
+import UIKit
 
+/// 首页大卡片：与 Android 1.4.39 同款版面。
+///
+/// 左栏「当地标准时间」、右栏「真太阳时」，中间一道竖分割线；
+/// 下面依次是「日期 · 天气 · 温度区间」+ 经纬度一行、0–24 时关键时间轴、六格逐时预报。
+///
+/// 时间字号遵守两条硬规则（与 Android / 鸿蒙一致）：
+/// 1. **秒是半高**：秒字号恒为主字号的 1/2；
+/// 2. **整段时间撑满栏宽**：按「00:00 + 半高秒」的实测宽度反推主字号，留 3% 余量。
 struct HeroCard: View {
 
     let snapshot: SolarSnapshot
@@ -7,102 +16,353 @@ struct HeroCard: View {
     let districtName: DistrictNames?
     let trackingGps: Bool
     let waitingForFix: Bool
+    let weather: WeatherSnapshot?
+    /// 关键时间色段（0–24 时轴上的着色）。
+    let keyBands: [TakeBand]
+    /// 落在关键时段内时的高亮色；不在时段内传 nil。
+    let keyHighlight: Color?
+    /// 「39.9042°N 116.4074°E」，由调用方算好传入。
+    let coordinates: String
 
-    /// 名字太长就退到「只有区县」，否则胶囊会被截成看不出位置的样子。
-    private var statusLabel: String {
+    /// 卡片宽度（由 GeometryReader 量出来，用于反推时间字号）。
+    @State private var cardWidth: CGFloat = 0
+
+    private let cardPadding: CGFloat = 18
+    private let columnGap: CGFloat = 12
+    private let dividerWidth: CGFloat = 1
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                standardColumn
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Rectangle()
+                    .fill(.white.opacity(0.2))
+                    .frame(width: dividerWidth, height: clockHeight * 0.72)
+                    .padding(.horizontal, columnGap)
+
+                solarColumn
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            dateAndWeatherRow
+                .padding(.top, 8)
+
+            HeroAxis(
+                bands: keyBands,
+                bandColor: keyHighlight ?? .white,
+                position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400
+            )
+            .frame(height: 11)
+            .padding(.top, 12)
+
+            HourlyRow(weather: weather, isDay: snapshot.isDay)
+                .padding(.top, 12)
+        }
+        .padding(cardPadding)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
+                .fill(snapshot.isDay ? Theme.dayGradient : Theme.nightGradient)
+        )
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: HeroCardWidthKey.self, value: proxy.size.width)
+            }
+        )
+        .onPreferenceChange(HeroCardWidthKey.self) { width in
+            if abs(width - cardWidth) > 0.5 {
+                cardWidth = width
+            }
+        }
+    }
+
+    // MARK: - 两栏
+
+    private var standardColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("UTC+8")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.8))
+                Spacer(minLength: 4)
+                Text(districtText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            FittingClock(
+                main: String(format: "%02d:%02d", snapshot.beijingTime.hour, snapshot.beijingTime.minute),
+                seconds: String(format: "%02d", snapshot.beijingTime.second),
+                color: .white,
+                availableWidth: columnWidth
+            )
+            .padding(.top, 2)
+        }
+    }
+
+    private var solarColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("真太阳时")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.8))
+                Spacer(minLength: 4)
+                Text("\(snapshot.shichenName) · \(snapshot.shichenHalf)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+
+            FittingClock(
+                main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                seconds: String(format: "%02d", snapshot.trueSolarTime.second),
+                color: keyHighlight ?? .white,
+                availableWidth: columnWidth
+            )
+            .padding(.top, 2)
+        }
+    }
+
+    // MARK: - 日期 / 天气
+
+    private var dateAndWeatherRow: some View {
+        HStack(spacing: 8) {
+            Text(dateWeatherText)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Text(coordinates)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+        }
+    }
+
+
+    private var dateWeatherText: String {
+        var parts: [String] = [snapshot.beijingDateText]
+        if let weather {
+            parts.append("\(weather.temperatureC)° \(weather.condition.label)")
+            if let range = WeatherParsing.temperatureRange(weather.hourly, date: Date(), timeZone: .current) {
+                parts.append("\(range.low)~\(range.high)°")
+            }
+        } else {
+            parts.append("--")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - 尺寸
+
+    private var columnWidth: CGFloat {
+        guard cardWidth > 0 else { return 150 }
+        let inner = cardWidth - cardPadding * 2
+        return max((inner - dividerWidth - columnGap * 2) / 2, 80)
+    }
+
+    private var clockHeight: CGFloat {
+        HeroClockMetrics.mainSize(availableWidth: columnWidth) * 1.25
+    }
+
+    private var districtText: String {
         if waitingForFix { return "定位中…" }
         if let districtName {
             return districtName.full.count <= 12 ? districtName.full : districtName.short
         }
         return placeLabel
     }
+}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(trackingGps ? "当地真太阳时 · 每分钟更新" : "当地真太阳时")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
-                Spacer(minLength: 8)
-                Text(statusLabel)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(.white.opacity(0.18)))
-            }
-
-            HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute))
-                    .font(.system(size: 72, weight: .light, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                Text(":" + String(format: "%02d", snapshot.trueSolarTime.second))
-                    .font(.system(size: 26, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.75))
-                    .padding(.bottom, 12)
-            }
-
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(.white.opacity(0.18)).frame(width: 54, height: 54)
-                    Text(String(snapshot.shichenName.prefix(1)))
-                        .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(.white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(snapshot.shichenName) · \(snapshot.shichenHalf)\(chineseNumber(snapshot.shichenQuarter))刻")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("\(snapshot.shichenRange)　距\(snapshot.nextShichenName) \(TimeFormat.countdown(snapshot.secondsToNextShichen))")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.top, 16)
-        }
-        .padding(22)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
-                .fill(snapshot.isDay ? Theme.dayGradient : Theme.nightGradient)
-        )
+private struct HeroCardWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
-struct BeijingCard: View {
+/// 时间字号的换算：与 Android 版同一套规则（按实测字宽反推，秒恒为主字号一半）。
+enum HeroClockMetrics {
 
-    let snapshot: SolarSnapshot
+    /// 探针字号：用 100pt 量一次「00:00」和半高的「:00」，得到每 1pt 的宽度。
+    private static let probe: CGFloat = 100
+
+    private static let mainProbeWidth: CGFloat = {
+        let font = UIFont.monospacedDigitSystemFont(ofSize: probe, weight: .medium)
+        return ("00:00" as NSString).size(withAttributes: [.font: font]).width
+    }()
+
+    private static let secondsProbeWidth: CGFloat = {
+        let font = UIFont.monospacedDigitSystemFont(ofSize: probe / 2, weight: .medium)
+        return (":00" as NSString).size(withAttributes: [.font: font]).width
+    }()
+
+    private static let gapWidth: CGFloat = 1
+
+    /// 每 1pt 字号占多少宽度。
+    static var widthRatio: CGFloat {
+        (mainProbeWidth + secondsProbeWidth + gapWidth) / probe
+    }
+
+    /// 撑满可用宽度时的主字号（留 3% 余量，18…80 之间）。
+    static func mainSize(availableWidth: CGFloat) -> CGFloat {
+        guard availableWidth > 0, widthRatio > 0 else { return 42 }
+        let fitted = availableWidth / widthRatio * 0.97
+        return min(max(fitted, 18), 80)
+    }
+}
+
+/// 一格时间：主字号「时:分」+ 半高「:秒」，整体撑满可用宽度。
+struct FittingClock: View {
+
+    let main: String
+    let seconds: String
+    let color: Color
+    let availableWidth: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("北京时间")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(snapshot.beijingDateText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+        let mainSize = HeroClockMetrics.mainSize(availableWidth: availableWidth)
+        let secondsSize = mainSize / 2
+
+        HStack(alignment: .firstTextBaseline, spacing: 1) {
+            Text(main)
+                .font(.system(size: mainSize, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .fixedSize()
+            Text(":" + seconds)
+                .font(.system(size: secondsSize, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(color.opacity(0.85))
+                .lineLimit(1)
+                .fixedSize()
+                .baselineOffset(mainSize * 0.06)
+        }
+        .frame(height: mainSize * 1.25, alignment: .bottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// 首页 0–24 时时间轴：白线 + 关键时段色段 + 当前时刻的柔光圆点（与 Android 同款）。
+struct HeroAxis: View {
+
+    let bands: [TakeBand]
+    let bandColor: Color
+    /// 0…1
+    let position: Double
+
+    var body: some View {
+        Canvas { context, size in
+            let midY = size.height / 2
+            let track = CGRect(x: 0, y: midY - 0.5, width: size.width, height: 1)
+            context.fill(Path(track), with: .color(.white.opacity(0.25)))
+
+            for band in bands {
+                let start = CGFloat(band.startMinute) / CGFloat(TakeBand.minutesPerDay) * size.width
+                let width = max(
+                    CGFloat(band.lengthMinutes) / CGFloat(TakeBand.minutesPerDay) * size.width,
+                    2
+                )
+                let rect = CGRect(x: start, y: midY - 1, width: width, height: 2)
+                context.fill(Path(rect), with: .color(bandColor.opacity(0.9)))
             }
 
-            Text(snapshot.beijingTime.clockWithSeconds)
-                .font(.system(size: 34, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .padding(.top, 2)
-
-            Divider().padding(.vertical, 12)
-
-            Text("真太阳时比北京时间\(snapshot.offsetSeconds >= 0 ? "快" : "慢") \(TimeFormat.minutesSeconds(snapshot.offsetSeconds))")
-                .font(.system(size: 15))
-
-            Text("经度修正 \(TimeFormat.signedDuration(seconds: snapshot.longitudeOffsetSeconds))　均时差 \(TimeFormat.signedDuration(seconds: snapshot.equationOfTimeSeconds))")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
+            let clamped = min(max(position, 0), 1)
+            let radius: CGFloat = 5.5
+            let center = CGPoint(x: CGFloat(clamped) * size.width, y: midY)
+            let dot = CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            context.fill(
+                Path(ellipseIn: dot.insetBy(dx: -2, dy: -2)),
+                with: .color(.white.opacity(0.25))
+            )
+            context.fill(Path(ellipseIn: dot), with: .color(.white))
         }
-        .cardBackground()
+    }
+}
+
+/// 六格逐时预报：现在 + 未来 5 个整点。
+struct HourlyRow: View {
+
+    let weather: WeatherSnapshot?
+    let isDay: Bool
+
+    private let slots = 6
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(points, id: \.epochSeconds) { point in
+                VStack(spacing: 3) {
+                    Text(label(for: point))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                    Image(systemName: point.condition.symbol(isDay: isDayOfHour(point)))
+                        .font(.system(size: 20))
+                        .symbolRenderingMode(.multicolor)
+                    Text("\(point.temperatureC)°")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            if points.isEmpty {
+                ForEach(0..<slots, id: \.self) { index in
+                    VStack(spacing: 3) {
+                        Text(index == 0 ? "现在" : "--")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                        Image(systemName: "questionmark")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text("--")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    private var points: [WeatherHour] {
+        let all = weather?.hourly ?? []
+        guard !all.isEmpty else { return [] }
+        let slots = WeatherParsing.slots(
+            nowEpochSeconds: Int(Date().timeIntervalSince1970),
+            zoneOffsetSeconds: TimeZone.current.secondsFromGMT(for: Date()),
+            count: 6,
+            stepHours: 1
+        )
+        return slots.compactMap { WeatherParsing.point(at: $0, in: all) }
+    }
+
+    private func label(for point: WeatherHour) -> String {
+        let now = Date()
+        let calendar = Calendar.current
+        if calendar.isDate(point.date, equalTo: now, toGranularity: .hour) {
+            return "现在"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = "H时"
+        return formatter.string(from: point.date)
+    }
+
+    private func isDayOfHour(_ point: WeatherHour) -> Bool {
+        let hour = Calendar.current.component(.hour, from: point.date)
+        return (6..<18).contains(hour)
     }
 }

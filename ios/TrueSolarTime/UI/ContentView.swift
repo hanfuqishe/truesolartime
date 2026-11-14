@@ -18,15 +18,14 @@ struct ContentView: View {
                         placeLabel: model.place.label,
                         districtName: model.districtName,
                         trackingGps: model.trackingGps,
-                        waitingForFix: model.waitingForFix
-                    )
-
-                    BeijingCard(snapshot: model.snapshot)
-
-                    WeatherCard(
+                        waitingForFix: model.waitingForFix,
                         weather: model.weather,
-                        isDay: model.snapshot.isDay,
-                        waitingForGPS: model.waitingForFix
+                        keyBands: model.keyTime?.bands ?? [],
+                        keyHighlight: keyHighlight,
+                        coordinates: TimeFormat.coordinates(
+                            latitude: model.place.latitude,
+                            longitude: model.place.longitude
+                        )
                     )
 
                     KeyTimeCard(
@@ -83,6 +82,17 @@ struct ContentView: View {
         }
     }
 
+    /// 真太阳时落在关键时段内时的高亮色（冷=绿、热=红），与 Android 的 activeKeyColor 一致。
+    private var keyHighlight: Color? {
+        guard let schedule = model.keyTime,
+              schedule.band(containing: Double(model.snapshot.trueSolarTime.secondsOfDay) / 60) != nil,
+              let temperature = schedule.temperature
+        else { return nil }
+        return temperature == .coldOrMild
+            ? Color(red: 0.30, green: 0.78, blue: 0.52)
+            : Color(red: 0.93, green: 0.35, blue: 0.32)
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("真太阳时")
@@ -90,6 +100,8 @@ struct ContentView: View {
             Text("以太阳经过当地子午线的时刻为正午")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
@@ -97,7 +109,7 @@ struct ContentView: View {
     }
 
     private var versionLabel: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.4.39"
         return "版本 \(version)"
     }
 }
