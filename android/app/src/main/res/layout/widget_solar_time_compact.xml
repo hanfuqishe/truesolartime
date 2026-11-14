@@ -106,6 +106,7 @@
                     tools:ignore="HardcodedText" />
 
                 <TextView
+                    android:id="@+id/widget_civil_colon"
                     style="@style/WidgetClockColon"
                     android:text=":"
                     tools:ignore="HardcodedText" />

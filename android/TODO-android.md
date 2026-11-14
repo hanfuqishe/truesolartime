@@ -166,3 +166,12 @@
 - 版本抬到 `versionCode 44 / versionName 1.4.37`；鸿蒙侧 `harmony/AppScope/app.json5`（`1043700 / 1.4.37`）与 `harmony/entry/oh-package.json5`（`1.4.37`）同步改了版本号，但**没有重新打 HAP**（构建里 `SignHap` 目前失败，签名材料在 `harmony/.sign/release/`）。
 - 产物：`dist/真太阳时-安卓-1.4.37.apk`（1.98 MB，release 签名，SHA-256 `ac41c07995e6…`；clean assembleRelease 两次构建哈希一致）+ 给测试者的 `dist/真太阳时-1.4.37-测试说明.md`。
 - 交付前核对：apt2 dump badging → ersionCode='44' versionName='1.4.37'、minSdk 24 / targetSdk 35；pksigner verify → CN=True Solar Time（与 1.4.35/1.4.36 同证书，可覆盖安装）；真机、平板、模拟器三台装的是同一份哈希。
+## 交付版 1.4.38
+
+- 版本抬到 `versionCode 45 / versionName 1.4.38`；鸿蒙侧 `harmony/AppScope/app.json5`（`1043800 / 1.4.38`）同步，两平台版本号仍然一致。
+- **平板宽屏两栏**：内容区 ≥ 560dp 时「首页大卡片」与「太阳位置」按 **1:1 并排、等高**（`Row(IntrinsicSize.Max)` + `fillMaxHeight`），并排时把太阳弧线压到 74dp，让行高由橙色大卡片决定、卡片里不留空白。
+- **卡片内容按卡宽自适应缩放**：`LocalDensity` 覆盖，卡片逻辑宽度恒等于手机卡的 334dp（夹在 0.8～1.6），所以 640dp 的小平板也不会出现「时钟被截断」（固定 1.35 倍时实测把 `10:46` 截成 `10:4`）。
+- **时间字号的硬规则**：秒恒为主字号的 **1/2**，且「时:分:秒」**正好撑满该栏**（`rememberTextMeasurer` 按 100sp 量样本宽度反推，留 3% 余量）。实测手机主字 159px／秒 80px（50.3%）、填充 96%；平板 231/232px + 64px、填充 97%。中途修掉两个坑：`BoxWithConstraints` 是 SubcomposeLayout，外层 `IntrinsicSize.Max` 会向它要固有尺寸直接崩；`toSp()` 二次除密度导致字号被压小。
+- **桌面小组件同样按两条规则**：秒与冒号不再是固定的 23dp，而是与主字号一起解 `主字号·R主 + (主字号/2)·(R秒+R冒) + 间隙 = 栏宽`；主字号上限 48 → 56dp（48 时算出来要 52dp 才撑满）。实测桌面截图主字 104px／秒 51px = 49%。为让标准时间那栏的冒号也能缩放，两个布局补齐 `@+id/widget_civil_colon`。
+- **地图视口按比例**：手机 **4:3**、平板 **16:9**（`Modifier.aspectRatio`，不再写死 190/340dp）。实测手机 1088×816、平板 1400×788。
+- 产物：`dist/真太阳时-安卓-1.4.38.apk`（1.98 MB，sha256 `d9276213c615131de652791edff7fb32e27f78f49caea246b4e690d011f46669`，release 签名 `CN=True Solar Time`）；手机（ELS-AN00）、平板（MRR-W29）均已装载验证。

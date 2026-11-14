@@ -14,10 +14,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -42,8 +45,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,14 +63,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -87,6 +97,29 @@ import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
+
+/** 宽屏断点：内容区达到这个宽度就把大卡片与太阳卡片并排（与鸿蒙版同一条规则：560）。 */
+private val WIDE_LAYOUT_MIN_WIDTH = 560.dp
+/** 手机版大卡片的实测宽度：并排时按这个逻辑宽度排版卡片内容，再整体缩放到实际宽度。 */
+private val PHONE_CARD_WIDTH = 334.dp
+/** 并排两张卡之间的间距。 */
+private val CARD_GAP = 12.dp
+/** 缩放系数区间：小平板上不至于把字缩到看不清，大屏上也不无限放大。 */
+private const val MIN_CARD_SCALE = 0.8f
+private const val MAX_CARD_SCALE = 1.6f
+/** 半高秒与主数字之间的间隔。 */
+private val SECONDS_GAP = 1.dp
+/** 时间字号上下限：下限保证字不糊，上限避免大屏上数字夸张。 */
+private const val FALLBACK_HERO_CLOCK_SP = 42f
+/** 撑满时留 3% 余量：算出来的字宽正好等于栏宽，右栏会紧贴卡片边缘，留一点才不会擦到圆角。 */
+private const val CLOCK_FIT_SAFETY = 0.97f
+private const val MIN_HERO_CLOCK_SP = 24f
+private const val MAX_HERO_CLOCK_SP = 80f
+/** 宽屏并排时把太阳弧线压矮：压低后太阳卡比大卡片略矮，行高由大卡片决定，橙色卡片里就不会再留空白。 */
+private val WIDE_ARC_HEIGHT = 74.dp
+/** 地图视口的宽高比：手机 4:3、平板 16:9（与鸿蒙版一致）。 */
+private const val PHONE_MAP_ASPECT_RATIO = 4f / 3f
+private const val WIDE_MAP_ASPECT_RATIO = 16f / 9f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -198,46 +231,99 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { padding ->
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp),
             ) {
-                Header(
-                    badge = if (place.source == PlaceSource.GPS) {
-                        stringResource(R.string.location_badge_gps)
+                // 平板/宽屏：大卡片与太阳卡片并排（1:1、等高），卡片内容整体缩放到手机上那个比例。
+                val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
+                val baseDensity = LocalDensity.current
+                // 自适应缩放：让「卡片的逻辑宽度」恒等于手机卡的 334dp，于是无论平板多宽，
+                // 卡片里的版式都和手机一模一样，只是整体按比例放大/缩小。
+                // （写死 1.35 会在 640dp 的小平板上出问题：分栏后每张卡只有 294dp，内容会被截断。）
+                val cardWidth = (maxWidth - CARD_GAP) / 2
+                val cardScale = (cardWidth / PHONE_CARD_WIDTH).coerceIn(MIN_CARD_SCALE, MAX_CARD_SCALE)
+                val scaledDensity = remember(baseDensity, cardScale) {
+                    Density(
+                        density = baseDensity.density * cardScale,
+                        fontScale = baseDensity.fontScale,
+                    )
+                }
+
+                Column {
+                    Header(
+                        badge = if (place.source == PlaceSource.GPS) {
+                            stringResource(R.string.location_badge_gps)
+                        } else {
+                            districtName.orEmpty()
+                        },
+                        onOpenSettings = { showSettings = true },
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    if (wide) {
+                        // IntrinsicSize.Max + fillMaxHeight：两卡取较高的那张作行高，底边自然对齐。
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Max),
+                            horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
+                        ) {
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                CompositionLocalProvider(LocalDensity provides scaledDensity) {
+                                    HeroCard(
+                                        snapshot = snapshot,
+                                        districtName = districtName,
+                                        coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                                        waitingForFix = waitingForFix,
+                                        extras = heroExtras,
+                                        modifier = Modifier.fillMaxHeight(),
+                                    )
+                                }
+                            }
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                CompositionLocalProvider(LocalDensity provides scaledDensity) {
+                                    SunCard(
+                                        snapshot = snapshot,
+                                        modifier = Modifier.fillMaxHeight(),
+                                        arcHeight = WIDE_ARC_HEIGHT,
+                                    )
+                                }
+                            }
+                        }
                     } else {
-                        districtName.orEmpty()
-                    },
-                    onOpenSettings = { showSettings = true },
-                )
-                Spacer(Modifier.height(12.dp))
+                        HeroCard(
+                            snapshot = snapshot,
+                            districtName = districtName,
+                            coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                            waitingForFix = waitingForFix,
+                            extras = heroExtras,
+                        )
+                        Spacer(Modifier.height(14.dp))
 
-                HeroCard(
-                    snapshot = snapshot,
-                    districtName = districtName,
-                    coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
-                    waitingForFix = waitingForFix,
-                    extras = heroExtras,
-                )
-                Spacer(Modifier.height(14.dp))
+                        SunCard(snapshot = snapshot)
+                    }
+                    Spacer(Modifier.height(14.dp))
 
-                SunCard(snapshot = snapshot)
-                Spacer(Modifier.height(14.dp))
+                    MapCard(
+                        place = place,
+                        mapStyle = mapStyle,
+                        mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
+                    )
+                    Spacer(Modifier.height(14.dp))
 
-                MapCard(place = place, mapStyle = mapStyle)
-                Spacer(Modifier.height(14.dp))
-
-                Text(
-                    text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(28.dp))
+                    Text(
+                        text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(28.dp))
+                }
             }
         }
 
@@ -318,6 +404,7 @@ private fun HeroCard(
     coordinates: String,
     waitingForFix: Boolean,
     extras: HeroExtras,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
@@ -335,7 +422,7 @@ private fun HeroCard(
         .joinToString(" · ")
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(Brush.linearGradient(HeroPalette.gradient(isDay)))
@@ -575,40 +662,81 @@ private fun HeroHourly(cells: List<HourCell>) {
 private const val MINUTES_PER_DAY: Double = 24.0 * 60.0
 private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
 
+/**
+ * 首页大卡片里的一格时间（`HH:mm` + 半高秒）。
+ *
+ * 两条硬规则：
+ * 1. **秒是半高**：秒字号恒为主字号的 1/2；
+ * 2. **整段时间正好撑满可用宽度**：用固定样本按 100sp 量出「主字号 + 半高秒」的实际宽度，
+ *    再按这一栏的可用宽度反推主字号 —— 数字是等宽（`tnum`），所以不同时刻的宽度一致，
+ *    不会忽宽忽窄。这样手机、平板（并排两栏、卡片被缩放）都自动铺满，不需要手调参数。
+ */
 @Composable
-private fun HeroClock(text: String, seconds: Int?, color: Color) {
-    Row(verticalAlignment = Alignment.Bottom) {
+private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val baseStyle = TextStyle(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
+    val probeSp = 100f
+    // 用「88:88」与「:88」作样本：等宽数字下与实际渲染同宽，和具体时刻无关。
+    val mainProbePx = measurer
+        .measure("88:88", baseStyle.copy(fontSize = probeSp.sp), maxLines = 1)
+        .size.width.toFloat()
+    val secondsProbePx = if (seconds == null) {
+        0f
+    } else {
+        measurer
+            .measure(":88", baseStyle.copy(fontSize = (probeSp / 2f).sp), maxLines = 1)
+            .size.width.toFloat()
+    }
+    val gapPx = if (seconds == null) 0f else with(density) { SECONDS_GAP.toPx() }
+    val totalRatio = (mainProbePx + secondsProbePx + gapPx) / probeSp // 每 1sp 对应的像素宽
+
+    // 用 onSizeChanged 取这一栏的可用宽度（不能用 BoxWithConstraints：它是 SubcomposeLayout，
+    // 外面 Row 的 IntrinsicSize.Max 会向它要固有尺寸，直接抛 IllegalStateException）。
+    var availablePx by remember { mutableIntStateOf(0) }
+    // totalRatio 已经是「每 1sp 占多少像素」（探针按 100sp 量出来），所以直接相除就是 sp；
+    // 不能再走 toSp() —— 那会再除一次 density × fontScale，字号会被压小一半。
+    val mainSp = if (totalRatio > 0f && availablePx > 0) {
+        availablePx / totalRatio * CLOCK_FIT_SAFETY
+    } else {
+        FALLBACK_HERO_CLOCK_SP
+    }.coerceIn(MIN_HERO_CLOCK_SP, MAX_HERO_CLOCK_SP)
+    val secondsSp = mainSp / 2f
+
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = modifier
+            .fillMaxWidth()
+            .onSizeChanged { availablePx = it.width },
+    ) {
         Text(
             text = text,
-            style = TextStyle(
-                fontSize = 42.sp,
-                fontWeight = FontWeight.Medium,
-                fontFeatureSettings = "tnum",
-            ),
+            style = baseStyle.copy(fontSize = mainSp.sp),
             color = color,
             maxLines = 1,
         )
         if (seconds != null) {
             Text(
                 text = ":%02d".format(seconds),
-                style = TextStyle(
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFeatureSettings = "tnum",
-                ),
+                style = baseStyle.copy(fontSize = secondsSp.sp),
                 color = color,
                 maxLines = 1,
-                modifier = Modifier.padding(start = 1.dp, bottom = 5.dp),
+                // 秒是半高，往上抬一点让它与主数字的基线齐平（间距按主字号等比）。
+                modifier = Modifier.padding(start = SECONDS_GAP, bottom = (mainSp * 0.12f).dp),
             )
         }
     }
 }
 
 @Composable
-private fun SunCard(snapshot: SolarSnapshot) {
+private fun SunCard(
+    snapshot: SolarSnapshot,
+    modifier: Modifier = Modifier,
+    arcHeight: Dp = 110.dp,
+) {
     val context = LocalContext.current
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -635,7 +763,7 @@ private fun SunCard(snapshot: SolarSnapshot) {
                 isDay = snapshot.isDay,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(110.dp),
+                    .height(arcHeight),
             )
 
             Spacer(Modifier.height(10.dp))

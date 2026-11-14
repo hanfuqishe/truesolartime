@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -41,7 +42,12 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 
 @Composable
-fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
+fun MapCard(
+    place: Place,
+    mapStyle: MapStyle,
+    modifier: Modifier = Modifier,
+    mapAspectRatio: Float = 4f / 3f,
+) {
     val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     val style = mapStyle.effective(place.latitude, place.longitude)
@@ -70,7 +76,7 @@ fun MapCard(place: Place, mapStyle: MapStyle, modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
+                    .aspectRatio(mapAspectRatio)
                     .clip(RoundedCornerShape(16.dp)),
             ) {
                 AndroidView(

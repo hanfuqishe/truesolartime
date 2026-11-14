@@ -156,9 +156,9 @@ object WidgetUpdater {
     private const val KEY_PIN_PENDING = "pending"
     /** 请求发出后多久才允许判定「没加上」：用户可能还在桌面的确认框上。 */
     private const val PIN_SETTLE_MIN_MILLIS = 3_000L
-    private const val MAX_MAIN_TEXT_DP = 48f
+    private const val MAX_MAIN_TEXT_DP = 56f
     private const val MIN_MAIN_TEXT_DP = 20f
-    private const val SECOND_TEXT_DP = 23f
+    // 秒与冒号的字号不再固定：恒为主字号的 1/2（见 applyClockSizing），布局里的 23dp 只是预览初值。
     private const val DATE_TEXT_DP = 11f
     /**
      * 日期／经纬度这行小字统一缩放的下限。
@@ -841,41 +841,44 @@ object WidgetUpdater {
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
 
-        // 秒数用等宽数字（tabular figures），与 style 里的 WidgetClockSecondChrono 保持一致：
-        // 数字等宽，「0:」与「00」的宽度关系固定，于是按「00」的宽度裁剪就恰好切在冒号之后。
-        val secondsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            fontFeatureSettings = "tnum"
-            textSize = dpToPx(SECOND_TEXT_DP, metrics)
-        }
-        val secondsBlockPx = secondsPaint.measureText(SECOND_SAMPLE)
+        // 两条规则与首页大卡片一致：
+        //   1. 秒（和它前面的冒号）**恒为主字号的一半**；
+        //   2. 「时:分 + 半高秒」的总宽**正好撑满栏宽**。
+        // 因为秒是主字号的一半，两者宽度都随主字号线性变化，所以一次解方程即可：
+        //   主字号·R主 + (主字号/2)·(R秒 + R冒) + 间隙 = 栏宽
+        // 等宽数字（tnum）下「00:00」「00」「:」的宽度与具体时刻无关，比例可以一次量准。
+        val probePx = dpToPx(MAX_MAIN_TEXT_DP, metrics)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
-            textSize = dpToPx(SECOND_TEXT_DP, metrics)
+            textSize = probePx
         }
-        val colonPx = paint.measureText(":")
-        val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
-        // 秒数字号也由这里按 px 下发，不用布局里的 sp：sp 会由宿主按它自己的
-        // 字体缩放解析，一旦与本进程的度量不一致，裁剪点就会偏，把「0:SS」的冒号露出来。
-        views.setTextViewTextSize(R.id.widget_solar_sec, TypedValue.COMPLEX_UNIT_PX, secondsPaint.textSize)
+        val mainRatio = paint.measureText(MAIN_TEXT_SAMPLE) / probePx
+        val secondsRatio = paint.measureText(SECOND_SAMPLE) / probePx
+        val colonRatio = paint.measureText(":") / probePx
+        val gapPx = TEXT_GAP_DP * density
+        val fittedPx = if (mainRatio > 0f) {
+            (columnWidthPx - gapPx) / (mainRatio + (secondsRatio + colonRatio) / 2f)
+        } else {
+            0f
+        }
+        val mainPx = fittedPx.coerceIn(dpToPx(MIN_MAIN_TEXT_DP, metrics), probePx)
+        val halfPx = mainPx / 2f
+
+        views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
+        views.setTextViewTextSize(R.id.widget_solar_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
+        // 秒与冒号一起按半高下发（都按 px，不用布局里的 sp：sp 会由宿主按它自己的字体缩放解析，
+        // 一旦与本进程的度量不一致，裁剪点就会偏，把「0:SS」的冒号露出来）。
+        views.setTextViewTextSize(R.id.widget_civil_colon, TypedValue.COMPLEX_UNIT_PX, halfPx)
+        views.setTextViewTextSize(R.id.widget_civil_sec, TypedValue.COMPLEX_UNIT_PX, halfPx)
+        views.setTextViewTextSize(R.id.widget_solar_colon, TypedValue.COMPLEX_UNIT_PX, halfPx)
+        views.setTextViewTextSize(R.id.widget_solar_sec, TypedValue.COMPLEX_UNIT_PX, halfPx)
         // Chronometer 的文本是「M:SS」，把宽度限成两位数字再配合右对齐，只露出秒数。
         views.setInt(
             R.id.widget_solar_sec,
             "setMaxWidth",
-            (secondsBlockPx + SECOND_WIDTH_SLACK_DP * density).toInt(),
+            (halfPx * secondsRatio + SECOND_WIDTH_SLACK_DP * density).toInt(),
         )
-
-        paint.textSize = dpToPx(MAX_MAIN_TEXT_DP, metrics)
-        val widthRatio = paint.measureText(MAIN_TEXT_SAMPLE) / paint.textSize
-        val mainPx = fitTextSizePx(
-            availableWidthPx = availablePx,
-            widthRatio = widthRatio,
-            minPx = dpToPx(MIN_MAIN_TEXT_DP, metrics),
-            maxPx = paint.textSize,
-        )
-        views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
-        views.setTextViewTextSize(R.id.widget_solar_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
 
         // 日期与经纬度同一行。两个都是「小字」，但**必须一起缩**：
         // 早先只让日期按可用宽度收缩、并允许缩到 8dp，而经纬度是定死的 10dp，于是窄一点的
@@ -890,9 +893,9 @@ object WidgetUpdater {
         val coordNaturalDp = COORD_TEXT_DP
         val dateNaturalWidth = measureTextWidth(date, dateNaturalDp, metrics)
         val coordNaturalWidth = if (coordinates.isEmpty()) 0f else measureTextWidth(coordinates, coordNaturalDp, metrics)
-        val gapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
+        val dateGapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
         val rowAvailablePx = totalWidthPx - chromeDp * density
-        val neededPx = dateNaturalWidth + coordNaturalWidth + gapPx
+        val neededPx = dateNaturalWidth + coordNaturalWidth + dateGapPx
         val smallScale = if (neededPx <= rowAvailablePx || neededPx <= 0f) {
             1f
         } else {
