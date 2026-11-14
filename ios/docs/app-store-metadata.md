@@ -6,7 +6,7 @@ App Store 上已有一个叫「真太阳时」的 App，为了区分，本项目
 | 位置 | 采用 | 字符数 | 填在哪 |
 | --- | --- | --- | --- |
 | 中文主名称 | **真太阳时时钟** | 5 | App Store Connect → 应用信息 → 名称（简体中文） |
-| 英文主名称 | **NowSolar: True Solar Time** | 25 | App Store Connect → 应用信息 → 名称（English） |
+| 英文主名称 | **NowSolar: True Solar Clock** | 26 | App Store Connect → 应用信息 → 名称（English） |
 | 显示名称（图标下） | **真太阳时时钟** | 5 | 代码：`ios/project.yml` → `INFOPLIST_KEY_CFBundleDisplayName` |
 | 中文副标题 | **实时定位显示当前真太阳时** | 11 | App Store Connect → 版本信息 → 副标题（简体中文，≤30 字符） |
 | 英文副标题 | **Live solar time by location** | 27 | App Store Connect → 版本信息 → 副标题（English，≤30 字符） |
@@ -14,7 +14,7 @@ App Store 上已有一个叫「真太阳时」的 App，为了区分，本项目
 ## 说明
 
 - 主名称与显示名统一用「真太阳时时钟」：既点明是「时钟」，又与商店里既有那个「输入出生时间计算」的 App 区分开。
-- 英文主名称用 `NowSolar` 作品牌词，避免与 `True Solar Time` 完全同名（Apple 不允许重名）。
+- 英文主名称用 `NowSolar` 作品牌词，避免与既有 `True Solar Time` 完全同名（Apple 不允许重名）；`True Solar Clock` 与中文「真太阳时时钟」对应。
 - **副标题上限 30 字符**，英文那条 27 字符，安全。
 - 显示名称是图标下方的文字，iOS 主屏一般能显示 4~6 个汉字；「真太阳时时钟」5 字，主流机型可完整显示。
 - 应用内页头标题（`ContentView` 里的「真太阳时」）暂不改，它是界面标题而不是商店名称。
