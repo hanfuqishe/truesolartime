@@ -12,7 +12,12 @@ object CoordinateTransform {
     private const val AXIS = 6378245.0
     private const val ECCENTRICITY = 0.00669342162296594323
 
-    /** GCJ-02 的适用边界，境外不加偏移。 */
+    /**
+     * GCJ-02 的适用边界，境外不加偏移。
+     *
+     * 注意这**不是**时区口径：判断「该用哪个标准时区」请用
+     * `SolarTimeMath.isInChinaBbox`（经度 73–135、纬度 18–54），两条边界本来就不同。
+     */
     fun isInChina(latitude: Double, longitude: Double): Boolean =
         longitude >= 72.004 && longitude <= 137.8347 && latitude >= 0.8293 && latitude <= 55.8271
 

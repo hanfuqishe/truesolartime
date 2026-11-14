@@ -92,6 +92,7 @@ export class SolarTimeMath {
   static readonly BEIJING_LONGITUDE: number = 120.0;
   /** 北京时间（东八区固定偏移）的毫秒数。 */
   static readonly BEIJING_OFFSET_MILLIS: number = 8 * 3600 * 1000;
+  static readonly BEIJING_OFFSET_SECONDS: number = 8 * 3600;
 
   /** 由儒略世纪数推求太阳位置（均时差与赤纬）。 */
   static solarPosition(epochMillis: number): SolarPosition {
@@ -155,6 +156,25 @@ export class SolarTimeMath {
   /** 经度修正：当地经度相对东经 120° 的时差，单位秒。 */
   static longitudeOffsetSeconds(longitude: number): number {
     return (longitude - SolarTimeMath.BEIJING_LONGITUDE) * 240.0;
+  }
+
+  /**
+   * 观测点所在地的**标准时区偏移**（相对 UTC，秒）。
+   * 中国全境统一 +8（含港澳台与新疆、西藏）；境外按经度每 15° 取整，限制在 UTC-12..+14。
+   */
+  /** 粗略判断是否在中国境内（含港澳台），用于时区兜底与逆地理编码分流。 */
+  static isInChinaBbox(latitude: number, longitude: number): boolean {
+    return longitude >= 73 && longitude <= 135 && latitude >= 18 && latitude <= 54;
+  }
+
+  static standardZoneOffsetSeconds(latitude: number, longitude: number): number {
+    const inChina: boolean = SolarTimeMath.isInChinaBbox(latitude, longitude);
+    if (inChina) {
+      return SolarTimeMath.BEIJING_OFFSET_SECONDS;
+    }
+    const hours: number = Math.round(longitude / 15.0);
+    const clamped: number = Math.min(14, Math.max(-12, hours));
+    return clamped * 3600;
   }
 
   /**

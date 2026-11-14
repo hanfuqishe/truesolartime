@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- ???????42sp???????????????????????? -->
+    <!-- 主时钟的字号由 WidgetUpdater 按栏宽实测换算成 px 下发，这里的 42dp 只是布局预览
+         与「最小版面」兜底用。小组件里所有字号都用 dp 而不是 sp：桌面单元格尺寸固定，
+         sp 会跟着系统「字体大小」放大，一放大版面就被挤出格子。 -->
     <style name="WidgetClockMain">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
@@ -9,7 +11,7 @@
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">42sp</item>
+        <item name="android:textSize">42dp</item>
     </style>
 
     <style name="WidgetClockSecondSolar">
@@ -19,7 +21,7 @@
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">23sp</item>
+        <item name="android:textSize">23dp</item>
         <item name="android:textColor">#FFFFC65C</item>
     </style>
 
@@ -42,7 +44,7 @@
         <item name="android:ellipsize">none</item>
         <item name="android:layout_marginStart">2dp</item>
         <item name="android:gravity">end</item>
-        <item name="android:textSize">23sp</item>
+        <item name="android:textSize">23dp</item>
         <item name="android:textColor">#FFFFC65C</item>
     </style>
 
@@ -54,7 +56,7 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">23sp</item>
+        <item name="android:textSize">23dp</item>
         <item name="android:textColor">#FFFFFFFF</item>
     </style>
 
@@ -65,7 +67,7 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">23sp</item>
+        <item name="android:textSize">23dp</item>
         <item name="android:textColor">#FFFFC65C</item>
     </style>
 
@@ -78,7 +80,7 @@
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">23sp</item>
+        <item name="android:textSize">23dp</item>
         <item name="android:textColor">#FFFFFFFF</item>
     </style>
 
@@ -89,8 +91,8 @@
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">10sp</item>
-        <item name="android:textColor">#B3FFFFFF</item>
+        <item name="android:textSize">11dp</item>
+        <item name="android:textColor">#CCFFFFFF</item>
     </style>
 
     <style name="WidgetHourIcon">
@@ -108,8 +110,8 @@
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">2</item>
         <item name="android:textAlignment">center</item>
-        <item name="android:textColor">#D9FFFFFF</item>
-        <item name="android:textSize">10sp</item>
+        <item name="android:textColor">#CCFFFFFF</item>
+        <item name="android:textSize">11dp</item>
     </style>
 
     <!-- ===== 紧凑间距版（5x2 等 2 行高的小尺寸）：字号不变，只压缩留白 ===== -->
@@ -133,8 +135,8 @@
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
-        <item name="android:textSize">11sp</item>
-        <item name="android:textColor">#B3FFFFFF</item>
+        <item name="android:textSize">11dp</item>
+        <item name="android:textColor">#CCFFFFFF</item>
     </style>
 
     <style name="WidgetHourCondCompact">
@@ -145,9 +147,31 @@
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">2</item>
         <item name="android:textAlignment">center</item>
-        <item name="android:textColor">#D9FFFFFF</item>
-        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">#CCFFFFFF</item>
+        <item name="android:textSize">11dp</item>
     </style>
 
 
+
+    <!-- 日出/正午/日落这一行的标签与时间：与逐时行同一档字号，标签淡一档。 -->
+    <style name="WidgetSunLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">#CCFFFFFF</item>
+        <item name="android:textSize">11dp</item>
+    </style>
+
+    <style name="WidgetSunTime">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">#CCFFFFFF</item>
+        <item name="android:textSize">11dp</item>
+    </style>
 </resources>

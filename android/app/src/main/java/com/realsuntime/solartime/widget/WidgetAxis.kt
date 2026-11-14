@@ -3,6 +3,7 @@ package com.realsuntime.solartime.widget
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
@@ -52,6 +53,7 @@ object WidgetAxis {
      * @param bands 关键时间（直接当作真太阳时）；为空时只画轴线
      * @param bandColor 关键时段色带的颜色（0 表示不着色），由调用方按昼夜选档
      * @param dotColor 当前时刻圆点的颜色（时段内与色带同色，其余为白）
+     * @param dotXCompensation 圆点的横向预压扁系数，见 [WidgetUpdater.dotXCompensation]
      */
     fun render(
         context: Context,
@@ -61,6 +63,7 @@ object WidgetAxis {
         bands: List<TakeBand>,
         bandColor: Int,
         dotColor: Int,
+        dotXCompensation: Float = 1f,
     ): Bitmap? {
         if (widthPx <= 0 || heightPx <= 0) return null
         val dotCore = dotColor
@@ -69,16 +72,17 @@ object WidgetAxis {
         val canvas = Canvas(bitmap)
         val centerY = heightPx / 2f
         val dotRadius = heightPx * 0.44f
-        // 点画在两端时不外溢。
-        val inset = dotRadius
-        val usable = widthPx - inset * 2
+        // 轴线（和色带）**铺满整条位图**：位图贴在内容列里，左右边缘就是上下文字的外沿，
+        // 两端要跟日期行／经纬度对齐。所以这里不做内缩 —— 代价是 0:00 与 24:00 附近那个
+        // 圆点会被位图边缘裁掉一半，这与 App 首页的时间轴（圆点中心夹到 0..width）表现一致。
+        val width = widthPx.toFloat()
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             strokeCap = Paint.Cap.ROUND
             strokeWidth = dp(context, 1f)
             color = AXIS_COLOR
         }
-        canvas.drawLine(inset, centerY, widthPx - inset, centerY, paint)
+        canvas.drawLine(0f, centerY, width, centerY, paint)
 
         if (solarSecondsOfDay != null) {
             if (bandColor != 0 && bands.isNotEmpty()) {
@@ -86,24 +90,34 @@ object WidgetAxis {
                 paint.color = bandColor
                 paint.strokeWidth = dp(context, 1f)
                 spans(bands).forEach { span ->
-                    val x1 = inset + usable * (span.startMinutes / MINUTES_PER_DAY).toFloat()
-                    val x2 = inset + usable * (span.endMinutes / MINUTES_PER_DAY).toFloat()
+                    val x1 = width * (span.startMinutes / MINUTES_PER_DAY).toFloat()
+                    val x2 = width * (span.endMinutes / MINUTES_PER_DAY).toFloat()
                     canvas.drawLine(x1, centerY, x2, centerY, paint)
                 }
             }
 
-            val x = inset + usable * (solarSecondsOfDay / 86_400.0).toFloat()
-            // 径向渐变让点的边缘化开，不像贴上去的硬圆。
+            val x = width * (solarSecondsOfDay / 86_400.0).toFloat()
+            // 径向渐变让点的边缘化开，不像贴上去的硬圆。渐变自己按 [dotXCompensation]
+            // 横向压扁、并挪到当前时刻的位置上，于是画出来的是个「预压扁」的椭圆，
+            // 桌面横向拉伸之后正好变回圆（系数由调用方按屏幕档位给）。
             paint.style = Paint.Style.FILL
-            paint.shader = RadialGradient(
-                x,
-                centerY,
+            val shader = RadialGradient(
+                0f,
+                0f,
                 dotRadius,
                 intArrayOf(dotCore, dotCore, dotEdge),
                 floatArrayOf(0f, 0.45f, 1f),
                 Shader.TileMode.CLAMP,
             )
-            canvas.drawCircle(x, centerY, dotRadius, paint)
+            shader.setLocalMatrix(
+                Matrix().apply {
+                    setScale(1f / dotXCompensation, 1f)
+                    postTranslate(x, centerY)
+                },
+            )
+            paint.shader = shader
+            val halfWidth = dotRadius / dotXCompensation
+            canvas.drawOval(x - halfWidth, centerY - dotRadius, x + halfWidth, centerY + dotRadius, paint)
             paint.shader = null
         }
         return bitmap

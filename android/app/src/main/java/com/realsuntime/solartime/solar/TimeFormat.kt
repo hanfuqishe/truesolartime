@@ -13,6 +13,16 @@ object TimeFormat {
 
     fun clockWithSeconds(time: LocalTime): String = time.format(clockWithSeconds)
 
+    /** 时区偏移（秒）→ `UTC+8` / `UTC-3:30`。左栏标准时钟的标签用它，免得「标准时间」到底是哪里的。 */
+    fun utcOffsetLabel(offsetSeconds: Int): String {
+        val minutes = Math.round(offsetSeconds / 60.0).toInt()
+        val sign = if (minutes < 0) "-" else "+"
+        val abs = kotlin.math.abs(minutes)
+        val hours = abs / 60
+        val rest = abs % 60
+        return if (rest == 0) "UTC$sign$hours" else "UTC$sign$hours:%02d".format(rest)
+    }
+
     /** 带正负号的时长，例如 "+14 分 22 秒"、"-2 分 05 秒"。 */
     fun signedDuration(seconds: Double): String {
         val sign = if (seconds < 0) "-" else "+"

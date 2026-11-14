@@ -18,6 +18,7 @@ import { AxisSegment, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { TimeFormat } from '../core/TimeFormat';
+import { ZoneTable } from '../core/ZoneTable';
 import { NearbyCity, CityIndex } from '../core/CityIndex';
 import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
 import { AppStore } from './Store';
@@ -81,7 +82,9 @@ export class CardService {
     const language: string = DistrictService.language();
     const place = AppStore.place();
     const now: number = Date.now();
-    const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language);
+    const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language,
+      ZoneTable.offsetSeconds(AppStore.district().countryCode, place.longitude,
+        SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)));
     const data: CardData = new CardData();
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);

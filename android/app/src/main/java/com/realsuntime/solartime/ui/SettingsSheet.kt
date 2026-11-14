@@ -46,6 +46,10 @@ import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetUpdater
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -71,6 +75,31 @@ fun SettingsSheet(
     var error by remember { mutableStateOf<String?>(null) }
     // 桌面上已有的小组件数量：>0 时分钟刷新同样依赖精确闹钟权限，要一并提示。
     var pinnedWidgets by remember { mutableStateOf(WidgetUpdater.pinnedCount(context)) }
+    // 「添加到桌面」的结果提示（null 时显示常规说明）。
+    var widgetMessage by remember { mutableStateOf<String?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // 结算上一次「添加到桌面」：桌面加成功后会把桌面切到前台、我们的界面进后台，
+    // 所以在回到本页（ON_RESUME）时再比对实例数，才知道到底加没加上。
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                when (WidgetUpdater.consumePinOutcome(context)) {
+                    WidgetUpdater.PinOutcome.ADDED -> {
+                        pinnedWidgets = WidgetUpdater.pinnedCount(context)
+                        widgetMessage = context.getString(R.string.widget_add_done)
+                    }
+
+                    WidgetUpdater.PinOutcome.NOT_ADDED -> {
+                        widgetMessage = context.getString(R.string.widget_add_manual)
+                    }
+
+                    null -> Unit
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -201,6 +230,41 @@ fun SettingsSheet(
                     )
                 }
             }
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = stringResource(R.string.section_widget),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(6.dp))
+            FilledTonalButton(
+                onClick = {
+                    // 各桌面对「应用内添加」的支持参差不齐：Pixel 桌面会弹确认框，
+                    // 华为桌面也弹，但桌面这一屏满了就只 toast 一句「当前屏幕已经没有空间」，
+                    // 小米/红米甚至返回成功却什么都不做。所以只负责发出请求 + 记一笔基线，
+                    // 真正是否加上，等用户回到本页时用实例数结算（见下面的 ON_RESUME）。
+                    val requested = WidgetUpdater.requestPin(context)
+                    widgetMessage = if (requested) {
+                        context.getString(R.string.widget_add_waiting)
+                    } else {
+                        context.getString(R.string.widget_add_manual)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.widget_add_action))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = widgetMessage ?: stringResource(R.string.widget_add_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (widgetMessage == null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
 
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

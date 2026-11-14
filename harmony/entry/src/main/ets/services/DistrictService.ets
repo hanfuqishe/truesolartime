@@ -8,6 +8,7 @@ import { i18n } from '@kit.LocalizationKit';
 import { CityIndex } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { Place } from '../core/Place';
+import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore, CachedDistrict } from './Store';
 import { HttpUtil } from './HttpUtil';
 
@@ -70,7 +71,7 @@ export class DistrictService {
       if (names === null) {
         return false;
       }
-      AppStore.saveDistrict(names.full, names.short, language, place.latitude, place.longitude, CACHE_SCHEMA);
+      AppStore.saveDistrict(names.full, names.short, language, place.latitude, place.longitude, CACHE_SCHEMA, names.countryCode);
       DistrictService.revisionCount++;
       return true;
     } finally {
@@ -113,7 +114,11 @@ export class DistrictService {
       const district: string = address.subLocality ?? address.locality ?? '';
       const city: string = address.locality ?? address.subAdministrativeArea ?? '';
       const province: string = address.administrativeArea ?? '';
-      return DistrictNameLogic.pickNames(district, city, province);
+      const sysNames: DistrictNames | null = DistrictNameLogic.pickNames(district, city, province);
+      if (sysNames !== null) {
+        sysNames.countryCode = (address.countryCode ?? '').toLowerCase();
+      }
+      return sysNames;
     } catch (error) {
       return null;
     }
@@ -153,9 +158,17 @@ export class DistrictService {
       const province: string = DistrictService.firstOf(fields, ['state', 'province', 'region']);
       // 中文界面写「上海市黄浦区」，其他语言保持由细到粗的逗号写法。
       if (language.startsWith('zh')) {
-        return DistrictNameLogic.pickNames(district, city, province);
+        const names: DistrictNames | null = DistrictNameLogic.pickNames(district, city, province);
+        if (names !== null) {
+          names.countryCode = DistrictService.firstOf(fields, ['country_code']).toLowerCase();
+        }
+        return names;
       }
-      return DistrictNameLogic.composeNames([district, city, province]);
+      const composed: DistrictNames | null = DistrictNameLogic.composeNames([district, city, province]);
+      if (composed !== null) {
+        composed.countryCode = DistrictService.firstOf(fields, ['country_code']).toLowerCase();
+      }
+      return composed;
     } catch (error) {
       return null;
     }

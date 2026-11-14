@@ -42,6 +42,9 @@ object DistrictResolver {
     private const val KEY_LON = "lon"
     private const val KEY_TIME = "time"
 
+    /** 反查到的国家码（ISO 3166-1 alpha-2）：左栏时钟与太阳卡片靠它选当地标准时区。 */
+    private const val KEY_COUNTRY = "country"
+
     /** 缓存名字时所用的界面语言：换了语言（中 ⇄ 英）要重查，否则一直显示旧语言的名字。 */
     private const val KEY_LANG = "lang"
 
@@ -49,10 +52,16 @@ object DistrictResolver {
     private const val MOVE_THRESHOLD_KM = 5.0
 
     /**
-     * 缓存格式版本。结果写法变了（例如现在带上「市」前缀、并额外存区县短名）就把旧缓存当过期，
-     * 避免升级后一直显示旧名字。
+     * 缓存里的**国家码**最多还能信多远。比 [MOVE_THRESHOLD_KM] 宽得多，是为了让「同城多走几公里、
+     * 还没来得及重查」不影响时区；但它必须足够小，才拦得住「跨洲换了地点 + 反查失败」这种串台。
      */
-    private const val CACHE_SCHEMA = 4
+    private const val COUNTRY_MAX_DISTANCE_KM = 50.0
+
+    /**
+     * 缓存格式版本。结果写法变了（例如现在带上「市」前缀、并额外存区县短名）就把旧缓存当过期，
+     * 避免升级后一直显示旧名字。v5 起还多存了国家码，旧缓存没有它，必须重查一次。
+     */
+    private const val CACHE_SCHEMA = 5
     private const val KEY_SCHEMA = "schema"
 
     /** 高德用来占位、本身不是地名的上级字段。 */
@@ -83,17 +92,47 @@ object DistrictResolver {
      *
      * 小组件里那一行只有十来字的宽度，名字太长就得退到 [short]，否则会被省略号截断成
      * 「克孜勒苏柯尔克孜自治…」这种看不出位置的样子。
+     *
+     * [countryCode] 是 ISO 3166-1 alpha-2（小写），逆地理编码顺带带回来的国家；
+     * 拿不到时是空串，时区只能按经度近似。
      */
-    data class DistrictNames(val full: String, val short: String)
+    data class DistrictNames(val full: String, val short: String, val countryCode: String = "")
 
     /** 最近一次反查到的名字；不判断距离，避免新结果回来前显示闪成别的名字。 */
     fun cachedNames(context: Context): DistrictNames? {
         val prefs = prefs(context)
         val full = prefs.getString(KEY_NAME, null) ?: return null
-        return DistrictNames(full, prefs.getString(KEY_SHORT, null) ?: full)
+        return DistrictNames(
+            full = full,
+            short = prefs.getString(KEY_SHORT, null) ?: full,
+            countryCode = prefs.getString(KEY_COUNTRY, null).orEmpty(),
+        )
     }
 
     fun cachedName(context: Context): String? = cachedNames(context)?.full
+
+    /**
+     * 缓存下来的国家码，但**只在与 [place] 还算同一个地方时才认**。
+     *
+     * 名字沿用旧值只是显示问题（下一个查询回来就换掉），国家码却是拿来算时区的：从上海手工
+     * 切到纽约、而这一次逆地理又失败（离线、没配 Key、高德抽风）时，仍拿着缓存里的 `cn`
+     * 就会把纽约算成 UTC+8。所以缓存坐标离当前位置超过 [COUNTRY_MAX_DISTANCE_KM] 时返回空串，
+     * 让调用方退回按经度取整的近似（纽约 −74° → −5，照样是对的）。
+     */
+    fun cachedCountryCode(context: Context, place: Place): String {
+        val prefs = prefs(context)
+        val code = prefs.getString(KEY_COUNTRY, null).orEmpty()
+        if (code.isEmpty()) return ""
+        val lat = prefs.getFloat(KEY_LAT, Float.NaN).toDouble()
+        val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
+        if (lat.isNaN() || lon.isNaN()) return ""
+        val moved = CityIndex.distanceKm(lat, lon, place.latitude, place.longitude)
+        return if (trustsCountryAt(moved)) code else ""
+    }
+
+    /** 缓存的坐标离当前位置这么近时，缓存里的国家码才算数。纯判定，便于单测。 */
+    internal fun trustsCountryAt(movedKm: Double): Boolean =
+        movedKm >= 0 && movedKm <= COUNTRY_MAX_DISTANCE_KM
 
     /** 距离上次反查的坐标是否已超过阈值、或缓存已过期。 */
     fun needsRefresh(context: Context, place: Place): Boolean {
@@ -196,7 +235,8 @@ object DistrictResolver {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return null
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             val address = JSONObject(body).optJSONObject("address") ?: return null
-            return composeNames(namesFromNominatim(address))
+            val names = composeNames(namesFromNominatim(address)) ?: return null
+            return names.copy(countryCode = cleanCountryCode(address.optString("country_code")))
         } finally {
             connection.disconnect()
         }
@@ -233,7 +273,7 @@ object DistrictResolver {
                                 val address = result?.regeocodeAddress
                                 val names = pickNames(address?.district, address?.city, address?.province)
                                 if (names != null) {
-                                    save(app, place, names)
+                                    save(app, place, names.copy(countryCode = countryCodeOf(address)))
                                     WidgetUpdater.refreshAll(app)
                                 }
                             }
@@ -307,6 +347,45 @@ object DistrictResolver {
     private fun cleanName(value: String?): String? =
         value?.trim()?.takeIf { it.isNotEmpty() && it != "[]" }
 
+    /**
+     * 国家码规范化：只认两位字母（大小写不敏感），其余（空串、`[]`、纯数字 adcode）当作没有。
+     *
+     * 没有国家码并不是错误 —— 时区会退回按经度取整，在中国境内仍然正确。
+     */
+    fun cleanCountryCode(value: String?): String =
+        value?.trim()?.lowercase()?.takeIf { it.length == 2 && it.all { c -> c in 'a'..'z' } }.orEmpty()
+
+    /**
+     * 高德的逆地理结果里取国家码。
+     *
+     * 高德大多数时候直接给 `countryCode`（如 `CN`、`US`），个别版本／地区只给 `country`
+     * 国家名（如「美国」）。名字只有在**多时区大国**上才影响结果（单时区国家按经度取整也对），
+     * 所以只给这几个国家留一张中英对照表，其余情况宁可返回空串。
+     */
+    fun countryCodeOf(address: com.amap.api.services.geocoder.RegeocodeAddress?): String =
+        resolveCountryCode(address?.countryCode, address?.country)
+
+    /** 上面的纯逻辑版本，便于单测。 */
+    internal fun resolveCountryCode(code: String?, countryName: String?): String {
+        val direct = cleanCountryCode(code)
+        if (direct.isNotEmpty()) return direct
+        val name = cleanName(countryName) ?: return ""
+        return COUNTRY_CODES_BY_NAME[name.lowercase()].orEmpty()
+    }
+
+    /** 高德只给国家名时用的对照表：只收「按经度取整会算错」的多时区大国，外加中国。 */
+    private val COUNTRY_CODES_BY_NAME: Map<String, String> = mapOf(
+        "中国" to "cn", "china" to "cn",
+        "美国" to "us", "united states" to "us", "united states of america" to "us",
+        "加拿大" to "ca", "canada" to "ca",
+        "俄罗斯" to "ru", "russia" to "ru",
+        "澳大利亚" to "au", "australia" to "au",
+        "巴西" to "br", "brazil" to "br",
+        "墨西哥" to "mx", "mexico" to "mx",
+        "印度尼西亚" to "id", "印尼" to "id", "indonesia" to "id",
+        "哈萨克斯坦" to "kz", "kazakhstan" to "kz",
+    )
+
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -314,6 +393,7 @@ object DistrictResolver {
         prefs(context).edit()
             .putString(KEY_NAME, names.full)
             .putString(KEY_SHORT, names.short)
+            .putString(KEY_COUNTRY, names.countryCode)
             .putString(KEY_LANG, currentLanguage(context))
             .putInt(KEY_SCHEMA, CACHE_SCHEMA)
             .putFloat(KEY_LAT, place.latitude.toFloat())

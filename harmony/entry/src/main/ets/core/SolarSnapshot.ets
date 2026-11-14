@@ -32,6 +32,12 @@ export class SolarSnapshot {
   sunriseBeijingSeconds: number;
   sunsetBeijingSeconds: number;
   solarNoonBeijingSeconds: number;
+  /** 观测点所在地标准时区相对 UTC 的偏移（秒）。 */
+  localOffsetSeconds: number;
+  /** 以下三个为「当地时间」口径，供界面展示日出/上中天/日落。 */
+  sunriseLocalSeconds: number;
+  sunsetLocalSeconds: number;
+  solarNoonLocalSeconds: number;
   daylightSeconds: number;
   polar: PolarState;
   altitudeDegrees: number;
@@ -56,6 +62,10 @@ export class SolarSnapshot {
     this.sunriseBeijingSeconds = -1;
     this.sunsetBeijingSeconds = -1;
     this.solarNoonBeijingSeconds = -1;
+    this.localOffsetSeconds = SolarTimeMath.BEIJING_OFFSET_SECONDS;
+    this.sunriseLocalSeconds = -1;
+    this.sunsetLocalSeconds = -1;
+    this.solarNoonLocalSeconds = -1;
     this.daylightSeconds = -1;
     this.polar = PolarState.NORMAL;
     this.altitudeDegrees = 0;
@@ -75,7 +85,8 @@ export class SolarSnapshot {
 }
 
 export class SolarTimeSnapshot {
-  static compute(epochMillis: number, latitude: number, longitude: number, language: string): SolarSnapshot {
+  static compute(epochMillis: number, latitude: number, longitude: number, language: string,
+      zoneOffsetSeconds: number = -1): SolarSnapshot {
     const snapshot: SolarSnapshot = new SolarSnapshot();
     const trueSolarSeconds: number = SolarTimeMath.trueSolarSecondsOfDay(epochMillis, longitude);
     const position: SolarPosition = SolarTimeMath.solarPosition(epochMillis);
@@ -115,9 +126,27 @@ export class SolarTimeSnapshot {
     if (sunTimes.hasSunrise() && sunTimes.hasSunset()) {
       snapshot.daylightSeconds = Math.round((sunTimes.sunsetMillis - sunTimes.sunriseMillis) / 1000);
     }
+    // 当地时间 = UTC 时刻 + 当地时区偏移；北京时间口径按 +8 换算，故先减去 +8 再加当地偏移。
+    const zoneOffset: number = zoneOffsetSeconds >= 0
+      ? zoneOffsetSeconds
+      : SolarTimeMath.standardZoneOffsetSeconds(latitude, longitude);
+    snapshot.localOffsetSeconds = zoneOffset;
+    const shiftSeconds: number = zoneOffset - SolarTimeMath.BEIJING_OFFSET_SECONDS;
+    if (snapshot.sunriseBeijingSeconds >= 0) {
+      snapshot.sunriseLocalSeconds = SolarTimeSnapshot.wrapDay(snapshot.sunriseBeijingSeconds + shiftSeconds);
+    }
+    if (snapshot.sunsetBeijingSeconds >= 0) {
+      snapshot.sunsetLocalSeconds = SolarTimeSnapshot.wrapDay(snapshot.sunsetBeijingSeconds + shiftSeconds);
+    }
+    snapshot.solarNoonLocalSeconds = SolarTimeSnapshot.wrapDay(snapshot.solarNoonBeijingSeconds + shiftSeconds);
     snapshot.polar = sunTimes.polar;
     snapshot.altitudeDegrees = SolarTimeMath.solarAltitudeDegrees(epochMillis, latitude, longitude);
     return snapshot;
+  }
+
+  /** 把秒数归一到 0..86399。 */
+  private static wrapDay(seconds: number): number {
+    return ((Math.round(seconds) % 86400) + 86400) % 86400;
   }
 
   /** 当前时刻是否落在一段关键时间里（按真太阳时当天分钟数判断，供界面着色）。 */

@@ -4,14 +4,14 @@
 
     <string name="screen_subtitle">以太阳经过当地子午线的时刻为正午</string>
     <string name="action_settings">设置</string>
-    <string name="sun_section_title">太阳位置 · 北京时间</string>
+    <string name="sun_section_title">太阳位置 · 当地时间</string>
     <string name="altitude">高度角 %1$.1f°</string>
     <string name="sunrise">日出</string>
     <string name="solar_noon">正午</string>
     <string name="sunset">日落</string>
     <string name="daylight_line">白昼 %1$s　真太阳时 %2$s – %3$s</string>
-    <string name="polar_day">极昼：太阳整日不落，正午（北京时间）%1$s</string>
-    <string name="polar_night">极夜：太阳整日不出，正午（北京时间）%1$s</string>
+    <string name="polar_day">极昼：太阳整日不落，正午（当地时间）%1$s</string>
+    <string name="polar_night">极夜：太阳整日不出，正午（当地时间）%1$s</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地图</string>
     <string name="map_auto_selected">按所在地区自动选择</string>
@@ -30,6 +30,12 @@
     <string name="section_cities">常用城市</string>
     <string name="section_map">地图底图</string>
     <string name="map_auto_hint">自动：境内用高德，境外用 OpenStreetMap</string>
+    <string name="section_widget">桌面卡片</string>
+    <string name="widget_add_waiting">已发出请求，等桌面确认…</string>
+    <string name="widget_add_action">添加到桌面</string>
+    <string name="widget_add_desc">把真太阳时卡片直接放到桌面上。</string>
+    <string name="widget_add_done">已添加到桌面。</string>
+    <string name="widget_add_manual">没加上：桌面这一屏可能已经满了，或这个桌面不支持从应用内添加。腾出一格再试，也可以长按桌面空白处 → 窗口小工具 → 真太阳时。</string>
     <string name="reminder_title">时辰交接提醒</string>
     <string name="reminder_desc">进入下一个时辰时蜂鸣一声</string>
     <string name="chime_title">进入关键时间报时</string>

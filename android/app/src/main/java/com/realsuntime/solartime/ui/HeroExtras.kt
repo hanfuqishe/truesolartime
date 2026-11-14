@@ -2,6 +2,7 @@ package com.realsuntime.solartime.ui
 
 import android.content.Context
 import com.realsuntime.solartime.R
+import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
@@ -11,7 +12,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * 首页大卡片里那些「慢变量」的一次性读数：日期、天气与温度区间、六格逐时预报、关键时段。
+ * 日期与逐时预报按**当地标准时**算，跟左栏那个时钟同一口径（见 [LocalZone]）：
+ * 人在纽约时日期是纽约的日期、逐时格子的整点也是纽约的整点，不会出现「时钟写着 12:00、
+ * 日期却是北京那天的」这种错位。
  *
  * 逐秒变化的部分（两个时钟、时间轴上的圆点、关键时间配色）不在这里，由 Compose 直接按 [Instant] 算，
  * 免得每秒都去读一次 SharedPreferences。
@@ -27,15 +30,18 @@ internal data class HeroExtras(
     val temperature: TakeTemperature?,
 )
 
-/** 与卡片左栏的「标准时间」一致：北京时间。 */
-private val BEIJING: ZoneOffset = ZoneOffset.ofHours(8)
-
 /** 逐时预报的格数与步长（小时），与桌面卡片保持一致。 */
 private const val HOUR_CELLS = 6
 private const val HOUR_STEP = 1
 
-internal fun loadHeroExtras(context: Context, place: Place, now: Instant): HeroExtras {
-    val civil = now.atZone(BEIJING)
+internal fun loadHeroExtras(
+    context: Context,
+    place: Place,
+    now: Instant,
+    zoneOffsetSeconds: Int,
+): HeroExtras {
+    val zone = LocalZone.zoneOffset(zoneOffsetSeconds)
+    val civil = now.atZone(zone)
     val date = civil.toLocalDate()
     val schedule = TakeTimeRepository.schedule(context)
     val cached = WeatherRepository.cached(context, place)
@@ -58,18 +64,24 @@ internal fun loadHeroExtras(context: Context, place: Place, now: Instant): HeroE
         dateText = TimeText.dateShortWithWeekday(context, date),
         weatherText = weatherText,
         rangeText = rangeText,
-        hourly = hourCells(context, place, now, cached?.code),
+        hourly = hourCells(context, place, now, cached?.code, zone),
         bands = schedule?.bands.orEmpty(),
         temperature = schedule?.temperature,
     )
 }
 
 /** 从当前整点起的六格逐时预报；首格标「现在」并用实时天气码，与桌面卡片同一套规则。 */
-private fun hourCells(context: Context, place: Place, now: Instant, currentCode: Int?): List<HourCell> {
+private fun hourCells(
+    context: Context,
+    place: Place,
+    now: Instant,
+    currentCode: Int?,
+    zone: ZoneOffset,
+): List<HourCell> {
     val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
     val slots = WeatherRepository.slots(
         nowEpochSeconds = now.epochSecond,
-        zoneOffsetSeconds = BEIJING.totalSeconds,
+        zoneOffsetSeconds = zone.totalSeconds,
         count = HOUR_CELLS,
         stepHours = HOUR_STEP,
     )
@@ -79,7 +91,7 @@ private fun hourCells(context: Context, place: Place, now: Instant, currentCode:
         val point = hourly[epoch]
         val code = if (index == 0) current?.code ?: currentCode ?: point?.code else point?.code
         val condition = code?.let { WeatherRepository.conditionOf(it) }
-        val hour = Instant.ofEpochSecond(epoch).atZone(BEIJING).hour
+        val hour = Instant.ofEpochSecond(epoch).atZone(zone).hour
         HourCell(
             label = if (index == 0) context.getString(R.string.weather_now) else context.getString(R.string.weather_hour, hour),
             condition = condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,

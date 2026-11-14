@@ -1,6 +1,7 @@
 package com.realsuntime.solartime.solar
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -119,6 +120,32 @@ class SolarTimeMathTest {
         val expected = SolarTimeMath.trueSolarSecondsOfDay(instant, longitude)
         val rebuilt = ((utcSecondsOfDay + SolarTimeMath.trueSolarOffsetSeconds(instant, longitude)) % 86_400.0 + 86_400.0) % 86_400.0
         assertEquals(expected, rebuilt, 1e-6)
+    }
+
+    @Test
+    fun chinaBoundingBoxCoversTheWholeCountry() {
+        assertTrue(SolarTimeMath.isInChinaBbox(39.9042, 116.4074))
+        assertTrue(SolarTimeMath.isInChinaBbox(43.8256, 87.6168))   // 乌鲁木齐
+        assertTrue(SolarTimeMath.isInChinaBbox(22.3193, 114.1694))  // 香港
+        assertTrue(SolarTimeMath.isInChinaBbox(31.2304, 121.4737))  // 上海
+        assertTrue(SolarTimeMath.isInChinaBbox(18.5, 109.5))        // 海南南端
+        assertFalse(SolarTimeMath.isInChinaBbox(35.6762, 139.6503)) // 东京
+        assertFalse(SolarTimeMath.isInChinaBbox(1.3521, 103.8198))  // 新加坡（纬度在框外）
+        assertFalse(SolarTimeMath.isInChinaBbox(55.7558, 37.6173))  // 莫斯科
+    }
+
+    @Test
+    fun standardZoneOffsetUsesChinaRuleThenLongitude() {
+        // 中国境内恒为 +8，即使按经度该是 +6
+        assertEquals(8 * 3600, SolarTimeMath.standardZoneOffsetSeconds(43.8256, 87.6168))
+        assertEquals(8 * 3600, SolarTimeMath.standardZoneOffsetSeconds(39.9042, 116.4074))
+        // 境外按经度每 15° 取整
+        assertEquals(9 * 3600, SolarTimeMath.standardZoneOffsetSeconds(35.6762, 139.6503))
+        assertEquals(0, SolarTimeMath.standardZoneOffsetSeconds(51.5072, -0.1276))
+        assertEquals(-5 * 3600, SolarTimeMath.standardZoneOffsetSeconds(40.7128, -74.0060))
+        // 按经度取整后落在 UTC−12…+12，永远不会超出 java.time 的范围
+        assertEquals(12 * 3600, SolarTimeMath.standardZoneOffsetSeconds(-16.5, 179.9))
+        assertEquals(-12 * 3600, SolarTimeMath.standardZoneOffsetSeconds(0.0, -179.9))
     }
 
     private fun assertWithinMinutes(expected: LocalTime, actual: LocalTime, toleranceMinutes: Double) {

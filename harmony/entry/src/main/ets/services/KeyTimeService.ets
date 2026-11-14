@@ -15,6 +15,15 @@ import { HttpUtil } from './HttpUtil';
 const PAGE_URL: string = 'https://www.duosuccess.com/tcm/001a01080301b01a.htm';
 const TIMEOUT_MILLIS: number = 10000;
 
+/**
+ * 「关键时间」（服用时间）功能开关。
+ *
+ * 该功能会抓取第三方网页（duosuccess.com）并解析其时段内容。
+ * 出于内容合规与版权考虑，上架版本暂不启用；代码保留，改动此常量即可恢复。
+ * 关闭时不发起任何网络请求，界面也不会出现时间轴。
+ */
+export const KEY_TIME_FEATURE_ENABLED: boolean = false;
+
 /** 本地日期键，例如 "2026-11-02"。 */
 export function localDayKey(epochMillis: number): string {
   const date: Date = new Date(epochMillis);
@@ -34,6 +43,9 @@ export class KeyTimeService {
 
   /** 当前可用的关键时间；缓存缺失或超过 7 天返回 null（此时不着色、不报时）。 */
   static schedule(): TakeTimeSchedule | null {
+      if (!KEY_TIME_FEATURE_ENABLED) {
+        return null;
+      }
     const cached: CachedKeyTime = AppStore.keyTime();
     const bands: TakeBand[] = TakeTimeLogic.decodeBands(cached.bands);
     if (bands.length === 0) {
@@ -55,6 +67,9 @@ export class KeyTimeService {
 
   /** 今天该不该联网；是则先记下尝试时刻（失败后一小时重试）。 */
   static async refreshIfDue(): Promise<boolean> {
+      if (!KEY_TIME_FEATURE_ENABLED) {
+        return false;
+      }
     if (KeyTimeService.inFlight) {
       return false;
     }

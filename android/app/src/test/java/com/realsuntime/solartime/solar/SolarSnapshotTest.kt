@@ -86,4 +86,48 @@ class SolarSnapshotTest {
         assertTrue(london.offsetSeconds < 0)
         assertEquals(LocalTime.of(8, 0, 0), london.beijingTime)
     }
+
+    @Test
+    fun insideChinaLocalStandardTimeIsBeijingTime() {
+        val snapshot = SolarTimeSnapshot.compute(
+            instant = Instant.parse("2026-11-02T04:03:00Z"),
+            latitude = 43.8256,
+            longitude = 87.6168,
+        )
+
+        // 乌鲁木齐按经度算该是 +6，中国境内仍按 +8 显示。
+        assertEquals(8 * 3600, snapshot.localOffsetSeconds)
+        assertEquals(snapshot.beijingTime, snapshot.localStandardTime)
+        assertEquals(snapshot.solarNoonBeijing, snapshot.solarNoonLocal)
+    }
+
+    @Test
+    fun localStandardTimeFollowsTheObserversZoneNotBeijing() {
+        val instant = Instant.parse("2026-11-02T04:03:00Z")
+        val newYork = SolarTimeSnapshot.compute(
+            instant = instant,
+            latitude = 40.7128,
+            longitude = -74.0060,
+            zoneOffsetSeconds = -5 * 3600,
+        )
+
+        // 北京时间 12:03 → 纽约标准时 23:03（前一天）
+        assertEquals(LocalTime.of(12, 3, 0), newYork.beijingTime)
+        assertEquals(LocalTime.of(23, 3, 0), newYork.localStandardTime)
+        assertEquals(-5 * 3600, newYork.localOffsetSeconds)
+        // 日出日落也换算到当地时间：北京口径的正午挪后 13 小时（+8 → −5）。
+        val localNoon = newYork.solarNoonLocal ?: error("missing local noon")
+        val beijingNoon = newYork.solarNoonBeijing ?: error("missing beijing noon")
+        assertEquals(beijingNoon.minusHours(13), localNoon)
+    }
+
+    @Test
+    fun zoneOffsetDefaultsToTheCoordinateFallback() {
+        val instant = Instant.parse("2026-11-02T04:03:00Z")
+        val tokyo = SolarTimeSnapshot.compute(instant, 35.6762, 139.6503)
+
+        assertEquals(SolarTimeMath.standardZoneOffsetSeconds(35.6762, 139.6503), tokyo.localOffsetSeconds)
+        assertEquals(9 * 3600, tokyo.localOffsetSeconds)
+        assertEquals(13, tokyo.localStandardTime.hour)
+    }
 }

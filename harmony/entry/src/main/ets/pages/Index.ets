@@ -7,6 +7,7 @@ import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
+import { ZoneTable } from '../core/ZoneTable';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
 import { router } from '@kit.ArkUI';
@@ -81,7 +82,10 @@ struct Index {
   /** 真太阳时当天秒数，每秒更新；大时钟只依赖它。 */
   @State solarSecond: number = 0;
   /** 北京时间当天秒数，每秒更新。 */
-  @State beijingSecond: number = 0;
+  /** 当地标准时间的当天秒数，每秒更新。 */
+  @State standardSecond: number = 0;
+  /** 上一次的昼夜判定，用来在日落/日出那一刻切换主题。 */
+  private dayThemeCached: boolean = true;
   @State language: string = 'zh-Hans';
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
   @State palette: AppPalette = paletteFor(true);
@@ -208,6 +212,12 @@ struct Index {
 
   // ---- 数据 ----
 
+  /** 观测点的标准时区偏移（秒）：优先查国家表，查不到按经度近似。 */
+  private zoneOffsetSeconds(): number {
+    return ZoneTable.offsetSeconds(AppStore.district().countryCode, this.place.longitude,
+      SolarTimeMath.standardZoneOffsetSeconds(this.place.latitude, this.place.longitude));
+  }
+
   private tick(): void {
     const now: number = Date.now();
     const seconds: number = Math.floor(SolarTimeMath.trueSolarSecondsOfDay(now, this.place.longitude)) % 86400;
@@ -216,7 +226,15 @@ struct Index {
     this.previousSolarSecond = seconds;
     this.previousShichenIndex = shichenIndex;
     this.solarSecond = seconds;
-    this.beijingSecond = Math.floor(SolarTimeMath.beijingSecondsOfDay(now)) % 86400;
+    const zoneSeconds: number = this.zoneOffsetSeconds();
+    this.standardSecond = ((Math.floor(SolarTimeMath.beijingSecondsOfDay(now) + zoneSeconds -
+      SolarTimeMath.BEIJING_OFFSET_SECONDS) % 86400) + 86400) % 86400;
+    // 太阳落山/升起的那一刻就换主题，不用等下次重算。
+    const dayTheme: boolean = this.isDayTheme();
+    if (dayTheme !== this.dayThemeCached) {
+      this.dayThemeCached = dayTheme;
+      this.palette = paletteFor(dayTheme);
+    }
     // 关键时间的字色要按秒跟进（进入/离开时段的那一秒就变色），所以放在每秒的 tick 里算。
     this.inKeyTime = TakeTimeLogic.insideBands(this.keyBands, seconds);
     // 跟随 GPS 时前台每分钟取一次定位；桌面卡片侧是 5 分钟一次（CardService）。
@@ -269,7 +287,8 @@ struct Index {
     const language: string = DistrictService.language();
     const now: number = Date.now();
     this.language = language;
-    this.snapshot = SolarTimeSnapshot.compute(now, this.place.latitude, this.place.longitude, language);
+    this.snapshot = SolarTimeSnapshot.compute(now, this.place.latitude, this.place.longitude, language,
+      this.zoneOffsetSeconds());
     this.palette = paletteFor(this.isDayTheme());
     this.districtFull = DistrictService.cachedName();
     this.district = DistrictService.cachedShortName();
@@ -584,7 +603,7 @@ struct Index {
         // 左：标准时间
         Column() {
           Row() {
-            Text('标准时间')
+            Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
               .fontSize(12)
               .fontColor('#CCFFFFFF')
             Text(this.districtLabel())
@@ -598,7 +617,7 @@ struct Index {
           }
           .width('100%')
           Row() {
-            Text(TimeFormat.clock(this.beijingSecond))
+            Text(TimeFormat.clock(this.standardSecond))
               .fontSize(42)
               .fontWeight(FontWeight.Medium)
               .fontColor('#FFFFFF')
@@ -609,7 +628,7 @@ struct Index {
               .fontColor('#FFFFFF')
               .maxLines(1)
               .margin({ bottom: 5 })
-            Text(pad2(this.beijingSecond % 60))
+            Text(pad2(this.standardSecond % 60))
               .fontSize(23)
               .fontWeight(FontWeight.Medium)
               .fontColor('#FFFFFF')
@@ -803,7 +822,7 @@ struct Index {
             Text('日出')
               .fontSize(10)
               .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.sunriseBeijingSeconds))
+            Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
               .fontSize(17)
               .fontColor(this.palette.text)
               .margin({ top: 2 })
@@ -814,7 +833,7 @@ struct Index {
             Text('上中天')
               .fontSize(10)
               .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.solarNoonBeijingSeconds))
+            Text(TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
               .fontSize(17)
               .fontColor(this.palette.text)
               .margin({ top: 2 })
@@ -825,7 +844,7 @@ struct Index {
             Text('日落')
               .fontSize(10)
               .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.sunsetBeijingSeconds))
+            Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
               .fontSize(17)
               .fontColor(this.palette.text)
               .margin({ top: 2 })

@@ -9,6 +9,7 @@ import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sin
 import kotlin.math.tan
@@ -29,6 +30,9 @@ object SolarTimeMath {
 
     /** 北京时间所在的东八区经度。 */
     const val BEIJING_LONGITUDE = 120.0
+
+    /** 北京时间的标准时区偏移（秒）。 */
+    const val BEIJING_OFFSET_SECONDS: Int = 8 * 3600
 
     /** 太阳上中天时的天顶角修正（含大气折射与太阳视半径）。 */
     private const val SUNRISE_ZENITH_DEGREES = 90.833
@@ -113,6 +117,27 @@ object SolarTimeMath {
     /** 经度修正：当地经度相对东经 120° 的时差，单位秒。 */
     fun longitudeOffsetSeconds(longitude: Double): Double =
         (longitude - BEIJING_LONGITUDE) * 240.0
+
+    /**
+     * 粗略判断坐标是否在中国境内（含港澳台），用于时区兜底与逆地理编码分流。
+     *
+     * 只要经度 73–135、纬度 18–54，就当作中国：这样乌鲁木齐（87°E）不会因为
+     * 按经度取整而被算成 UTC+6。
+     */
+    fun isInChinaBbox(latitude: Double, longitude: Double): Boolean =
+        longitude in 73.0..135.0 && latitude in 18.0..54.0
+
+    /**
+     * 观测点所在地的**标准时区偏移**（相对 UTC，秒），不含夏令时。
+     *
+     * 中国全境统一 +8（含港澳台与新疆、西藏）；境外按经度每 15° 取整，限制在 UTC−12…+14。
+     * 只知道坐标、不知道国家时可用的近似值；有国家码时优先用 `data.ZoneTable`（多时区大国要靠它）。
+     */
+    fun standardZoneOffsetSeconds(latitude: Double, longitude: Double): Int {
+        if (isInChinaBbox(latitude, longitude)) return BEIJING_OFFSET_SECONDS
+        val hours = (longitude / 15.0).roundToInt().coerceIn(-12, 14)
+        return hours * 3600
+    }
 
     /**
      * 当地真太阳时相对 **UTC** 的偏移，单位秒 = 经度 × 4 分/度 + 均时差。

@@ -26,6 +26,39 @@ class DistrictResolverTest {
     }
 
     @Test
+    fun cachedCountryCodeIsOnlyTrustedNearTheCachedCoordinates() {
+        // 同城多走几公里：缓存里的国家码照样算数
+        assertTrue(DistrictResolver.trustsCountryAt(0.0))
+        assertTrue(DistrictResolver.trustsCountryAt(20.0))
+        assertTrue(DistrictResolver.trustsCountryAt(50.0))
+        // 跨洲换了地点、这次逆地理又失败：不能再拿上一个地点的国家码算时区
+        assertFalse(DistrictResolver.trustsCountryAt(51.0))
+        assertFalse(DistrictResolver.trustsCountryAt(11_000.0))
+        assertFalse(DistrictResolver.trustsCountryAt(-1.0))
+    }
+
+    @Test
+    fun normalizesCountryCodesFromEitherGeocoder() {
+        assertEquals("us", DistrictResolver.cleanCountryCode("US"))
+        assertEquals("cn", DistrictResolver.cleanCountryCode(" cn "))
+        // 空串、「[]」、纯数字 adcode 都不算国家码
+        assertEquals("", DistrictResolver.cleanCountryCode(null))
+        assertEquals("", DistrictResolver.cleanCountryCode("[]"))
+        assertEquals("", DistrictResolver.cleanCountryCode("310000"))
+    }
+
+    @Test
+    fun mapsCountryNameWhenAmapOmitsTheCode() {
+        assertEquals("us", DistrictResolver.resolveCountryCode("", "美国"))
+        assertEquals("ru", DistrictResolver.resolveCountryCode(null, "Russia"))
+        assertEquals("cn", DistrictResolver.resolveCountryCode(null, "中国"))
+        // 单时区国家不查名字：按经度取整本来就对，宁可返回空串少一次误判。
+        assertEquals("", DistrictResolver.resolveCountryCode(null, "法国"))
+        // 有代码时优先用代码
+        assertEquals("jp", DistrictResolver.resolveCountryCode(" JP ", "日本"))
+    }
+
+    @Test
     fun prefixesDistrictWithItsCity() {
         assertEquals("上海市宝山区", DistrictResolver.pickName("宝山区", "上海市", "上海市"))
         assertEquals("南京市鼓楼区", DistrictResolver.pickName("鼓楼区", "南京市", "江苏省"))

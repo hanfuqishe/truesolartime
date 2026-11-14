@@ -43,6 +43,7 @@ export class CachedDistrict {
   longitude: number = 0;
   fetchedMillis: number = 0;
   schema: number = 0;
+  countryCode: string = '';
 }
 
 export class AppStore {
@@ -334,10 +335,12 @@ export class AppStore {
     cached.longitude = AppStore.numberValue(store, 'lon', Number.NaN);
     cached.fetchedMillis = AppStore.numberValue(store, 'time', 0);
     cached.schema = AppStore.numberValue(store, 'schema', 0);
+    cached.countryCode = AppStore.stringValue(store, 'countryCode', '');
     return cached;
   }
 
-  static saveDistrict(full: string, short: string, language: string, latitude: number, longitude: number, schema: number): void {
+  static saveDistrict(full: string, short: string, language: string, latitude: number, longitude: number, schema: number,
+      countryCode: string = ''): void {
     const store: preferences.Preferences = AppStore.districtStore();
     store.putSync('name', full);
     store.putSync('short', short);
@@ -345,6 +348,7 @@ export class AppStore {
     store.putSync('lat', latitude);
     store.putSync('lon', longitude);
     store.putSync('schema', schema);
+    store.putSync('countryCode', countryCode);
     store.putSync('time', Date.now());
     store.flush();
   }

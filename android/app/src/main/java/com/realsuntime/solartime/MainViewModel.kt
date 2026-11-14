@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.DistrictResolver
+import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
@@ -62,6 +63,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _districtName = MutableStateFlow(DistrictResolver.cachedName(application))
     val districtName: StateFlow<String?> = _districtName.asStateFlow()
 
+    /**
+     * 观测点所在地的**标准时区偏移**（秒）：左栏标准时钟与太阳卡片都用它换算。
+     *
+     * 依赖逆地理带回来的国家码（多时区大国要靠它），所以每一拍都跟着区划缓存一起重读 ——
+     * 区划名是后台查回来的，查完这一拍就能切到正确的时区，不用等重启。
+     */
+    private val _zoneOffsetSeconds = MutableStateFlow(
+        LocalZone.offsetSeconds(application, settings.place, Instant.now()),
+    )
+    val zoneOffsetSeconds: StateFlow<Int> = _zoneOffsetSeconds.asStateFlow()
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
@@ -74,6 +86,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _now.value = Instant.now()
                 // 区县反查在后台跑完会写缓存；这里读的是内存里的 prefs，代价可忽略。
                 _districtName.value = DistrictResolver.cachedName(application)
+                _zoneOffsetSeconds.value = LocalZone.offsetSeconds(application, _place.value, _now.value)
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
         }
@@ -203,6 +216,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val previous = _place.value
         settings.place = place
         _place.value = place
+        // 换地点后时区可能整个变掉（例如从上海切到纽约），当拍就跟上，不必等下一秒的 tick。
+        _zoneOffsetSeconds.value = LocalZone.offsetSeconds(getApplication(), place, Instant.now())
 
         val app = getApplication<Application>()
         val moved = abs(place.longitude - previous.longitude) > REMINDER_RESCHEDULE_DEGREES ||

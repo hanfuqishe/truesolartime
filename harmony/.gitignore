@@ -7,3 +7,7 @@ build/
 local.properties
 *.har
 *.hap
+
+# 发布签名脚本（含密钥库路径，口令走环境变量）
+sign-release.ps1
+sign-release.ps1.*

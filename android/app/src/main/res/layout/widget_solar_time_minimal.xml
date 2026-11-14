@@ -22,6 +22,6 @@
         android:maxLines="1"
         android:text="00:00"
         android:textColor="#FFFFC65C"
-        android:textSize="30sp"
+        android:textSize="30dp"
         tools:ignore="HardcodedText" />
 </LinearLayout>

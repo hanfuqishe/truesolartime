@@ -22,6 +22,7 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.CityIndex
 import com.realsuntime.solartime.data.DistrictResolver
+import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
@@ -29,9 +30,9 @@ import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.data.TakeTimeSchedule
 import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.ui.TimeText
-import com.realsuntime.solartime.map.CoordinateTransform
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
+import com.realsuntime.solartime.solar.TimeFormat
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -75,17 +76,44 @@ object WidgetUpdater {
     private const val GPS_FIX_INTERVAL_MILLIS = 5L * 60 * 1000
 
     /**
-     * 桌面回报的高度（OPTION_APPWIDGET_MIN_HEIGHT）普遍小于实际可用的单元格高度
-     * （实测 2 行回报 131dp、实际约 165dp；3 行回报 180dp、实际约 224dp），
-     * 按这个系数折算后再决定用哪套布局。
+     * 桌面回报的高度（OPTION_APPWIDGET_MIN_HEIGHT）只是**名义尺寸**：各家桌面一律按
+     * 「一格 70dp」折算单元格数，而实际一格的高度差得很远。实测三组（回报值 → 实际卡片高度）：
+     *
+     * | 设备 | 回报 | 实际 |
+     * |---|---|---|
+     * | Pixel 4（手机）1 格 | 52dp  | 107dp |
+     * | Pixel 4（手机）2 格 | 116dp | 223dp |
+     * | 华为 MRR-W29（平板）2 格 | 132dp | 266dp |
+     *
+     * 三组都约等于 **2 倍**，所以按这个系数折算才是接近真实的可用高度（早先按 1.25 折算，
+     * 会把一张 266dp 的卡片当成 165dp，于是错用了紧凑版面、内容显得缩成一团）。
      */
-    private const val HEIGHT_SCALE = 1.25f
+    private const val HEIGHT_SCALE = 2.0f
 
-    /** 折算后低于这个高度就用紧凑间距布局（常规内容约 170dp）。 */
+    /** 折算后低于这个高度就用紧凑间距布局（常规内容约 180dp）。 */
     private const val REGULAR_MIN_CONTENT_DP = 170f
 
-    /** 折算后低于这个高度时连逐时行都放不下，先隐藏它把空间留给时钟。 */
+    /** 折算后低于这个高度就算「一行卡片」，连日期行都紧（见 [showAxis] 处的说明）。 */
     private const val MIN_HEIGHT_WITH_HOURLY_DP = 145f
+
+    /**
+     * 卡片「够高」的门槛（折算后的 dp）：到这个高度才加**日出 / 正午 / 日落**那一行。
+     *
+     * 手机 2 格折算 232dp → 不加（223dp 正好放下现有内容）；平板 2 格折算 264dp → 加
+     * （卡片实际 288dp，加完约 200dp，剩下的空间刚好）。
+     */
+    private const val TALL_CONTENT_DP = 240f
+
+    /**
+     * 再加**第二排逐时天气**（后 6 小时）所需的高度。
+     *
+     * 平板 2 格折算 264dp：现有内容约 200dp，第二排约 66dp，加起来 266dp，288dp 的卡片放得下
+     * （实测确实放得下）；手机 2 格 232dp 就不行。
+     */
+    private const val TALL_WEATHER_DP = 255f
+
+    /** 第二排逐时行的最小宽度：6 格逐时排得开就行（约 4 列）。 */
+    private const val MIN_WIDTH_FOR_SECOND_HOUR_ROW_DP = 260
 
     /** 桌面没给出宽度时按默认 5x2 小组件的宽度（dp）估算字号。 */
     private const val DEFAULT_WIDGET_WIDTH_DP = 320f
@@ -97,7 +125,7 @@ object WidgetUpdater {
     private const val TEXT_GAP_DP = 2f
 
     /** 地名那一行：字号与左侧「标准时间」标签的宽度（4 个汉字）估算用。 */
-    private const val CITY_TEXT_SP = 11f
+    private const val CITY_TEXT_DP = 11f
     private const val CITY_LABEL_CHARS = 4
     private const val CITY_LABEL_GAP_DP = 6f
 
@@ -121,13 +149,26 @@ object WidgetUpdater {
 
     /** 秒数宽度的余量：等宽字体下切点本就精确，只留一点防亚像素裁边。 */
     private const val SECOND_WIDTH_SLACK_DP = 0.25f
-    private const val MAX_MAIN_TEXT_SP = 48f
-    private const val MIN_MAIN_TEXT_SP = 20f
-    private const val SECOND_TEXT_SP = 23f
-    private const val DATE_TEXT_SP = 11f
-    private const val MIN_DATE_TEXT_SP = 8f
-    /** 日期行右侧经纬度的字号与它和日期之间的间隙。 */
-    private const val COORD_TEXT_SP = 10f
+    /** 「添加到桌面」请求的记账文件与键名。 */
+    private const val PIN_PREFS = "widget_pin"
+    private const val KEY_PIN_BASELINE = "baseline"
+    private const val KEY_PIN_STARTED = "started_at"
+    private const val KEY_PIN_PENDING = "pending"
+    /** 请求发出后多久才允许判定「没加上」：用户可能还在桌面的确认框上。 */
+    private const val PIN_SETTLE_MIN_MILLIS = 3_000L
+    private const val MAX_MAIN_TEXT_DP = 48f
+    private const val MIN_MAIN_TEXT_DP = 20f
+    private const val SECOND_TEXT_DP = 23f
+    private const val DATE_TEXT_DP = 11f
+    /**
+     * 日期／经纬度这行小字统一缩放的下限。
+     *
+     * 两者按自然字号（11dp / 10dp）算出的总宽超出可用宽度时一起缩，缩到 0.85 为止
+     * （日期 ≈ 9.4dp、经纬度 ≈ 8.5dp），再不够就让日期那格自己省略号截断。
+     */
+    private const val MIN_SMALL_TEXT_SCALE = 0.85f
+    /** 日期行右侧经纬度的字号与它和日期之间的间隙：与其它小字（标签、逐时、日出日落）一致。 */
+    private const val COORD_TEXT_DP = 11f
     private const val COORD_GAP_DP = 8f
 
     /**
@@ -197,6 +238,14 @@ object WidgetUpdater {
                 val options = manager.getAppWidgetOptions(id)
                 val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
                 val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+                // 排查尺寸问题时一并打出另一组口径（max 是横屏/放大后的上限，各桌面含义不一）。
+                Log.d(
+                    TAG,
+                    "options($id) min=${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)}x" +
+                        "${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)} " +
+                        "max=${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)}x" +
+                        "${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)}",
+                )
                 buildViews(context, location, widthDp, heightDp, id, forceChronometer)
             }.onFailure {
                 Log.w(TAG, "buildViews($id) failed, falling back to minimal", it)
@@ -229,7 +278,7 @@ object WidgetUpdater {
     ): RemoteViews {
         val place = location.place
         val now = Instant.now()
-        val zone = civilZoneOf(place)
+        val zone = civilZoneOf(context, place, now)
         val civil = now.atZone(zone)
         val solarOffset = solarOffsetMillis(now, place)
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(now, place.longitude)
@@ -250,15 +299,40 @@ object WidgetUpdater {
         val date = dateText(context, civil, place, location.hasFix)
         // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
-        // 折算后放不下常规布局的内容（如默认 5x2）时，改用只压缩留白的紧凑间距布局。
-        val compact = effectiveHeightDp > 0f && effectiveHeightDp < REGULAR_MIN_CONTENT_DP
+        // 折算后不足两行的高度就算「一行卡片」。桌面一律按「一格 70dp」上报（实测 1 行报 46~52dp、
+        // 2 行报 116dp），折算后 145dp 正好把一行和两行分开。
+        val singleRow = effectiveHeightDp > 0f && effectiveHeightDp < MIN_HEIGHT_WITH_HOURLY_DP
+        val large = isLargeScreen(context)
+        // 一行卡片在两档设备上的实际高度差很多：平板一格实测 143dp，刚好装得下带逐时行的紧凑版面；
+        // 手机一格只有约 107dp，连日期行+时间轴都塞不下。所以：
+        //   * 平板一行 → 紧凑间距 + 整张卡（时钟、日期、时间轴、逐时行）；
+        //   * 手机一行 → 常规间距（把空间用满）+ 只留两栏时钟与日期，时间轴和逐时行都让位；
+        //   * 两行及以上 → 与原来一致，按折算高度在常规/紧凑之间切。
+        val compact = if (singleRow) large else effectiveHeightDp > 0f && effectiveHeightDp < REGULAR_MIN_CONTENT_DP
         // 关键时间只在刷新时读一次：时间轴着色与真太阳时的数字都要用。
         val keyTime = TakeTimeRepository.schedule(context)
         val solarSecondsOfDay = solarSeconds.toDouble()
         val keyColor = if (location.hasFix) activeKeyColor(keyTime, solarSecondsOfDay, isDay) else null
-        // 再矮就连逐时行都放不下，先让位给时钟。
-        val showHourly = effectiveHeightDp <= 0f || effectiveHeightDp >= MIN_HEIGHT_WITH_HOURLY_DP
+        val showAxis = !singleRow || large
+        val showHourly = !singleRow || large
+        // 只有**平板**才在富余空间里加料（手机上一加就显满，实测 P40 Pro 的 5x2 卡片
+        // 折算 262dp，够高但不该再塞东西）：
+        // 高度富余 → 加一行日出/正午/日落；再富余一截 → 加第二排逐时天气（后 6 小时）。
+        val tallContent = effectiveHeightDp >= TALL_CONTENT_DP
+        val roomForMoreWeather = effectiveHeightDp >= TALL_WEATHER_DP &&
+            widthDp >= MIN_WIDTH_FOR_SECOND_HOUR_ROW_DP
+        val showSunRow = large && tallContent && !singleRow
+        val showSecondHourRow = large && showHourly && roomForMoreWeather
         val layout = if (compact) R.layout.widget_solar_time_compact else R.layout.widget_solar_time
+        // 各厂商启动器上报的高度口径差异很大（小米/华为实测 2 行报 110~143dp，实际单元格 165~286dp），
+        // 排查布局问题时先把原始值与折算值打出来。
+        Log.d(
+            TAG,
+            "build($widgetId) reported=${widthDp}x${heightDp}dp effectiveHeight=${effectiveHeightDp}dp " +
+                "singleRow=$singleRow large=$large compact=$compact axis=$showAxis hourly=$showHourly " +
+                "sun=$showSunRow hourly2=$showSecondHourRow " +
+                "layout=${if (compact) "compact" else "regular"}",
+        )
 
         return RemoteViews(context.packageName, layout).apply {
             setInt(
@@ -268,9 +342,20 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             applyClockSizing(context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude), compact, this)
-            bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
+            if (showAxis) {
+                bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
+            } else {
+                // 一行卡片放不下时间轴：整条连位图一起收掉，别让它在底部露出半截。
+                setViewVisibility(R.id.widget_axis, View.GONE)
+            }
             setString(R.id.widget_civil_time, "setTimeZone", zone.id)
             setString(R.id.widget_civil_sec, "setTimeZone", zone.id)
+            // 左栏标签直接写 UTC 偏移（如「UTC+8」），与首页一致：一个卡片上「标准时间」
+            // 到底是哪个时区的，一眼就能看出来。
+            setTextViewText(
+                R.id.widget_label_civil,
+                TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds),
+            )
             setTextViewText(R.id.widget_civil_date, date)
             val city = cityLabel(context, place, widthDp, compact)
             // 地名放不下时才用「整行」：那一行里地名在左、时辰在右，右边那一栏的时辰就不必再显示。
@@ -327,10 +412,43 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_solar_shichen, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
-            bindHourly(context, place, now, zone, showHourly && location.hasFix, this)
+            bindSunRow(context, place, now, zone, showSunRow && location.hasFix, this)
+            // 逐时天气在「还没有定位」时也照样画出来（格子填 `--` 与问号图标）：
+            // 早先这里整块隐藏，卡片就只剩两个时钟、下面空一大片，看着像坏了；
+            // 留占位既保持版面形状，也说明「在等数据」。
+            bindHourly(
+                context, place, now, zone,
+                show = showHourly,
+                row = FIRST_HOUR_ROW,
+                firstSlotOffsetHours = 0,
+                hasFix = location.hasFix,
+                views = this,
+            )
+            bindHourly(
+                context, place, now, zone,
+                show = showSecondHourRow,
+                row = SECOND_HOUR_ROW,
+                firstSlotOffsetHours = FIRST_HOUR_ROW.size,
+                hasFix = location.hasFix,
+                views = this,
+            )
             bindClicks(context, place, this)
         }
     }
+
+    /**
+     * 时间轴圆点的「横向预压扁」系数。
+     *
+     * 轴线整条是按**桌面回报的宽度**画成位图、再由桌面 `fitXY` 横向拉伸到真实卡片宽度，
+     * 画成正圆的点子会被拉成椭圆。桌面只给名义尺寸、真实宽度拿不到，所以按屏幕档位来：
+     *
+     * - **手机 = 1.0（完全不动）**：Pixel 这类桌面回报的宽度和真实卡片基本一致，圆点本来就是正圆。
+     * - **平板 = 1.30**：华为桌面回报 304dp、实际卡片约 396dp，横向被拉伸 1.3 倍，点子明显变扁。
+     *
+     * 实测（截图量亮核）：平板改前宽高比 1.29 → 改后 1.00。
+     */
+    private fun dotXCompensation(context: Context): Float =
+        if (isLargeScreen(context)) 1.30f else 1f
 
     /**
      * 画时间轴：真太阳时 0–24 时，色带为「关键时间」，白点是当前时刻。
@@ -379,9 +497,17 @@ object WidgetUpdater {
             } else {
                 0xFFFFFFFF.toInt()
             },
+            dotXCompensation = dotXCompensation(context),
         )
         if (bitmap != null) {
             views.setImageViewBitmap(R.id.widget_axis, bitmap)
+            // 把视图高度钉成位图的像素高度，纵向缩放就永远是 1:1。
+            // 不钉的话，布局写的是 `13dp`，由**宿主**按它自己的密度换算：真机 P40 Pro 上
+            // 系统的显示大小被改成 450dpi、物理 530dpi，宿主换算出的 13dp 比我们算的位图高，
+            // 竖直方向被放大，圆点就变成竖椭圆（同一份代码在模拟器上是正圆）。
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                views.setViewLayoutHeight(R.id.widget_axis, heightPx.toFloat(), TypedValue.COMPLEX_UNIT_PX)
+            }
         }
     }
 
@@ -400,10 +526,10 @@ object WidgetUpdater {
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnDp = (totalWidthDp - chromeDp) / 2f
         val paddingDp = if (compact) 10f else 14f
-        val maxNarrow = ((columnDp - CITY_LABEL_CHARS * CITY_TEXT_SP - CITY_LABEL_GAP_DP) / CITY_TEXT_SP).toInt()
-        val maxNoLabel = ((columnDp - CITY_LABEL_GAP_DP) / CITY_TEXT_SP).toInt()
+        val maxNarrow = ((columnDp - CITY_LABEL_CHARS * CITY_TEXT_DP - CITY_LABEL_GAP_DP) / CITY_TEXT_DP).toInt()
+        val maxNoLabel = ((columnDp - CITY_LABEL_GAP_DP) / CITY_TEXT_DP).toInt()
         // 跨栏时可用的宽度：整条轴减去左右内边距，再给右端的「时辰」留出位置。
-        val maxWide = ((totalWidthDp - paddingDp * 2f - CITY_WIDE_END_RESERVE_DP) / CITY_TEXT_SP).toInt()
+        val maxWide = ((totalWidthDp - paddingDp * 2f - CITY_WIDE_END_RESERVE_DP) / CITY_TEXT_DP).toInt()
         return planCityLabel(names, fallback, maxNarrow, maxNoLabel, maxWide)
     }
 
@@ -539,41 +665,79 @@ object WidgetUpdater {
         now: Instant,
         zone: ZoneId,
         show: Boolean,
+        row: HourRow,
+        firstSlotOffsetHours: Int,
+        hasFix: Boolean,
         views: RemoteViews,
     ) {
         val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
-        views.setViewVisibility(R.id.widget_hour_row, if (show) View.VISIBLE else View.GONE)
+        views.setViewVisibility(row.rowId, if (show) View.VISIBLE else View.GONE)
         if (!show) return
 
         val slots = WeatherRepository.slots(
-            nowEpochSeconds = now.epochSecond,
+            // 第二排接在第一排后面：整体往后挪 firstSlotOffsetHours 小时。
+            nowEpochSeconds = now.epochSecond + firstSlotOffsetHours * 3600L,
             zoneOffsetSeconds = zone.rules.getOffset(now).totalSeconds,
-            count = HOUR_LABEL_IDS.size,
+            count = row.size,
             stepHours = HOUR_STEP,
         )
-        // 第一格标「现在」，用实时天气码，与日期行的读数保持一致。
+        // 第一排的第一格标「现在」，用实时天气码，与日期行的读数保持一致。
         val currentCode = WeatherRepository.cached(context, place)?.code
         val unknown = context.getString(R.string.weather_unknown)
         slots.forEachIndexed { index, epoch ->
             val point = hourly[epoch]
-            val label = if (index == 0) {
+            val isNow = firstSlotOffsetHours == 0 && index == 0
+            val label = if (isNow) {
                 context.getString(R.string.weather_now)
             } else {
                 context.getString(R.string.weather_hour, Instant.ofEpochSecond(epoch).atZone(zone).hour)
             }
-            val code = if (index == 0) currentCode ?: point?.code else point?.code
-            views.setTextViewText(HOUR_LABEL_IDS[index], label)
+            // 还没有定位时一律画占位符：兜底城市（内置默认坐标）的天气挂在这里会让人
+            // 以为那就是当地的读数。
+            val code = if (!hasFix) {
+                null
+            } else if (isNow) {
+                currentCode ?: point?.code
+            } else {
+                point?.code
+            }
+            views.setTextViewText(row.labelIds[index], label)
             val condition = code?.let { WeatherRepository.conditionOf(it) }
             val hour = Instant.ofEpochSecond(epoch).atZone(zone).hour
             views.setImageViewResource(
-                HOUR_ICON_IDS[index],
+                row.iconIds[index],
                 condition?.let { conditionIcon(it, isDay = hour in 6..17) } ?: R.drawable.ic_wx_unknown,
             )
             views.setTextViewText(
-                HOUR_COND_IDS[index],
+                row.condIds[index],
                 condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,
             )
         }
+    }
+
+    /**
+     * 日出 / 正午 / 日落那一行：只在卡片够高时显示。
+     *
+     * 时间按观测点的标准时（与左栏那个时钟同一口径），不是真太阳时；极昼／极夜时
+     * 没有日出或日落，对应的位置显示占位符 `--`。
+     */
+    private fun bindSunRow(
+        context: Context,
+        place: Place,
+        now: Instant,
+        zone: ZoneId,
+        show: Boolean,
+        views: RemoteViews,
+    ) {
+        views.setViewVisibility(R.id.widget_sun_row, if (show) View.VISIBLE else View.GONE)
+        if (!show) return
+        val times = SolarTimeMath.sunTimes(now.atZone(zone).toLocalDate(), place.latitude, place.longitude)
+        fun text(time: Instant?): String = time?.atZone(zone)?.toLocalTime()
+            ?.let { "%02d:%02d".format(Locale.ROOT, it.hour, it.minute) }
+            ?: context.getString(R.string.weather_unknown)
+        views.setTextViewText(R.id.widget_sunrise, text(times.sunrise))
+        views.setTextViewText(R.id.widget_noon, text(times.solarNoon))
+        views.setTextViewText(R.id.widget_sunset, text(times.sunset))
     }
 
     /** 逐时格子的天气图标；夜间用月亮区分晴与多云。 */
@@ -682,13 +846,13 @@ object WidgetUpdater {
         val secondsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
-            textSize = spToPx(SECOND_TEXT_SP, metrics)
+            textSize = dpToPx(SECOND_TEXT_DP, metrics)
         }
         val secondsBlockPx = secondsPaint.measureText(SECOND_SAMPLE)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             fontFeatureSettings = "tnum"
-            textSize = spToPx(SECOND_TEXT_SP, metrics)
+            textSize = dpToPx(SECOND_TEXT_DP, metrics)
         }
         val colonPx = paint.measureText(":")
         val availablePx = columnWidthPx - secondsBlockPx - colonPx - TEXT_GAP_DP * density
@@ -702,35 +866,58 @@ object WidgetUpdater {
             (secondsBlockPx + SECOND_WIDTH_SLACK_DP * density).toInt(),
         )
 
-        paint.textSize = spToPx(MAX_MAIN_TEXT_SP, metrics)
+        paint.textSize = dpToPx(MAX_MAIN_TEXT_DP, metrics)
         val widthRatio = paint.measureText(MAIN_TEXT_SAMPLE) / paint.textSize
         val mainPx = fitTextSizePx(
             availableWidthPx = availablePx,
             widthRatio = widthRatio,
-            minPx = spToPx(MIN_MAIN_TEXT_SP, metrics),
+            minPx = dpToPx(MIN_MAIN_TEXT_DP, metrics),
             maxPx = paint.textSize,
         )
         views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
         views.setTextViewTextSize(R.id.widget_solar_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
 
-        // 日期与经纬度同一行：日期占满剩余宽度，同样按可用宽度收缩，免得窄尺寸时被截成半截。
-        val coordPx = spToPx(COORD_TEXT_SP, metrics)
-        paint.textSize = coordPx
-        val coordsWidthPx = if (coordinates.isEmpty()) 0f else paint.measureText(coordinates) + COORD_GAP_DP * density
-        val dateAvailablePx = totalWidthPx - chromeDp * density - coordsWidthPx
-        val datePx = spToPx(DATE_TEXT_SP, metrics)
-        paint.textSize = datePx
-        val dateRatio = paint.measureText(date) / datePx
-        views.setTextViewTextSize(
-            R.id.widget_civil_date,
-            TypedValue.COMPLEX_UNIT_PX,
-            fitTextSizePx(
-                availableWidthPx = dateAvailablePx,
-                widthRatio = dateRatio,
-                minPx = spToPx(MIN_DATE_TEXT_SP, metrics),
-                maxPx = datePx,
-            ),
+        // 日期与经纬度同一行。两个都是「小字」，但**必须一起缩**：
+        // 早先只让日期按可用宽度收缩、并允许缩到 8dp，而经纬度是定死的 10dp，于是窄一点的
+        // 卡片上日期那行明显比旁边的经纬度、比下面的逐时标签小一截（真机 P40 Pro 上肉眼可见）。
+        // 现在按两者在自然字号（11dp / 10dp）下需要的总宽度算一个统一系数，一起缩放，
+        // 下限 0.85（日期 ≈ 9.4dp、经纬度 ≈ 8.5dp），比例始终与设计一致。
+        //
+        // 注意下发时用 **dp** 而不是 px：布局里其它小字都是 dp，由桌面按**它自己**的密度换算成
+        // 像素；而本进程拿到的 density 可能和桌面不同（真机 P40 Pro 系统显示大小 450dpi、
+        // 物理 530dpi，桌面按 530 渲染）。用 px 下发会让这一行比同样标称 11dp 的标签小 ~15%。
+        val dateNaturalDp = DATE_TEXT_DP
+        val coordNaturalDp = COORD_TEXT_DP
+        val dateNaturalWidth = measureTextWidth(date, dateNaturalDp, metrics)
+        val coordNaturalWidth = if (coordinates.isEmpty()) 0f else measureTextWidth(coordinates, coordNaturalDp, metrics)
+        val gapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
+        val rowAvailablePx = totalWidthPx - chromeDp * density
+        val neededPx = dateNaturalWidth + coordNaturalWidth + gapPx
+        val smallScale = if (neededPx <= rowAvailablePx || neededPx <= 0f) {
+            1f
+        } else {
+            (rowAvailablePx / neededPx).coerceIn(MIN_SMALL_TEXT_SCALE, 1f)
+        }
+        views.setTextViewTextSize(R.id.widget_civil_date, TypedValue.COMPLEX_UNIT_DIP, dateNaturalDp * smallScale)
+        if (coordinates.isNotEmpty()) {
+            views.setTextViewTextSize(R.id.widget_coordinates, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp * smallScale)
+        }
+        Log.d(
+            TAG,
+            "smallText date=${"%.2f".format(Locale.ROOT, dateNaturalDp * smallScale)}dp " +
+                "coord=${"%.2f".format(Locale.ROOT, coordNaturalDp * smallScale)}dp " +
+                "scale=${"%.3f".format(Locale.ROOT, smallScale)} " +
+                "dateW=${dateNaturalWidth.toInt()} coordW=${coordNaturalWidth.toInt()} avail=${rowAvailablePx.toInt()}",
         )
+    }
+
+    /** 用与小字相同的字体度量量出某段文字的宽度（px）。 */
+    private fun measureTextWidth(text: String, sizeDp: Float, metrics: DisplayMetrics): Float {
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = dpToPx(sizeDp, metrics)
+            fontFeatureSettings = "tnum"
+        }
+        return paint.measureText(text)
     }
 
     /** 文本宽度约等于 widthRatio × 字号，按可用宽度反推字号并夹在上下限内。 */
@@ -744,8 +931,15 @@ object WidgetUpdater {
         return (availableWidthPx / widthRatio).coerceIn(minPx, maxPx)
     }
 
-    private fun spToPx(sp: Float, metrics: DisplayMetrics): Float =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, metrics)
+    /**
+     * dp → px。
+     *
+     * 小组件里**一律按 dp 换算，不用 sp**：桌面单元格的尺寸是固定的，而 sp 会跟着系统「字体大小」
+     * 一起放大（有些人会把它调到 1.3～2 倍），字号一涨排版就被挤出格子、甚至把时钟裁掉。
+     * 布局里的 `textSize` 也全部写成了 dp，见 `res/layout/widget_solar_time*.xml`。
+     */
+    private fun dpToPx(dp: Float, metrics: DisplayMetrics): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, metrics)
 
     /**
      * 安排下一次刷新。
@@ -769,7 +963,7 @@ object WidgetUpdater {
                 // 亮屏时两个时钟的整分都要刷（日期、天气、时辰、色带都跟着走）。
                 nextTickDelayMillis(
                     nowMillis = nowMillis,
-                    civilOffsetMillis = civilOffsetMillis(now, civilZoneOf(place)),
+                    civilOffsetMillis = civilOffsetMillis(now, civilZoneOf(context, place, now)),
                     solarOffsetMillis = solarOffset,
                 )
             } else {
@@ -836,6 +1030,46 @@ object WidgetUpdater {
         R.id.widget_hour_cond_5,
     )
 
+    private val HOUR2_LABEL_IDS = intArrayOf(
+        R.id.widget_hour2_label_0,
+        R.id.widget_hour2_label_1,
+        R.id.widget_hour2_label_2,
+        R.id.widget_hour2_label_3,
+        R.id.widget_hour2_label_4,
+        R.id.widget_hour2_label_5,
+    )
+
+    private val HOUR2_ICON_IDS = intArrayOf(
+        R.id.widget_hour2_icon_0,
+        R.id.widget_hour2_icon_1,
+        R.id.widget_hour2_icon_2,
+        R.id.widget_hour2_icon_3,
+        R.id.widget_hour2_icon_4,
+        R.id.widget_hour2_icon_5,
+    )
+
+    private val HOUR2_COND_IDS = intArrayOf(
+        R.id.widget_hour2_cond_0,
+        R.id.widget_hour2_cond_1,
+        R.id.widget_hour2_cond_2,
+        R.id.widget_hour2_cond_3,
+        R.id.widget_hour2_cond_4,
+        R.id.widget_hour2_cond_5,
+    )
+
+    /** 一排逐时格子的三条 id（行容器 + 时刻 + 图标 + 天气名）。 */
+    private class HourRow(
+        val rowId: Int,
+        val labelIds: IntArray,
+        val iconIds: IntArray,
+        val condIds: IntArray,
+    ) {
+        val size: Int get() = labelIds.size
+    }
+
+    private val FIRST_HOUR_ROW = HourRow(R.id.widget_hour_row, HOUR_LABEL_IDS, HOUR_ICON_IDS, HOUR_COND_IDS)
+    private val SECOND_HOUR_ROW = HourRow(R.id.widget_hour_row2, HOUR2_LABEL_IDS, HOUR2_ICON_IDS, HOUR2_COND_IDS)
+
     /** 每格代表 1 小时。 */
     private const val HOUR_STEP = 1
 
@@ -865,9 +1099,43 @@ object WidgetUpdater {
         val manager = context.getSystemService(AppWidgetManager::class.java) ?: return false
         if (!manager.isRequestPinAppWidgetSupported) return false
         val provider = ComponentName(context, SolarWidgetProvider::class.java)
+        // 记一笔「这次请求从几个实例开始」，桌面添加完成后会把前台切成桌面、我们的界面被盖住，
+        // 没法当场等结果，只能等用户回到 App 再结算（见 [consumePinOutcome]）。
+        pinPrefs(context).edit()
+            .putInt(KEY_PIN_BASELINE, pinnedCount(context))
+            .putLong(KEY_PIN_STARTED, System.currentTimeMillis())
+            .putBoolean(KEY_PIN_PENDING, true)
+            .apply()
         // 部分启动器（如华为桌面）不会回调成功事件，是否真的加上去由调用方比对实例数判断。
         return runCatching { manager.requestPinAppWidget(provider, null, null) }.getOrDefault(false)
     }
+
+    /** 「添加到桌面」的结算结果。 */
+    enum class PinOutcome { ADDED, NOT_ADDED }
+
+    /**
+     * 结算上一次「添加到桌面」请求；没有待结算的请求时返回 null。
+     *
+     * 桌面添加成功后会直接把桌面切到前台，我们的界面在后台，所以这里只在**用户回到 App 之后**
+     * 比对实例数。请求刚发出不到 [PIN_SETTLE_MIN_MILLIS] 时不结算 —— 用户可能还在确认框上。
+     */
+    fun consumePinOutcome(context: Context): PinOutcome? {
+        val prefs = pinPrefs(context)
+        if (!prefs.getBoolean(KEY_PIN_PENDING, false)) return null
+        val baseline = prefs.getInt(KEY_PIN_BASELINE, 0)
+        val now = pinnedCount(context)
+        if (now > baseline) {
+            prefs.edit().putBoolean(KEY_PIN_PENDING, false).apply()
+            return PinOutcome.ADDED
+        }
+        val startedAt = prefs.getLong(KEY_PIN_STARTED, 0L)
+        if (System.currentTimeMillis() - startedAt < PIN_SETTLE_MIN_MILLIS) return null
+        prefs.edit().putBoolean(KEY_PIN_PENDING, false).apply()
+        return PinOutcome.NOT_ADDED
+    }
+
+    private fun pinPrefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PIN_PREFS, Context.MODE_PRIVATE)
 
     /** 当前已固定到桌面的实例数，供「添加到桌面」判断是否成功。 */
     fun pinnedCount(context: Context): Int = runCatching {
@@ -907,15 +1175,21 @@ object WidgetUpdater {
     }
 
     /**
-     * 所在地的法定时区。中国全境统一为东八区，直接固定；
-     * 其他地区跟随设备时区（人在当地时手机通常已自动切换）。
+     * 是不是平板级的宽屏（sw ≥ 600dp）。平板的桌面单元格比手机高得多（实测一格 143dp vs
+     * 手机约 111dp），但上报口径两边都按「一格 70dp」算，所以高度这一路判断在平板上偏保守。
      */
-    private fun civilZoneOf(place: Place): ZoneId =
-        if (CoordinateTransform.isInChina(place.latitude, place.longitude)) {
-            ZoneId.of("Asia/Shanghai")
-        } else {
-            ZoneId.systemDefault()
-        }
+    private fun isLargeScreen(context: Context): Boolean =
+        context.resources.configuration.smallestScreenWidthDp >= 600
+
+    /**
+     * 卡片左栏「标准时间」用的时区，取**观测点所在地**的标准时，而不是手机所在的时区。
+     *
+     * 中国境内钉在 `Asia/Shanghai`（含港澳台与新疆，不按经度算）；境外优先用设备时区
+     * （人在当地时手机通常已自动切换，还能顺带照顾夏令时），当设备时区与观测点的标准偏移
+     * 对不上时（人在国内、手工指定了纽约坐标）退到固定的 `GMT±HH:MM`，两者口径见 [LocalZone]。
+     */
+    private fun civilZoneOf(context: Context, place: Place, now: Instant): ZoneId =
+        LocalZone.zoneIdFor(context, place, now)
 
     /**
      * 手工指定过坐标时，App 与小组件一律按它显示，连系统最近一次定位都不看；
@@ -938,8 +1212,15 @@ object WidgetUpdater {
             return LocationState(place, hasFix = true)
         }
         // 没有实时定位时，只有「历史上确实拿到过 GPS 定位」才继续用它；默认坐标不算有效定位。
+        //
+        // 「跟随 GPS」的判定必须与 App 内一致：**有定位权限**且**不是手工指定坐标**。
+        // App 启动时就是按 `hasPermission() && source != MANUAL` 决定要不要开启跟踪、要不要进
+        // 「等待定位」的；早先这里只看 source，于是在没给定位权限的机器上，主页拿默认坐标照常
+        // 显示内容、桌面卡片却全变成占位符（用户报「为什么两边显示不一样」）。
+        val followingGps = LocationTracker(context).hasPermission() &&
+            saved.source != PlaceSource.MANUAL
         val hasFix = hasValidFix(
-            followingGps = true,
+            followingGps = followingGps,
             hadFix = saved.source == PlaceSource.GPS,
             fixNow = false,
         )
@@ -986,7 +1267,9 @@ object WidgetUpdater {
      */
     private fun dateText(context: Context, civil: ZonedDateTime, place: Place, hasFix: Boolean): String {
         val date = TimeText.dateShortWithWeekday(context, civil.toLocalDate())
-        if (!hasFix) return date
+        // 还没定位时不知道是哪里的天气，但这一行不该只剩日期：留个 `--` 占位，
+        // 与逐时格子的 `--` 一起表示「在等数据」，版面也保持原样。
+        if (!hasFix) return "$date · ${context.getString(R.string.weather_unknown)}"
         val parts = ArrayList<String>(3)
         parts += date
         val weather = WeatherRepository.cached(context, place)?.let {

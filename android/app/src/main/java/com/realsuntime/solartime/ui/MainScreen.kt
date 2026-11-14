@@ -98,6 +98,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val remindersEnabled by viewModel.remindersEnabled.collectAsStateWithLifecycle()
     val keyTimeChimeEnabled by viewModel.keyTimeChimeEnabled.collectAsStateWithLifecycle()
     val districtName by viewModel.districtName.collectAsStateWithLifecycle()
+    val zoneOffsetSeconds by viewModel.zoneOffsetSeconds.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -106,15 +107,15 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
-    val snapshot = remember(now, place) {
-        SolarTimeSnapshot.compute(now, place.latitude, place.longitude)
+    val snapshot = remember(now, place, zoneOffsetSeconds) {
+        SolarTimeSnapshot.compute(now, place.latitude, place.longitude, zoneOffsetSeconds)
     }
 
     // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好；
     // 但新数据一到（例如刚换了城市、天气刚取回来）要立刻重算，所以把天气版本号也当键。
     val weatherRevision = WeatherRepository.revision()
-    val heroExtras = remember(place, now.epochSecond / 30, weatherRevision) {
-        loadHeroExtras(context, place, now)
+    val heroExtras = remember(place, now.epochSecond / 30, weatherRevision, zoneOffsetSeconds) {
+        loadHeroExtras(context, place, now, zoneOffsetSeconds)
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -276,7 +277,10 @@ private fun Header(badge: String, onOpenSettings: () -> Unit) {
             .padding(top = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        // 标题与右侧地名都要限宽：地名是不定宽文本，早先它按内容取宽，长地址（例如
+        // "Donghuamen Subdistrict, Dongcheng District"）会把左边的标题挤成一字一行。
+        // 两者都给权重，地名右对齐、超出省略，标题至少拿 60% 宽度。
+        Column(Modifier.weight(1.5f)) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
@@ -295,7 +299,10 @@ private fun Header(badge: String, onOpenSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(end = 6.dp),
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp, end = 6.dp),
             )
         }
         IconButton(onClick = onOpenSettings) {
@@ -336,11 +343,12 @@ private fun HeroCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth()) {
-                // 左：标准时间（与桌面卡片一致，用北京时间）
+                // 左：当地标准时间（所在地的法定时区，标签直接写成 UTC+8 这种形式；
+                // 中国境内就是北京时间，出国或手工指定外地坐标时换成当地标准时）
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = stringResource(R.string.widget_label_civil),
+                            text = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds),
                             style = MaterialTheme.typography.labelMedium,
                             color = HeroPalette.LABEL,
                         )
@@ -356,8 +364,8 @@ private fun HeroCard(
                         )
                     }
                     HeroClock(
-                        text = TimeFormat.clock(snapshot.beijingTime),
-                        seconds = snapshot.beijingTime.second,
+                        text = TimeFormat.clock(snapshot.localStandardTime),
+                        seconds = snapshot.localStandardTime.second,
                         color = Color.White,
                     )
                 }
@@ -382,7 +390,10 @@ private fun HeroCard(
                         Text(
                             text = stringResource(
                                 R.string.hero_shichen,
-                                snapshot.shichenName,
+                                // 时辰名走本地化字符串（英文本地化成 "Si hour"），与桌面卡片
+                                // 用同一套；`snapshot.shichenName` 是固定的中文名，不能直接用，
+                                // 否则英文界面下主页显示「巳时」、桌面卡片显示「Si hour」。
+                                TimeText.shichenName(context, snapshot.shichenIndex),
                                 TimeText.shichenHalf(context, snapshot.secondHalf),
                             ),
                             style = MaterialTheme.typography.labelMedium,
@@ -631,9 +642,9 @@ private fun SunCard(snapshot: SolarSnapshot) {
 
             if (snapshot.polar == SolarTimeMath.PolarState.NORMAL) {
                 Row(Modifier.fillMaxWidth()) {
-                    SunTimeItem(stringResource(R.string.sunrise), snapshot.sunriseBeijing, Modifier.weight(1f))
-                    SunTimeItem(stringResource(R.string.solar_noon), snapshot.solarNoonBeijing, Modifier.weight(1f))
-                    SunTimeItem(stringResource(R.string.sunset), snapshot.sunsetBeijing, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.sunrise), snapshot.sunriseLocal, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.solar_noon), snapshot.solarNoonLocal, Modifier.weight(1f))
+                    SunTimeItem(stringResource(R.string.sunset), snapshot.sunsetLocal, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -651,12 +662,12 @@ private fun SunCard(snapshot: SolarSnapshot) {
                     text = if (snapshot.polar == SolarTimeMath.PolarState.MIDNIGHT_SUN) {
                         stringResource(
                             R.string.polar_day,
-                            TimeFormat.clock(snapshot.solarNoonBeijing),
+                            TimeFormat.clock(snapshot.solarNoonLocal),
                         )
                     } else {
                         stringResource(
                             R.string.polar_night,
-                            TimeFormat.clock(snapshot.solarNoonBeijing),
+                            TimeFormat.clock(snapshot.solarNoonLocal),
                         )
                     },
                     style = MaterialTheme.typography.bodySmall,

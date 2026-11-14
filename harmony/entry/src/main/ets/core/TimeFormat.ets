@@ -62,6 +62,16 @@ export class TimeFormat {
     return `${rest} s`;
   }
 
+  /** 时区偏移（秒）→ "UTC+8" / "UTC-3:30"。 */
+  static utcOffsetLabel(offsetSeconds: number): string {
+    const minutes: number = Math.round(offsetSeconds / 60);
+    const sign: string = minutes < 0 ? '-' : '+';
+    const abs: number = Math.abs(minutes);
+    const hours: number = Math.floor(abs / 60);
+    const rest: number = abs % 60;
+    return rest === 0 ? `UTC${sign}${hours}` : `UTC${sign}${hours}:${pad2(rest)}`;
+  }
+
   /** 例如 "13 小时 42 分"；传负数得 "--"。 */
   static duration(seconds: number, language: string): string {
     if (seconds < 0) {

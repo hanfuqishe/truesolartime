@@ -4,14 +4,14 @@
 
     <string name="screen_subtitle">以太陽經過當地子午線的時刻為正午</string>
     <string name="action_settings">設定</string>
-    <string name="sun_section_title">太陽位置 · 北京時間</string>
+    <string name="sun_section_title">太陽位置 · 當地時間</string>
     <string name="altitude">高度角 %1$.1f°</string>
     <string name="sunrise">日出</string>
     <string name="solar_noon">正午</string>
     <string name="sunset">日落</string>
     <string name="daylight_line">白晝 %1$s　真太陽時 %2$s – %3$s</string>
-    <string name="polar_day">極晝：太陽整日不落，正午（北京時間）%1$s</string>
-    <string name="polar_night">極夜：太陽整日不出，正午（北京時間）%1$s</string>
+    <string name="polar_day">極晝：太陽整日不落，正午（當地時間）%1$s</string>
+    <string name="polar_night">極夜：太陽整日不出，正午（當地時間）%1$s</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地圖</string>
     <string name="map_auto_selected">依所在地區自動選擇</string>
@@ -30,6 +30,12 @@
     <string name="section_cities">常用城市</string>
     <string name="section_map">地圖底圖</string>
     <string name="map_auto_hint">自動：境內用高德，境外用 OpenStreetMap</string>
+    <string name="section_widget">桌面卡片</string>
+    <string name="widget_add_waiting">已發出請求，等桌面確認…</string>
+    <string name="widget_add_action">新增到桌面</string>
+    <string name="widget_add_desc">把真太陽時卡片直接放到桌面上。</string>
+    <string name="widget_add_done">已新增到桌面。</string>
+    <string name="widget_add_manual">沒加上：桌面這一屏可能已經滿了，或這個桌面不支援從應用內新增。騰出一格再試，也可以長按桌面空白處 → 視窗小工具 → 真太陽時。</string>
     <string name="reminder_title">時辰交接提醒</string>
     <string name="reminder_desc">進入下一個時辰時蜂鳴一聲</string>
     <string name="chime_title">進入關鍵時間報時</string>

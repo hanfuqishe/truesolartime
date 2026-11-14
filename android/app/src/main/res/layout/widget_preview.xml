@@ -26,7 +26,7 @@
         android:maxLines="1"
         android:text="上海市黄浦区"
         android:textColor="#B3FFFFFF"
-        android:textSize="11sp"
+        android:textSize="11dp"
         tools:ignore="HardcodedText" />
 
     <LinearLayout
@@ -47,7 +47,7 @@
                 android:maxLines="1"
                 android:text="标准时间"
                 android:textColor="#CCFFFFFF"
-                android:textSize="11sp"
+                android:textSize="11dp"
                 tools:ignore="HardcodedText" />
 
             <TextView
@@ -57,7 +57,7 @@
                 android:maxLines="1"
                 android:text="21:42"
                 android:textColor="#FFFFFFFF"
-                android:textSize="30sp"
+                android:textSize="30dp"
                 tools:ignore="HardcodedText" />
         </LinearLayout>
 
@@ -74,7 +74,7 @@
                 android:maxLines="1"
                 android:text="真太阳时"
                 android:textColor="#CCFFFFFF"
-                android:textSize="11sp"
+                android:textSize="11dp"
                 tools:ignore="HardcodedText" />
 
             <TextView
@@ -84,7 +84,7 @@
                 android:maxLines="1"
                 android:text="22:04"
                 android:textColor="#FFFFC65C"
-                android:textSize="30sp"
+                android:textSize="30dp"
                 tools:ignore="HardcodedText" />
         </LinearLayout>
     </LinearLayout>

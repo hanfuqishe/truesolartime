@@ -10,8 +10,11 @@ export class DistrictNames {
   full: string;
   /** 最细一级，例如 "南山区"。 */
   short: string;
+  /** ISO 3166-1 alpha-2 国家码（小写），用于查标准时区。 */
+  countryCode: string;
 
-  constructor(full: string, short: string) {
+  constructor(full: string, short: string, countryCode: string = '') {
+    this.countryCode = countryCode;
     this.full = full;
     this.short = short;
   }

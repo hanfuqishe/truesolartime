@@ -4,14 +4,14 @@
 
     <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
     <string name="action_settings">Settings</string>
-    <string name="sun_section_title">Sun position · Beijing time</string>
+    <string name="sun_section_title">Sun position · local time</string>
     <string name="altitude">Altitude %1$.1f°</string>
     <string name="sunrise">Sunrise</string>
     <string name="solar_noon">Noon</string>
     <string name="sunset">Sunset</string>
     <string name="daylight_line">Daylight %1$s　true solar %2$s – %3$s</string>
-    <string name="polar_day">Midnight sun: the sun never sets. Noon (Beijing time) %1$s</string>
-    <string name="polar_night">Polar night: the sun never rises. Noon (Beijing time) %1$s</string>
+    <string name="polar_day">Midnight sun: the sun never sets. Noon (local time) %1$s</string>
+    <string name="polar_night">Polar night: the sun never rises. Noon (local time) %1$s</string>
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
     <string name="map_auto_selected">auto-selected by region</string>
@@ -30,6 +30,12 @@
     <string name="section_cities">Common cities</string>
     <string name="section_map">Map tiles</string>
     <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
+    <string name="section_widget">Home screen card</string>
+    <string name="widget_add_waiting">Request sent. Waiting for the launcher…</string>
+    <string name="widget_add_action">Add to home screen</string>
+    <string name="widget_add_desc">Puts the true solar time card on your home screen.</string>
+    <string name="widget_add_done">Added to the home screen.</string>
+    <string name="widget_add_manual">Could not add it: this home screen may be full, or the launcher does not support adding widgets from inside an app. Free a slot and try again, or long-press an empty spot and choose Widgets, then True Solar Time.</string>
     <string name="reminder_title">Shichen change alert</string>
     <string name="reminder_desc">Beep once when the next shichen begins</string>
     <string name="chime_title">Chime at key times</string>

@@ -36,8 +36,8 @@
             android:ellipsize="end"
             android:gravity="start"
             android:maxLines="1"
-            android:textColor="#B3FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#CCFFFFFF"
+            android:textSize="11dp"
             tools:text="克孜勒苏柯尔克孜自治州阿图什市" />
 
         <TextView
@@ -46,8 +46,8 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:maxLines="1"
-            android:textColor="#B3FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#CCFFFFFF"
+            android:textSize="11dp"
             tools:text="亥时" />
     </LinearLayout>
 
@@ -75,7 +75,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/widget_label_civil"
                     android:textColor="#CCFFFFFF"
-                    android:textSize="11sp" />
+                    android:textSize="11dp" />
 
                 <TextView
                     android:id="@+id/widget_city"
@@ -85,8 +85,8 @@
                     android:ellipsize="end"
                     android:gravity="end"
                     android:maxLines="1"
-                    android:textColor="#B3FFFFFF"
-                    android:textSize="11sp" />
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="11dp" />
             </LinearLayout>
 
             <LinearLayout
@@ -148,7 +148,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/widget_label_solar"
                     android:textColor="#CCFFFFFF"
-                    android:textSize="11sp" />
+                    android:textSize="11dp" />
 
                 <TextView
                     android:id="@+id/widget_solar_shichen"
@@ -156,8 +156,8 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:gravity="end"
-                    android:textColor="#B3FFFFFF"
-                    android:textSize="11sp" />
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="11dp" />
             </LinearLayout>
 
             <LinearLayout
@@ -214,8 +214,8 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="#B3FFFFFF"
-            android:textSize="12sp" />
+            android:textColor="#CCFFFFFF"
+            android:textSize="11dp" />
 
         <TextView
             android:id="@+id/widget_coordinates"
@@ -223,8 +223,8 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:maxLines="1"
-            android:textColor="#B3FFFFFF"
-            android:textSize="11sp" />
+            android:textColor="#CCFFFFFF"
+            android:textSize="11dp" />
     </LinearLayout>
     <!-- 真太阳时 0–24 时的时间轴：彩色段是「服用时间」，白点是当前时刻；位图由 WidgetAxis 绘制。 -->
     <ImageView
@@ -236,7 +236,69 @@
         android:scaleType="fitXY"
         tools:ignore="ContentDescription" />
 
+        <!-- 日出 / 正午 / 日落：只有卡片够高时才显示（手机上 2 格只有 223dp，放不下这一行；
+         平板 2 格有 288dp，把余量用起来）。时间按观测点的标准时，与左栏时钟同一口径。 -->
     <LinearLayout
+        android:id="@+id/widget_sun_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/WidgetSunLabel"
+                android:text="@string/sunrise" />
+
+            <TextView
+                android:id="@+id/widget_sunrise"
+                style="@style/WidgetSunTime"
+                tools:ignore="HardcodedText" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/WidgetSunLabel"
+                android:text="@string/solar_noon" />
+
+            <TextView
+                android:id="@+id/widget_noon"
+                style="@style/WidgetSunTime"
+                tools:ignore="HardcodedText" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/WidgetSunLabel"
+                android:text="@string/sunset" />
+
+            <TextView
+                android:id="@+id/widget_sunset"
+                style="@style/WidgetSunTime"
+                tools:ignore="HardcodedText" />
+        </LinearLayout>
+    </LinearLayout>
+
+<LinearLayout
         android:id="@+id/widget_hour_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -339,6 +401,109 @@
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
     </LinearLayout>
+    <!-- 第二排逐时预报：只有卡片又宽又高时才显示（平板把小组件拉到 7 列以上），
+         多出来的宽度用来放后 6 小时的天气，而不是把 6 格摊得更开。 -->
+
+    <LinearLayout
+        android:id="@+id/widget_hour_row2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_0"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_0"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_0"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_1"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_1"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_1"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_2"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_2"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_2"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_3"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_3"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_3"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_4"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_4"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_4"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/widget_hour2_label_5"
+                style="@style/WidgetHourLabel" />
+            <ImageView
+                android:id="@+id/widget_hour2_icon_5"
+                style="@style/WidgetHourIcon" />
+            <TextView
+                android:id="@+id/widget_hour2_cond_5"
+                style="@style/WidgetHourCond" />
+        </LinearLayout>    </LinearLayout>
+
+
 
 </LinearLayout>
 </FrameLayout>
