@@ -3,9 +3,10 @@
  * 主界面通过「设置」进入，返回后由 Index.onPageShow 重新读取偏好。
  */
 
-import { common } from '@kit.AbilityKit';
+import { common, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
+import { formInfo, formProvider } from '@kit.FormKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { MAP_STYLE_OPTIONS, MapStyleOption } from '../core/MapTiles';
@@ -15,7 +16,7 @@ import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore } from '../services/Store';
 import { AppInfo } from '../services/AppInfo';
-import { CardService } from '../services/CardService';
+import { CardService, CARD_ENTRY_ENABLED } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
 import { KeepAwake } from '../services/KeepAwake';
 import { KeyTimeService } from '../services/KeyTimeService';
@@ -142,6 +143,38 @@ struct Settings {
     }).catch(() => {
       // 查询失败就跳过，发布提醒时系统还会再问一次。
     });
+  }
+
+  /**
+   * 「添加到桌面」：打开系统的卡片页（`formProvider.openFormManager`，API 18+）。
+   *
+   * HarmonyOS 没有「应用内把卡片直接钉到桌面」的能力（Android 的 `requestPinAppWidget`
+   * 在鸿蒙没有对应物），能做的只是把用户送到卡片页，由用户点「添加」。低版本系统上
+   * 该接口不存在，会抛错，这时退回提示「长按桌面空白处 → 卡片」。
+   */
+  private addCardToDesktop(): void {
+    const params: Record<string, Object> = {};
+    params['ohos.extra.param.key.form_dimension'] = formInfo.FormDimension.Dimension_2_4;
+    params['ohos.extra.param.key.form_name'] = 'solar_time_card';
+    params['ohos.extra.param.key.module_name'] = 'entry';
+    const want: Want = {
+      bundleName: 'com.realsuntime.solartime',
+      abilityName: 'SolarTimeFormAbility',
+      parameters: params
+    };
+    try {
+      formProvider.openFormManager(want);
+      console.info('[card] openFormManager dispatched');
+      // 系统卡片页能否真的打开取决于桌面实现；无论成功与否都给一句反馈，
+      // 免得用户点了没反应（模拟器上实测：接口不抛错，但界面无变化）。
+      promptAction.showToast({ message: '已请求打开卡片页：选中「真太阳时」再点添加；打不开就长按桌面空白处 → 卡片' });
+    } catch (error) {
+      const err = error as BusinessError;
+      console.error(`[card] openFormManager failed: ${err.code} ${err.message}`);
+      promptAction.showToast({
+        message: `打不开卡片页（${err.code}）：请长按桌面空白处 → 卡片 → 真太阳时`
+      });
+    }
   }
 
   private reschedule(): void {
@@ -399,6 +432,37 @@ struct Settings {
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
+
+          // 桌面卡片：1.4.37 起开放（`CardService.CARD_ENTRY_ENABLED`）。
+          // 注意鸿蒙的 ArkTS 卡片做不到「非本地时间的分钟级自走」，卡片上的真太阳时最多
+          // 滞后约 30 分钟，所以说明里必须写清，别让用户当成秒表。
+          if (CARD_ENTRY_ENABLED) {
+            Column() {
+              this.sectionTitle('桌面卡片')
+              Text('把 2×4 的真太阳时卡片放到桌面：点下面按钮打开卡片页，选中「真太阳时」再点添加。')
+                .fontSize(10)
+                .fontColor(this.palette.subtle)
+                .margin({ top: 4 })
+                .width('100%')
+              Button('添加到桌面')
+                .fontSize(13)
+                .backgroundColor(this.palette.accent)
+                .fontColor(this.palette.onAccent)
+                .width('100%')
+                .height(38)
+                .margin({ top: 10 })
+                .onClick(() => {
+                  this.addCardToDesktop();
+                })
+              Text('注意：系统限制卡片内的时钟不能自走，卡片上的真太阳时最多滞后约 30 分钟；要看准点请打开应用。')
+                .fontSize(10)
+                .fontColor(this.palette.subtle)
+                .margin({ top: 8 })
+                .width('100%')
+            }
+            .cardStyle()
+            .backgroundColor(this.palette.card)
+          }
 
           // 提醒
           Column() {

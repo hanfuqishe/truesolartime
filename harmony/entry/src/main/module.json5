@@ -34,11 +34,16 @@
         ]
       }
     ],
-    // 桌面卡片暂时关掉入口：鸿蒙的 ArkTS 卡片做不到「分钟级自走」的非本地时间（TextClock 忽略
-    // format/timeZoneOffset、卡片内禁用定时器、updateDuration 最小 30 分钟、互动卡片激活态只有
-    // 3500ms），卡片上的真太阳时只能靠推送刷新，会滞后最多 30 分钟。
-    // 代码（entryformability / widget / CardService）都还在，系统能力补齐后把下面这段 extensionAbility
-    // 恢复回来就能重新开放：
+    // 桌面卡片重新关掉入口（1.4.37 短暂开放后实测撤回）：鸿蒙的 ArkTS 卡片做不到「分钟级自走」的
+    // 非本地时间，实测（HarmonyOS 6.0.0 / API 20）：
+    //   - 卡片里的 TextClock 忽略 format()：写 HH:mm:ss 也只显示 HH:mm，拿不到秒；
+    //   - TextClock.timeZoneOffset 生效，但只按整数小时位移（小数被截断），且符号与直觉相反
+    //     （传 3 = 西三区，系统 10:15 时显示 23:15）；
+    //   - 卡片内禁用定时器（setInterval 编译报 11706006、TextTimer 忽略 count）；
+    //   - 刷新下限：updateDuration 30 分钟、setFormNextRefreshTime 5 分钟、互动卡片激活态 3.5 s。
+    // 折中方案是「推送 + 5 分钟刷新链」，但卡片上的真太阳时最好也滞后 5 分钟，对时钟类应用是误导。
+    // 代码（entryformability / widget / CardService）全部保留，系统补齐能力后把下面这段
+    // extensionAbility 恢复回来、并把 CardService.CARD_ENTRY_ENABLED 改成 true 即可重新开放。
     //
     // "extensionAbilities": [
     //   {

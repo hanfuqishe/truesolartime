@@ -28,6 +28,24 @@ import { LocationService, GeoPoint } from './LocationService';
 import { Place, PlaceSource } from '../core/Place';
 import { WeatherService } from './WeatherService';
 
+/**
+ * 设置页「桌面卡片 → 添加到桌面」这个入口是否显示。
+ *
+ * **现在关着**（与 module.json5 里被注释的 form extensionAbility 一致）。1.4.37 曾短暂开放，
+ * 实测后的结论是：鸿蒙卡片**做不到逐秒的真太阳时**，任何"看起来在走秒"的方案都会显示滞后值 ——
+ *   1. 卡片里的 `TextClock` 忽略 `format()`：写 `HH:mm:ss` 也只显示 `HH:mm`，拿不到秒；
+ *   2. `TextClock.timeZoneOffset` 虽生效，但**只按整数小时位移**（小数被截断），且符号与直觉相反
+ *      （传 3 = 西三区，系统 10:15 时显示 23:15）——即使能显示秒，非整小时的真太阳时也补不上残差；
+ *   3. 卡片内禁用定时器（`setInterval` 编译报 11706006、`TextTimer` 忽略 count）；
+ *   4. 刷新下限：`updateDuration` 30 分钟、`setFormNextRefreshTime` 5 分钟、互动卡片激活态 3.5 秒。
+ * 我们最后用的是「推送 + 5 分钟刷新链」，最好情况仍滞后 5 分钟。对一个时钟类应用这是误导，
+ * 所以宁可先不给入口；代码（entryformability / widget / CardService）全部保留。
+ *
+ * 系统补齐能力后：把这里改成 `true`，并把 `module.json5` 里的 `extensionAbilities` 取消注释。
+ * 相关建议书见 `docs/feedback-card-realtime.md`（已按上述实测结论修订）。
+ */
+export const CARD_ENTRY_ENABLED: boolean = false;
+
 /** TextClock 允许的时区偏移范围（分钟）。 */
 const MIN_OFFSET_MINUTES: number = -720;
 const MAX_OFFSET_MINUTES: number = 840;
@@ -35,6 +53,14 @@ const MAX_OFFSET_MINUTES: number = 840;
 const HOUR_CELLS: number = 6;
 /** 桌面卡片侧的定位节奏：每 5 分钟最多主动取一次。 */
 const CARD_GPS_INTERVAL_MILLIS: number = 5 * 60 * 1000;
+/**
+ * 卡片下次自动刷新的间隔（分钟）。
+ *
+ * 卡片里的时钟不能自走、`updateDuration` 最小 30 分钟，真太阳时只能靠推送刷新；
+ * `formProvider.setFormNextRefreshTime` 的下限是 5 分钟，用它每次推送后续上下一拍，
+ * 把滞后从「最多 30 分钟」压到「最多 5 分钟」。
+ */
+const CARD_REFRESH_MINUTES: number = 5;
 const MINUTES_PER_DAY: number = 1440;
 const BEIJING_OFFSET_SECONDS: number = SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000;
 
@@ -54,6 +80,8 @@ export class CardData {
   /** 真太阳时的秒，两位。 */
   /** 例如「39.9042°N  116.4074°E」。 */
   coords: string = '';
+  /** 左栏标签：观测点法定时区的 UTC 偏移，例如「UTC+8」/「UTC-5:30」。 */
+  utcLabel: string = '';
   /** 与北京时间的时差文字，例如「+1 分 31 秒」。 */
   offsetText: string = '';
   /** 时间轴分段，元素形如「900,-1」（长度分钟数,段号，段号 -1 为空档）。 */
@@ -93,6 +121,14 @@ export class CardService {
     data.isDay = snapshot.isDay();
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
+    // 左栏标签要和 Android 一致显示 UTC 偏移：这里必须用**法定时区**的偏移，
+    // 不是下面那个 trueSolarOffset（那是真太阳时相对当地标准时的差，北京会算出 +8:01）。
+    const zoneSeconds: number = ZoneTable.offsetSeconds(
+      AppStore.district().countryCode,
+      place.longitude,
+      SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)
+    );
+    data.utcLabel = TimeFormat.utcOffsetLabel(zoneSeconds);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);
     data.nowMinute = snapshot.trueSolarSeconds / 60;
     const minutes: number = Math.round(SolarTimeMath.trueSolarOffsetSeconds(now, place.longitude) / 60);
@@ -193,6 +229,10 @@ export class CardService {
     for (const formId of formIds) {
       try {
         await formProvider.updateForm(formId, binding);
+        // 卡片里的时钟不能自走（updateDuration 最小 30 分钟），真太阳时只能靠推送刷新。
+        // setFormNextRefreshTime 的最小间隔是 5 分钟，用它把滞后从 30 分钟压到 5 分钟；
+        // 每推一次就续下一次，形成 5 分钟一拍的自走链。
+        await formProvider.setFormNextRefreshTime(formId, CARD_REFRESH_MINUTES);
       } catch (error) {
         const failure: BusinessError = error as BusinessError;
         console.warn(`updateForm ${formId} failed: ${failure.code} ${failure.message}`);

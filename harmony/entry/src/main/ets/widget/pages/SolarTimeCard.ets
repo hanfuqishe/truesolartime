@@ -13,10 +13,14 @@
  * 尺寸按鸿蒙 2*4 卡片实际可用的约 226×110vp 收：Android 的 4×2 有约 146dp 高，
  * 这里更矮，所以内边距、字号、图标都比 Android 再紧一档，保证六格预报不被裁掉。
  *
- * 与 Android 的两处差异来自卡片能力本身（实测 HarmonyOS 6.0.0 / API 20）：
- *   - 卡片里的 TextClock 只走系统本地时间，`format()` 与 `timeZoneOffset` 都被忽略，
- *     且卡片禁用定时器，所以真太阳时只能用快照文本（HH:mm:ss），随卡片刷新更新；
- *   - 因此左栏标准时间交给 TextClock 自走（分钟精度、跟随系统 12/24 小时制）。
+ * 与 Android 的差异来自卡片能力本身（实测 HarmonyOS 6.0.0 / API 20）：
+ *   - 卡片里的 `TextClock` **忽略 `format()`**（写 `HH:mm:ss` 也只显示 `HH:mm`，拿不到秒）；
+ *   - `TextClock.timeZoneOffset` 虽然生效，但**只按整数小时位移**（小数被截断，且符号与直觉相反：
+ *     传 3 得到 UTC−3），补不上「标准时 → 真太阳时」那几分钟；
+ *   - 卡片内禁用定时器（`setInterval` / `TextTimer` 都无效，`updateDuration` 最小 30 分钟）。
+ * 结论：**卡片上做不到逐秒的真太阳时**，只能由 Provider 推文本（`HH:mm`），
+ * 刷新靠 `updateForm` + `setFormNextRefreshTime`（下限 5 分钟）。
+ * 左栏那格「标准时间」仍交给 `TextClock` 自走（分钟精度、跟随系统 12/24 小时制）。
  */
 
 import { weatherIcon } from '../../common/WeatherIcon';
@@ -36,8 +40,7 @@ const GOLD: string = '#FFC65C';
 /** 白天橙底上的真太阳时：淡金，比纯白暖一档，又不至于和底色糊在一起。 */
 const DAY_ACCENT: string = '#FFE6B4';
 const WHITE: string = '#FFFFFF';
-const TEXT_DIM: string = '#B3FFFFFF';
-const TEXT_LABEL: string = '#CCFFFFFF';
+const TEXT_SMALL: string = '#CCFFFFFF';
 const DIVIDER: string = '#33FFFFFF';
 const AXIS_TRACK: string = '#40FFFFFF';
 
@@ -56,6 +59,7 @@ struct SolarTimeCard {
   @LocalStorageProp('segments') segments: string[] = [];
   @LocalStorageProp('nowMinute') nowMinute: number = 0;
   @LocalStorageProp('offsetMinutes') offsetMinutes: number = 480;
+  @LocalStorageProp('utcLabel') utcLabel: string = 'UTC+8';
   @LocalStorageProp('hourLabels') hourLabels: string[] = [];
   @LocalStorageProp('hourConds') hourConds: string[] = [];
   @LocalStorageProp('hourIcons') hourIcons: string[] = [];
@@ -112,6 +116,7 @@ struct SolarTimeCard {
     return parts.join(' · ');
   }
 
+  /** 时间轴上「已过去」那一段的权重（按当前时刻的分钟数，最小 0.1 免得贴边）。 */
   private passedWeight(): number {
     return this.nowMinute > 0 ? this.nowMinute : 0.1;
   }
@@ -126,7 +131,7 @@ struct SolarTimeCard {
     Column() {
       Text(label)
         .fontSize(9)
-        .fontColor(TEXT_DIM)
+        .fontColor(TEXT_SMALL)
         .maxLines(1)
       Image(weatherIcon(icon))
         .width(15)
@@ -135,7 +140,7 @@ struct SolarTimeCard {
         .margin({ top: 1 })
       Text(condition)
         .fontSize(9)
-        .fontColor(TEXT_DIM)
+        .fontColor(TEXT_SMALL)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 1 })
@@ -150,13 +155,13 @@ struct SolarTimeCard {
         // 左：标准时间（交给 TextClock 自走）
         Column() {
           Row() {
-            Text('标准时间')
-              .fontSize(10)
-              .fontColor(TEXT_LABEL)
+            Text(this.utcLabel)
+              .fontSize(9)
+              .fontColor(TEXT_SMALL)
               .maxLines(1)
             Text(this.city)
-              .fontSize(10)
-              .fontColor(TEXT_DIM)
+              .fontSize(9)
+              .fontColor(TEXT_SMALL)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .textAlign(TextAlign.End)
@@ -170,8 +175,8 @@ struct SolarTimeCard {
             .fontColor(WHITE)
           Row() {
             Text(this.dateTail())
-              .fontSize(8)
-              .fontColor(TEXT_DIM)
+              .fontSize(9)
+              .fontColor(TEXT_SMALL)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -207,12 +212,12 @@ struct SolarTimeCard {
         Column() {
           Row() {
             Text('真太阳时')
-              .fontSize(10)
-              .fontColor(TEXT_LABEL)
+              .fontSize(9)
+              .fontColor(TEXT_SMALL)
               .maxLines(1)
             Text(this.shichen)
-              .fontSize(10)
-              .fontColor(TEXT_DIM)
+              .fontSize(9)
+              .fontColor(TEXT_SMALL)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .textAlign(TextAlign.End)
@@ -220,6 +225,8 @@ struct SolarTimeCard {
               .margin({ left: 6 })
           }
           .width('100%')
+          // 真太阳时只能是推送来的文本：实测卡片里的 TextClock 忽略 format（拿不到秒），
+          // timeZoneOffset 也只按整数小时位移（小数被截断），补不上「标准时 → 真太阳时」那几分钟。
           Text(this.solarTime)
             .fontSize(38)
             .fontWeight(FontWeight.Medium)
@@ -228,7 +235,7 @@ struct SolarTimeCard {
             .width('100%')
           Text(this.coords)
             .fontSize(9)
-            .fontColor(TEXT_DIM)
+            .fontColor(TEXT_SMALL)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
