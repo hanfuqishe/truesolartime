@@ -49,17 +49,8 @@ struct ContentView: View {
                 .padding(.bottom, 28)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("设置")
-                }
-            }
+            // 设置按钮移进页头（与标题上边缘对齐），导航栏留空就直接隐藏。
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
             }
@@ -95,14 +86,32 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("真太阳时")
-                .font(.system(size: 26, weight: .semibold))
-            Text("以太阳经过当地子午线的时刻为正午")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("真太阳时")
+                    .font(.system(size: 26, weight: .semibold))
+                Text("以太阳经过当地子午线的时刻为正午")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+
+            Spacer(minLength: 8)
+
+            // 设置按钮：与「真太阳时」标题**上边缘**对齐。
+            // HStack 用 .top 对齐后，再给按钮一点光学内边距 —— 图标字形本身比文字框顶部略低。
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .regular))
+                    .frame(width: 32, height: 32, alignment: .center)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("设置")
+            .padding(.top, 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
