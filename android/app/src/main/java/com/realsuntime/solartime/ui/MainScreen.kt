@@ -446,20 +446,23 @@ private fun HeroCard(
                 // 中国境内就是北京时间，出国或手工指定外地坐标时换成当地标准时）
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = HeroPalette.LABEL,
-                        )
-                        Spacer(Modifier.weight(1f))
+                        // 城市名固定在左上角、从左往右排：城市名过长时先省略自己，
+                        // 不把 UTC+8 挤走（weight(fill = false) 让它只吃需要的那点宽度）。
                         Text(
                             text = districtName ?: "",
                             style = MaterialTheme.typography.labelMedium,
                             color = HeroPalette.LABEL_DIM,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.padding(start = 8.dp),
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = HeroPalette.LABEL,
+                            maxLines = 1,
                         )
                     }
                     HeroClock(
