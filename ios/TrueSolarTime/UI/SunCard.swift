@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SunCard: View {
 
+    @Environment(\.palette) private var palette
+
     let snapshot: SolarSnapshot
 
     var body: some View {
@@ -9,7 +11,7 @@ struct SunCard: View {
             HStack {
                 Text("太阳位置 · 北京时间")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                 Spacer()
                 Text(String(format: "高度角 %.1f°", snapshot.altitudeDegrees))
                     .font(.system(size: 12))
@@ -29,7 +31,7 @@ struct SunCard: View {
 
                 Text("白昼 \(TimeFormat.duration(snapshot.daylightSeconds))　真太阳时 日出 \(TimeFormat.clock(snapshot.sunriseTrueSolar)) 日落 \(TimeFormat.clock(snapshot.sunsetTrueSolar))")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                     .padding(.top, 10)
             } else {
                 Text(
@@ -38,10 +40,11 @@ struct SunCard: View {
                         : "极夜：太阳整日不出，上中天（当地标准时间）\(TimeFormat.clock(snapshot.solarNoonBeijing))"
                 )
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.onSurfaceVariant)
             }
         }
-        .cardBackground()
+        .foregroundStyle(palette.onSurface)
+            .cardBackground()
     }
 
     private var daylightProgress: Double {
@@ -64,7 +67,7 @@ private struct SunTimeItem: View {
         VStack(spacing: 2) {
             Text(label)
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.onSurfaceVariant)
             Text(TimeFormat.clock(time))
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .monospacedDigit()
@@ -90,14 +93,14 @@ private struct SunArc: View {
             arc.addQuadCurve(to: end, control: control)
             context.stroke(
                 arc,
-                with: .color(.secondary.opacity(0.35)),
+                with: .color(palette.outlineVariant),
                 style: StrokeStyle(lineWidth: 2, dash: [6, 6])
             )
 
             var horizon = Path()
             horizon.move(to: CGPoint(x: 0, y: horizonY))
             horizon.addLine(to: CGPoint(x: size.width, y: horizonY))
-            context.stroke(horizon, with: .color(.secondary.opacity(0.35)), lineWidth: 2)
+            context.stroke(horizon, with: .color(palette.outlineVariant), lineWidth: 2)
 
             let t = min(max(progress, 0), 1)
             let u = 1 - t

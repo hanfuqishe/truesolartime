@@ -12,29 +12,22 @@ enum HeroPalette {
     static let label = Color.white.opacity(0.8)
     static let labelDim = Color.white.opacity(0.7)
 
-    /// 十六进制转颜色（0xRRGGBB）。注意必须用浮点除法，否则整数相除会全部变成 0。
-    private static func hex(_ value: UInt32, opacity: Double = 1.0) -> Color {
-        let red = Double((value >> 16) & 0xFF) / 255.0
-        let green = Double((value >> 8) & 0xFF) / 255.0
-        let blue = Double(value & 0xFF) / 255.0
-        return Color(red: red, green: green, blue: blue, opacity: opacity)
-    }
 
     /// 夜里（深色底）的真太阳时字色。
-    static let gold = hex(0xF5D68A)
+    static let gold = Color(hex: 0xF5D68A)
     /// 白天（橙底）的真太阳时字色：淡金，比纯白暖一档。
-    static let dayAccent = hex(0xFFE6B4)
+    static let dayAccent = Color(hex: 0xFFE6B4)
 
-    static let cold = hex(0x4CAF7D)
-    static let hot = hex(0xD9534F)
+    static let cold = Color(hex: 0x4CAF7D)
+    static let hot = Color(hex: 0xD9534F)
 
     /// 白天的数字用与淡金同浓度的淡绿/淡红，深绿/深红压在橙底上发闷。
-    static let coldInkOnDay = hex(0xBCF5CA)
-    static let hotInkOnDay = hex(0xFFC4C9)
+    static let coldInkOnDay = Color(hex: 0xBCF5CA)
+    static let hotInkOnDay = Color(hex: 0xFFC4C9)
 
     /// 时间轴上的色段与圆点仍用深一档，淡色在橙底上几乎看不出边界。
-    static let coldBandOnDay = hex(0x2E7D32)
-    static let hotBandOnDay = hex(0xB3261E)
+    static let coldBandOnDay = Color(hex: 0x2E7D32)
+    static let hotBandOnDay = Color(hex: 0xB3261E)
 
     /// 真太阳时的常规字色：白天淡金、夜里金色。
     static func accent(isDay: Bool) -> Color {

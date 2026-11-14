@@ -4,6 +4,8 @@ import SwiftUI
 /// 内嵌地图：自动按地区选择高德或 OpenStreetMap 瓦片，并把 WGS-84 坐标换算到底图坐标系。
 struct MapCard: View {
 
+    @Environment(\.palette) private var palette
+
     let place: Place
     let mapStyle: MapStyle
 
@@ -16,11 +18,11 @@ struct MapCard: View {
             HStack {
                 Text("位置地图")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                 Spacer()
                 Text(TimeFormat.coordinates(latitude: place.latitude, longitude: place.longitude))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
             }
 
             MapViewRepresentable(place: place, style: resolvedStyle)
@@ -30,10 +32,11 @@ struct MapCard: View {
 
             Text(attributionText)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.onSurfaceVariant)
                 .padding(.top, 8)
         }
-        .cardBackground()
+        .foregroundStyle(palette.onSurface)
+            .cardBackground()
     }
 
     private var attributionText: String {

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView: View {
 
+    @Environment(\.palette) private var palette
+
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -39,7 +41,7 @@ struct ContentView: View {
 
                     Text(versionLabel)
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.onSurfaceVariant)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 6)
                 }
@@ -47,7 +49,9 @@ struct ContentView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 28)
             }
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(palette.background)
+            // 默认文字色跟随日/夜主题（子视图里显式设过色的不受影响）
+            .foregroundStyle(palette.onSurface)
             // 设置按钮移进页头（与标题上边缘对齐），导航栏留空就直接隐藏。
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSettings) {
@@ -62,6 +66,7 @@ struct ContentView: View {
                 Text(model.message ?? "")
             }
         }
+        .environment(\.isDay, model.snapshot.isDay)
         .task {
             model.requestLocationPermissionIfNeeded()
             model.startGpsTracking(announce: false)
@@ -89,7 +94,7 @@ struct ContentView: View {
                     .font(.system(size: 26, weight: .semibold))
                 Text("以太阳经过当地子午线的时刻为正午")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
@@ -101,7 +106,7 @@ struct ContentView: View {
                 if model.trackingGps {
                     Text("GPS")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.onSurfaceVariant)
                 }
 
                 Button {

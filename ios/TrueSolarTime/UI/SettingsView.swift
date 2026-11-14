@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
 
+    @Environment(\.palette) private var palette
+
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -71,7 +73,7 @@ struct SettingsView: View {
                     section(title: "地图底图") {
                         Text("自动：境内用高德，境外用 OpenStreetMap")
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.onSurfaceVariant)
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
                             ForEach(MapStyle.allCases) { style in
@@ -90,7 +92,7 @@ struct SettingsView: View {
                                     .font(.system(size: 15))
                                 Text("每个时辰交接时准时提醒（250 ms 蜂鸣）")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.onSurfaceVariant)
                             }
                         }
 
@@ -100,7 +102,7 @@ struct SettingsView: View {
                                     .font(.system(size: 15))
                                 Text("每到一段关键时间的起点提醒（500 ms 蜂鸣）")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.onSurfaceVariant)
                             }
                         }
                     }
@@ -114,7 +116,7 @@ struct SettingsView: View {
                                     .font(.system(size: 15))
                                 Text("应用打开期间不自动熄屏（会更耗电）")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.onSurfaceVariant)
                             }
                         }
                     }
@@ -128,7 +130,7 @@ struct SettingsView: View {
                             diagnosticLine(title: "关键时间", value: keyTimeSummary)
                         }
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.onSurfaceVariant)
                     }
 
                     Divider()
@@ -136,11 +138,13 @@ struct SettingsView: View {
                     section(title: "关于计算") {
                         Text("真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。")
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.onSurfaceVariant)
                     }
                 }
                 .padding(20)
             }
+            .background(palette.background)
+            .foregroundStyle(palette.onSurface)
             .navigationTitle("位置与提醒")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
