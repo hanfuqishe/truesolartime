@@ -54,7 +54,8 @@ struct HeroCard: View {
 
             HeroAxis(
                 bands: keyBands,
-                bandColor: keyHighlight ?? .white,
+                bandColor: .white,
+                dotColor: keyHighlight ?? .white,
                 position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400
             )
             .frame(height: 11)
@@ -277,7 +278,10 @@ struct FittingClock: View {
 struct HeroAxis: View {
 
     let bands: [TakeBand]
+    /// 关键时段的色段颜色（现在统一为亮白，不再区分冷/热）。
     let bandColor: Color
+    /// 当前时刻圆点的颜色：落在关键时段内时为淡金色，否则白色。
+    let dotColor: Color
     /// 0…1
     let position: Double
 
@@ -308,9 +312,9 @@ struct HeroAxis: View {
             )
             context.fill(
                 Path(ellipseIn: dot.insetBy(dx: -2, dy: -2)),
-                with: .color(.white.opacity(0.25))
+                with: .color(dotColor.opacity(0.28))
             )
-            context.fill(Path(ellipseIn: dot), with: .color(.white))
+            context.fill(Path(ellipseIn: dot), with: .color(dotColor))
         }
     }
 }

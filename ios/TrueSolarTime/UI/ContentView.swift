@@ -29,10 +29,6 @@ struct ContentView: View {
                         weatherNote: model.weather == nil ? model.weatherStatus : nil
                     )
 
-                    KeyTimeCard(
-                        schedule: model.keyTime,
-                        trueSolarSeconds: Double(model.snapshot.trueSolarTime.secondsOfDay)
-                    )
 
                     SunCard(snapshot: model.snapshot)
 
@@ -74,15 +70,15 @@ struct ContentView: View {
         }
     }
 
-    /// 真太阳时落在关键时段内时的高亮色（冷=绿、热=红），与 Android 的 activeKeyColor 一致。
+    /// 真太阳时落在关键时段内时用的**淡金色**；不在时段内返回 nil（保持白色）。
+    ///
+    /// 不再按「冷/热」区分颜色：时间轴上的关键时段统一显示为亮白，
+    /// 只有当前真太阳时进入时段时，数字与圆点才换成淡金色。
     private var keyHighlight: Color? {
         guard let schedule = model.keyTime,
-              schedule.band(containing: Double(model.snapshot.trueSolarTime.secondsOfDay) / 60) != nil,
-              let temperature = schedule.temperature
+              schedule.band(containing: Double(model.snapshot.trueSolarTime.secondsOfDay) / 60) != nil
         else { return nil }
-        return temperature == .coldOrMild
-            ? Color(red: 0.30, green: 0.78, blue: 0.52)
-            : Color(red: 0.93, green: 0.35, blue: 0.32)
+        return Color(red: 1.0, green: 0.90, blue: 0.62)
     }
 
     private var header: some View {
@@ -99,18 +95,25 @@ struct ContentView: View {
 
             Spacer(minLength: 8)
 
-            // 设置按钮：与「真太阳时」标题**上边缘**对齐。
-            // HStack 用 .top 对齐后，再给按钮一点光学内边距 —— 图标字形本身比文字框顶部略低。
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 20, weight: .regular))
-                    .frame(width: 32, height: 32, alignment: .center)
-                    .contentShape(Rectangle())
+            // 右侧：跟随 GPS 时先显示「GPS」，再是设置齿轮；整体与标题**上边缘**对齐。
+            HStack(alignment: .center, spacing: 4) {
+                if model.trackingGps {
+                    Text("GPS")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20, weight: .regular))
+                        .frame(width: 32, height: 32, alignment: .center)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("设置")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("设置")
             .padding(.top, 1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
