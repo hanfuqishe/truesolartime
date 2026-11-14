@@ -19,8 +19,10 @@ struct HeroCard: View {
     let weather: WeatherSnapshot?
     /// 关键时间色段（0–24 时轴上的着色）。
     let keyBands: [TakeBand]
-    /// 落在关键时段内时的高亮色；不在时段内传 nil。
-    let keyHighlight: Color?
+    /// 时间轴色段的颜色：按网页要求的「冻/热」取绿/红；温度未标注时为 nil（不画色段）。
+    let bandColor: Color?
+    /// 真太阳时落在关键时段内时的字色（同色系、白天淡一档）；不在时段内传 nil。
+    let inkColor: Color?
     /// 「39.9042°N 116.4074°E」，由调用方算好传入。
     let coordinates: String
     /// 天气取不到时的说明（例如「请求超时（15 秒）」）；有天气数据时为 nil。
@@ -54,8 +56,8 @@ struct HeroCard: View {
 
             HeroAxis(
                 bands: keyBands,
-                bandColor: .white,
-                dotColor: keyHighlight ?? .white,
+                bandColor: bandColor,
+                dotColor: bandColor ?? HeroPalette.dot,
                 position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400
             )
             .frame(height: 11)
@@ -127,7 +129,8 @@ struct HeroCard: View {
             FittingClock(
                 main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
                 seconds: String(format: "%02d", snapshot.trueSolarTime.second),
-                color: keyHighlight ?? .white,
+                // 落在关键时段内用「冻/热」对应的绿/红，否则用常规强调色（白天淡金、夜里金）
+                color: inkColor ?? HeroPalette.accent(isDay: snapshot.isDay),
                 availableWidth: columnWidth
             )
             .padding(.top, 2)
@@ -296,8 +299,8 @@ struct FittingClock: View {
 struct HeroAxis: View {
 
     let bands: [TakeBand]
-    /// 关键时段的色段颜色（现在统一为亮白，不再区分冷/热）。
-    let bandColor: Color
+    /// 关键时段色段的颜色（冻/热对应的绿/红）；nil 表示温度未标注，不画色段。
+    let bandColor: Color?
     /// 当前时刻圆点的颜色：落在关键时段内时为淡金色，否则白色。
     let dotColor: Color
     /// 0…1
@@ -309,14 +312,16 @@ struct HeroAxis: View {
             let track = CGRect(x: 0, y: midY - 0.5, width: size.width, height: 1)
             context.fill(Path(track), with: .color(.white.opacity(0.25)))
 
-            for band in bands {
-                let start = CGFloat(band.startMinute) / CGFloat(TakeBand.minutesPerDay) * size.width
-                let width = max(
-                    CGFloat(band.lengthMinutes) / CGFloat(TakeBand.minutesPerDay) * size.width,
-                    2
-                )
-                let rect = CGRect(x: start, y: midY - 1, width: width, height: 2)
-                context.fill(Path(rect), with: .color(bandColor.opacity(0.9)))
+            if let bandColor {
+                for band in bands {
+                    let start = CGFloat(band.startMinute) / CGFloat(TakeBand.minutesPerDay) * size.width
+                    let width = max(
+                        CGFloat(band.lengthMinutes) / CGFloat(TakeBand.minutesPerDay) * size.width,
+                        2
+                    )
+                    let rect = CGRect(x: start, y: midY - 1, width: width, height: 2)
+                    context.fill(Path(rect), with: .color(bandColor))
+                }
             }
 
             let clamped = min(max(position, 0), 1)

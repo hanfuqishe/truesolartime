@@ -21,7 +21,10 @@ struct ContentView: View {
                         waitingForFix: model.waitingForFix,
                         weather: model.weather,
                         keyBands: model.keyTime?.bands ?? [],
-                        keyHighlight: keyHighlight,
+                        bandColor: HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
+                        inkColor: inKeyTime
+                            ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
+                            : nil,
                         coordinates: TimeFormat.coordinates(
                             latitude: model.place.latitude,
                             longitude: model.place.longitude
@@ -70,15 +73,13 @@ struct ContentView: View {
         }
     }
 
-    /// 真太阳时落在关键时段内时用的**淡金色**；不在时段内返回 nil（保持白色）。
+    /// 当前真太阳时是否落在某个关键时段内。
     ///
-    /// 不再按「冷/热」区分颜色：时间轴上的关键时段统一显示为亮白，
-    /// 只有当前真太阳时进入时段时，数字与圆点才换成淡金色。
-    private var keyHighlight: Color? {
-        guard let schedule = model.keyTime,
-              schedule.band(containing: Double(model.snapshot.trueSolarTime.secondsOfDay) / 60) != nil
-        else { return nil }
-        return Color(red: 1.0, green: 0.90, blue: 0.62)
+    /// 落在时段内时：真太阳时数字与时间轴圆点都换成该时段对应的绿/红（白天淡一档），
+    /// 与 Android 的 `solarColor = if (inKeyTime) inkTint ?: accent else accent` 一致。
+    private var inKeyTime: Bool {
+        guard let schedule = model.keyTime else { return false }
+        return schedule.band(containing: Double(model.snapshot.trueSolarTime.secondsOfDay) / 60) != nil
     }
 
     private var header: some View {
