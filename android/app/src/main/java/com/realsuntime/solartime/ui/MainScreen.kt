@@ -579,8 +579,8 @@ private object HeroPalette {
     private val COLD: Color = Color(0xFF4CAF7D)
     private val HOT: Color = Color(0xFFD9534F)
     // 白天的数字用与淡金同浓度的淡绿/淡红，深绿/深红压在橙底上发闷。
-    private val COLD_INK_ON_DAY: Color = Color(0xFFBCF5CA)
-    private val HOT_INK_ON_DAY: Color = Color(0xFFFFC4C9)
+    private val COLD_INK_ON_DAY: Color = Color(0xFF86E3A6)
+    private val HOT_INK_ON_DAY: Color = Color(0xFFFF9BA1)
     // 时间轴上的色段、圆点仍用深一档，淡色在橙底上几乎看不出边界。
     private val COLD_BAND_ON_DAY: Color = Color(0xFF2E7D32)
     private val HOT_BAND_ON_DAY: Color = Color(0xFFB3261E)
