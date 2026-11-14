@@ -39,7 +39,7 @@ final class DistrictStore {
 
         inFlight = true
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
-        geocoder.reverseGeocodeLocation(location, preferredLocale: Locale.current) { [weak self] placemarks, _ in
+        geocoder.reverseGeocodeLocation(location, preferredLocale: AppLanguage.geocoderLocale) { [weak self] placemarks, _ in
             guard let self else { return }
             self.inFlight = false
             guard let mark = placemarks?.first else { return }
@@ -59,7 +59,7 @@ final class DistrictStore {
         let country = mark.isoCountryCode?.lowercased()
 
         var names: DistrictNames?
-        if DistrictNaming.prefersChinese(Locale.current.languageCode ?? "en") {
+        if AppLanguage.prefersChinese {
             names = DistrictNaming.joinChinese(county: county, city: city, region: region)
         }
         if names == nil {
@@ -73,7 +73,7 @@ final class DistrictStore {
 
     private func needsRefresh(_ place: Place) -> Bool {
         guard defaults.string(forKey: Key.full) != nil else { return true }
-        if defaults.string(forKey: Key.language) != Locale.current.languageCode { return true }
+        if defaults.string(forKey: Key.language) != AppLanguage.code { return true }
         let lat = defaults.double(forKey: Key.latitude)
         let lon = defaults.double(forKey: Key.longitude)
         let moved = DistrictNaming.distanceKm(lat, lon, place.latitude, place.longitude)
@@ -88,6 +88,6 @@ final class DistrictStore {
         defaults.set(place.latitude, forKey: Key.latitude)
         defaults.set(place.longitude, forKey: Key.longitude)
         defaults.set(Date().timeIntervalSince1970, forKey: Key.fetchedAt)
-        defaults.set(Locale.current.languageCode, forKey: Key.language)
+        defaults.set(AppLanguage.code, forKey: Key.language)
     }
 }
