@@ -2,7 +2,12 @@ import SwiftUI
 
 struct ContentView: View {
 
-    @Environment(\.palette) private var palette
+    /// 页面自身的调色板必须**直接按太阳高度角算**，不能读 `@Environment(\.palette)`：
+    /// 环境值是往下传的，`body` 里 `.environment(\.isDay, …)` 只影响子视图，
+    /// 本视图自己读到的仍是外层默认值（白天），导致夜里只有卡片变暗、页面背景还是白的。
+    private var palette: ThemePalette {
+        ThemePalette.of(isDay: model.snapshot.isDay)
+    }
 
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
@@ -50,13 +55,14 @@ struct ContentView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 28)
             }
-            .background(palette.background)
+            .background(palette.background.ignoresSafeArea())
             // 默认文字色跟随日/夜主题（子视图里显式设过色的不受影响）
             .foregroundStyle(palette.onSurface)
             // 设置按钮移进页头（与标题上边缘对齐），导航栏留空就直接隐藏。
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
+                    .environment(\.isDay, model.snapshot.isDay)
             }
             .alert("提示", isPresented: Binding(
                 get: { model.message != nil },

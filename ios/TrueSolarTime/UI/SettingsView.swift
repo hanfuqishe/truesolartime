@@ -143,7 +143,7 @@ struct SettingsView: View {
                 }
                 .padding(20)
             }
-            .background(palette.background)
+            .background(palette.background.ignoresSafeArea())
             .foregroundStyle(palette.onSurface)
             .navigationTitle("位置与提醒")
             .navigationBarTitleDisplayMode(.inline)
