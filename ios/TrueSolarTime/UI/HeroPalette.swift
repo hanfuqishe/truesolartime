@@ -22,8 +22,12 @@ enum HeroPalette {
     static let hot = Color(hex: 0xD9534F)
 
     /// 白天的数字用与淡金同浓度的淡绿/淡红，深绿/深红压在橙底上发闷。
-    static let coldInkOnDay = Color(hex: 0x86E3A6)
-    static let hotInkOnDay = Color(hex: 0xB3261E)
+    static let coldInkOnDay = Color(hex: 0xBCF5CA)
+    static let hotInkOnDay = Color(hex: 0xFFC4C9)
+
+    /// 夜间数字也用同一档「最淡」（浓度统一 0%）。
+    static let coldInkAtNight = Color(hex: 0xA6E4C3)
+    static let hotInkAtNight = Color(hex: 0xF0A9A6)
 
     /// 时间轴上的色段与圆点仍用深一档，淡色在橙底上几乎看不出边界。
     static let coldBandOnDay = Color(hex: 0x2E7D32)
@@ -38,9 +42,9 @@ enum HeroPalette {
     static func ink(_ temperature: TakeTemperature?, isDay: Bool) -> Color? {
         switch temperature {
         case .some(.coldOrMild):
-            return isDay ? coldInkOnDay : cold
+            return isDay ? coldInkOnDay : coldInkAtNight
         case .some(.hotOrMild):
-            return isDay ? hotInkOnDay : hot
+            return isDay ? hotInkOnDay : hotInkAtNight
         case .none:
             return nil
         }

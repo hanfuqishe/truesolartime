@@ -37,8 +37,11 @@ const NIGHT_BOTTOM_COLOR: string = '#151B2E';
 /**
  * 关键时段：数字用与淡金同浓度的淡绿／淡红，色段仍用深一档（淡色在橙底上几乎看不出边界）。
  */
-const COLD_INK_ON_DAY_COLOR: string = '#86E3A6';
-const HOT_INK_ON_DAY_COLOR: string = '#B3261E';
+const COLD_INK_ON_DAY_COLOR: string = '#BCF5CA';
+const HOT_INK_ON_DAY_COLOR: string = '#FFC4C9';
+// 夜间数字也用同一档「最淡」（浓度统一 0%）
+const COLD_INK_ON_NIGHT_COLOR: string = '#A6E4C3';
+const HOT_INK_ON_NIGHT_COLOR: string = '#F0A9A6';
 const COLD_BAND_ON_DAY_COLOR: string = '#2E7D32';
 const HOT_BAND_ON_DAY_COLOR: string = '#B3261E';
 /** 应用在前台时的定位节奏：每分钟一次（桌面卡片是 5 分钟一次）。 */
@@ -584,10 +587,10 @@ struct Index {
   private inkColor(): string {
     const day: boolean = this.isDayTheme();
     if (this.temperatureKey === 'cold') {
-      return day ? COLD_INK_ON_DAY_COLOR : COLD_COLOR;
+      return day ? COLD_INK_ON_DAY_COLOR : COLD_INK_ON_NIGHT_COLOR;
     }
     if (this.temperatureKey === 'hot') {
-      return day ? HOT_INK_ON_DAY_COLOR : HOT_COLOR;
+      return day ? HOT_INK_ON_DAY_COLOR : HOT_INK_ON_NIGHT_COLOR;
     }
     return this.solarAccent();
   }

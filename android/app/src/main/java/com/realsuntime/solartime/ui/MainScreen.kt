@@ -85,7 +85,6 @@ import com.realsuntime.solartime.BuildConfig
 import com.realsuntime.solartime.MainViewModel
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.TakeBand
-import com.realsuntime.solartime.data.DebugPalette
 import com.realsuntime.solartime.data.TakeTemperature
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.WeatherRepository
@@ -295,9 +294,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        // 临时调试卡片：直接预览配色（确认后删除）
-                        DebugPaletteCard()
+
                     } else {
                         HeroCard(
                             snapshot = snapshot,
@@ -306,9 +303,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             waitingForFix = waitingForFix,
                             extras = heroExtras,
                         )
-                        Spacer(Modifier.height(10.dp))
-                        // 临时调试卡片：直接预览配色（确认后删除 DebugPaletteCard.kt 与 data/DebugPalette.kt）
-                        DebugPaletteCard()
                         Spacer(Modifier.height(14.dp))
 
                         SunCard(snapshot = snapshot)
@@ -418,20 +412,12 @@ private fun HeroCard(
     val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
     val isDay = snapshot.isDay
     // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
-    // 调试覆盖：forceInKeyTime 让「落在关键时段内」恒为真，便于预览数字配色
-    val inKeyTime = !waitingForFix &&
-        (DebugPalette.forceInKeyTime || extras.bands.any { it.contains(solarSeconds / 60.0) })
-    // 调试覆盖：强制指定「冻或温 / 热或温」
-    val temperature = DebugPalette.temperatureOverride ?: extras.temperature
+    val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
     val accent = HeroPalette.accent(isDay)
     // 关键时段的色段一直画出来（与桌面卡片一致），只有「当前正落在某个关键时段里」时才把
     // 真太阳时数字与时间轴圆点也换成该时段的配色。
-    val bandTint = if (waitingForFix) null else HeroPalette.band(temperature, isDay)
-    val inkTint = if (waitingForFix) {
-        null
-    } else {
-        HeroPalette.ink(temperature, isDay, DebugPalette.inkIntensity)
-    }
+    val bandTint = if (waitingForFix) null else HeroPalette.band(extras.temperature, isDay)
+    val inkTint = if (waitingForFix) null else HeroPalette.ink(extras.temperature, isDay)
     val solarColor = if (inKeyTime) inkTint ?: accent else accent
     val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
         .filter { it.isNotBlank() }
@@ -584,8 +570,7 @@ private fun HeroCard(
 }
 
 /** 大卡片用的配色：白天暖橙底、白字；夜里深蓝底、金色真太阳时。 */
-// 调试卡片（DebugPaletteCard）要读同一套色值，这里从 private 放宽到 internal
-internal object HeroPalette {
+private object HeroPalette {
     val LABEL: Color = Color(0xCCFFFFFF)
     val LABEL_DIM: Color = Color(0xB3FFFFFF)
     val DOT: Color = Color.White
@@ -595,19 +580,11 @@ internal object HeroPalette {
     private val COLD: Color = Color(0xFF4CAF7D)
     private val HOT: Color = Color(0xFFD9534F)
     // 白天数字色的两个端点：0% 用「最淡」，100% 用时间轴色段的深色；默认取中间偏浓。
-    private val COLD_INK_DAY_PALE: Color = Color(0xFFBCF5CA)
-    private val HOT_INK_DAY_PALE: Color = Color(0xFFFFC4C9)
-    private const val INK_INTENSITY_DEFAULT = 0.42f
-
-    private fun lerpColor(start: Color, end: Color, fraction: Float): Color {
-        val f = fraction.coerceIn(0f, 1f)
-        return Color(
-            red = start.red + (end.red - start.red) * f,
-            green = start.green + (end.green - start.green) * f,
-            blue = start.blue + (end.blue - start.blue) * f,
-            alpha = start.alpha + (end.alpha - start.alpha) * f,
-        )
-    }
+    // 白天/夜间都用「最淡」一档：浓度统一 0%（用户确认）。
+    private val COLD_INK_DAY: Color = Color(0xFFBCF5CA)
+    private val HOT_INK_DAY: Color = Color(0xFFFFC4C9)
+    private val COLD_INK_NIGHT: Color = Color(0xFFA6E4C3)
+    private val HOT_INK_NIGHT: Color = Color(0xFFF0A9A6)
     // 时间轴上的色段、圆点仍用深一档，淡色在橙底上几乎看不出边界。
     private val COLD_BAND_ON_DAY: Color = Color(0xFF2E7D32)
     private val HOT_BAND_ON_DAY: Color = Color(0xFFB3261E)
@@ -627,21 +604,9 @@ internal object HeroPalette {
      * [intensity] 只影响白天：0 = 最淡（[COLD_INK_DAY_PALE] / [HOT_INK_DAY_PALE]），
      * 1 = 与时间轴色段同色（[COLD_BAND_ON_DAY] / [HOT_BAND_ON_DAY]）。夜间始终用 [COLD] / [HOT]。
      */
-    fun ink(
-        temperature: TakeTemperature?,
-        isDay: Boolean,
-        intensity: Float = INK_INTENSITY_DEFAULT,
-    ): Color? = when (temperature) {
-        TakeTemperature.COLD_OR_MILD -> if (isDay) {
-            lerpColor(COLD_INK_DAY_PALE, COLD_BAND_ON_DAY, intensity)
-        } else {
-            COLD
-        }
-        TakeTemperature.HOT_OR_MILD -> if (isDay) {
-            lerpColor(HOT_INK_DAY_PALE, HOT_BAND_ON_DAY, intensity)
-        } else {
-            HOT
-        }
+    fun ink(temperature: TakeTemperature?, isDay: Boolean): Color? = when (temperature) {
+        TakeTemperature.COLD_OR_MILD -> if (isDay) COLD_INK_DAY else COLD_INK_NIGHT
+        TakeTemperature.HOT_OR_MILD -> if (isDay) HOT_INK_DAY else HOT_INK_NIGHT
         else -> null
     }
 

@@ -1,5 +1,4 @@
 package com.realsuntime.solartime.solar
-import com.realsuntime.solartime.data.DebugPalette
 
 import java.time.Instant
 import java.time.LocalDate
@@ -46,8 +45,7 @@ data class SolarSnapshot(
     val polar: SolarTimeMath.PolarState,
     val altitudeDegrees: Double,
 ) {
-    // 调试覆盖优先（DebugPalette.isDayOverride），否则按太阳高度角判定
-    val isDay: Boolean get() = DebugPalette.isDayOverride ?: (altitudeDegrees > -0.833)
+    val isDay: Boolean get() = altitudeDegrees > -0.833
 }
 
 object SolarTimeSnapshot {
