@@ -51,16 +51,25 @@ object WeatherRepository {
     private const val TTL_MILLIS = 30L * 60 * 1000
 
     /**
-     * 显示用的时限：与小时预报一样保留 6 小时。
+     * 显示用的时限：**24 小时**。
      *
-     * 只按 30 分钟取舍的话，一旦取数失败（夜间 Doze、闹钟被冻结、网络刚醒还没通），
-     * 卡片上的「当前天气」会整块消失几十分钟，只剩日期与温度区间；这里改为继续显示
-     * 最近一次成功取到的天气，等下一次刷新覆盖。
+     * 取数失败时（夜间 Doze、闹钟被冻结、网络刚醒还没通、上游 CDN 的某个节点不可达……）
+     * 卡片继续显示最近一次成功取到的天气，总比整块变成 `--` 强；超过一天才当作没有数据。
      */
-    private const val DISPLAY_MAX_AGE_MILLIS = 6L * 60 * 60 * 1000
+    private const val DISPLAY_MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
 
-    /** 小时预报最多沿用这么久（超过就当作没有数据）。 */
-    private const val HOURLY_MAX_AGE_MILLIS = 6L * 60 * 60 * 1000
+    /** 小时预报沿用同样的时限：与「当前天气」一起出现、一起消失，不要一半有一半空。 */
+    private const val HOURLY_MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
+
+    /**
+     * 取数失败后的重试间隔：成功后的刷新节奏是 30 分钟（[TTL_MILLIS]），
+     * 但失败时不该等半小时——用户可能就盯着这几分钟的空白。
+     */
+    private const val RETRY_AFTER_FAILURE_MILLIS = 5L * 60 * 1000
+
+    /** 上次尝试取数的时刻（无论成败），用于失败后的 5 分钟节流。 */
+    private const val KEY_ATTEMPT = "attempt"
+
     private const val MOVE_THRESHOLD_KM = 5.0
 
     private val inFlight = AtomicBoolean(false)
@@ -121,6 +130,7 @@ object WeatherRepository {
         if (!inFlight.compareAndSet(false, true)) return
 
         val app = context.applicationContext
+        prefs(app).edit().putLong(KEY_ATTEMPT, System.currentTimeMillis()).apply()
         Thread {
             try {
                 val body = fetch(place.latitude, place.longitude) ?: return@Thread
@@ -135,9 +145,22 @@ object WeatherRepository {
         }.apply { isDaemon = true }.start()
     }
 
-    /** 缓存过期，或与上次取数的坐标相距超过阈值。 */
-    internal fun shouldRefresh(ageMillis: Long, movedKm: Double): Boolean =
-        ageMillis !in 0..TTL_MILLIS || movedKm > MOVE_THRESHOLD_KM
+    /**
+     * 缓存过期、或与上次取数的坐标相距超过阈值。
+     *
+     * [sinceAttemptMillis] 是距上一次**尝试**取数的时长：过期后仍按 [RETRY_AFTER_FAILURE_MILLIS]
+     * 节流，避免失败时每次回到前台都立刻打一次网络；取数成功会连带刷新尝试时刻。
+     */
+    internal fun shouldRefresh(
+        ageMillis: Long,
+        movedKm: Double,
+        sinceAttemptMillis: Long = Long.MAX_VALUE,
+    ): Boolean {
+        if (movedKm > MOVE_THRESHOLD_KM) return true
+        if (ageMillis in 0..TTL_MILLIS) return false
+        // 已过期：上次尝试不足 5 分钟就再等等（失败重试的节流）。
+        return sinceAttemptMillis !in 0..RETRY_AFTER_FAILURE_MILLIS
+    }
 
     internal fun parse(json: String): Snapshot? = runCatching {
         val current = JSONObject(json).optJSONObject("current") ?: return null
@@ -233,8 +256,10 @@ object WeatherRepository {
         } else {
             CityIndex.distanceKm(lat, lon, place.latitude, place.longitude)
         }
-        val age = System.currentTimeMillis() - prefs.getLong(KEY_TIME, 0L)
-        return shouldRefresh(age, moved)
+        val now = System.currentTimeMillis()
+        val sinceAttempt = now - prefs.getLong(KEY_ATTEMPT, 0L)
+        val age = now - prefs.getLong(KEY_TIME, 0L)
+        return shouldRefresh(age, moved, sinceAttempt)
     }
 
     private fun fetch(latitude: Double, longitude: Double): String? {

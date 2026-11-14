@@ -50,7 +50,9 @@ export class WeatherLogic {
   /** 取数的刷新间隔 30 分钟；位置移动超过 5 km 也重新取数。 */
   static readonly TTL_MILLIS: number = 30 * 60 * 1000;
   /** 显示用的保留时限（与小时预报一致）：刷新失败时继续显示最近一次取到的数据。 */
-  static readonly HOURLY_MAX_AGE_MILLIS: number = 6 * 60 * 60 * 1000;
+  static readonly HOURLY_MAX_AGE_MILLIS: number = 24 * 60 * 60 * 1000;
+  /** 取数失败后的重试间隔：成功是 30 分钟一拍，失败时 5 分钟就再试一次。 */
+  static readonly RETRY_AFTER_FAILURE_MILLIS: number = 5 * 60 * 1000;
   static readonly MOVE_THRESHOLD_KM: number = 5.0;
   /** 没有有效天气时天气位显示的占位符。 */
   static readonly PLACEHOLDER: string = '--';
@@ -197,9 +199,20 @@ export class WeatherLogic {
     return found ? [min, max] : null;
   }
 
-  /** 缓存是否该刷新：过期，或与上次取数的坐标相距超过阈值。 */
-  static shouldRefresh(ageMillis: number, movedKm: number): boolean {
-    return !(ageMillis >= 0 && ageMillis <= WeatherLogic.TTL_MILLIS) || movedKm > WeatherLogic.MOVE_THRESHOLD_KM;
+  /**
+   * 缓存是否该刷新。
+   *
+   * `sinceAttemptMillis` 是距上一次**尝试**取数的时长：过期后按 5 分钟节流，
+   * 免得取数失败时每次回到前台都打一次网络；成功取到后尝试时刻会一起更新。
+   */
+  static shouldRefresh(ageMillis: number, movedKm: number, sinceAttemptMillis: number): boolean {
+    if (movedKm > WeatherLogic.MOVE_THRESHOLD_KM) {
+      return true;
+    }
+    if (ageMillis >= 0 && ageMillis <= WeatherLogic.TTL_MILLIS) {
+      return false;
+    }
+    return !(sinceAttemptMillis >= 0 && sinceAttemptMillis <= WeatherLogic.RETRY_AFTER_FAILURE_MILLIS);
   }
 
   /**

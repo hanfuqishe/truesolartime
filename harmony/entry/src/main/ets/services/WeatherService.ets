@@ -72,7 +72,8 @@ export class WeatherService {
     const moved: number = isNaN(latitude) || isNaN(longitude)
       ? Number.MAX_VALUE
       : CityIndex.distanceKm(latitude, longitude, place.latitude, place.longitude);
-    return WeatherLogic.shouldRefresh(Date.now() - cached.fetchedMillis, moved);
+    const now: number = Date.now();
+    return WeatherLogic.shouldRefresh(now - cached.fetchedMillis, moved, now - cached.attemptMillis);
   }
 
   /** 需要时取一次数；成功返回 true。force 为 true 时忽略 30 分钟窗口（用户手工换了地点）。 */
@@ -81,6 +82,8 @@ export class WeatherService {
       return false;
     }
     WeatherService.inFlight = true;
+    // 先记下尝试时刻：失败后按 5 分钟节流重试；成功时 saveWeather 会把它一起刷新。
+    AppStore.markWeatherAttempt();
     try {
       const body: string | null = await HttpUtil.getText(WeatherLogic.buildUrl(place.latitude, place.longitude), {}, TIMEOUT_MILLIS);
       if (body === null) {

@@ -23,6 +23,8 @@ export class CachedWeather {
   /** 格式版本，参数变化时递增以强制重取。 */
   schema: number = 0;
   hourly: string = '';
+  /** 上次**尝试**取数的时刻（毫秒）：取数失败后按 5 分钟节流重试。 */
+  attemptMillis: number = 0;
 }
 
 export class CachedKeyTime {
@@ -261,13 +263,22 @@ export class AppStore {
     cached.temperatureC = AppStore.numberValue(store, 'temp', 0);
     cached.code = AppStore.numberValue(store, 'code', 0);
     cached.fetchedMillis = AppStore.numberValue(store, 'time', 0);
+    cached.attemptMillis = AppStore.numberValue(store, 'attempt', 0);
     cached.schema = AppStore.numberValue(store, 'schema', 0);
     cached.hourly = AppStore.stringValue(store, 'hourly', '');
     return cached;
   }
 
+  /** 只记下「尝试过取数」，不改动已有的成功数据（成功时间仍由 saveWeather 维护）。 */
+  static markWeatherAttempt(): void {
+    const store: preferences.Preferences = AppStore.weatherStore();
+    store.putSync('attempt', Date.now());
+    store.flush();
+  }
+
   static saveWeather(temperatureC: number, code: number, hourly: string, schema: number, latitude: number, longitude: number): void {
     const store: preferences.Preferences = AppStore.weatherStore();
+    store.putSync('attempt', Date.now());
     store.putSync('temp', temperatureC);
     store.putSync('code', code);
     store.putSync('hourly', hourly);

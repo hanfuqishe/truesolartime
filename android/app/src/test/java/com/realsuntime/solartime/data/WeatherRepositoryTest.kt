@@ -89,6 +89,26 @@ class WeatherRepositoryTest {
         assertTrue(WeatherRepository.shouldRefresh(ageMillis = -1L, movedKm = 0.0))
     }
 
+    /** 取数失败后按 5 分钟节流重试：刚失败过就先等一等，别每次回到前台都打一次网络。 */
+    @Test
+    fun retriesFailedFetchAfterFiveMinutes() {
+        val stale = 40L * 60 * 1000
+        assertFalse(
+            WeatherRepository.shouldRefresh(stale, movedKm = 0.0, sinceAttemptMillis = 2L * 60 * 1000),
+        )
+        assertTrue(
+            WeatherRepository.shouldRefresh(stale, movedKm = 0.0, sinceAttemptMillis = 6L * 60 * 1000),
+        )
+        // 从没尝试过（sinceAttempt 极大）→ 立刻取
+        assertTrue(
+            WeatherRepository.shouldRefresh(stale, movedKm = 0.0, sinceAttemptMillis = Long.MAX_VALUE),
+        )
+        // 没过期就永远不取，哪怕刚失败过
+        assertFalse(
+            WeatherRepository.shouldRefresh(60_000L, movedKm = 0.0, sinceAttemptMillis = 60_000L),
+        )
+    }
+
     @Test
     fun parsesHourlySeries() {
         val json = """
