@@ -60,6 +60,6 @@ class ChimeTest {
     @Test
     fun shichenChimeIsShorter() {
         // 250 ms
-        assertEquals(5_512, Chime.samples(250).size)
+        assertEquals(2_205, Chime.samples(100).size)
     }
 }

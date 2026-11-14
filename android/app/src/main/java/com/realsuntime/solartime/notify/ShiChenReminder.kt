@@ -16,7 +16,7 @@ import com.realsuntime.solartime.widget.ChimeAlarm
 import java.time.Instant
 
 /**
- * 时辰交接提醒：进入下一个时辰的那一刻蜂鸣一声（250 ms）。
+ * 时辰交接提醒：进入下一个时辰的那一刻蜂鸣一声（100 ms）。
  *
  * 只播提示音，不发通知 —— 提醒是瞬时事件，不该在通知栏留下条目。
  */
@@ -30,7 +30,7 @@ object ShiChenReminder {
     private const val SETTLE_SECONDS = 1L
 
     /** 时辰交接的提示音比关键时间报时更短，便于区分两种提醒。 */
-    internal const val BEEP_MILLIS = 250
+    internal const val BEEP_MILLIS = 100
 
     private const val MINUTES_PER_DAY = 24 * 60
 

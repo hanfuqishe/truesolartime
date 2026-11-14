@@ -5,7 +5,7 @@ import UserNotifications
 ///
 /// iOS 没有 Android 的精确闹钟，只能把未来的触发点逐条排成**本地通知**：
 /// - 关键时间段起点：500 ms 的 3200 Hz 蜂鸣（`chime500.wav`），与 Android 一致；
-/// - 时辰交接：250 ms（`chime250.wav`），并且是**准时**触发（Android 也改成了准时）。
+/// - 时辰交接：100 ms（`chime100.wav`），并且是**准时**触发（Android 也改成了准时）。
 ///
 /// 系统对单个应用最多保留 64 条待发通知，所以滚动排未来 5 天，App 回到前台时续排。
 final class KeyTimeReminder {
@@ -128,7 +128,7 @@ final class KeyTimeReminder {
             let content = UNMutableNotificationContent()
             content.title = "进入\(name)"
             content.body = "真太阳时 \(TimeOfDay(secondsOfDay: boundarySeconds).clock)"
-            content.sound = UNNotificationSound(named: UNNotificationSoundName("chime250.wav"))
+            content.sound = UNNotificationSound(named: UNNotificationSoundName("chime100.wav"))
 
             let components = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second],

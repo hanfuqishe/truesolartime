@@ -2,7 +2,7 @@
  * 应用在前台时播放报时音（与 Android 端同一段 3200 Hz 蜂鸣），
  * 素材放在 resources/rawfile 下，短促、可区分：
  *   chime500.wav —— 进入关键时间（500 ms）
- *   chime250.wav —— 时辰交接（250 ms）
+ *   chime100.wav —— 时辰交接（100 ms）
  */
 
 import { resourceManager } from '@kit.LocalizationKit';
