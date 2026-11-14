@@ -250,6 +250,58 @@ expectClose(
     unit: " 秒"
 )
 
+// MARK: - 时区表（对齐 Android 的 ZoneTable）
+
+func zoneOffset(_ country: String?, _ longitude: Double) -> Int {
+    SolarTimeMath.standardZoneOffsetSeconds(countryCode: country, longitude: longitude)
+}
+
+expect("中国全境 +8（乌鲁木齐 87.6°E 不按经度算）", zoneOffset("cn", 87.6168) == 28_800, "得到 \(zoneOffset("cn", 87.6168))")
+expect("香港 +8", zoneOffset("hk", 114.17) == 28_800)
+expect("日本 +9", zoneOffset("jp", 139.69) == 32_400)
+expect("印度 +5:30", zoneOffset("in", 77.2) == 19_800)
+expect("尼泊尔 +5:45", zoneOffset("np", 85.3) == 20_700)
+expect("英国 +0", zoneOffset("gb", -0.12) == 0)
+expect("德国 +1", zoneOffset("de", 13.4) == 3_600)
+expect("纽约 −5", zoneOffset("us", -74.006) == -18_000)
+expect("芝加哥 −6", zoneOffset("us", -87.6) == -21_600)
+expect("丹佛 −7", zoneOffset("us", -104.99) == -25_200)
+expect("安克雷奇 −9", zoneOffset("us", -149.9) == -32_400)
+expect("檀香山 −10", zoneOffset("us", -157.86) == -36_000)
+expect("俄罗斯按经度分段 +7（82.9°E）", zoneOffset("ru", 82.9) == 25_200)
+expect("未知国家按经度近似（100°E → +7）", zoneOffset(nil, 100.0) == 25_200, "得到 \(zoneOffset(nil, 100.0))")
+expect("未知国家按经度近似（−74°E → −5）", zoneOffset(nil, -74.0) == -18_000, "得到 \(zoneOffset(nil, -74.0))")
+
+let utcLabelCases: [(Int, String)] = [
+    (28_800, "UTC+8"),
+    (-18_000, "UTC−5"),
+    (19_800, "UTC+5:30"),
+    (0, "UTC+0"),
+    (-34_200, "UTC−9:30")
+]
+for (seconds, expected) in utcLabelCases {
+    let actual = TimeFormat.utcOffsetLabel(seconds: seconds)
+    expect("UTC 标签 \(expected)", actual == expected, "得到 \(actual)")
+}
+
+let instant = date("2026-11-14T04:00:00Z")
+let beijingZone = SolarTimeSnapshot.compute(
+    date: instant, latitude: 39.9042, longitude: 116.4074, countryCode: "cn"
+)
+expect("北京标准时间 12:00", beijingZone.standardTime.hour == 12, "得到 \(beijingZone.standardTime.clock)")
+expect("北京 UTC 标签 UTC+8", beijingZone.utcLabel == "UTC+8", "得到 \(beijingZone.utcLabel)")
+
+let newYorkZone = SolarTimeSnapshot.compute(
+    date: instant, latitude: 40.7128, longitude: -74.0060, countryCode: "us"
+)
+expect("纽约标准时间 23:00（前一日）", newYorkZone.standardTime.hour == 23, "得到 \(newYorkZone.standardTime.clock)")
+expect("纽约 UTC 标签 UTC−5", newYorkZone.utcLabel == "UTC−5", "得到 \(newYorkZone.utcLabel)")
+
+let mumbaiZone = SolarTimeSnapshot.compute(
+    date: instant, latitude: 19.0760, longitude: 72.8777, countryCode: "in"
+)
+expect("孟买 UTC 标签 UTC+5:30", mumbaiZone.utcLabel == "UTC+5:30", "得到 \(mumbaiZone.utcLabel)")
+
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")
