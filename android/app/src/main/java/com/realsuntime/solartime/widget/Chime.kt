@@ -21,6 +21,15 @@ object Chime {
     /** 蜂鸣频率：比系统提示音（约 800 Hz）高，短促而清楚。 */
     internal const val BEEP_HZ = 3_200.0
 
+    /**
+     * 蜂鸣峰值振幅（占满量程比例）。
+     *
+     * 取 0.42 是为了和鸿蒙/iOS 用的 `chime*.wav` 对齐：那两个文件实测峰值
+     * 13762/32767 = 42.0%（-7.5 dBFS）、RMS ≈ 29%，而 42% 峰值的正弦波 RMS ≈ 29.7%，
+     * 三端在同样系统音量下响度基本一致。
+     */
+    private const val TONE_AMPLITUDE = 0.42
+
     private const val SAMPLE_RATE = 22_050
     private const val TONE_VOLUME = 95
     private const val RELEASE_DELAY_MILLIS = 200L
@@ -106,7 +115,7 @@ object Chime {
         return ShortArray(count) { index ->
             val envelope = minOf(1.0, index / fade.toDouble(), (count - 1 - index) / fade.toDouble())
             val wave = sin(2.0 * Math.PI * hz * index / SAMPLE_RATE)
-            (wave * envelope * Short.MAX_VALUE * 0.6).toInt().toShort()
+            (wave * envelope * Short.MAX_VALUE * TONE_AMPLITUDE).toInt().toShort()
         }
     }
 

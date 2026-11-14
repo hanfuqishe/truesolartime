@@ -8,6 +8,7 @@
 import { resourceManager } from '@kit.LocalizationKit';
 import { common } from '@kit.AbilityKit';
 import { media } from '@kit.MediaKit';
+import { audio } from '@kit.AudioKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 export class ChimePlayer {
@@ -20,6 +21,17 @@ export class ChimePlayer {
       ChimePlayer.player = player;
       player.on('stateChange', (state: media.AVPlayerState) => {
         if (state === 'initialized') {
+          // 走「通知」音频通道，与安卓的 USAGE_NOTIFICATION_EVENT 对齐：
+          // 静音/铃声音量为 0 时不响，跟着系统通知音量走，而不是媒体音量。
+          try {
+            const rendererInfo: audio.AudioRendererInfo = {
+              usage: audio.StreamUsage.STREAM_USAGE_NOTIFICATION,
+              rendererFlags: 0
+            };
+            player.audioRendererInfo = rendererInfo;
+          } catch (error) {
+            console.warn(`chime audioRendererInfo failed: ${(error as BusinessError).code}`);
+          }
           player.prepare();
         } else if (state === 'prepared') {
           player.play();

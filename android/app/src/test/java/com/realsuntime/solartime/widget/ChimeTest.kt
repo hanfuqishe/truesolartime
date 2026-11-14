@@ -21,7 +21,7 @@ class ChimeTest {
         assertEquals(0, samples.first().toInt())
         assertEquals(0, samples.last().toInt())
         val peak = samples.maxOf { abs(it.toInt()) }
-        assertTrue("peak=$peak", peak in 17_000..19_700)
+        assertTrue("peak=$peak", peak in 13_300..13_800)
 
         // 22050/3200 ≈ 6.89 个采样点一个周期：累计 8 个周期后相位接近回到原点
         val period = (22_050.0 / 3_200.0 * 9).toInt()
