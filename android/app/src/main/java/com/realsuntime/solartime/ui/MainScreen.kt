@@ -131,12 +131,19 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val remindersEnabled by viewModel.remindersEnabled.collectAsStateWithLifecycle()
     val keyTimeChimeEnabled by viewModel.keyTimeChimeEnabled.collectAsStateWithLifecycle()
     val districtName by viewModel.districtName.collectAsStateWithLifecycle()
+
     val zoneOffsetSeconds by viewModel.zoneOffsetSeconds.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
+
+    // 卡片上的城市：反查到的区划名优先；查不到就回退到预设/城市名；
+    // 手工输入或 GPS 坐标没有名字可用时显示减号，不留空白。
+    val cityText = districtName?.takeIf { it.isNotBlank() }
+        ?: TimeText.placeLabel(context, place).takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.city_unknown)
     val snackbarHostState = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
@@ -258,7 +265,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         badge = if (place.source == PlaceSource.GPS) {
                             stringResource(R.string.location_badge_gps)
                         } else {
-                            districtName.orEmpty()
+                            cityText
                         },
                         onOpenSettings = { showSettings = true },
                     )
@@ -276,7 +283,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 CompositionLocalProvider(LocalDensity provides scaledDensity) {
                                     HeroCard(
                                         snapshot = snapshot,
-                                        districtName = districtName,
+                                        districtName = cityText,
                                         coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                                         waitingForFix = waitingForFix,
                                         extras = heroExtras,
@@ -298,7 +305,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     } else {
                         HeroCard(
                             snapshot = snapshot,
-                            districtName = districtName,
+                            districtName = cityText,
                             coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                             waitingForFix = waitingForFix,
                             extras = heroExtras,
