@@ -42,13 +42,14 @@ struct ContentView: View {
                                 longitude: model.place.longitude
                             )
                         )
-
+                        // 只有最上方的大卡片不受系统「粗体文本」影响；
+                        // 太阳卡、地图卡、设置页等仍按系统设置走（可读性优先）。
+                        .cardLegibilityRegular()
 
                         SunCard(snapshot: model.snapshot)
 
                         MapCard(place: model.place, mapStyle: model.mapStyle)
                     }
-                    .cardLegibilityRegular()
 
                     Text(versionLabel)
                         .font(.system(size: 12))
