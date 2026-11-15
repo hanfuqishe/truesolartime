@@ -58,6 +58,35 @@
 
 > 免费签名的附带限制：同时在装的 App 最多 3 个、Bundle ID 每周上限 10 个；如果以后加了 WidgetKit 小组件扩展，扩展和主 App 会一起被重签，同样 7 天到期。
 
+#### 路线 C 的具体步骤（TestFlight，已配好 workflow）
+
+GitHub → **Actions** → 左侧「**iOS TestFlight**」→ **Run workflow**，约 4 分钟出包并上传；随后 App Store Connect → TestFlight 里等 Apple 处理（几分钟）。
+
+签名**不能再走自动签名**：个人账号下一台设备都没注册，`xcodebuild -allowProvisioningUpdates` 只会去申请 *iOS App Development* 描述文件，而 Development 描述文件必须绑设备，于是必然报
+`Your team has no devices from which to generate a provisioning profile`；
+硬塞 `CODE_SIGN_IDENTITY="Apple Distribution"` 又会被判成设置冲突
+（`conflicting provisioning settings`）。所以改成用 App Store Connect API **手工签名**——分发用的这两样东西都不需要任何设备：
+
+| 需要的东西 | 怎么来 | 需要设备吗 |
+| --- | --- | --- |
+| Apple Distribution 证书 | `POST /v1/certificates`（`certificateType=DISTRIBUTION`），CSR 用 `cryptography` 现生成 | 不需要 |
+| App Store 描述文件 | `POST /v1/profiles`（`profileType=IOS_APP_STORE`） | 不需要 |
+| 归档 | `xcodebuild archive` + `CODE_SIGN_STYLE=Manual` + `PROVISIONING_PROFILE_SPECIFIER=<uuid>` | — |
+
+实现在 `ios/ci/asc.py`（只依赖 `cryptography` + `PyJWT`，四个子命令 `preflight` / `signing` / `builds` / `selfcheck`）；工作流负责用 `openssl pkcs12` 导出证书、`security import` 进临时钥匙串、导出 ipa、`altool` 上传。
+
+**必须用 Xcode 26+（iOS 26 SDK）**：`macos-15` 镜像默认是 Xcode 16.4（iOS 18.5 SDK），上传会被 App Store Connect 拒绝
+`Validation failed (409) SDK version issue ... must be built with the iOS 26 SDK or later`。
+工作流会自动列出 `/Applications/Xcode*.app`、挑最新的稳定版并 `xcode-select` 过去（镜像里预装了 26.x）。
+
+触发时可填：
+
+- `build_number`：覆盖 `project.yml` 的 `CURRENT_PROJECT_VERSION`。同一版本号不能重复上传（Apple 回 `Redundant Binary Upload`），所以**重跑要填个新数字**；留空就用工程里的值。
+- `verify_only`：只跑 `GET /v1/builds`，看构建是 `VALID` 还是卡在出口合规（`MISSING_EXPORT_COMPLIANCE`），不构建不上传，约 1 分钟。
+- `skip_upload`：只出包不上传，ipa 留在 artifact 里。
+
+分发证书有配额（个人账号很少），工作流在 Apple 回「已有一张当前 Distribution 证书」时会自动吊销**最早到期**的那张再重试，日志里会写明吊销了哪个 id。
+
 #### 这个仓库的 iOS 版现状
 
 - 已有：真太阳时、十二时辰、太阳位置、位置地图、时辰交接本地通知（`UNCalendarNotificationTrigger`）。
