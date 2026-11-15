@@ -110,7 +110,6 @@ jobs:
         run: brew install xcodegen
 
       - name: 准备 Python（cryptography / PyJWT）
-        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/venv"
@@ -355,7 +354,7 @@ jobs:
           echo "### 已上传：xcodebuild destination=upload" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 验证 TestFlight 构建（GET /v1/builds）
-        if: always() && env.HAS_APP_RECORD == 'yes'
+        if: always()
         run: |
           set -euo pipefail
           if [ "${UPLOADED:-no}" = "no" ]; then
