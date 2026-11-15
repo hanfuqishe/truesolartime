@@ -564,7 +564,15 @@ object WidgetUpdater {
             for (utcId in TOP_ROW_UTC_IDS) setTextViewText(utcId, utcLabel)
             for (cityId in TOP_ROW_CITY_IDS) {
                 setTextViewText(cityId, cityText)
-                setInt(cityId, "setGravity", gravityFor(city.align))
+                // ⚠️ TextView#setGravity 的 @RemotableViewMethod 是后来才加上的：
+                // Android 10（P30 / ELE-AL00 实测）上 RemoteViews 调它会抛
+                //   "view: android.widget.TextView can't use method with RemoteViews: setGravity(int)"
+                // 而且是**在桌面进程里**抛，我们这边 catch 不到 —— 整个小组件直接变成
+                // 「加载窗口小工具时出现问题」的空白块。只在验证过的新系统上下发，
+                // 老系统用布局里声明的默认对齐（档 1 的地区名靠左而不是居中，可接受）。
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setInt(cityId, "setGravity", gravityFor(city.align))
+                }
             }
             // 档 1 起收起「真太阳时」，档 2 起连 UTC 一起收起：把位置让给长地名。
             for (utcId in TOP_ROW_UTC_IDS) {
