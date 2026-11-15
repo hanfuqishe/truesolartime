@@ -11,6 +11,10 @@ enum CoordinateTransform {
     private static let eccentricity = 0.00669342162296594323
 
     /// GCJ-02 的适用边界，境外不加偏移。
+    ///
+    /// 注意：这是**坐标系**的边界（72–137.8°E / 0.83–55.8°N，比行政区划大一圈），
+    /// 不是「是不是中国境内」的判据 —— 印度、尼泊尔、东南亚都在里面。
+    /// 「是不是境内」一律看 `GeoRegion.isInChina`（国家码优先），选底图也用它。
     static func isInChina(latitude: Double, longitude: Double) -> Bool {
         longitude >= 72.004 && longitude <= 137.8347 && latitude >= 0.8293 && latitude <= 55.8271
     }
@@ -84,9 +88,21 @@ enum MapStyle: String, CaseIterable, Identifiable {
         }
     }
 
-    func effective(latitude: Double, longitude: Double) -> MapStyle {
+    /// 自动选图：境内高德，境外 OpenStreetMap。
+    ///
+    /// 「境内」用 `GeoRegion.isInChina`：**有国家码以国家码为准**，没有才退回包围盒。
+    /// 之前直接用 GCJ-02 的矩形判断，新德里（77.2°E, 28.6°N）会被当成境内而去拉高德的
+    /// 瓦片 —— 境外没有高德数据，标点还会被 GCJ-02 偏移推歪。
+    ///
+    /// - Parameter countryCode: 观测点的 ISO 3166-1 alpha-2；未知传 nil。
+    func effective(countryCode: String? = nil, latitude: Double, longitude: Double) -> MapStyle {
         guard self == .auto else { return self }
-        return CoordinateTransform.isInChina(latitude: latitude, longitude: longitude) ? .amapVector : .osm
+        let inChina = GeoRegion.isInChina(
+            countryCode: countryCode,
+            latitude: latitude,
+            longitude: longitude
+        )
+        return inChina ? .amapVector : .osm
     }
 
     var isGcj02: Bool { self == .amapVector || self == .amapSatellite }

@@ -116,7 +116,7 @@ export class CardService {
       : AppStore.district().countryCode;
     const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language,
       ZoneTable.offsetSeconds(countryCode, place.longitude,
-        SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)));
+        SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude, countryCode)), countryCode);
     const data: CardData = new CardData();
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);
@@ -130,7 +130,7 @@ export class CardService {
     const zoneSeconds: number = ZoneTable.offsetSeconds(
       countryCode,
       place.longitude,
-      SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude)
+      SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude, countryCode)
     );
     data.utcLabel = TimeFormat.utcOffsetLabel(zoneSeconds);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);

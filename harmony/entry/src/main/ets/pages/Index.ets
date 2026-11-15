@@ -114,7 +114,9 @@ struct Index {
     Date.now(),
     Place.DEFAULT.latitude,
     Place.DEFAULT.longitude,
-    'zh-Hans'
+    'zh-Hans',
+    -1,
+    Place.DEFAULT.countryCode
   );
   /** 真太阳时当天秒数，每秒更新；大时钟只依赖它。 */
   @State solarSecond: number = 0;
@@ -260,14 +262,27 @@ struct Index {
 
   // ---- 数据 ----
 
-  /** 观测点的标准时区偏移（秒）：优先用预设城市自带的国家码，其次逆地理结果，最后按经度近似。 */
-  private zoneOffsetSeconds(): number {
-    // 预设城市的国家码随城市一起内置，选中就能当场算出时区，不必等（也可能失败的）逆地理编码。
-    const countryCode: string = this.place.countryCode.length > 0
+  /**
+   * 观测点**已知**的国家/地区码：预设城市自带，其次逆地理结果；都没有时为空串。
+   *
+   * 预设城市的国家码随城市一起内置，选中就能当场算出时区，不必等（也可能失败的）逆地理编码。
+   */
+  private countryCodeOfPlace(): string {
+    return this.place.countryCode.length > 0
       ? this.place.countryCode
       : AppStore.district().countryCode;
+  }
+
+  /**
+   * 观测点的标准时区偏移（秒）：有国家码按国家码查表，表里没有才兜底。
+   *
+   * 兜底交给 `SolarTimeMath.standardZoneOffsetSeconds`：它按「国家码优先、没有国家码才看
+   * 经纬度包围盒」判是不是中国境内（境内恒 +8，境外按经度近似）。
+   */
+  private zoneOffsetSeconds(): number {
+    const countryCode: string = this.countryCodeOfPlace();
     return ZoneTable.offsetSeconds(countryCode, this.place.longitude,
-      SolarTimeMath.standardZoneOffsetSeconds(this.place.latitude, this.place.longitude));
+      SolarTimeMath.standardZoneOffsetSeconds(this.place.latitude, this.place.longitude, countryCode));
   }
 
   private tick(): void {
@@ -340,7 +355,7 @@ struct Index {
     const now: number = Date.now();
     this.language = language;
     this.snapshot = SolarTimeSnapshot.compute(now, this.place.latitude, this.place.longitude, language,
-      this.zoneOffsetSeconds());
+      this.zoneOffsetSeconds(), this.countryCodeOfPlace());
     this.palette = paletteFor(this.isDayTheme());
     // 区划名只在「缓存坐标仍属于当前观测点（≤ 5 km）」时才算数：换了城市就立刻变空，
     // 新名字回来之前卡片退回预设城市名 / 减号，不会挂着上一个城市的区划名。
@@ -442,10 +457,11 @@ struct Index {
 
   // ---- 位置地图 ----
 
-  /** 当前设置下的底图图层（自动＝境内高德、境外 OSM）。 */
+  /** 当前设置下的底图图层（自动＝境内高德、境外 OSM；境内/境外按国家码判）。 */
   private mapLayer(): MapLayer {
     const style: MapStyle = MapTilesLogic.styleFromKey(this.mapStyleKey);
-    return MapTilesLogic.layerForStyle(style, this.place.latitude, this.place.longitude);
+    return MapTilesLogic.layerForStyle(style, this.place.latitude, this.place.longitude,
+      this.countryCodeOfPlace());
   }
 
   /** 地图中心复位到观测点：换城市、跟随 GPS 更新坐标后都要复位。 */

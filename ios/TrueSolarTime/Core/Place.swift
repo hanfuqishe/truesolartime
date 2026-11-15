@@ -14,9 +14,21 @@ struct Place: Equatable {
     /// 逆地理编码得到的 ISO 3166-1 alpha-2（小写），例如 "cn" / "us"；未知为 nil。
     var countryCode: String?
 
-    /// 观测地的法定标准时区偏移（秒）。查不到国家时按经度每 15° 近似。
+    /// 这个地点算不算中国境内（含港澳台）：国家码优先，没有国家码才退回经纬度包围盒。
+    /// 见 `GeoRegion`。
+    var isInChina: Bool {
+        GeoRegion.isInChina(countryCode: countryCode, latitude: latitude, longitude: longitude)
+    }
+
+    /// 观测地的法定标准时区偏移（秒）。
+    ///
+    /// 有国家码按国家码查表；没有国家码时境内恒为 +8、境外按经度每 15° 近似。
     var standardOffsetSeconds: Int {
-        SolarTimeMath.standardZoneOffsetSeconds(countryCode: countryCode, longitude: longitude)
+        SolarTimeMath.standardZoneOffsetSeconds(
+            countryCode: countryCode,
+            latitude: latitude,
+            longitude: longitude
+        )
     }
 
     /// 预设城市名：只有从「常用城市」里点选的城市才有名字可用，手工坐标 / GPS 一律没有。

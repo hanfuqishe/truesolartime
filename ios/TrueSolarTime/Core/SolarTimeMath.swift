@@ -182,12 +182,28 @@ enum SolarTimeMath {
         Int(((longitude / 15.0).rounded()) * 3600.0)
     }
 
-    /// 观测点的标准时区偏移（秒）：先查国家表，查不到按经度近似。
-    static func standardZoneOffsetSeconds(countryCode: String?, longitude: Double) -> Int {
-        ZoneTable.offsetSeconds(
+    /// 观测点的标准时区偏移（秒）：先查国家表，表里没有时才兜底。
+    ///
+    /// 兜底分两种情形（与 Android 的 `LocalZone.standardOffsetSeconds` 口径一致）：
+    ///   - 是中国境内 → 恒为 +8。乌鲁木齐 87.6°E 按经度近似会被算成 +6，
+    ///     所以境内绝不能退到「按经度每 15° 取整」；
+    ///   - 不是 → 按经度每 15° 取整。
+    ///
+    /// 「是不是境内」走 `GeoRegion.isInChina`：**有国家码以国家码为准**，没有才退回包围盒。
+    static func standardZoneOffsetSeconds(
+        countryCode: String?,
+        latitude: Double,
+        longitude: Double
+    ) -> Int {
+        let inChina = GeoRegion.isInChina(
+            countryCode: countryCode,
+            latitude: latitude,
+            longitude: longitude
+        )
+        return ZoneTable.offsetSeconds(
             countryCode: countryCode,
             longitude: longitude,
-            fallbackSeconds: approxZoneOffsetSeconds(longitude: longitude)
+            fallbackSeconds: inChina ? Int(beijingOffsetSeconds) : approxZoneOffsetSeconds(longitude: longitude)
         )
     }
 

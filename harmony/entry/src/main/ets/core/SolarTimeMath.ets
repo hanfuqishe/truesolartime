@@ -93,6 +93,8 @@ export class SolarTimeMath {
   /** 北京时间（东八区固定偏移）的毫秒数。 */
   static readonly BEIJING_OFFSET_MILLIS: number = 8 * 3600 * 1000;
   static readonly BEIJING_OFFSET_SECONDS: number = 8 * 3600;
+  /** 中国境内（含港澳台）的国家/地区码，小写。有国家码时以它为准。 */
+  static readonly CHINA_COUNTRY_CODES: string[] = ['cn', 'hk', 'mo', 'tw'];
 
   /** 由儒略世纪数推求太阳位置（均时差与赤纬）。 */
   static solarPosition(epochMillis: number): SolarPosition {
@@ -159,17 +161,44 @@ export class SolarTimeMath {
   }
 
   /**
-   * 观测点所在地的**标准时区偏移**（相对 UTC，秒）。
-   * 中国全境统一 +8（含港澳台与新疆、西藏）；境外按经度每 15° 取整，限制在 UTC-12..+14。
+   * 中国境内的经纬度包围盒（73–135°E / 18–54°N），与 Android `SolarTimeMath.isInChinaBbox` 同源。
+   *
+   * **只作没有国家码时的兜底**，不是「是不是中国」的完整判据：这个矩形把印度、尼泊尔、
+   * 孟加拉与部分东南亚都框了进来 —— 新德里（77.2°E, 28.6°N）就在框内。
    */
-  /** 粗略判断是否在中国境内（含港澳台），用于时区兜底与逆地理编码分流。 */
   static isInChinaBbox(latitude: number, longitude: number): boolean {
     return longitude >= 73 && longitude <= 135 && latitude >= 18 && latitude <= 54;
   }
 
-  static standardZoneOffsetSeconds(latitude: number, longitude: number): number {
-    const inChina: boolean = SolarTimeMath.isInChinaBbox(latitude, longitude);
-    if (inChina) {
+  /**
+   * 「是不是中国境内」（含港澳台）的唯一口径：**有国家码以国家码为准**，没有才退回包围盒。
+   *
+   * 只按包围盒判断时，新德里会被当成中国 → 时区显示 UTC+8（应为 +5:30）、底图还会去拉高德。
+   * 与 Android 的 `LocalZone.isInChina`、iOS 的 `GeoRegion.isInChina` 是同一套规则，三端要一起改。
+   *
+   * @param countryCode ISO 3166-1 alpha-2（大小写不敏感）；未知传空串。
+   */
+  static isInChina(latitude: number, longitude: number, countryCode: string = ''): boolean {
+    const code: string = countryCode !== undefined && countryCode !== null ? countryCode.trim().toLowerCase() : '';
+    if (code.length > 0) {
+      return SolarTimeMath.CHINA_COUNTRY_CODES.indexOf(code) >= 0;
+    }
+    return SolarTimeMath.isInChinaBbox(latitude, longitude);
+  }
+
+  /**
+   * 观测点所在地的**标准时区偏移**（相对 UTC，秒）——**表里查不到时的兜底**。
+   *
+   * 有国家码先按国家码判「是不是中国境内」（cn/hk/mo/tw → 恒 +8），没有国家码才退回包围盒；
+   * 境外按经度每 15° 取整，限制在 UTC-12..+14。
+   *
+   * 正常路径是 `ZoneTable.offsetSeconds(countryCode, longitude, 本函数)`：国家表认识全世界，
+   * 这里只负责「表里没有」的那几种情形。
+   *
+   * @param countryCode ISO 3166-1 alpha-2（大小写不敏感）；未知传空串。
+   */
+  static standardZoneOffsetSeconds(latitude: number, longitude: number, countryCode: string = ''): number {
+    if (SolarTimeMath.isInChina(latitude, longitude, countryCode)) {
       return SolarTimeMath.BEIJING_OFFSET_SECONDS;
     }
     const hours: number = Math.round(longitude / 15.0);

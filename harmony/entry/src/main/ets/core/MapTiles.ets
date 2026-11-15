@@ -8,6 +8,8 @@
  * 这里只有纯计算（坐标转换、瓦片编号与摆放），绘制放在 pages/Index.ets。
  */
 
+import { SolarTimeMath } from './SolarTimeMath';
+
 /** 一块瓦片的边长（像素）与缩放范围，与 Android 端相同。 */
 export const TILE_PX: number = 256;
 export const MIN_ZOOM: number = 3;
@@ -86,14 +88,29 @@ export class MapTile {
 }
 
 export class MapTilesLogic {
-  /** GCJ-02 的适用边界（与 Android 端同一套判断），境外不加偏移。 */
+  /**
+   * GCJ-02 的**坐标系**适用边界（与 Android 端 `CoordinateTransform.isInChina` 同一套判断），
+   * 境外不加偏移。
+   *
+   * 注意：它比行政区划大一圈（印度、尼泊尔、东南亚都在里面），**不是**「是不是中国境内」的判据。
+   * 决定用哪张底图请看 [layerFor]（走 `SolarTimeMath.isInChina`，国家码优先）；
+   * 这里只回答「要不要做 GCJ-02 偏移」。
+   */
   static isInChina(latitude: number, longitude: number): boolean {
     return longitude >= 72.004 && longitude <= 137.8347 && latitude >= 0.8293 && latitude <= 55.8271;
   }
 
-  /** 自动选图：境内高德，境外 OSM。 */
-  static layerFor(latitude: number, longitude: number): MapLayer {
-    return MapTilesLogic.isInChina(latitude, longitude) ? AMAP_LAYER : OSM_LAYER;
+  /**
+   * 自动选图：境内高德，境外 OSM。
+   *
+   * 「境内」走 `SolarTimeMath.isInChina`：**有国家码以国家码为准**，没有才退回包围盒。
+   * 只看经纬度时，新德里（77.2°E, 28.6°N）会被当成境内 → 去拉高德的瓦片（境外没有覆盖，
+   * 标点还会被 GCJ-02 偏移推歪）。
+   *
+   * @param countryCode ISO 3166-1 alpha-2；未知传空串。
+   */
+  static layerFor(latitude: number, longitude: number, countryCode: string = ''): MapLayer {
+    return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? AMAP_LAYER : OSM_LAYER;
   }
 
   /** 偏好里的标识 → 底图；认不出的标识按「自动」处理（旧版本升上来时就是这个默认值）。 */
@@ -106,8 +123,13 @@ export class MapTilesLogic {
     return MapStyle.AUTO;
   }
 
-  /** 按设置里选定的底图取图层：自动仍是境内高德、境外 OSM。 */
-  static layerForStyle(style: MapStyle, latitude: number, longitude: number): MapLayer {
+  /**
+   * 按设置里选定的底图取图层：自动仍是境内高德、境外 OSM（境内/境外按国家码判，见 [layerFor]）。
+   *
+   * @param countryCode ISO 3166-1 alpha-2；未知传空串，只有「自动」会用到。
+   */
+  static layerForStyle(style: MapStyle, latitude: number, longitude: number,
+    countryCode: string = ''): MapLayer {
     if (style === MapStyle.OSM) {
       return OSM_LAYER;
     }
@@ -117,7 +139,7 @@ export class MapTilesLogic {
     if (style === MapStyle.AMAP_SATELLITE) {
       return AMAP_SATELLITE_LAYER;
     }
-    return MapTilesLogic.layerFor(latitude, longitude);
+    return MapTilesLogic.layerFor(latitude, longitude, countryCode);
   }
 
   /** WGS-84 → GCJ-02；境外原样返回。 */

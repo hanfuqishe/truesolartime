@@ -85,8 +85,15 @@ export class SolarSnapshot {
 }
 
 export class SolarTimeSnapshot {
+  /**
+   * 组装某一瞬间、某一地点的快照。
+   *
+   * @param zoneOffsetSeconds 观测点的法定标准时区偏移（秒）；传 -1 表示由本函数自己算兜底值。
+   * @param countryCode 观测点的 ISO 3166-1 alpha-2；只在需要自己算时区兜底时用到
+   *   （**有国家码以国家码为准**，没有才退回经纬度包围盒，见 `SolarTimeMath.isInChina`）。
+   */
   static compute(epochMillis: number, latitude: number, longitude: number, language: string,
-      zoneOffsetSeconds: number = -1): SolarSnapshot {
+      zoneOffsetSeconds: number = -1, countryCode: string = ''): SolarSnapshot {
     const snapshot: SolarSnapshot = new SolarSnapshot();
     const trueSolarSeconds: number = SolarTimeMath.trueSolarSecondsOfDay(epochMillis, longitude);
     const position: SolarPosition = SolarTimeMath.solarPosition(epochMillis);
@@ -129,7 +136,7 @@ export class SolarTimeSnapshot {
     // 当地时间 = UTC 时刻 + 当地时区偏移；北京时间口径按 +8 换算，故先减去 +8 再加当地偏移。
     const zoneOffset: number = zoneOffsetSeconds >= 0
       ? zoneOffsetSeconds
-      : SolarTimeMath.standardZoneOffsetSeconds(latitude, longitude);
+      : SolarTimeMath.standardZoneOffsetSeconds(latitude, longitude, countryCode);
     snapshot.localOffsetSeconds = zoneOffset;
     const shiftSeconds: number = zoneOffset - SolarTimeMath.BEIJING_OFFSET_SECONDS;
     if (snapshot.sunriseBeijingSeconds >= 0) {

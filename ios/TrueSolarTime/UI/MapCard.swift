@@ -10,7 +10,12 @@ struct MapCard: View {
     let mapStyle: MapStyle
 
     private var resolvedStyle: MapStyle {
-        mapStyle.effective(latitude: place.latitude, longitude: place.longitude)
+        // 带上国家码：境内/境外以国家码为准，没有国家码（GPS 刚定位）才退回包围盒。
+        mapStyle.effective(
+            countryCode: place.countryCode,
+            latitude: place.latitude,
+            longitude: place.longitude
+        )
     }
 
     var body: some View {

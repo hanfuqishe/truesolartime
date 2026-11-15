@@ -441,6 +441,75 @@ for (const item of equationCases) {
   check('overseas presets have a city name', overseasNamesOk);
 }
 
+// ---- 「是不是中国境内」：国家码优先，没有国家码才退回包围盒 ----
+{
+  // 与页面/卡片同一条管线：有国家码按国家码查 ZoneTable，表里没有才由 SolarTimeMath 兜底。
+  const zoneOf = (latitude: number, longitude: number, countryCode: string): number =>
+    ZoneTable.offsetSeconds(countryCode, longitude,
+      SolarTimeMath.standardZoneOffsetSeconds(latitude, longitude, countryCode));
+
+  // 回归：早先只按经纬度包围盒（73–135°E / 18–54°N）判断，新德里（77.2°E, 28.6°N）落在框内，
+  // 于是被当成中国 —— 时区显示 UTC+8（应为 +5:30），底图也去拉高德的瓦片。
+  const delhiLatitude = 28.6139;
+  const delhiLongitude = 77.2090;
+  check('delhi with country code in is not in china',
+    !SolarTimeMath.isInChina(delhiLatitude, delhiLongitude, 'in'));
+  equal('delhi with country code in resolves utc+5:30', 19800,
+    zoneOf(delhiLatitude, delhiLongitude, 'in'));
+
+  // 对照：上海 + cn 仍然是境内、仍然 +8。
+  check('shanghai with country code cn is in china',
+    SolarTimeMath.isInChina(31.2304, 121.4737, 'cn'));
+  equal('shanghai with country code cn resolves utc+8', 28800,
+    zoneOf(31.2304, 121.4737, 'cn'));
+
+  // 港澳台按国家码算境内，也是 +8。
+  let everyChinaCodeOk: boolean = true;
+  for (const code of SolarTimeMath.CHINA_COUNTRY_CODES) {
+    if (!SolarTimeMath.isInChina(31.2304, 121.4737, code) || zoneOf(31.2304, 121.4737, code) !== 28800) {
+      everyChinaCodeOk = false;
+    }
+  }
+  check('cn/hk/mo/tw all count as china and stay utc+8', everyChinaCodeOk);
+
+  // 国家码大小写不敏感（空白视为未知）。
+  check('country code is case insensitive',
+    SolarTimeMath.isInChina(31.2304, 121.4737, 'CN')
+      && !SolarTimeMath.isInChina(delhiLatitude, delhiLongitude, ' in '));
+
+  // 没有国家码时才用包围盒：新德里仍在框内 → 退回旧行为（判境内、+8）。
+  // 这是**有意保留**的兜底（与 Android 一致）：包围盒只是粗略近似，所以三端都优先用国家码。
+  check('delhi without country code falls back to the bbox (known approximation)',
+    SolarTimeMath.isInChina(delhiLatitude, delhiLongitude));
+  equal('delhi without country code falls back to +8', 28800,
+    zoneOf(delhiLatitude, delhiLongitude, ''));
+
+  // 加德满都 27.7N / 85.3E：无国家码 → 包围盒判境内（+8）；有 np → 境外且 +5:45。
+  check('kathmandu without country code uses the bbox', SolarTimeMath.isInChina(27.7, 85.3));
+  equal('kathmandu without country code is +8 via the bbox', 28800, zoneOf(27.7, 85.3, ''));
+  check('kathmandu with country code np is not in china', !SolarTimeMath.isInChina(27.7, 85.3, 'np'));
+  equal('kathmandu with country code np resolves utc+5:45', 20700, zoneOf(27.7, 85.3, 'np'));
+
+  // 境内没有国家码时也必须 +8：乌鲁木齐 87.6°E 按经度近似会被算成 +6。
+  equal('urumqi without country code stays utc+8', 28800, zoneOf(43.8256, 87.6168, ''));
+
+  // 端到端：快照里的当地偏移也跟着国家码走（与页面/卡片一致：偏移由 ZoneTable 算好再传进来）。
+  const delhiSnapshot = SolarTimeSnapshot.compute(
+    Date.UTC(2026, 10, 14, 4, 0, 0), delhiLatitude, delhiLongitude, 'zh-Hans',
+    zoneOf(delhiLatitude, delhiLongitude, 'in'), 'in');
+  equal('delhi snapshot uses utc+5:30', 19800, delhiSnapshot.localOffsetSeconds);
+  const delhiSnapshotNoCode = SolarTimeSnapshot.compute(
+    Date.UTC(2026, 10, 14, 4, 0, 0), delhiLatitude, delhiLongitude, 'zh-Hans');
+  equal('delhi snapshot without country code falls back to +8', 28800,
+    delhiSnapshotNoCode.localOffsetSeconds);
+
+  // 预设城市自带国家码：选中新德里就当场是 +5:30，不必等逆地理回来。
+  const delhiPreset: Place = Place.PRESETS[16];
+  equal('delhi preset carries country code in', 'in', delhiPreset.countryCode);
+  equal('delhi preset resolves utc+5:30', 19800,
+    zoneOf(delhiPreset.latitude, delhiPreset.longitude, delhiPreset.countryCode));
+}
+
 // ---- 位置地图瓦片 ----
 {
   const shanghai = MapTilesLogic.layerFor(31.2304, 121.4737);
@@ -448,6 +517,16 @@ for (const item of equationCases) {
   check('amap inside China', shanghai.datum === MapDatum.GCJ02 && shanghai.name.indexOf('amap') === 0);
   check('osm outside China', tokyo.datum === MapDatum.WGS84 && tokyo.name === 'osm');
   check('china bounds', MapTilesLogic.isInChina(31.23, 121.47) && !MapTilesLogic.isInChina(35.68, 139.76));
+
+  // 自动选底图也按国家码判境内：新德里（in）用 OSM，上海（cn）用高德；
+  // 没有国家码时才退回包围盒（新德里在框内 → 旧行为高德，加德满都同理）。
+  check('auto layer picks osm for delhi with country code in',
+    MapTilesLogic.layerFor(28.6139, 77.2090, 'in').name === 'osm');
+  check('auto layer picks amap for shanghai with country code cn',
+    MapTilesLogic.layerFor(31.2304, 121.4737, 'cn').name === 'amap-vector');
+  check('auto layer falls back to the bbox without a country code',
+    MapTilesLogic.layerForStyle(MapStyle.AUTO, 28.6139, 77.2090).name === 'amap-vector'
+      && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
 
   // 高德底图是 GCJ-02：上海一带的偏移在千米级（0.001°~0.01°）。
   const gcj = MapTilesLogic.toGcj02(31.2304, 121.4737);

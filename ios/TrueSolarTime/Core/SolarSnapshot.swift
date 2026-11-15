@@ -82,6 +82,7 @@ enum SolarTimeSnapshot {
     ) -> SolarSnapshot {
         let offsetSeconds = SolarTimeMath.standardZoneOffsetSeconds(
             countryCode: countryCode,
+            latitude: latitude,
             longitude: longitude
         )
         return compute(date: date, latitude: latitude, longitude: longitude, offsetSeconds: offsetSeconds)

@@ -253,7 +253,9 @@ expectClose(
 // MARK: - 时区表（对齐 Android 的 ZoneTable）
 
 func zoneOffset(_ country: String?, _ longitude: Double) -> Int {
-    SolarTimeMath.standardZoneOffsetSeconds(countryCode: country, longitude: longitude)
+    // 纬度传 0（赤道，不在中国包围盒里）：没有国家码时仍然走「按经度近似」，
+    // 与改写前的口径一致；包围盒那条分支另有专门的用例（见「是不是中国境内」一节）。
+    SolarTimeMath.standardZoneOffsetSeconds(countryCode: country, latitude: 0, longitude: longitude)
 }
 
 expect("中国全境 +8（乌鲁木齐 87.6°E 不按经度算）", zoneOffset("cn", 87.6168) == 28_800, "得到 \(zoneOffset("cn", 87.6168))")
@@ -302,10 +304,134 @@ let mumbaiZone = SolarTimeSnapshot.compute(
 )
 expect("孟买 UTC 标签 UTC+5:30", mumbaiZone.utcLabel == "UTC+5:30", "得到 \(mumbaiZone.utcLabel)")
 
+// MARK: - 「是不是中国境内」：国家码优先，没有国家码才退回包围盒
+
+// 回归：早先只按经纬度包围盒判断（73–135°E / 18–54°N），新德里（77.2°E, 28.6°N）正好落在
+// 框内，于是被当成中国 —— 时区显示 UTC+8（应为 +5:30），底图还会去拉境外的数据。
+let delhiLatitude = 28.6139
+let delhiLongitude = 77.2090
+let delhiInChina = GeoRegion.isInChina(
+    countryCode: "in",
+    latitude: delhiLatitude,
+    longitude: delhiLongitude
+)
+expect("新德里 + 国家码 in 不算中国境内", delhiInChina == false)
+expect(
+    "新德里 + 国家码 in → UTC+5:30",
+    SolarTimeMath.standardZoneOffsetSeconds(
+        countryCode: "in",
+        latitude: delhiLatitude,
+        longitude: delhiLongitude
+    ) == 19_800,
+    "得到 \(SolarTimeMath.standardZoneOffsetSeconds(countryCode: "in", latitude: delhiLatitude, longitude: delhiLongitude))"
+)
+expect(
+    "新德里 + 国家码 in → 底图用 OpenStreetMap",
+    MapStyle.auto.effective(countryCode: "in", latitude: delhiLatitude, longitude: delhiLongitude) == .osm
+)
+expect(
+    "新德里无国家码 → 底图退回包围盒（仍是高德，已知近似）",
+    MapStyle.auto.effective(latitude: delhiLatitude, longitude: delhiLongitude) == .amapVector
+)
+expect("新德里（预设自带国家码）不算中国境内", Place.presets.first { $0.label == "新德里" }?.isInChina == false)
+
+// 对照：上海 + 国家码 cn 仍然是境内、仍然 +8、仍然用高德。
+let shanghaiLatitude = 31.2304
+let shanghaiLongitude = 121.4737
+expect(
+    "上海 + 国家码 cn 算中国境内",
+    GeoRegion.isInChina(countryCode: "cn", latitude: shanghaiLatitude, longitude: shanghaiLongitude)
+)
+expect(
+    "上海 + 国家码 cn → UTC+8",
+    SolarTimeMath.standardZoneOffsetSeconds(
+        countryCode: "cn",
+        latitude: shanghaiLatitude,
+        longitude: shanghaiLongitude
+    ) == 28_800
+)
+expect(
+    "上海 + 国家码 cn → 底图用高德矢量",
+    MapStyle.auto.effective(countryCode: "cn", latitude: shanghaiLatitude, longitude: shanghaiLongitude) == .amapVector
+)
+
+// 港澳台按国家码算境内（中国全境统一 +8）。
+for code in ["hk", "mo", "tw"] {
+    expect(
+        "国家码 \(code) 算中国境内且 +8",
+        GeoRegion.isInChina(countryCode: code, latitude: 22.3193, longitude: 114.1694)
+            && SolarTimeMath.standardZoneOffsetSeconds(
+                countryCode: code,
+                latitude: 22.3193,
+                longitude: 114.1694
+            ) == 28_800
+    )
+}
+
+// 国家码大小写不敏感；空白 / nil 一律视为「没有国家码」。
+expect(
+    "国家码大小写不敏感",
+    GeoRegion.isInChina(countryCode: "CN", latitude: shanghaiLatitude, longitude: shanghaiLongitude)
+        && GeoRegion.isInChina(countryCode: " in ", latitude: delhiLatitude, longitude: delhiLongitude) == false
+)
+expect(
+    "空白国家码视为未知",
+    GeoRegion.normalizedCountryCode("  ") == nil && GeoRegion.normalizedCountryCode(nil) == nil
+)
+
+// 没有国家码时才用包围盒。加德满都（27.7°N, 85.3°E）在框内，所以：
+//   - 没有国家码 → 退回包围盒，判为境内、+8（**有意保留**的近似，与 Android / 鸿蒙一致）；
+//   - 有 np → 按国家码走，境外、+5:45。
+expect(
+    "加德满都无国家码 → 退回包围盒（判为境内，已知近似）",
+    GeoRegion.isInChina(countryCode: nil, latitude: 27.7, longitude: 85.3)
+)
+expect(
+    "加德满都无国家码 → 兜底 +8（包围盒口径）",
+    SolarTimeMath.standardZoneOffsetSeconds(countryCode: nil, latitude: 27.7, longitude: 85.3) == 28_800
+)
+expect(
+    "加德满都 + 国家码 np → 境外且 +5:45",
+    GeoRegion.isInChina(countryCode: "np", latitude: 27.7, longitude: 85.3) == false
+        && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "np", latitude: 27.7, longitude: 85.3) == 20_700
+)
+
+// 境内没有国家码时也必须 +8：乌鲁木齐 87.6°E 若按经度近似会被算成 +6。
+expect(
+    "乌鲁木齐无国家码也 +8（按经度近似会算成 +6）",
+    SolarTimeMath.standardZoneOffsetSeconds(countryCode: nil, latitude: 43.8256, longitude: 87.6168) == 28_800,
+    "得到 \(SolarTimeMath.standardZoneOffsetSeconds(countryCode: nil, latitude: 43.8256, longitude: 87.6168))"
+)
+
+// 端到端：快照里的标准时间与 UTC 标签也要跟着国家码走。
+let delhiSnapshot = SolarTimeSnapshot.compute(
+    date: instant,
+    latitude: delhiLatitude,
+    longitude: delhiLongitude,
+    countryCode: "in"
+)
+expect(
+    "新德里快照 UTC+5:30",
+    delhiSnapshot.utcLabel == "UTC+5:30" && delhiSnapshot.standardOffsetSeconds == 19_800,
+    "得到 \(delhiSnapshot.utcLabel) / \(delhiSnapshot.standardOffsetSeconds)"
+)
+let delhiWithoutCode = SolarTimeSnapshot.compute(
+    date: instant,
+    latitude: delhiLatitude,
+    longitude: delhiLongitude
+)
+expect(
+    "新德里无国家码的快照退回 +8（包围盒兜底）",
+    delhiWithoutCode.utcLabel == "UTC+8",
+    "得到 \(delhiWithoutCode.utcLabel)"
+)
+
 // MARK: - 内置城市列表的时区（含境外城市，供真机切换验证）
 
 // 回归：预设城市一定要把国家码带进 Place。
-// 之前在 `usePreset` 里只传了经纬度和名字，国家码丢了，德里就被按经度近似算成 UTC+5。
+// 之前在 `usePreset` 里只传了经纬度和名字，国家码丢了，德里就只能靠兜底 ——
+// 而现在兜底的第一条是「境内包围盒」，德里在框内，于是被算成 UTC+8。
+// 也就是说：**国家码丢了就一定出错**（要么 UTC+5、要么 UTC+8），必须带上。
 if let delhi = Place.presets.first(where: { $0.label == "新德里" }) {
     let withoutCountry = Place(
         latitude: delhi.latitude,
@@ -314,8 +440,8 @@ if let delhi = Place.presets.first(where: { $0.label == "新德里" }) {
         label: delhi.label
     )
     expect(
-        "丢掉国家码会退化成 UTC+5（历史 bug）",
-        TimeFormat.utcOffsetLabel(seconds: withoutCountry.standardOffsetSeconds) == "UTC+5",
+        "丢掉国家码只剩包围盒兜底（新德里在框内 → UTC+8，历史 bug 的同一类错）",
+        TimeFormat.utcOffsetLabel(seconds: withoutCountry.standardOffsetSeconds) == "UTC+8",
         "得到 \(TimeFormat.utcOffsetLabel(seconds: withoutCountry.standardOffsetSeconds))"
     )
     expect(
