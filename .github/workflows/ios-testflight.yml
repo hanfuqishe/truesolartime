@@ -39,6 +39,10 @@ on:
         type: boolean
         required: false
         default: false
+      build_number:
+        description: '可选：覆盖 iOS 构建号（CURRENT_PROJECT_VERSION）。留空用 ios/project.yml 里的值；同一版本号重复上传会被 Apple 拒（Redundant Binary Upload），重跑时填新值'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -187,9 +191,22 @@ jobs:
       - name: Archive（手工签名）
         if: ${{ !inputs.verify_only }}
         working-directory: ios
+        env:
+          BUILD_NUMBER_OVERRIDE: ${{ inputs.build_number }}
         run: |
           set -euo pipefail
           ARCHIVE="$RUNNER_TEMP/$APP_NAME.xcarchive"
+          # 构建号：默认取 ios/project.yml 的 CURRENT_PROJECT_VERSION，
+          # 重跑同一版本时用 build_number 输入覆盖，避免 Apple 的
+          # Redundant Binary Upload 拒绝。
+          BUILD_NO="${BUILD_NUMBER_OVERRIDE:-}"
+          if [ -z "$BUILD_NO" ]; then
+            # project.yml 里是  CURRENT_PROJECT_VERSION: "46"
+            BUILD_NO=$(awk -F'"' '/CURRENT_PROJECT_VERSION/ {print $2; exit}' project.yml)
+          fi
+          echo "计划构建号 = ${BUILD_NO:-（工程默认）}"
+          EXTRA=()
+          if [ -n "$BUILD_NO" ]; then EXTRA=(CURRENT_PROJECT_VERSION="$BUILD_NO"); fi
           set -x
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
@@ -201,6 +218,7 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            ${EXTRA[@]+"${EXTRA[@]}"} \
             -quiet
           set +x
           /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' \
@@ -326,6 +344,9 @@ jobs:
               exit 0
             fi
             echo "::warning::altool 退出码 ${rc}，改走 xcodebuild destination=upload 兜底"
+            if grep -qiE "redundant binary|already been used" "$RUNNER_TEMP/upload.log"; then
+              echo "::warning title=构建号重复::build ${BUNDLE_BUILD:-?} 已经上传过了。重跑时把 build_number 输入填一个新的数字。"
+            fi
           else
             echo "::warning::当前 Xcode 没有 altool，改走 xcodebuild destination=upload 兜底"
             : > "$RUNNER_TEMP/upload.log"
