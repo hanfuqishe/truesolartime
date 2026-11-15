@@ -32,6 +32,8 @@ targets:
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: 用于获取你所在位置的经纬度，以计算当地真太阳时
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        # 只用系统提供的 HTTPS（URLSession），属于豁免加密：声明后 TestFlight 不再问「加密文稿」
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         ENABLE_USER_SCRIPT_SANDBOXING: YES
