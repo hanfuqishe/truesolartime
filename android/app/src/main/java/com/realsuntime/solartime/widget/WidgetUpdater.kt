@@ -11,6 +11,7 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.text.TextPaint
 import android.util.DisplayMetrics
 import android.util.Log
@@ -54,6 +55,7 @@ object WidgetUpdater {
     const val ACTION_TICK = "com.realsuntime.solartime.action.WIDGET_TICK"
 
     private const val TAG = "SolarWidget"
+
 
     /** 兜底刷新：正常每分钟的 [ACTION_TICK] 万一被系统丢掉，靠它把链条接回来。 */
     const val ACTION_WATCHDOG = "com.realsuntime.solartime.action.WIDGET_WATCHDOG"
@@ -205,7 +207,7 @@ object WidgetUpdater {
     private const val SECOND_SAMPLE = "00"
 
     /** 秒数宽度的余量：等宽字体下切点本就精确，只留一点防亚像素裁边。 */
-    private const val SECOND_WIDTH_SLACK_DP = 0.25f
+    private const val SECOND_WIDTH_SLACK_DP = 0.75f
     /** 「添加到桌面」请求的记账文件与键名。 */
     private const val PIN_PREFS = "widget_pin"
     private const val KEY_PIN_BASELINE = "baseline"
@@ -215,6 +217,16 @@ object WidgetUpdater {
     private const val PIN_SETTLE_MIN_MILLIS = 3_000L
     private const val MAX_MAIN_TEXT_DP = 56f
     private const val MIN_MAIN_TEXT_DP = 20f
+    /**
+     * 显示大小被抬到出厂 dpi 之上（长辈关怀的「大号显示」）时主时钟的宽度余量。
+     * 见 [clockSafetyFactor]：那种情况下桌面回报的格子 dp 与渲染密度不是同一套，留 10% 宁可略小。
+     */
+    private const val LARGE_DISPLAY_CLOCK_SAFETY = 0.90f
+    /**
+     * 格子宽度占整屏宽度的上限。桌面会在格子两侧留内缩（华为 1200px 屏上格子 1134px ≈ 95%），
+     * 所以「按整屏宽封顶」还不够，再乘这个系数才是真实可用宽度。
+     */
+    private const val CELL_SCREEN_FRACTION = 0.95f
     // 秒与冒号的字号不再固定：恒为主字号的 1/2（见 applyClockSizing），布局里的 23dp 只是预览初值。
     private const val DATE_TEXT_DP = 11f
     /**
@@ -398,7 +410,7 @@ object WidgetUpdater {
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
-            applyClockSizing(context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude), compact, this)
+            val mainPx = applyClockSizing(context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude), compact, this)
             if (showAxis) {
                 bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
             } else {
@@ -518,6 +530,7 @@ object WidgetUpdater {
                 views = this,
             )
             bindClicks(context, place, this)
+
         }
     }
 
@@ -551,8 +564,11 @@ object WidgetUpdater {
         isDay: Boolean,
         views: RemoteViews,
     ) {
-        val density = context.resources.displayMetrics.density
-        val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
+        // 位图是按像素画、再被桌面 1:1 贴上去的，所以这里也要用「桌面渲染密度」而不是本进程密度，
+        // 否则长辈模式（显示大小 600、本进程 density 3.75）下轴的高度会比版面高 13%，版面跟着挤。
+        val metrics = renderMetrics(context)
+        val density = metrics.density
+        val totalWidthDp = cellWidthDp(metrics, widthDp)
         val paddingDp = if (compact) COMPACT_AXIS_PADDING_DP else AXIS_PADDING_DP
         val widthPx = (((totalWidthDp - paddingDp * 2f) * density).toInt())
             // 整张位图要 parcel 给系统进程，Binder 事务上限约 1 MB：高密度大屏上
@@ -992,10 +1008,10 @@ object WidgetUpdater {
         coordinates: String,
         compact: Boolean,
         views: RemoteViews,
-    ) {
-        val metrics = context.resources.displayMetrics
+    ): Float {
+        val metrics = renderMetrics(context)
         val density = metrics.density
-        val totalWidthPx = (if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP) * density
+        val totalWidthPx = cellWidthDp(metrics, widthDp) * density
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
         val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
 
@@ -1007,7 +1023,11 @@ object WidgetUpdater {
         // 等宽数字（tnum）下「00:00」「00」「:」的宽度与具体时刻无关，比例可以一次量准。
         val probePx = dpToPx(MAX_MAIN_TEXT_DP, metrics)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            // 必须用**小组件实际渲染的那份字面**（`@font/card_sans_widget` = Noto Sans SC Medium）：
+            // 早先这里量的是系统 `sans-serif-medium`，而 Noto 的数字略宽（约 +6%），
+            // 于是「秒」那一段的 setMaxWidth 差一点点 —— 长辈模式下主字号变小、余量被吃掉，
+            // 两位秒就被裁成一位（实测：`12:03:2`）。
+            typeface = widgetTypeface(context)
             fontFeatureSettings = "tnum"
             textSize = probePx
         }
@@ -1020,7 +1040,8 @@ object WidgetUpdater {
         } else {
             0f
         }
-        val mainPx = fittedPx.coerceIn(dpToPx(MIN_MAIN_TEXT_DP, metrics), probePx)
+        val mainPx = (fittedPx * clockSafetyFactor(context, metrics))
+            .coerceIn(dpToPx(MIN_MAIN_TEXT_DP, metrics), probePx)
         val halfPx = mainPx / 2f
 
         views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
@@ -1081,6 +1102,7 @@ object WidgetUpdater {
                 "scale=${"%.3f".format(Locale.ROOT, dateScale)} " +
                 "dateW=${dateNaturalWidth.toInt()} coordW=${coordNaturalWidth.toInt()} avail=${rowAvailablePx.toInt()}",
         )
+        return mainPx
     }
 
     /** 用与小字相同的字体度量量出某段文字的宽度（px）。 */
@@ -1112,6 +1134,78 @@ object WidgetUpdater {
      */
     private fun dpToPx(dp: Float, metrics: DisplayMetrics): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, metrics)
+
+    /**
+     * 桌面进程**真正**用来把 dp 换算成像素的密度（本进程的 `DisplayMetrics.density` 未必是它）。
+     *
+     * EMUI 的「显示大小」/ 长辈关怀会把 `densityDpi` 抬到出厂 dpi 之上（这台 ELS-AN00：450 → **600**），
+     * 本进程跟着变成 600（density 3.75），但**桌面进程仍按出厂 dpi（`Secure.init_dpi` = 530）渲染 dp**。
+     * 实测：显示大小 600 时小组件里 11dp 的标签渲染成 33px（= 3.31 px/dp），与 450 时的 28px
+     * 呈 3.31/2.81 的比例 —— 桌面用的是 530 这一档，不是 600。
+     *
+     * 用本进程密度算主时钟的 px，字号会大 13%；再叠加桌面回报的格子宽度也按另一套密度算
+     * （见 [clockSafetyFactor]），主时钟就撑破栏宽 —— 表现就是「11:46」被裁成「11:4」、秒整段消失、
+     * 变高的时钟行再把逐时天气挤出格子（只露出半个「多云」）。
+     */
+    private fun renderMetrics(context: Context): DisplayMetrics {
+        val base = context.resources.displayMetrics
+        val factory = factoryDensity(context)
+        val density = if (factory > 0f) minOf(base.density, factory) else base.density
+        if (density == base.density) return base
+        return DisplayMetrics().also {
+            it.setTo(base)
+            it.density = density
+            it.scaledDensity = density * (base.scaledDensity / base.density)
+        }
+    }
+
+    /** 出厂 dpi（`Secure.init_dpi`，EMUI 才有）折算的密度；读不到返回 0（= 不做任何假设）。 */
+    private fun factoryDensity(context: Context): Float = runCatching {
+        Settings.Secure.getInt(context.contentResolver, "init_dpi")
+    }.getOrNull()?.takeIf { it > 0 }?.div(160f) ?: 0f
+
+    /**
+     * 小组件文字真正用的 Typeface（`res/font/card_sans_widget` → `card_sans_medium.ttf`）。
+     *
+     * 量字号比例必须用它：系统 `sans-serif-medium` 的数字比 Noto 窄约 6%，
+     * 拿它算出来的「秒」宽度会把两位秒裁成一位。取不到时退回系统字面（不崩）。
+     */
+    private fun widgetTypeface(context: Context): Typeface = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.resources.getFont(R.font.card_sans_medium)
+        } else {
+            Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+    }.getOrElse { Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+
+    /**
+     * 桌面回报的格子宽度（dp），按「屏幕在桌面渲染空间里的 dp 宽」封顶。
+     *
+     * 显示大小被抬到出厂 dpi 之上时，桌面回报的宽度是按**另一套密度**折出来的：格子 1134px
+     * 回报成 384dp（= 2.95 px/dp），而桌面实际按 3.31 px/dp 渲染、本进程是 3.75 —— 三方都不一致。
+     * 封顶之后再配 [clockSafetyFactor] 的余量，主时钟在长辈模式下也不会超出栏宽。
+     */
+    private fun cellWidthDp(metrics: DisplayMetrics, widthDp: Int): Float {
+        // 桌面的格子两侧还有一圈内缩（华为 1200px 屏上格子 1134px），所以不能直接拿整屏宽度封顶。
+        val screenDp = metrics.widthPixels / metrics.density * CELL_SCREEN_FRACTION
+        val reported = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
+        return minOf(reported, screenDp)
+    }
+
+    /**
+     * 主时钟的宽度余量：显示大小被抬到出厂 dpi 之上时留 10%。
+     *
+     * 那种情况下桌面回报的格子 dp 与它自己的渲染密度不是同一套（见 [cellWidthDp]），
+     * 折算出来仍会偏宽约 7%；宁可时钟略小一圈，也不要裁掉最后一位数字或整段秒。
+     * 显示大小 ≤ 出厂 dpi（绝大多数机器、以及本机 450 档）时余量为 1，行为与改造前完全一致。
+     */
+    private fun clockSafetyFactor(context: Context, metrics: DisplayMetrics): Float {
+        val factory = factoryDensity(context)
+        // 注意比的是**本进程**的密度：传进来的 metrics 已经换成「桌面渲染密度」，与出厂 dpi 相等，
+        // 拿它比较永远判成「没被抬高」，余量就白设了。
+        val overridden = factory > 0f && context.resources.displayMetrics.density > factory + 0.01f
+        return if (overridden) LARGE_DISPLAY_CLOCK_SAFETY else 1f
+    }
 
     /**
      * 安排下一次刷新。
