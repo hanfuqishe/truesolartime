@@ -60,6 +60,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Run #5 的死点：macos-15 的默认 Xcode 是 16.4（iOS 18.5 SDK），
+      # 而 App Store Connect 现在要求 iOS 26 SDK / Xcode 26+：
+      #   Validation failed (409) SDK version issue. This app was built with the
+      #   iOS 18.5 SDK. All iOS and iPadOS apps must be built with the iOS 26 SDK
+      #   or later, included in Xcode 26 or later.
+      # 镜像里 26.x 是预装的（非默认），所以这里挑最新的稳定版切过去。
+      - name: 选择 Xcode（需要 iOS 26 SDK）
+        run: |
+          set -euo pipefail
+          echo "--- 已安装的 Xcode ---"
+          ls -d /Applications/Xcode*.app || true
+          BEST=""
+          for app in $(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V); do
+            case "$app" in *[Bb]eta*) continue ;; esac
+            ver=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+                    "$app/Contents/Info.plist" 2>/dev/null || echo "0")
+            major=${ver%%.*}
+            echo "  $app -> $ver"
+            if [ "${major:-0}" -ge 26 ] 2>/dev/null; then BEST="$app"; fi
+          done
+          if [ -z "$BEST" ]; then
+            echo "::error::这台 runner 上没有 Xcode 26+，上传会被 App Store Connect 以 SDK 版本拒绝"
+            exit 1
+          fi
+          echo "选用 $BEST"
+          sudo xcode-select -s "$BEST"
+          echo "DEVELOPER_DIR=$BEST/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
+
       - name: 显示工具链
         run: |
           xcodebuild -version
@@ -276,7 +306,7 @@ jobs:
               echo "### 已上传：altool 返回 0" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            echo "::warning::altool 退出码 $rc，改走 xcodebuild destination=upload 兜底"
+            echo "::warning::altool 退出码 ${rc}，改走 xcodebuild destination=upload 兜底"
           else
             echo "::warning::当前 Xcode 没有 altool，改走 xcodebuild destination=upload 兜底"
             : > "$RUNNER_TEMP/upload.log"
