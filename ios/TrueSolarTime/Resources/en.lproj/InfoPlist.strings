@@ -1,0 +1,3 @@
+/* Home-screen name and location permission text; picked by system language. */
+"CFBundleDisplayName" = "True Solar Clock";
+"NSLocationWhenInUseUsageDescription" = "Used to get your coordinates so the app can compute local true solar time.";

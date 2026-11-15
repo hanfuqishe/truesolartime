@@ -17,8 +17,8 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    section(title: "当前位置") {
-                        Text("\(model.place.label)　\(TimeFormat.coordinates(latitude: model.place.latitude, longitude: model.place.longitude))")
+                    section(title: L("settings.sectionCurrent")) {
+                        Text("\(model.place.displayLabel)  \(TimeFormat.coordinates(latitude: model.place.latitude, longitude: model.place.longitude))")
                             .font(.system(size: 15))
 
                         Button {
@@ -29,7 +29,7 @@ struct SettingsView: View {
                                 if model.trackingGps {
                                     ProgressView()
                                 }
-                                Text(model.trackingGps ? "重新开始跟随 GPS" : "使用 GPS 自动定位")
+                                Text(model.trackingGps ? L("settings.gpsRestart") : L("settings.gpsStart"))
                                     .frame(maxWidth: .infinity)
                             }
                         }
@@ -37,12 +37,12 @@ struct SettingsView: View {
                         .padding(.top, 4)
                     }
 
-                    section(title: "手动设置经纬度") {
+                    section(title: L("settings.sectionManual")) {
                         HStack(spacing: 12) {
-                            TextField("纬度", text: $latitudeText)
+                            TextField(L("settings.latitude"), text: $latitudeText)
                                 .keyboardType(.numbersAndPunctuation)
                                 .textFieldStyle(.roundedBorder)
-                            TextField("经度", text: $longitudeText)
+                            TextField(L("settings.longitude"), text: $longitudeText)
                                 .keyboardType(.numbersAndPunctuation)
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -53,13 +53,13 @@ struct SettingsView: View {
                                 .foregroundStyle(.red)
                         }
 
-                        Button("应用坐标") { applyManual() }
+                        Button(L("settings.applyCoordinates")) { applyManual() }
                             .buttonStyle(.borderedProminent)
                             .frame(maxWidth: .infinity)
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
-                            ForEach(Place.presets, id: \.label) { preset in
-                                Button(preset.label) {
+                            ForEach(Place.presets, id: \.presetKey) { preset in
+                                Button(preset.displayLabel) {
                                     model.usePreset(preset)
                                     dismiss()
                                 }
@@ -70,8 +70,8 @@ struct SettingsView: View {
                         .padding(.top, 4)
                     }
 
-                    section(title: "地图底图") {
-                        Text("自动：境内用高德，境外用 OpenStreetMap")
+                    section(title: L("settings.sectionMap")) {
+                        Text(L("settings.mapHint"))
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)
 
@@ -85,12 +85,12 @@ struct SettingsView: View {
                         }
                     }
 
-                    section(title: "提醒") {
+                    section(title: L("settings.sectionReminders")) {
                         Toggle(isOn: remindersBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("时辰交接提醒")
+                                Text(L("settings.shichenTitle"))
                                     .font(.system(size: 15))
-                                Text("每个时辰交接时准时提醒（250 ms 蜂鸣）")
+                                Text(L("settings.shichenDesc"))
                                     .font(.system(size: 12))
                                     .foregroundStyle(palette.onSurfaceVariant)
                             }
@@ -98,9 +98,9 @@ struct SettingsView: View {
 
                         Toggle(isOn: keyTimeChimeBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("进入关键时间报时")
+                                Text(L("settings.keyTimeTitle"))
                                     .font(.system(size: 15))
-                                Text("每到一段关键时间的起点提醒（500 ms 蜂鸣）")
+                                Text(L("settings.keyTimeDesc"))
                                     .font(.system(size: 12))
                                     .foregroundStyle(palette.onSurfaceVariant)
                             }
@@ -109,12 +109,12 @@ struct SettingsView: View {
 
                     Divider()
 
-                    section(title: "屏幕") {
+                    section(title: L("settings.sectionScreen")) {
                         Toggle(isOn: keepScreenOnBinding) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("屏幕常亮")
+                                Text(L("settings.keepScreenOn"))
                                     .font(.system(size: 15))
-                                Text("应用打开期间不自动熄屏（会更耗电）")
+                                Text(L("settings.keepScreenOnDesc"))
                                     .font(.system(size: 12))
                                     .foregroundStyle(palette.onSurfaceVariant)
                             }
@@ -123,11 +123,11 @@ struct SettingsView: View {
 
                     Divider()
 
-                    section(title: "诊断") {
+                    section(title: L("settings.sectionDiagnostics")) {
                         VStack(alignment: .leading, spacing: 6) {
-                            diagnosticLine(title: "天气", value: WeatherStore.shared.diagnosticsSummary())
-                            diagnosticLine(title: "区划名", value: districtSummary)
-                            diagnosticLine(title: "关键时间", value: keyTimeSummary)
+                            diagnosticLine(title: L("settings.diagWeather"), value: WeatherStore.shared.diagnosticsSummary())
+                            diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
+                            diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
                         }
                         .font(.system(size: 12))
                         .foregroundStyle(palette.onSurfaceVariant)
@@ -136,7 +136,7 @@ struct SettingsView: View {
                         Button {
                             model.refreshKeyTime()
                         } label: {
-                            Text("立即同步关键时间")
+                            Text(L("settings.syncKeyTime"))
                                 .font(.system(size: 12))
                         }
                         .buttonStyle(.bordered)
@@ -145,8 +145,8 @@ struct SettingsView: View {
 
                     Divider()
 
-                    section(title: "关于计算") {
-                        Text("真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。")
+                    section(title: L("settings.sectionAbout")) {
+                        Text(L("settings.aboutBody"))
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)
                     }
@@ -155,11 +155,11 @@ struct SettingsView: View {
             }
             .background(palette.background.ignoresSafeArea())
             .foregroundStyle(palette.onSurface)
-            .navigationTitle("位置与提醒")
+            .navigationTitle(L("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button(L("settings.done")) { dismiss() }
                 }
             }
             .onAppear {
@@ -180,7 +180,7 @@ struct SettingsView: View {
                 requestAuthorization { granted in
                     model.setRemindersEnabled(granted)
                     if !granted {
-                        model.message = "未授予通知权限，提醒可能无法显示"
+                        model.message = L("settings.notifDeniedReminders")
                     }
                 }
             }
@@ -198,7 +198,7 @@ struct SettingsView: View {
                 requestAuthorization { granted in
                     model.setKeyTimeChimeEnabled(granted)
                     if !granted {
-                        model.message = "未授予通知权限，报时可能无法显示"
+                        model.message = L("settings.notifDeniedChime")
                     }
                 }
             }
@@ -217,7 +217,7 @@ struct SettingsView: View {
     }
 
     private var districtSummary: String {
-        let text = model.districtName?.full ?? "暂无"
+        let text = model.districtName?.full ?? L("common.none")
         // 带上来源（Apple / OSM 兜底）、失败原因与 CLGeocoder 的原始字段：
         // 境外坐标只有真机能验证，界面上能看到这些才好判断是「只回了国家」还是「直接报错」。
         return "\(text) · \(DistrictStore.shared.diagnosticsSummary())"
@@ -225,7 +225,7 @@ struct SettingsView: View {
 
     private var keyTimeSummary: String {
         let status = model.keyTimeStatus
-        return status.isEmpty ? "尚未抓取" : status
+        return status.isEmpty ? L("keytime.st.never") : status
     }
 
     private var keepScreenOnBinding: Binding<Bool> {
@@ -245,19 +245,19 @@ struct SettingsView: View {
     private func applyManual() {
         guard let latitude = Double(latitudeText.trimmingCharacters(in: .whitespaces)),
               let longitude = Double(longitudeText.trimmingCharacters(in: .whitespaces)) else {
-            errorText = "请输入有效的经纬度数值"
+            errorText = L("settings.errorLatLon")
             return
         }
         guard (Place.minLatitude...Place.maxLatitude).contains(latitude) else {
-            errorText = "纬度需为 -90 至 90 之间的数值"
+            errorText = L("settings.errorLatRange")
             return
         }
         guard (Place.minLongitude...Place.maxLongitude).contains(longitude) else {
-            errorText = "经度需为 -180 至 180 之间的数值"
+            errorText = L("settings.errorLonRange")
             return
         }
         errorText = nil
-        model.applyManualPlace(latitude: latitude, longitude: longitude, label: "手动设置")
+        model.applyManualPlace(latitude: latitude, longitude: longitude, label: L("settings.manualLabel"))
         dismiss()
     }
 

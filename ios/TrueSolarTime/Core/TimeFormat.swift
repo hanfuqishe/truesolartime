@@ -14,18 +14,18 @@ enum TimeFormat {
         let minutes = (total % 3600) / 60
         let rest = total % 60
         if hours > 0 {
-            return "\(hours) 小时 \(minutes) 分"
+            return Lf("time.hoursMinutes", hours, minutes)
         }
         if minutes > 0 {
-            return String(format: "%d 分 %02d 秒", minutes, rest)
+            return Lf("time.minutesSeconds", minutes, rest)
         }
-        return "\(rest) 秒"
+        return Lf("time.seconds", rest)
     }
 
     /// 例如 "10 小时 54 分"。
     static func duration(_ seconds: Int?) -> String {
         guard let seconds else { return "--" }
-        return String(format: "%d 小时 %02d 分", seconds / 3600, (seconds % 3600) / 60)
+        return Lf("time.durationHoursMinutes", seconds / 3600, (seconds % 3600) / 60)
     }
 
     /// 倒计时，例如 "01:23:45"。
@@ -39,19 +39,16 @@ enum TimeFormat {
         dateWithWeekday(date, offsetSeconds: Int(SolarTimeMath.beijingOffsetSeconds))
     }
 
-    /// 「11 月 14 日 · 星期六」，按**观测地标准时区**取日期。
+    /// 「11 月 14 日 周六」这种写法，按**观测地标准时区**与界面语言取日期。
+    ///
+    /// 用 `setLocalizedDateFormatFromTemplate` 而不是硬编码格式：中文出「11月14日周六」、
+    /// 繁體出「11月14日 週六」、英文出「Sat, Nov 14」。
     static func dateWithWeekday(_ date: Date, offsetSeconds: Int) -> String {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: offsetSeconds) ?? .current
-        let components = calendar.dateComponents([.month, .day, .weekday], from: date)
-        let weekdays = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
-        let weekdayIndex = (components.weekday ?? 1) - 1
-        return String(
-            format: "%d 月 %d 日 · %@",
-            components.month ?? 1,
-            components.day ?? 1,
-            weekdays[max(0, min(6, weekdayIndex))]
-        )
+        let formatter = DateFormatter()
+        formatter.locale = AppLanguage.locale
+        formatter.timeZone = TimeZone(secondsFromGMT: offsetSeconds) ?? .current
+        formatter.setLocalizedDateFormatFromTemplate("MMMdEEE")
+        return formatter.string(from: date)
     }
 
     /// 「UTC+8」「UTC−5」「UTC+5:30」——负号用 U+2212，和安卓界面一致。

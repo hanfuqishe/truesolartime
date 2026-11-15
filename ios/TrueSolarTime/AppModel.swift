@@ -83,7 +83,7 @@ final class AppModel: ObservableObject {
 
     func startGpsTracking(announce: Bool = true) {
         guard location.hasPermission else {
-            message = "没有定位权限，请在系统设置中允许，或手动输入经纬度"
+            message = L("msg.noLocationPermission")
             return
         }
 
@@ -97,7 +97,7 @@ final class AppModel: ObservableObject {
         fixWatchdog?.invalidate()
         let watchdog = Timer(timeInterval: 20, repeats: false) { [weak self] _ in
             guard let self, self.waitingForFix else { return }
-            self.message = "尚未收到定位结果，可能需要在空旷处等待；也可手动设置经纬度"
+            self.message = L("msg.noFix")
             // 一直等不到定位时不要再拿「等定位」当遮罩：会把关键时段的颜色一起藏起来
             // （关键时段是地点无关的，只有「当前是否落在时段内」才依赖经度）。
             self.waitingForFix = false
@@ -115,21 +115,23 @@ final class AppModel: ObservableObject {
     }
 
     private func applyFix(_ fix: CLLocation, announce: Bool) {
-        let accuracy = fix.horizontalAccuracy > 0 ? "精度 \(Int(fix.horizontalAccuracy)) 米" : "精度未知"
+        let accuracy = fix.horizontalAccuracy > 0
+            ? Lf("gps.accuracy", Int(fix.horizontalAccuracy))
+            : L("gps.accuracyUnknown")
         waitingForFix = false
 
         updatePlace(Place(
             latitude: fix.coordinate.latitude,
             longitude: fix.coordinate.longitude,
             source: .gps,
-            label: "GPS · \(accuracy)"
+            label: Lf("gps.label", accuracy)
         ))
 
         if announce && !announcedFirstFix {
             announcedFirstFix = true
             let current = place
             let text = TimeFormat.coordinates(latitude: current.latitude, longitude: current.longitude)
-            message = "已跟随 GPS 定位（\(text)），每分钟更新"
+            message = Lf("msg.followingGps", text)
         }
     }
 
@@ -159,11 +161,19 @@ final class AppModel: ObservableObject {
     }
 
     func usePreset(_ preset: Place) {
-        applyManualPlace(
-            latitude: preset.latitude,
-            longitude: preset.longitude,
-            label: preset.label,
-            countryCode: preset.countryCode
+        stopGpsTracking()
+        // 用 `presetKey` 记住「这是哪个预设城市」：显示名按界面语言取（北京 / 北京 / Beijing），
+        // 数据也随语言切换，不需要把某个语言的城市名写进偏好设置。
+        updatePlace(
+            Place(
+                latitude: preset.latitude,
+                longitude: preset.longitude,
+                source: .manual,
+                label: "",
+                presetKey: preset.presetKey,
+                countryCode: preset.countryCode
+            ),
+            userChosen: true
         )
     }
 

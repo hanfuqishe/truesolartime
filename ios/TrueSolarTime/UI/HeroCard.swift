@@ -115,7 +115,7 @@ struct HeroCard: View {
     private var solarColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text("真太阳时")
+                Text(L("hero.trueSolar"))
                     .font(.system(size: 12))
                     .foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 4)
@@ -372,7 +372,7 @@ struct HourlyRow: View {
             if points.isEmpty {
                 ForEach(0..<slots, id: \.self) { index in
                     VStack(spacing: 3) {
-                        Text(index == 0 ? "现在" : "-")
+                        Text(index == 0 ? L("weather.now") : "-")
                             .font(.system(size: 10))
                             .foregroundStyle(.white.opacity(0.6))
                             .frame(height: labelSlotHeight)
@@ -409,13 +409,11 @@ struct HourlyRow: View {
         let now = Date()
         let calendar = Calendar.current
         if calendar.isDate(point.date, equalTo: now, toGranularity: .hour) {
-            return "现在"
+            return L("weather.now")
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = .current
-        formatter.dateFormat = "H时"
-        return formatter.string(from: point.date)
+        // 中文习惯写「15时」，英文写「15:00」—— 由本地化表决定，不再硬编码格式。
+        let hour = Calendar.current.component(.hour, from: point.date)
+        return Lf("weather.hour", hour)
     }
 
     private func isDayOfHour(_ point: WeatherHour) -> Bool {

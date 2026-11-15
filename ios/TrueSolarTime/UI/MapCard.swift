@@ -21,7 +21,7 @@ struct MapCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("位置地图")
+                Text(L("map.title"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(palette.onSurfaceVariant)
                 Spacer()
@@ -46,7 +46,7 @@ struct MapCard: View {
 
     private var attributionText: String {
         mapStyle == .auto
-            ? "\(resolvedStyle.attribution) · 按所在地区自动选择"
+            ? "\(resolvedStyle.attribution) · \(L("map.autoNote"))"
             : resolvedStyle.attribution
     }
 }
@@ -113,7 +113,7 @@ private struct MapViewRepresentable: UIViewRepresentable {
             let coordinate = CLLocationCoordinate2D(latitude: converted.latitude, longitude: converted.longitude)
 
             annotation?.coordinate = coordinate
-            annotation?.title = place.label
+            annotation?.title = place.displayLabel
 
             let region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 12_000, longitudinalMeters: 12_000)
             mapView.setRegion(region, animated: animated)

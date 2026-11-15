@@ -71,11 +71,11 @@ struct ContentView: View {
                 SettingsView(model: model)
                     .environment(\.isDay, model.snapshot.isDay)
             }
-            .alert("提示", isPresented: Binding(
+            .alert(L("common.notice"), isPresented: Binding(
                 get: { model.message != nil },
                 set: { if !$0 { model.message = nil } }
             )) {
-                Button("好", role: .cancel) { model.message = nil }
+                Button(L("common.ok"), role: .cancel) { model.message = nil }
             } message: {
                 Text(model.message ?? "")
             }
@@ -130,9 +130,9 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("真太阳时时钟")
+                Text(L("app.name"))
                     .font(.system(size: 26, weight: .semibold))
-                Text("以太阳经过当地子午线的时刻为正午")
+                Text(L("app.tagline"))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.onSurfaceVariant)
                     .lineLimit(1)
@@ -144,7 +144,7 @@ struct ContentView: View {
             // 右侧：跟随 GPS 时先显示「GPS」，再是设置齿轮；整体与标题**上边缘**对齐。
             HStack(alignment: .center, spacing: 4) {
                 if model.trackingGps {
-                    Text("GPS")
+                    Text(L("gps.badge"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(palette.onSurfaceVariant)
                 }
@@ -158,7 +158,7 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("设置")
+                .accessibilityLabel(L("common.settings"))
             }
             .padding(.top, 1)
         }
@@ -169,6 +169,6 @@ struct ContentView: View {
 
     private var versionLabel: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.4.39"
-        return "版本 \(version)"
+        return Lf("app.version", version)
     }
 }

@@ -1,0 +1,3 @@
+/* 应用显示名（桌面图标下）与定位权限说明；系统按语言取用。 */
+"CFBundleDisplayName" = "真太阳时时钟";
+"NSLocationWhenInUseUsageDescription" = "用于获取你所在位置的经纬度，以计算当地真太阳时";

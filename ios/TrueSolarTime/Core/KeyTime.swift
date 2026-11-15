@@ -35,11 +35,11 @@ enum TakeTemperature: String {
     case coldOrMild
     case hotOrMild
 
-    /// 界面上的说法（简体中文，与 Android / 鸿蒙一致）。
+    /// 界面上的说法（冻或温 / 凍或溫 / Cold or mild）。
     var label: String {
         switch self {
-        case .coldOrMild: return "冻或温"
-        case .hotOrMild: return "热或温"
+        case .coldOrMild: return L("keytime.temperatureCold")
+        case .hotOrMild: return L("keytime.temperatureHot")
         }
     }
 

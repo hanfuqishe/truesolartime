@@ -48,21 +48,25 @@ enum WeatherCondition: String, CaseIterable {
         }
     }
 
-    var label: String {
+    /// 本地化 key，例如 "weather.clear"。
+    var key: String {
         switch self {
-        case .clear: return "晴"
-        case .partlyCloudy: return "多云"
-        case .overcast: return "阴"
-        case .fog: return "雾"
-        case .drizzle: return "小雨"
-        case .rain: return "中雨"
-        case .heavyRain: return "大雨"
-        case .showers: return "阵雨"
-        case .snow: return "雪"
-        case .heavySnow: return "大雪"
-        case .thunder: return "雷雨"
+        case .clear: return "weather.clear"
+        case .partlyCloudy: return "weather.partlyCloudy"
+        case .overcast: return "weather.overcast"
+        case .fog: return "weather.fog"
+        case .drizzle: return "weather.drizzle"
+        case .rain: return "weather.rain"
+        case .heavyRain: return "weather.heavyRain"
+        case .showers: return "weather.showers"
+        case .snow: return "weather.snow"
+        case .heavySnow: return "weather.heavySnow"
+        case .thunder: return "weather.thunder"
         }
     }
+
+    /// 界面上的写法（晴 / 多雲 / Clear）。
+    var label: String { L(key) }
 }
 
 /// 小时预报的一个点。时间用 UTC 秒存，跨时区展示时再换算。

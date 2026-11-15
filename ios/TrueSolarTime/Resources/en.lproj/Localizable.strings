@@ -1,0 +1,207 @@
+/* English (en) — keys must match zh-Hans / zh-Hant exactly.
+   No CJK characters allowed in this file (checked by Scripts/check-localization). */
+
+/* App */
+"app.name" = "True Solar Clock";
+"app.tagline" = "Noon is when the sun crosses your local meridian";
+"app.version" = "Version %@";
+"common.ok" = "OK";
+"common.notice" = "Notice";
+"common.settings" = "Settings";
+"common.none" = "None";
+
+/* Hero card */
+"hero.trueSolar" = "True solar";
+
+/* Sun card */
+"sun.title" = "Sun position · local standard time";
+"sun.altitude" = "Altitude %.1f°";
+"sun.sunrise" = "Sunrise";
+"sun.noon" = "Solar noon";
+"sun.sunset" = "Sunset";
+"sun.daylight" = "Daylight %@ · sunrise %@ · sunset %@ (true solar time)";
+"sun.polarDay" = "Midnight sun: the sun never sets. Solar noon (local standard time) %@";
+"sun.polarNight" = "Polar night: the sun never rises. Solar noon (local standard time) %@";
+
+/* Map */
+"map.title" = "Location map";
+"map.autoNote" = "chosen automatically for this region";
+"map.styleAuto" = "Auto";
+"map.styleOsm" = "OpenStreetMap";
+"map.styleAmapVector" = "AutoNavi vector";
+"map.styleAmapSatellite" = "AutoNavi satellite";
+"map.attributionOsm" = "Map data © OpenStreetMap contributors";
+"map.attributionAmap" = "Base map © AutoNavi";
+
+/* Settings */
+"settings.title" = "Location & reminders";
+"settings.sectionCurrent" = "Current location";
+"settings.gpsStart" = "Use GPS location";
+"settings.gpsRestart" = "Restart GPS tracking";
+"settings.sectionManual" = "Set coordinates manually";
+"settings.latitude" = "Latitude";
+"settings.longitude" = "Longitude";
+"settings.applyCoordinates" = "Apply";
+"settings.sectionMap" = "Map source";
+"settings.mapHint" = "Auto: AutoNavi in mainland China, OpenStreetMap elsewhere";
+"settings.sectionReminders" = "Reminders";
+"settings.shichenTitle" = "Shichen change alert";
+"settings.shichenDesc" = "Beep right when the next shichen begins (250 ms)";
+"settings.keyTimeTitle" = "Key time chime";
+"settings.keyTimeDesc" = "Beep at the start of each key time period (500 ms)";
+"settings.sectionScreen" = "Screen";
+"settings.keepScreenOn" = "Keep screen on";
+"settings.keepScreenOnDesc" = "Stop the screen from sleeping while the app is open (uses more battery)";
+"settings.sectionDiagnostics" = "Diagnostics";
+"settings.diagWeather" = "Weather";
+"settings.diagDistrict" = "District";
+"settings.diagKeyTime" = "Key time";
+"settings.syncKeyTime" = "Sync key time now";
+"settings.sectionAbout" = "How it is calculated";
+"settings.aboutBody" = "True solar time follows the real position of the sun. First the clock is corrected for the longitude offset from 120°E (4 minutes per degree), then the equation of time is added, which comes from Earth's orbital eccentricity and axial tilt. The twelve shichen are derived from true solar time: Zi starts at 23:00 and each shichen lasts two hours.";
+"settings.done" = "Done";
+"settings.manualLabel" = "Manual";
+"settings.errorLatLon" = "Enter a valid latitude and longitude";
+"settings.errorLatRange" = "Latitude must be between -90 and 90";
+"settings.errorLonRange" = "Longitude must be between -180 and 180";
+"settings.notifDeniedReminders" = "Notifications are off, so reminders may not appear";
+"settings.notifDeniedChime" = "Notifications are off, so chimes may not play";
+
+/* Location and messages */
+"gps.badge" = "GPS";
+"gps.accuracy" = "±%d m";
+"gps.accuracyUnknown" = "accuracy unknown";
+"gps.label" = "GPS · %@";
+"msg.noLocationPermission" = "No location permission. Allow it in Settings, or enter coordinates manually.";
+"msg.noFix" = "No GPS fix yet. Try open sky, or set the coordinates manually.";
+"msg.followingGps" = "Following GPS (%@), updated every minute";
+
+/* Weather */
+"weather.clear" = "Clear";
+"weather.partlyCloudy" = "Partly cloudy";
+"weather.overcast" = "Overcast";
+"weather.fog" = "Fog";
+"weather.drizzle" = "Drizzle";
+"weather.rain" = "Rain";
+"weather.heavyRain" = "Heavy rain";
+"weather.showers" = "Showers";
+"weather.snow" = "Snow";
+"weather.heavySnow" = "Heavy snow";
+"weather.thunder" = "Thunderstorm";
+"weather.now" = "Now";
+"weather.hour" = "%d:00";
+
+/* Shichen */
+"shichen.zi" = "Zi";
+"shichen.chou" = "Chou";
+"shichen.yin" = "Yin";
+"shichen.mao" = "Mao";
+"shichen.chen" = "Chen";
+"shichen.si" = "Si";
+"shichen.wu" = "Wu";
+"shichen.wei" = "Wei";
+"shichen.shen" = "Shen";
+"shichen.you" = "You";
+"shichen.xu" = "Xu";
+"shichen.hai" = "Hai";
+"shichen.format" = "%@ hour";
+"shichen.halfEarly" = "early";
+"shichen.halfLate" = "late";
+
+/* Key time */
+"keytime.title" = "Key time";
+"keytime.inBand" = "Inside key time %@ now";
+"keytime.outOfBand" = "Not inside a key time period now";
+"keytime.empty" = "No key time data yet (synced once a day between 01:00 and 05:00, retried hourly)";
+"keytime.temperatureCold" = "Cold or mild";
+"keytime.temperatureHot" = "Hot or mild";
+"keytime.temperatureUnknown" = "temperature not stated";
+"keytime.notifyTitle" = "Key time begins";
+"keytime.notifyBody" = "Starts at %@ true solar time (%@)";
+"shichen.notifyTitle" = "%@ hour begins";
+"shichen.notifyBody" = "%@ true solar time";
+
+/* Durations */
+"time.hoursMinutes" = "%dh %dm";
+"time.minutesSeconds" = "%dm %02ds";
+"time.seconds" = "%ds";
+"time.durationHoursMinutes" = "%dh %02dm";
+
+/* Diagnostics: weather */
+"diag.urlFailed" = "Could not build the request URL from the coordinates";
+"diag.parseFailed" = "Could not parse the response";
+"diag.timeout" = "Request timed out (15 s)";
+"diag.offline" = "Device is offline";
+"diag.dns" = "DNS lookup failed (api.open-meteo.com)";
+"diag.cannotConnect" = "Cannot connect to the server";
+"diag.connectionLost" = "Connection lost";
+"diag.tls" = "TLS handshake failed";
+"diag.networkError" = "Network error (%@ %d)";
+"diag.noResponse" = "No response after %d s";
+"diag.secondsAgo" = "%ds ago";
+"diag.minutesAgo" = "%d min ago";
+"diag.hoursAgo" = "%dh ago";
+"diag.updated" = "%@ · %@ · updated %@";
+"diag.lastFailure" = " (last failure: %@)";
+"diag.noData" = "No data: %@";
+"diag.requesting" = "Requesting…";
+"diag.requestingElapsed" = "Requesting… (%d s)";
+"diag.neverSucceeded" = "No data: no successful request yet";
+
+/* Diagnostics: key time */
+"keytime.st.never" = "Not fetched yet";
+"keytime.st.bands" = "%d periods: %@";
+"keytime.st.temperature" = "Temperature: %@";
+"keytime.st.none" = "No key time data";
+"keytime.st.lastSuccess" = "Last success: %@";
+"keytime.st.lastAttempt" = "Last attempt: %@";
+"keytime.st.neverShort" = "never";
+"keytime.st.http" = "HTTP %d";
+"keytime.st.bytes" = "%d bytes";
+"keytime.st.result" = "Result: %@";
+"keytime.out.successBands" = "Success: %d periods";
+"keytime.out.httpParen" = " (HTTP %d)";
+"keytime.out.retrying" = "%@, retrying…";
+"keytime.out.retryHour" = "%@, will retry in 1 hour";
+"keytime.out.decodeFailed" = "Could not decode the page (%d bytes)";
+"keytime.out.noKeyTime" = "No key time in the page (%d bytes)";
+
+/* Diagnostics: district */
+"district.appleOnly" = "Apple returned only “%@”";
+"district.appleNoResult" = "Apple returned nothing (%@)";
+"district.osmUrlFailed" = "OSM fallback failed: could not build the request URL";
+"district.osmRetrying" = "OSM fallback retrying (%@)";
+"district.osmFailed" = "OSM fallback failed: %@";
+"district.osmNoName" = "No place name in the response";
+"district.emptyFields" = "every place-name field was empty";
+"district.noAddress" = "the system returned no address";
+"district.source" = "Source: %@";
+"district.appleFields" = "CLGeocoder: %@";
+
+/* Preset cities (20) */
+"city.beijing" = "Beijing";
+"city.shanghai" = "Shanghai";
+"city.guangzhou" = "Guangzhou";
+"city.shenzhen" = "Shenzhen";
+"city.chengdu" = "Chengdu";
+"city.xian" = "Xi'an";
+"city.harbin" = "Harbin";
+"city.urumqi" = "Urumqi";
+"city.lhasa" = "Lhasa";
+"city.hongkong" = "Hong Kong";
+"city.honolulu" = "Honolulu";
+"city.losangeles" = "Los Angeles";
+"city.newyork" = "New York";
+"city.london" = "London";
+"city.paris" = "Paris";
+"city.dubai" = "Dubai";
+"city.newdelhi" = "New Delhi";
+"city.tokyo" = "Tokyo";
+"city.singapore" = "Singapore";
+"city.sydney" = "Sydney";
+
+/* Misc */
+"weather.title" = "Weather";
+"weather.waitingFix" = "Locating, weather will follow";
+"weather.loading" = "Fetching weather…";
+"list.separator" = ", ";

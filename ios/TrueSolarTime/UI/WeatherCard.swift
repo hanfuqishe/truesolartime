@@ -13,7 +13,7 @@ struct WeatherCard: View {
     var body: some View {
         CardContainer {
             HStack {
-                Text("天气")
+                Text(L("weather.title"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -61,7 +61,7 @@ struct WeatherCard: View {
                     }
                 }
             } else {
-                Text(waitingForGPS ? "定位中，稍后取天气" : "正在获取天气…")
+                Text(waitingForGPS ? L("weather.waitingFix") : L("weather.loading"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
@@ -89,11 +89,7 @@ struct WeatherCard: View {
     }
 
     private func hourLabel(_ point: WeatherHour) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = .current
-        formatter.dateFormat = "H:00"
-        return formatter.string(from: point.date)
+        Lf("weather.hour", Calendar.current.component(.hour, from: point.date))
     }
 
     /// 各时段是否白天：用日出日落粗略判断（只在做图标明暗区分时用）。

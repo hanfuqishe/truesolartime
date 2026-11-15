@@ -109,14 +109,3 @@ extension Color {
         self.init(red: red, green: green, blue: blue, opacity: opacity)
     }
 }
-
-/// 与 Android 版一致的中文数字，用于"初一刻""正四刻"。
-func chineseNumber(_ value: Int) -> String {
-    switch value {
-    case 1: return "一"
-    case 2: return "二"
-    case 3: return "三"
-    case 4: return "四"
-    default: return "\(value)"
-    }
-}

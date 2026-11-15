@@ -88,11 +88,11 @@ final class KeyTimeReminder {
                 guard fireDate > now.addingTimeInterval(1) else { continue }
 
                 let content = UNMutableNotificationContent()
-                content.title = "进入关键时间"
-                content.body = String(
-                    format: "真太阳时 %@ 起（%@）",
+                content.title = L("keytime.notifyTitle")
+                content.body = Lf(
+                    "keytime.notifyBody",
                     band.startText,
-                    schedule.temperature?.label ?? "关键时间"
+                    schedule.temperature?.label ?? L("keytime.title")
                 )
                 content.sound = UNNotificationSound(named: UNNotificationSoundName("chime500.wav"))
 
@@ -126,8 +126,8 @@ final class KeyTimeReminder {
             let name = Shichen.name(Shichen.index(of: boundarySeconds))
 
             let content = UNMutableNotificationContent()
-            content.title = "进入\(name)"
-            content.body = "真太阳时 \(TimeOfDay(secondsOfDay: boundarySeconds).clock)"
+            content.title = Lf("shichen.notifyTitle", name)
+            content.body = Lf("shichen.notifyBody", TimeOfDay(secondsOfDay: boundarySeconds).clock)
             content.sound = UNNotificationSound(named: UNNotificationSoundName("chime100.wav"))
 
             let components = Calendar.current.dateComponents(

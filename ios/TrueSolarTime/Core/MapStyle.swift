@@ -81,10 +81,10 @@ enum MapStyle: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto: return "自动"
-        case .osm: return "OpenStreetMap"
-        case .amapVector: return "高德矢量"
-        case .amapSatellite: return "高德卫星"
+        case .auto: return L("map.styleAuto")
+        case .osm: return L("map.styleOsm")
+        case .amapVector: return L("map.styleAmapVector")
+        case .amapSatellite: return L("map.styleAmapSatellite")
         }
     }
 
@@ -109,8 +109,8 @@ enum MapStyle: String, CaseIterable, Identifiable {
 
     var attribution: String {
         switch self {
-        case .osm: return "地图数据 © OpenStreetMap 贡献者"
-        case .amapVector, .amapSatellite: return "底图 © 高德地图"
+        case .osm: return L("map.attributionOsm")
+        case .amapVector, .amapSatellite: return L("map.attributionAmap")
         case .auto: return ""
         }
     }

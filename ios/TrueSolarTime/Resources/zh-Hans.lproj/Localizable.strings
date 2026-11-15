@@ -1,0 +1,207 @@
+/* 简体中文（zh-Hans）—— 与 zh-Hant / en 三份表的 key 必须完全一致。
+   改动约定：新增 key 时三份文件一起加；值里不要出现双引号与换行。 */
+
+/* 应用 */
+"app.name" = "真太阳时时钟";
+"app.tagline" = "以太阳经过当地子午线的时刻为正午";
+"app.version" = "版本 %@";
+"common.ok" = "好";
+"common.notice" = "提示";
+"common.settings" = "设置";
+"common.none" = "暂无";
+
+/* 大卡片 */
+"hero.trueSolar" = "真太阳时";
+
+/* 太阳卡片 */
+"sun.title" = "太阳位置 · 当地标准时间";
+"sun.altitude" = "高度角 %.1f°";
+"sun.sunrise" = "日出";
+"sun.noon" = "上中天";
+"sun.sunset" = "日落";
+"sun.daylight" = "白昼 %@ · 真太阳时 日出 %@ 日落 %@";
+"sun.polarDay" = "极昼：太阳整日不落，上中天（当地标准时间）%@";
+"sun.polarNight" = "极夜：太阳整日不出，上中天（当地标准时间）%@";
+
+/* 地图 */
+"map.title" = "位置地图";
+"map.autoNote" = "按所在地区自动选择";
+"map.styleAuto" = "自动";
+"map.styleOsm" = "OpenStreetMap";
+"map.styleAmapVector" = "高德矢量";
+"map.styleAmapSatellite" = "高德卫星";
+"map.attributionOsm" = "地图数据 © OpenStreetMap 贡献者";
+"map.attributionAmap" = "底图 © 高德地图";
+
+/* 设置页 */
+"settings.title" = "位置与提醒";
+"settings.sectionCurrent" = "当前位置";
+"settings.gpsStart" = "使用 GPS 自动定位";
+"settings.gpsRestart" = "重新开始跟随 GPS";
+"settings.sectionManual" = "手动设置经纬度";
+"settings.latitude" = "纬度";
+"settings.longitude" = "经度";
+"settings.applyCoordinates" = "应用坐标";
+"settings.sectionMap" = "地图底图";
+"settings.mapHint" = "自动：境内用高德，境外用 OpenStreetMap";
+"settings.sectionReminders" = "提醒";
+"settings.shichenTitle" = "时辰交接提醒";
+"settings.shichenDesc" = "每个时辰交接时准时提醒（250 ms 蜂鸣）";
+"settings.keyTimeTitle" = "进入关键时间报时";
+"settings.keyTimeDesc" = "每到一段关键时间的起点提醒（500 ms 蜂鸣）";
+"settings.sectionScreen" = "屏幕";
+"settings.keepScreenOn" = "屏幕常亮";
+"settings.keepScreenOnDesc" = "应用打开期间不自动熄屏（会更耗电）";
+"settings.sectionDiagnostics" = "诊断";
+"settings.diagWeather" = "天气";
+"settings.diagDistrict" = "区划名";
+"settings.diagKeyTime" = "关键时间";
+"settings.syncKeyTime" = "立即同步关键时间";
+"settings.sectionAbout" = "关于计算";
+"settings.aboutBody" = "真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。";
+"settings.done" = "完成";
+"settings.manualLabel" = "手动设置";
+"settings.errorLatLon" = "请输入有效的经纬度数值";
+"settings.errorLatRange" = "纬度需为 -90 至 90 之间的数值";
+"settings.errorLonRange" = "经度需为 -180 至 180 之间的数值";
+"settings.notifDeniedReminders" = "未授予通知权限，提醒可能无法显示";
+"settings.notifDeniedChime" = "未授予通知权限，报时可能无法显示";
+
+/* 定位与提示 */
+"gps.badge" = "GPS";
+"gps.accuracy" = "精度 %d 米";
+"gps.accuracyUnknown" = "精度未知";
+"gps.label" = "GPS · %@";
+"msg.noLocationPermission" = "没有定位权限，请在系统设置中允许，或手动输入经纬度";
+"msg.noFix" = "尚未收到定位结果，可能需要在空旷处等待；也可手动设置经纬度";
+"msg.followingGps" = "已跟随 GPS 定位（%@），每分钟更新";
+
+/* 天气 */
+"weather.clear" = "晴";
+"weather.partlyCloudy" = "多云";
+"weather.overcast" = "阴";
+"weather.fog" = "雾";
+"weather.drizzle" = "小雨";
+"weather.rain" = "中雨";
+"weather.heavyRain" = "大雨";
+"weather.showers" = "阵雨";
+"weather.snow" = "雪";
+"weather.heavySnow" = "大雪";
+"weather.thunder" = "雷雨";
+"weather.now" = "现在";
+"weather.hour" = "%d时";
+
+/* 时辰 */
+"shichen.zi" = "子";
+"shichen.chou" = "丑";
+"shichen.yin" = "寅";
+"shichen.mao" = "卯";
+"shichen.chen" = "辰";
+"shichen.si" = "巳";
+"shichen.wu" = "午";
+"shichen.wei" = "未";
+"shichen.shen" = "申";
+"shichen.you" = "酉";
+"shichen.xu" = "戌";
+"shichen.hai" = "亥";
+"shichen.format" = "%@时";
+"shichen.halfEarly" = "初";
+"shichen.halfLate" = "正";
+
+/* 关键时间 */
+"keytime.title" = "关键时间";
+"keytime.inBand" = "现在处于关键时间 %@";
+"keytime.outOfBand" = "当前不在关键时间段内";
+"keytime.empty" = "还没有取到关键时间（每天 01:00–05:00 自动同步一次，失败每小时重试）";
+"keytime.temperatureCold" = "冻或温";
+"keytime.temperatureHot" = "热或温";
+"keytime.temperatureUnknown" = "温度未标注";
+"keytime.notifyTitle" = "进入关键时间";
+"keytime.notifyBody" = "真太阳时 %@ 起（%@）";
+"shichen.notifyTitle" = "进入%@";
+"shichen.notifyBody" = "真太阳时 %@";
+
+/* 时长与日期 */
+"time.hoursMinutes" = "%d 小时 %d 分";
+"time.minutesSeconds" = "%d 分 %02d 秒";
+"time.seconds" = "%d 秒";
+"time.durationHoursMinutes" = "%d 小时 %02d 分";
+
+/* 诊断：天气 */
+"diag.urlFailed" = "坐标无法生成请求地址";
+"diag.parseFailed" = "返回内容无法解析";
+"diag.timeout" = "请求超时（15 秒）";
+"diag.offline" = "设备未联网";
+"diag.dns" = "域名解析失败（api.open-meteo.com）";
+"diag.cannotConnect" = "无法连接服务器";
+"diag.connectionLost" = "连接中断";
+"diag.tls" = "TLS 握手失败";
+"diag.networkError" = "网络错误（%@ %d）";
+"diag.noResponse" = "请求无响应（已等 %d 秒）";
+"diag.secondsAgo" = "%d 秒前";
+"diag.minutesAgo" = "%d 分钟前";
+"diag.hoursAgo" = "%d 小时前";
+"diag.updated" = "%@ · %@ · %@更新";
+"diag.lastFailure" = "（最近一次失败：%@）";
+"diag.noData" = "无数据：%@";
+"diag.requesting" = "正在请求…";
+"diag.requestingElapsed" = "正在请求…（已 %d 秒）";
+"diag.neverSucceeded" = "无数据：尚未请求成功";
+
+/* 诊断：关键时间 */
+"keytime.st.never" = "尚未抓取";
+"keytime.st.bands" = "%d 段：%@";
+"keytime.st.temperature" = "温度：%@";
+"keytime.st.none" = "无可用关键时间";
+"keytime.st.lastSuccess" = "最近成功：%@";
+"keytime.st.lastAttempt" = "最近尝试：%@";
+"keytime.st.neverShort" = "从未";
+"keytime.st.http" = "HTTP %d";
+"keytime.st.bytes" = "%d 字节";
+"keytime.st.result" = "结果：%@";
+"keytime.out.successBands" = "成功：%d 段";
+"keytime.out.httpParen" = "（HTTP %d）";
+"keytime.out.retrying" = "%@，重试中…";
+"keytime.out.retryHour" = "%@，1 小时后自动重试";
+"keytime.out.decodeFailed" = "页面无法解码（%d 字节）";
+"keytime.out.noKeyTime" = "页面里没有关键时间（%d 字节）";
+
+/* 诊断：区划名 */
+"district.appleOnly" = "Apple 只给出「%@」";
+"district.appleNoResult" = "Apple 无结果（%@）";
+"district.osmUrlFailed" = "OSM 兜底失败：坐标无法生成请求地址";
+"district.osmRetrying" = "OSM 兜底重试中（%@）";
+"district.osmFailed" = "OSM 兜底失败：%@";
+"district.osmNoName" = "返回里没有解析出地名";
+"district.emptyFields" = "各级地名都为空";
+"district.noAddress" = "系统没有返回地址";
+"district.source" = "来源：%@";
+"district.appleFields" = "CLGeocoder：%@";
+
+/* 常用城市（20 个预设） */
+"city.beijing" = "北京";
+"city.shanghai" = "上海";
+"city.guangzhou" = "广州";
+"city.shenzhen" = "深圳";
+"city.chengdu" = "成都";
+"city.xian" = "西安";
+"city.harbin" = "哈尔滨";
+"city.urumqi" = "乌鲁木齐";
+"city.lhasa" = "拉萨";
+"city.hongkong" = "香港";
+"city.honolulu" = "檀香山";
+"city.losangeles" = "洛杉矶";
+"city.newyork" = "纽约";
+"city.london" = "伦敦";
+"city.paris" = "巴黎";
+"city.dubai" = "迪拜";
+"city.newdelhi" = "新德里";
+"city.tokyo" = "东京";
+"city.singapore" = "新加坡";
+"city.sydney" = "悉尼";
+
+/* 其它 */
+"weather.title" = "天气";
+"weather.waitingFix" = "定位中，稍后取天气";
+"weather.loading" = "正在获取天气…";
+"list.separator" = "、";

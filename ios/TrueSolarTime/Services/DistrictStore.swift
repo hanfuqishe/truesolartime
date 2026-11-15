@@ -123,7 +123,7 @@ final class DistrictStore {
                     return
                 }
                 // 只有国家一级（或什么都没解析出来）：上屏没意义，交给 OSM 补区县/市。
-                self.lastErrorDescription = "Apple 只给出「\(appleNames?.full ?? "空")」"
+                self.lastErrorDescription = Lf("district.appleOnly", appleNames?.full ?? "-")
                 if !isRetry {
                     self.reverseGeocode(
                         place: place,
@@ -138,7 +138,7 @@ final class DistrictStore {
                 return
             }
 
-            self.lastErrorDescription = "Apple 无结果（\(Self.describe(error: error, hasPlacemark: false))）"
+            self.lastErrorDescription = Lf("district.appleNoResult", Self.describe(error: error, hasPlacemark: false))
             if !isRetry {
                 self.reverseGeocode(
                     place: place,
@@ -165,7 +165,7 @@ final class DistrictStore {
             longitude: place.longitude,
             language: Self.nominatimLanguage
         ) else {
-            lastErrorDescription = "OSM 兜底失败：坐标无法生成请求地址"
+            lastErrorDescription = L("district.osmUrlFailed")
             inFlight = false
             return
         }
@@ -194,15 +194,15 @@ final class DistrictStore {
             let reason: String
             if let error {
                 let ns = error as NSError
-                reason = "网络错误（\(ns.domain) \(ns.code)）"
+                reason = Lf("diag.networkError", ns.domain, ns.code)
             } else if let status, !(200..<300).contains(status) {
                 reason = "HTTP \(status)"
             } else {
-                reason = "返回里没有解析出地名"
+                reason = L("district.osmNoName")
             }
             if attempt < 2 {
                 // 境外网络偶发抖动：与 Android 一样再试一次。
-                self.lastErrorDescription = "OSM 兜底重试中（\(reason)）"
+                self.lastErrorDescription = Lf("district.osmRetrying", reason)
                 DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
                     self.fetchNominatim(
                         place: place,
@@ -213,7 +213,7 @@ final class DistrictStore {
                 }
                 return
             }
-            self.lastErrorDescription = "OSM 兜底失败：\(reason)"
+            self.lastErrorDescription = Lf("district.osmFailed", reason)
             self.inFlight = false
         }.resume()
     }
@@ -261,7 +261,7 @@ final class DistrictStore {
             let ns = error as NSError
             return "\(ns.domain) \(ns.code)"
         }
-        return hasPlacemark ? "各级地名都为空" : "系统没有返回地址"
+        return hasPlacemark ? L("district.emptyFields") : L("district.noAddress")
     }
 
     /// Nominatim 的 `accept-language`：中文界面用 zh-CN。
@@ -294,9 +294,9 @@ final class DistrictStore {
 
     /// 诊断：缓存里的名字来自哪儿、最近一次失败原因、`CLGeocoder` 到底回了什么。
     func diagnosticsSummary() -> String {
-        var parts: [String] = ["来源：\(lastProvider)"]
+        var parts: [String] = [Lf("district.source", lastProvider)]
         if let lastErrorDescription { parts.append(lastErrorDescription) }
-        parts.append("CLGeocoder：\(lastAppleFields)")
+        parts.append(Lf("district.appleFields", lastAppleFields))
         return parts.joined(separator: " · ")
     }
 

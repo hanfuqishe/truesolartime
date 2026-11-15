@@ -34,6 +34,12 @@ func minutesBetween(_ a: TimeOfDay, _ b: TimeOfDay) -> Double {
     Double(a.secondsOfDay - b.secondsOfDay) / 60.0
 }
 
+// MARK: - 本地化：把源码目录里的三份 strings 注入进来（命令行自检没有 .lproj）
+
+let scriptURL = URL(fileURLWithPath: #filePath)
+let iosRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+let localizationTables = LocalizationCatalog.load(root: iosRoot)
+L10n.useTablesForTesting(localizationTables)
 print("== 均时差（对照公开数据，容差 ±0.5 分钟）==")
 let equationCases: [(String, Double)] = [
     ("2024-02-11T12:00:00Z", -14.2),
@@ -87,8 +93,8 @@ for (seconds, expected) in shichenCases {
 }
 expect("子时范围", Shichen.rangeText(0) == "23:00 – 01:00", "actual=\(Shichen.rangeText(0))")
 expect("午时范围", Shichen.rangeText(6) == "11:00 – 13:00", "actual=\(Shichen.rangeText(6))")
-expect("11:00 为时初", Shichen.halfLabel(11 * 3600) == "初")
-expect("12:00 为时正", Shichen.halfLabel(12 * 3600) == "正")
+expect("11:00 为时初", Shichen.halfLabel(11 * 3600) == L("shichen.halfEarly"))
+expect("12:00 为时正", Shichen.halfLabel(12 * 3600) == L("shichen.halfLate"))
 expect("距下个时辰 5400 秒", abs(Shichen.secondsToNextShichen(23.5 * 3600) - 5400) < 1e-6)
 
 print("== GCJ-02 坐标转换 ==")
@@ -546,7 +552,7 @@ expect(
     "新德里无国家码 → 底图退回包围盒（仍是高德，已知近似）",
     MapStyle.auto.effective(latitude: delhiLatitude, longitude: delhiLongitude) == .amapVector
 )
-expect("新德里（预设自带国家码）不算中国境内", Place.presets.first { $0.label == "新德里" }?.isInChina == false)
+expect("新德里（预设自带国家码）不算中国境内", Place.presets.first { $0.presetKey == "city.newdelhi" }?.isInChina == false)
 
 // 对照：上海 + 国家码 cn 仍然是境内、仍然 +8、仍然用高德。
 let shanghaiLatitude = 31.2304
@@ -645,12 +651,12 @@ expect(
 // 之前在 `usePreset` 里只传了经纬度和名字，国家码丢了，德里就只能靠兜底 ——
 // 而现在兜底的第一条是「境内包围盒」，德里在框内，于是被算成 UTC+8。
 // 也就是说：**国家码丢了就一定出错**（要么 UTC+5、要么 UTC+8），必须带上。
-if let delhi = Place.presets.first(where: { $0.label == "新德里" }) {
+if let delhi = Place.presets.first(where: { $0.presetKey == "city.newdelhi" }) {
     let withoutCountry = Place(
         latitude: delhi.latitude,
         longitude: delhi.longitude,
         source: .manual,
-        label: delhi.label
+        label: delhi.displayLabel
     )
     expect(
         "丢掉国家码只剩包围盒兜底（新德里在框内 → UTC+8，历史 bug 的同一类错）",
@@ -665,26 +671,107 @@ if let delhi = Place.presets.first(where: { $0.label == "新德里" }) {
 }
 
 let expectedPresets: [(String, Int)] = [
-    ("北京", 28_800), ("上海", 28_800), ("广州", 28_800), ("深圳", 28_800),
-    ("成都", 28_800), ("西安", 28_800), ("哈尔滨", 28_800), ("乌鲁木齐", 28_800),
-    ("拉萨", 28_800), ("香港", 28_800),
-    ("檀香山", -36_000), ("洛杉矶", -28_800), ("纽约", -18_000),
-    ("伦敦", 0), ("巴黎", 3_600), ("迪拜", 14_400),
-    ("新德里", 19_800), ("东京", 32_400), ("新加坡", 28_800), ("悉尼", 36_000)
+    ("city.beijing", 28_800), ("city.shanghai", 28_800), ("city.guangzhou", 28_800), ("city.shenzhen", 28_800),
+    ("city.chengdu", 28_800), ("city.xian", 28_800), ("city.harbin", 28_800), ("city.urumqi", 28_800),
+    ("city.lhasa", 28_800), ("city.hongkong", 28_800),
+    ("city.honolulu", -36_000), ("city.losangeles", -28_800), ("city.newyork", -18_000),
+    ("city.london", 0), ("city.paris", 3_600), ("city.dubai", 14_400),
+    ("city.newdelhi", 19_800), ("city.tokyo", 32_400), ("city.singapore", 28_800), ("city.sydney", 36_000)
 ]
-for (label, expected) in expectedPresets {
-    guard let preset = Place.presets.first(where: { $0.label == label }) else {
-        expect("内置城市 \(label) 存在", false, "列表里没有这个城市")
+for (presetKey, expected) in expectedPresets {
+    guard let preset = Place.presets.first(where: { $0.presetKey == presetKey }) else {
+        expect("内置城市 \(presetKey) 存在", false, "列表里没有这个城市")
         continue
     }
     expect(
-        "内置城市 \(label) 时区偏移 \(expected)",
+        "内置城市 \(presetKey) 时区偏移 \(expected)",
         preset.standardOffsetSeconds == expected,
         "得到 \(preset.standardOffsetSeconds)（\(TimeFormat.utcOffsetLabel(seconds: preset.standardOffsetSeconds))）"
     )
 }
 expect("内置城市数量 ≥ 20", Place.presets.count >= 20, "实际 \(Place.presets.count)")
 
+print("== 本地化（三语 strings + 语言匹配）==")
+// 1) 三份表的 key 集合必须一致、值非空、格式参数一致、简繁互斥、英文无 CJK
+let localizationReport = LocalizationCatalog.check(localizationTables)
+expect("三份 strings 都能读到", localizationTables.count == 3, "实际 \(localizationTables.count) 份")
+expect("没有本地化问题", localizationReport.isOK, localizationReport.errors.joined(separator: " | "))
+expect(
+    "三份 key 数量一致",
+    Set(localizationReport.counts.values).count == 1,
+    "\(localizationReport.counts)"
+)
+expect("key 数量 ≥ 150", localizationReport.keyCount >= 150, "实际 \(localizationReport.keyCount)")
+
+// 2) 源码里用到的 key 必须都在表里（防止改了代码忘了加翻译）
+let usedKeys = LocalizationCatalog.keysUsedInSources(root: iosRoot)
+expect("能扫描到源码里的 key", !usedKeys.unreadable && !usedKeys.keys.isEmpty, "扫描失败或没找到 key")
+let missingKeys = usedKeys.keys.subtracting(Set((localizationTables["en"] ?? [:]).keys))
+expect("源码里没有未定义的 key", missingKeys.isEmpty, "缺少 \(missingKeys.sorted().joined(separator: ", "))")
+
+// 3) 语言匹配：zh-Hans → 简体，zh-Hant（含 TW/HK/MO）→ 繁體，其它一律英文
+expect("zh-Hans → 简体", AppLanguage.resolve(preferredLanguages: ["zh-Hans-CN"]) == .simplified)
+expect("zh-Hant → 繁體", AppLanguage.resolve(preferredLanguages: ["zh-Hant-TW"]) == .traditional)
+expect("zh-TW → 繁體", AppLanguage.resolve(preferredLanguages: ["zh-TW"]) == .traditional)
+expect("zh-HK → 繁體", AppLanguage.resolve(preferredLanguages: ["zh-HK"]) == .traditional)
+expect("裸 zh → 简体", AppLanguage.resolve(preferredLanguages: ["zh"]) == .simplified)
+expect("en → 英文", AppLanguage.resolve(preferredLanguages: ["en-US"]) == .english)
+expect("ja → 英文兜底", AppLanguage.resolve(preferredLanguages: ["ja-JP"]) == .english)
+expect("空列表 → 英文兜底", AppLanguage.resolve(preferredLanguages: []) == .english)
+expect(
+    "列表里第二个才是中文也能匹配",
+    AppLanguage.resolve(preferredLanguages: ["fr-FR", "zh-Hant"]) == .traditional
+)
+
+// 4) 三语关键文案
+expect(
+    "应用名三语",
+    L10n.t("app.name", language: .simplified) == "真太阳时时钟"
+        && L10n.t("app.name", language: .traditional) == "真太陽時時鐘"
+        && L10n.t("app.name", language: .english) == "True Solar Clock"
+)
+expect(
+    "天气描述三语",
+    L10n.t("weather.clear", language: .simplified) == "晴"
+        && L10n.t("weather.overcast", language: .traditional) == "陰"
+        && L10n.t("weather.overcast", language: .english) == "Overcast"
+)
+expect(
+    "时辰名三语（子 / 子 / Zi）",
+    L10n.t("shichen.zi", language: .simplified) == "子"
+        && L10n.t("shichen.zi", language: .traditional) == "子"
+        && L10n.t("shichen.zi", language: .english) == "Zi"
+)
+expect(
+    "时辰格式三语（子时 / 子時 / Zi hour）",
+    L10n.f("shichen.format", language: .simplified, ["子"]) == "子时"
+        && L10n.f("shichen.format", language: .traditional, ["子"]) == "子時"
+        && L10n.f("shichen.format", language: .english, ["Zi"]) == "Zi hour"
+)
+expect(
+    "预设城市三语（纽约 / 紐約 / New York）",
+    L10n.t("city.newyork", language: .simplified) == "纽约"
+        && L10n.t("city.newyork", language: .traditional) == "紐約"
+        && L10n.t("city.newyork", language: .english) == "New York"
+)
+expect(
+    "预设城市名走本地化（不是空串）",
+    !Place.shanghai.displayLabel.isEmpty && !Place.presets[0].displayLabel.isEmpty
+)
+
+// 5) 台湾用语：特意纠正过的词
+expect("設定（不是「设置」）", L10n.t("common.settings", language: .traditional) == "設定")
+expect("螢幕（不是「屏幕」）", L10n.t("settings.sectionScreen", language: .traditional) == "螢幕")
+expect("套用座標（不是「应用坐标」）", L10n.t("settings.applyCoordinates", language: .traditional) == "套用座標")
+expect("裝置未連線（不是「设备未联网」）", L10n.t("diag.offline", language: .traditional) == "裝置未連線")
+expect("伺服器（不是「服务器」）", L10n.t("diag.cannotConnect", language: .traditional) == "無法連線至伺服器")
+expect("简体仍是「设置」", L10n.t("common.settings", language: .simplified) == "设置")
+
+// 6) 缺 key 时退回到 key 本身（便于发现漏翻）
+expect(
+    "未知 key 原样返回",
+    L10n.t("no.such.key", language: .simplified) == "no.such.key"
+)
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")

@@ -79,7 +79,7 @@ final class WeatherStore {
         guard !inFlight else { return }
         if !force && !needsRefresh(place) { return }
         guard let url = WeatherParsing.url(latitude: place.latitude, longitude: place.longitude) else {
-            lastErrorDescription = "坐标无法生成请求地址"
+            lastErrorDescription = L("diag.urlFailed")
             lastFinishedAt = Date()
             return
         }
@@ -134,7 +134,7 @@ final class WeatherStore {
             else {
                 DispatchQueue.main.async {
                     self.inFlight = false
-                    self.lastErrorDescription = "返回内容无法解析"
+                    self.lastErrorDescription = L("diag.parseFailed")
                     self.lastFinishedAt = Date()
                 }
                 return
@@ -160,19 +160,19 @@ final class WeatherStore {
         let ns = error as NSError
         switch ns.code {
         case NSURLErrorTimedOut:
-            return "请求超时（15 秒）"
+            return L("diag.timeout")
         case NSURLErrorNotConnectedToInternet:
-            return "设备未联网"
+            return L("diag.offline")
         case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed:
-            return "域名解析失败（api.open-meteo.com）"
+            return L("diag.dns")
         case NSURLErrorCannotConnectToHost:
-            return "无法连接服务器"
+            return L("diag.cannotConnect")
         case NSURLErrorNetworkConnectionLost:
-            return "连接中断"
+            return L("diag.connectionLost")
         case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted:
-            return "TLS 握手失败"
+            return L("diag.tls")
         default:
-            return "网络错误（\(ns.domain) \(ns.code)）"
+            return Lf("diag.networkError", ns.domain, ns.code)
         }
     }
 
@@ -184,7 +184,7 @@ final class WeatherStore {
         guard elapsed > 40 else { return }
         inFlight = false
         attemptStartedAt = nil
-        lastErrorDescription = "请求无响应（已等 \(Int(elapsed)) 秒）"
+        lastErrorDescription = Lf("diag.noResponse", Int(elapsed))
         lastFinishedAt = Date()
     }
 
@@ -193,24 +193,31 @@ final class WeatherStore {
         let now = Date()
         if let snapshot = cached() {
             let age = Int(now.timeIntervalSince1970 - defaults.double(forKey: Key.fetchedAt))
-            let ageText = age < 60 ? "\(age) 秒前" : (age < 3600 ? "\(age / 60) 分钟前" : "\(age / 3600) 小时前")
-            var text = "\(snapshot.temperatureC)° · \(snapshot.condition.label) · \(ageText)更新"
+            let ageText: String
+            if age < 60 {
+                ageText = Lf("diag.secondsAgo", age)
+            } else if age < 3600 {
+                ageText = Lf("diag.minutesAgo", age / 60)
+            } else {
+                ageText = Lf("diag.hoursAgo", age / 3600)
+            }
+            var text = Lf("diag.updated", "\(snapshot.temperatureC)°", snapshot.condition.label, ageText)
             if let lastErrorDescription {
-                text += "（最近一次失败：\(lastErrorDescription)）"
+                text += Lf("diag.lastFailure", lastErrorDescription)
             }
             return text
         }
         if let lastErrorDescription {
-            return "无数据：\(lastErrorDescription)"
+            return Lf("diag.noData", lastErrorDescription)
         }
         if inFlight {
             if let startedAt = attemptStartedAt {
                 let elapsed = Int(Date().timeIntervalSince(startedAt))
-                return "正在请求…（已 \(elapsed) 秒）"
+                return Lf("diag.requestingElapsed", elapsed)
             }
-            return "正在请求…"
+            return L("diag.requesting")
         }
-        return "无数据：尚未请求成功"
+        return L("diag.neverSucceeded")
     }
 
     private func decodeHourly() -> [WeatherHour] {

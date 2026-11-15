@@ -41,7 +41,7 @@ final class KeyTimeStore {
     // MARK: - 诊断（设置 → 诊断 → 关键时间）
 
     /// 最近一次抓取的结果描述，例如「成功：3 段 · 冻或温（HTTP 200）」「网络错误（-1009）」。
-    private(set) var lastOutcome: String = "尚未抓取"
+    private(set) var lastOutcome: String = L("keytime.st.never")
     private(set) var lastAttemptAt: Date?
     private(set) var lastSuccessAt: Date?
     private(set) var lastHTTPStatus: Int?
@@ -113,9 +113,13 @@ final class KeyTimeStore {
                     self.lastHTTPStatus = status
                     self.lastByteCount = byteCount
                     self.lastSuccessAt = Date()
-                    var outcome = "成功：\(schedule.bands.count) 段"
-                    outcome += schedule.temperature.map { " · \($0.label)" } ?? " · 温度未标注"
-                    if let status { outcome += "（HTTP \(status)）" }
+                    var outcome = Lf("keytime.out.successBands", schedule.bands.count)
+                    if let temperature = schedule.temperature {
+                        outcome += " · \(temperature.label)"
+                    } else {
+                        outcome += " · \(L("keytime.temperatureUnknown"))"
+                    }
+                    if let status { outcome += Lf("keytime.out.httpParen", status) }
                     self.lastOutcome = outcome
                     self.save(schedule)
                     completion?(schedule)
@@ -126,19 +130,19 @@ final class KeyTimeStore {
             let reason: String
             if let error {
                 let ns = error as NSError
-                reason = "网络错误（\(ns.domain) \(ns.code)）"
+                reason = Lf("diag.networkError", ns.domain, ns.code)
             } else if let status, !(200..<300).contains(status) {
                 reason = "HTTP \(status)"
             } else if let data, TakeTimeParsing.decodeHTML(data) == nil {
-                reason = "页面无法解码（\(byteCount ?? 0) 字节）"
+                reason = Lf("keytime.out.decodeFailed", byteCount ?? 0)
             } else {
-                reason = "页面里没有关键时间（\(byteCount ?? 0) 字节）"
+                reason = Lf("keytime.out.noKeyTime", byteCount ?? 0)
             }
 
             if attempt < 2 {
                 // 第一次失败：3 秒后再试一次（冷启动/切网的第一请求经常失败）。
                 DispatchQueue.main.async {
-                    self.lastOutcome = "\(reason)，重试中…"
+                    self.lastOutcome = Lf("keytime.out.retrying", reason)
                 }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
                     self.fetch(attempt: attempt + 1, now: Date(), completion: completion)
@@ -150,7 +154,7 @@ final class KeyTimeStore {
             DispatchQueue.main.async {
                 self.lastHTTPStatus = status
                 self.lastByteCount = byteCount
-                self.lastOutcome = "\(reason)，1 小时后自动重试"
+                self.lastOutcome = Lf("keytime.out.retryHour", reason)
             }
         }.resume()
     }
@@ -213,27 +217,28 @@ final class KeyTimeStore {
     /// 一行（可换行）的状态说明，设置页「诊断 → 关键时间」直接用。
     func diagnosticsSummary() -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MM-dd HH:mm"
+        formatter.locale = AppLanguage.locale
+        formatter.setLocalizedDateFormatFromTemplate("MMddHHmm")
         var parts: [String] = []
         if let schedule = schedule() {
-            let bands = schedule.bands.map(\.text).joined(separator: "、")
-            parts.append("\(schedule.bands.count) 段：\(bands)")
-            parts.append("温度：\(schedule.temperature?.label ?? "未标注")")
+            let bands = schedule.bands.map(\.text).joined(separator: L("list.separator"))
+            parts.append(Lf("keytime.st.bands", schedule.bands.count, bands))
+            parts.append(Lf("keytime.st.temperature", schedule.temperature?.label ?? L("keytime.temperatureUnknown")))
         } else {
-            parts.append("无可用关键时间")
+            parts.append(L("keytime.st.none"))
         }
-        parts.append("最近成功：\(lastSuccessAt.map { formatter.string(from: $0) } ?? "从未")")
+        let lastSuccess = lastSuccessAt.map { formatter.string(from: $0) } ?? L("keytime.st.neverShort")
+        parts.append(Lf("keytime.st.lastSuccess", lastSuccess))
         if let lastAttemptAt {
-            parts.append("最近尝试：\(formatter.string(from: lastAttemptAt))")
+            parts.append(Lf("keytime.st.lastAttempt", formatter.string(from: lastAttemptAt)))
         }
         if let status = lastHTTPStatus {
-            parts.append("HTTP \(status)")
+            parts.append(Lf("keytime.st.http", status))
         }
         if let bytes = lastByteCount {
-            parts.append("\(bytes) 字节")
+            parts.append(Lf("keytime.st.bytes", bytes))
         }
-        parts.append("结果：\(lastOutcome)")
+        parts.append(Lf("keytime.st.result", lastOutcome))
         return parts.joined(separator: " · ")
     }
 }

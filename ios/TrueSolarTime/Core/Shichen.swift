@@ -3,7 +3,12 @@ import Foundation
 /// 十二时辰：以真太阳时为准，每个时辰两小时，子时自 23:00 起。
 enum Shichen {
 
-    static let names = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+    /// 十二个时辰名各自的本地化 key（简体「子」、繁體「子」、英文「Zi」）。
+    static let nameKeys = [
+        "shichen.zi", "shichen.chou", "shichen.yin", "shichen.mao",
+        "shichen.chen", "shichen.si", "shichen.wu", "shichen.wei",
+        "shichen.shen", "shichen.you", "shichen.xu", "shichen.hai",
+    ]
 
     private static let secondsPerShichen = 7200.0
 
@@ -13,11 +18,18 @@ enum Shichen {
         return Int(shifted / secondsPerShichen) % 12
     }
 
-    static func name(_ index: Int) -> String {
-        names[index] + "时"
+    /// 单个时辰名，例如「子」/「Zi」。
+    static func baseName(_ index: Int) -> String {
+        let wrapped = ((index % 12) + 12) % 12
+        return L(nameKeys[wrapped])
     }
 
-    /// 例如 "23:00 – 01:00"。
+    /// 带单位，例如「子时」/「子時」/「Zi hour」。
+    static func name(_ index: Int) -> String {
+        Lf("shichen.format", baseName(index))
+    }
+
+    /// 例如 "23:00 – 01:00"（纯数字，不需要翻译）。
     static func rangeText(_ index: Int) -> String {
         let start = (index * 2 + 23) % 24
         let end = (start + 2) % 24
@@ -32,9 +44,11 @@ enum Shichen {
         secondsPerShichen - secondsIntoShichen(trueSolarSecondsOfDay)
     }
 
-    /// 时初 / 时正，各占一个时辰的前后一小时。
+    /// 时初 / 时正，各占一个时辰的前后一小时（英文 early / late）。
     static func halfLabel(_ trueSolarSecondsOfDay: Double) -> String {
-        secondsIntoShichen(trueSolarSecondsOfDay) < 3600.0 ? "初" : "正"
+        secondsIntoShichen(trueSolarSecondsOfDay) < 3600.0
+            ? L("shichen.halfEarly")
+            : L("shichen.halfLate")
     }
 
     /// 刻：每 15 分钟一刻，返回 1..4。

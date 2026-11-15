@@ -20,7 +20,7 @@ struct KeyTimeCard: View {
     var body: some View {
         CardContainer {
             HStack {
-                Text("关键时间")
+                Text(L("keytime.title"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -55,7 +55,7 @@ struct KeyTimeCard: View {
             if let schedule {
                 if let band = currentBand {
                     Label {
-                        Text("现在处于关键时间 \(band.text)")
+                        Text(Lf("keytime.inBand", band.text))
                     } icon: {
                         Image(systemName: "bell.badge.fill")
                     }
@@ -63,17 +63,17 @@ struct KeyTimeCard: View {
                     .foregroundStyle(accent)
                     .padding(.top, 4)
                 } else {
-                    Text("当前不在关键时间段内")
+                    Text(L("keytime.outOfBand"))
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
 
-                Text(schedule.bands.map(\.text).joined(separator: "　"))
+                Text(schedule.bands.map(\.text).joined(separator: " · "))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else {
-                Text("还没有取到关键时间（每天 01:00–05:00 自动同步一次，失败每小时重试）")
+                Text(L("keytime.empty"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
