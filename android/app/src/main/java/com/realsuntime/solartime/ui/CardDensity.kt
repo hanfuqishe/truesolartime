@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import com.realsuntime.solartime.R
 
 /**
  * 卡片里锁死的字号缩放系数。
@@ -54,6 +56,28 @@ internal const val CARD_FONT_SCALE = 1f
  * 不参与任何界面逻辑，留着比删掉有用。
  */
 internal const val CARD_FONT_TAG = "SolarTimeCard"
+
+/**
+ * 卡片专用字族：App 自带的 Noto Sans SC（SIL OFL 1.1，见 `android/FONT-README.md`）。
+ *
+ * 为什么自带：华为 EMUI / HarmonyOS 的「字体粗细」滑杆（`font_weight_scale`）不换字面，而是在
+ * **渲染层**把笔画描粗（卡片 bbox 与各段 x 范围逐像素不变，只有墨迹上涨）。用系统字族时换字重
+ * 躲不掉 —— 系统 `sans-serif` 在这一段只暴露两三个字面，压字重会从 +10% 直接翻到 −11%。
+ * 自带字体走 App 自己的 Typeface 与 `res/font` 资源，系统那层描粗管不到，卡片笔画才稳定：
+ * 实测滑杆 0.79 → 0.88，卡片三段文字带的逐像素差异为 **0**。
+ *
+ * 两个字面是有意为之，为的是保住卡片的字重层次（改造前是系统 sans-serif 的 Normal / Medium）：
+ * - [FontWeight.Normal] → `card_sans_regular`：只收固定文案用到的 567 个字符（204 KB）；
+ * - [FontWeight.Medium] → `card_sans_medium`：收 4000 字（含 GB2312 一级汉字），因为顶部的
+ *   「地区名」是运行期定位/逆地理编码拿到的，字符集不封闭，缺字会回落到**系统字体**、又被描粗。
+ *
+ * 配合 [cardTextStyle] 里的 `fontSynthesis = FontSynthesis.None`：Compose 不会在字重对不上时
+ * 合成假粗体，请求什么字重就渲染对应字面的字形。
+ */
+private val CardFontFamily = FontFamily(
+    Font(R.font.card_sans_regular, weight = FontWeight.Normal),
+    Font(R.font.card_sans_medium, weight = FontWeight.Medium),
+)
 
 /** 华为 EMUI / HarmonyOS「加粗字体」写在 `Settings.System` 里的乘法字重键。 */
 private const val HUAWEI_WEIGHT_SCALE_KEY = "font_weight_scale"
@@ -241,9 +265,9 @@ private fun rememberCardFontEnv(): CardFontEnv {
  * 2. `fontSynthesis = FontSynthesis.None` —— Compose 在字族里找不到目标字重时会**合成**粗体
  *    （把字形描粗），那会让「减字重」失效：请求 200 也照样被描成 Medium 的观感。
  *    这里明确禁止合成，请求什么字重就渲染什么字重；
- * 3. `fontFamily` 显式钉成 `sans-serif` —— 不让系统把「默认族」替换成别的加粗变体族。
- *    Compose 的 `FontFamily.Default` 本来就映射到 `sans-serif`，所以这一条不改变外观，
- *    只是把「默认」变成「写明」，防止 ROM 改动默认族时把卡片带偏。
+ * 3. `fontFamily` 钉成自带的 [CardFontFamily]（Noto Sans SC Regular 子集）—— 不再让系统
+ *    字族参与，华为那层渲染期描粗就落在 App 自带字形之外；同时也把「默认族」变成「写明」，
+ *    防止 ROM 改动默认族时把卡片带偏。
  *
  * [base] 一般传 `MaterialTheme.typography.xxx`，[nominal] 传「不想被系统加粗影响」的目标字重
  * （卡片里是 Medium / Normal）。设置页不经过这里，照旧跟随系统加粗。
@@ -254,7 +278,7 @@ internal fun cardTextStyle(base: TextStyle, nominal: FontWeight): TextStyle {
     return base.copy(
         fontWeight = env.weightFor(nominal),
         fontSynthesis = FontSynthesis.None,
-        fontFamily = base.fontFamily ?: FontFamily.SansSerif,
+        fontFamily = CardFontFamily,
     )
 }
 

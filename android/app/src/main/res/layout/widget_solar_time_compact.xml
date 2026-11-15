@@ -66,6 +66,7 @@
                         android:orientation="horizontal">
 
                         <TextView
+                            android:fontFamily="@font/card_sans_medium"
                             android:id="@+id/widget_top_utc_default"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -76,6 +77,7 @@
                             android:textSize="11dp" />
 
                         <TextView
+                            android:fontFamily="@font/card_sans_medium"
                             android:id="@+id/widget_city_default"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -102,6 +104,7 @@
                         android:paddingStart="8dp">
 
                         <TextView
+                            android:fontFamily="@font/card_sans_medium"
                             android:id="@+id/widget_top_solar_default"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -110,6 +113,7 @@
                             android:textSize="11dp" />
 
                         <TextView
+                            android:fontFamily="@font/card_sans_medium"
                             android:id="@+id/widget_top_shichen_default"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -135,6 +139,7 @@
                     android:visibility="gone">
 
                     <TextView
+                        android:fontFamily="@font/card_sans_medium"
                         android:id="@+id/widget_top_utc"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -147,6 +152,7 @@
                     <!-- 档 1/2/3 的地区：宽度吃满「UTC（档 1 还在）与时辰」之间的剩余空间，
                          对齐由代码用 setGravity 下发（档 1 居中、档 2/3 贴左）。 -->
                     <TextView
+                        android:fontFamily="@font/card_sans_medium"
                         android:id="@+id/widget_city"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
@@ -161,6 +167,7 @@
                         tools:text="上海市黄浦区" />
 
                     <TextView
+                        android:fontFamily="@font/card_sans_medium"
                         android:id="@+id/widget_top_solar"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -170,6 +177,7 @@
 
                     <!-- 时辰：任何档位都保留，始终贴整行最右。 -->
                     <TextView
+                        android:fontFamily="@font/card_sans_medium"
                         android:id="@+id/widget_top_shichen"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -211,6 +219,7 @@
                                 tools:ignore="HardcodedText" />
 
                             <TextView
+                                android:fontFamily="@font/card_sans_medium"
                                 android:id="@+id/widget_civil_colon"
                                 style="@style/WidgetClockColon"
                                 android:text=":"
@@ -248,6 +257,7 @@
                             android:orientation="horizontal">
 
                             <TextView
+                                android:fontFamily="@font/card_sans_medium"
                                 android:id="@+id/widget_solar_time"
                                 style="@style/WidgetClockMain"
                                 android:text="00:00"
@@ -260,6 +270,7 @@
                               真正刷新时由 WidgetUpdater 把它们设为可见。
                             -->
                             <TextView
+                                android:fontFamily="@font/card_sans_medium"
                                 android:id="@+id/widget_solar_colon"
                                 style="@style/WidgetClockColonSolar"
                                 android:text=":"
@@ -309,6 +320,7 @@
         android:orientation="horizontal">
 
         <TextView
+            android:fontFamily="@font/card_sans_medium"
             android:id="@+id/widget_civil_date"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -319,6 +331,7 @@
             android:textSize="11dp" />
 
         <TextView
+            android:fontFamily="@font/card_sans_medium"
             android:id="@+id/widget_coordinates"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -355,10 +368,12 @@
             android:orientation="horizontal">
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 style="@style/WidgetSunLabel"
                 android:text="@string/sunrise" />
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_sunrise"
                 style="@style/WidgetSunTime"
                 tools:ignore="HardcodedText" />
@@ -372,10 +387,12 @@
             android:orientation="horizontal">
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 style="@style/WidgetSunLabel"
                 android:text="@string/solar_noon" />
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_noon"
                 style="@style/WidgetSunTime"
                 tools:ignore="HardcodedText" />
@@ -389,10 +406,12 @@
             android:orientation="horizontal">
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 style="@style/WidgetSunLabel"
                 android:text="@string/sunset" />
 
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_sunset"
                 style="@style/WidgetSunTime"
                 tools:ignore="HardcodedText" />
@@ -412,12 +431,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_0"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_0"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_0"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -428,12 +449,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_1"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_1"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_1"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -444,12 +467,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_2"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_2"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_2"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -460,12 +485,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_3"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_3"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_3"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -476,12 +503,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_4"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_4"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_4"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -492,12 +521,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_label_5"
                 style="@style/WidgetHourLabelCompact" />
             <ImageView
                 android:id="@+id/widget_hour_icon_5"
                 style="@style/WidgetHourIconCompact" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour_cond_5"
                 style="@style/WidgetHourCondCompact" />
         </LinearLayout>
@@ -519,12 +550,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_0"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_0"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_0"
                 style="@style/WidgetHourCond" />
         </LinearLayout>        <LinearLayout
@@ -534,12 +567,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_1"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_1"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_1"
                 style="@style/WidgetHourCond" />
         </LinearLayout>        <LinearLayout
@@ -549,12 +584,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_2"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_2"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_2"
                 style="@style/WidgetHourCond" />
         </LinearLayout>        <LinearLayout
@@ -564,12 +601,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_3"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_3"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_3"
                 style="@style/WidgetHourCond" />
         </LinearLayout>        <LinearLayout
@@ -579,12 +618,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_4"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_4"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_4"
                 style="@style/WidgetHourCond" />
         </LinearLayout>        <LinearLayout
@@ -594,12 +635,14 @@
             android:gravity="center_horizontal"
             android:orientation="vertical">
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_label_5"
                 style="@style/WidgetHourLabel" />
             <ImageView
                 android:id="@+id/widget_hour2_icon_5"
                 style="@style/WidgetHourIcon" />
             <TextView
+                android:fontFamily="@font/card_sans_medium"
                 android:id="@+id/widget_hour2_cond_5"
                 style="@style/WidgetHourCond" />
         </LinearLayout>    </LinearLayout>
