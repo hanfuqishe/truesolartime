@@ -232,6 +232,22 @@ jobs:
           # 确认包真的用分发证书签了
           codesign -dv --verbose=4 "$ARCHIVE/Products/Applications/$APP_NAME.app" 2>&1 | head -n 20
 
+      - name: 校验本地化资源已进包
+        run: |
+          APP=$(ls -d "$RUNNER_TEMP/TrueSolarTime.xcarchive/Products/Applications/"*.app | head -n 1)
+          echo "检查 $APP"
+          MISSING=0
+          for L in en zh-Hans zh-Hant; do
+            if [ ! -d "$APP/$L.lproj" ]; then
+              echo "::error::缺少 $L.lproj"; MISSING=1
+            elif [ ! -s "$APP/$L.lproj/Localizable.strings" ]; then
+              echo "::error::$L.lproj/Localizable.strings 缺失或为空"; MISSING=1
+            else
+              echo "OK  $L.lproj/Localizable.strings ($(wc -c < "$APP/$L.lproj/Localizable.strings") 字节)"
+            fi
+          done
+          if [ "$MISSING" = "1" ]; then exit 1; fi
+
       - name: 导出 ipa（app-store-connect / manual）
         if: ${{ !inputs.verify_only }}
         run: |
