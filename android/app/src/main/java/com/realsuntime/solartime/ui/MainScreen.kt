@@ -536,6 +536,21 @@ private fun HeroCard(
             val dividerTopPadding = 3.dp
             val dividerColumnHeight = 58.dp
             var labelRowHeightPx by remember { mutableStateOf(0f) }
+            // 时钟行的实际高度（px）。竖线的长度要跟着它走，不能写死：
+            // 长辈关怀里「显示大小」被抬到 600dpi，卡片在 dp 上变窄（387dp → 280dp），
+            // HeroClock 按栏宽自动缩了字号，时钟行只剩 ~39dp 高，而线还是 58dp ——
+            // 于是线比整行时钟还长，上下都戳出来。做法与标签行一致：onSizeChanged 量到真实高度，
+            // 线的长度取 min(58dp, 时钟行高)。常规档时钟行 58.3dp > 58dp，取 58dp，
+            // 与改造前逐像素一致；只有时钟行更矮时才跟着缩。
+            // 不能用 BoxWithConstraints / SubcomposeLayout：卡片在宽屏分支里处于
+            // IntrinsicSize.Max 下，SubcomposeLayout 参与固有测量会抛异常。
+            var clockRowHeightPx by remember { mutableStateOf(0f) }
+            val dividerHeight = if (clockRowHeightPx > 0f) {
+                with(LocalDensity.current) { clockRowHeightPx.toDp() }
+                    .coerceAtMost(dividerColumnHeight)
+            } else {
+                dividerColumnHeight
+            }
             // 上延段的顶端要和**标签文字的上沿**齐平（不是标签行的顶边）：文字画在行盒（lineHeight）
             // 里、上下各留一半行距，所以字形上沿比行盒顶边还要低 (行高 − 字号) / 2；
             // 标签行万一比文本本身更高（居中对齐），再补上差值的一半。
@@ -660,7 +675,13 @@ private fun HeroCard(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         // 左：当地标准时间（所在地的法定时区；中国境内就是北京时间，
                         // 出国或手工指定外地坐标时换成当地标准时。时区标签在上面的整行里）
-                        Column(modifier = Modifier.weight(1f)) {
+                        // 顺手把这一列的高度量下来给竖线用：列的高度就是时钟行的高度，
+                        // 而竖线不参与列的高度（它在 Row 里是固定高度，见 dividerHeight）。
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .onSizeChanged { clockRowHeightPx = it.height.toFloat() },
+                        ) {
                             HeroClock(
                                 text = TimeFormat.clock(snapshot.localStandardTime),
                                 seconds = snapshot.localStandardTime.second,
@@ -676,7 +697,7 @@ private fun HeroCard(
                                     top = dividerTopPadding,
                                 )
                                 .width(dividerWidth)
-                                .height(dividerColumnHeight)
+                                .height(dividerHeight)
                                 .background(dividerColor),
                         )
 
