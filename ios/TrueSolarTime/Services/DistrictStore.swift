@@ -1,10 +1,10 @@
 import CoreLocation
 import Foundation
 
-/// 用系统 `CLGeocoder` 把经纬度反查成「市 + 区县」。
+/// 把经纬度反查成「区县 + 市 + 州/省」。
 ///
-/// 选它而不是高德/OSM 的原因：iOS 自带、无需 Key，而且返回的名字**跟随系统语言**
-/// （中文得到「黄浦区」，英文得到「Huangpu District」），正好符合「区划名跟着界面语言走」。
+/// 主用系统 `CLGeocoder`（iOS 自带、无需 Key、名字跟随语言）；它拿不到地名、或者只回了
+/// 国家一级时，**再用 OpenStreetMap Nominatim 兜底**（与 Android 对境外坐标的做法一致）。
 /// 结果按位置缓存：移动超过 5 km 或缓存超过 30 天才重查；语言变了也重查。
 final class DistrictStore {
 
@@ -18,21 +18,40 @@ final class DistrictStore {
         static let longitude = "district.longitude"
         static let fetchedAt = "district.fetched_at"
         static let language = "district.language"
+        static let provider = "district.provider"
     }
 
     private let defaults = UserDefaults.standard
     private let geocoder = CLGeocoder()
+    /// OSM 兜底用的会话：12 秒超时（与 Android 的 12 s 一致）、允许等网络。
+    private let nominatimSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 12
+        config.timeoutIntervalForResource = 24
+        config.waitsForConnectivity = true
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+
     private var inFlight = false
     /// 正在反查的那个地点（坐标取 4 位小数 ≈ 11 m）：同一地点的重复请求不再互相取消。
     private var inFlightSiteKey: String?
     /// 请求代号：切换城市时自增，用来丢弃迟到的旧结果。
     private var generation = 0
 
-    /// 最近一次反查的失败原因（成功时为 nil）。设置页「诊断」会显示它 ——
-    /// 境外坐标的 `CLGeocoder` 行为只有真机能验证，把错误码留在界面上才能快速定位。
-    private(set) var lastErrorDescription: String?
+    // MARK: - 诊断（设置 → 诊断 → 区划名）
 
-    private init() {}
+    /// 最近一次反查的失败原因（成功时为 nil）。
+    private(set) var lastErrorDescription: String?
+    /// 最近一次成功的地名来源："Apple" / "OSM"。
+    private(set) var lastProvider: String = "-"
+    /// 最近一次 `CLGeocoder` 到底回了什么（逐字段），排查「境外只回国家」用。
+    private(set) var lastAppleFields: String = "-"
+
+    private init() {
+        lastProvider = defaults.string(forKey: Key.provider) ?? "-"
+    }
 
     /// 读缓存的地名。
     ///
@@ -53,13 +72,11 @@ final class DistrictStore {
     /// 需要且允许时反查一次；成功后在主线程回调。
     ///
     /// - Parameter force: 用户**明确换了地点**（点常用城市 / 应用手工坐标）时传 true，
-    ///   跳过 `needsRefresh` 的距离与时限判定，一定真的发一次 `reverseGeocodeLocation`。
-    ///   否则「先上海、再纽约」这类切换一旦被缓存判定挡住，卡片就永远只有预设城市名。
+    ///   跳过 `needsRefresh` 的距离与时限判定，一定真的发一次请求。
     ///
     /// 连续切换城市时：旧请求会被取消，并用「代号」把迟到的旧结果丢掉，
     /// 否则会出现「切到纽约，卡片却回填北京的地名」。
-    /// 但**同一个地点**的请求还在路上时不做取消 —— 反复 cancel 会让回调丢失
-    /// （表现就是「圈一下就没反应」，区划名一直是空的）。
+    /// 但**同一个地点**的请求还在路上时不做取消 —— 反复 cancel 会让回调丢失。
     func requestRefresh(place: Place, force: Bool = false, completion: ((DistrictNames) -> Void)? = nil) {
         let siteKey = Self.siteKey(place)
         if inFlight, siteKey == inFlightSiteKey, !force { return }
@@ -81,10 +98,10 @@ final class DistrictStore {
         )
     }
 
-    /// 真正的系统反查。
+    /// 第一步：系统反查。
     ///
-    /// 中文 locale 拿不到名字时（Apple 对部分境外小城市没有中文译名，或该 locale 直接失败），
-    /// 用系统 locale 再试一次：宁可显示原文「Manhattan」也不要什么都不显示。
+    /// 中文 locale 拿不到结果时用系统 locale 再试一次；两次都「只有国家一级」或干脆没有结果，
+    /// 就转 `fetchNominatim` 兜底 —— 境外坐标在大陆网络下经常就是这样。
     private func reverseGeocode(
         place: Place,
         locale: Locale,
@@ -96,18 +113,33 @@ final class DistrictStore {
         geocoder.reverseGeocodeLocation(location, preferredLocale: locale) { [weak self] placemarks, error in
             guard let self else { return }
             guard generation == self.generation else { return }
-            if let mark = placemarks?.first, let names = Self.names(from: mark) {
-                self.lastErrorDescription = nil
-                self.inFlight = false
-                DispatchQueue.main.async {
-                    self.save(place: place, names: names)
-                    completion?(names)
+
+            if let mark = placemarks?.first {
+                self.lastAppleFields = Self.describe(mark)
+                let appleNames = Self.names(from: mark)
+                if let appleNames, !Self.isWeak(appleNames, country: mark.country) {
+                    self.lastErrorDescription = nil
+                    self.finish(place: place, names: appleNames, provider: "Apple", completion: completion)
+                    return
                 }
+                // 只有国家一级（或什么都没解析出来）：上屏没意义，交给 OSM 补区县/市。
+                self.lastErrorDescription = "Apple 只给出「\(appleNames?.full ?? "空")」"
+                if !isRetry {
+                    self.reverseGeocode(
+                        place: place,
+                        locale: Locale.current,
+                        isRetry: true,
+                        generation: generation,
+                        completion: completion
+                    )
+                    return
+                }
+                self.fetchNominatim(place: place, generation: generation, attempt: 1, completion: completion)
                 return
             }
-            let reason = Self.describe(error: error, hasPlacemark: placemarks?.first != nil)
+
+            self.lastErrorDescription = "Apple 无结果（\(Self.describe(error: error, hasPlacemark: false))）"
             if !isRetry {
-                self.lastErrorDescription = "中文 locale 无结果（\(reason)），已用系统 locale 重试"
                 self.reverseGeocode(
                     place: place,
                     locale: Locale.current,
@@ -117,18 +149,124 @@ final class DistrictStore {
                 )
                 return
             }
-            self.lastErrorDescription = reason
-            self.inFlight = false
+            self.fetchNominatim(place: place, generation: generation, attempt: 1, completion: completion)
         }
     }
 
-    /// 失败原因的一行说明，给设置页「诊断」用（境外坐标只有真机能查，留在界面上才能定位问题）。
+    /// 第二步：OpenStreetMap Nominatim 兜底（12 秒超时 + 失败重试一次，与 Android 同策略）。
+    private func fetchNominatim(
+        place: Place,
+        generation: Int,
+        attempt: Int,
+        completion: ((DistrictNames) -> Void)?
+    ) {
+        guard let url = NominatimReverse.url(
+            latitude: place.latitude,
+            longitude: place.longitude,
+            language: Self.nominatimLanguage
+        ) else {
+            lastErrorDescription = "OSM 兜底失败：坐标无法生成请求地址"
+            inFlight = false
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+        request.setValue(NominatimReverse.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(Self.nominatimLanguage, forHTTPHeaderField: "Accept-Language")
+
+        nominatimSession.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+            guard generation == self.generation else { return }
+
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let json = data.flatMap { String(data: $0, encoding: .utf8) }
+            let names = json.flatMap {
+                NominatimReverse.names(json: $0, prefersChinese: AppLanguage.prefersChinese)
+            }
+            if let names {
+                self.lastErrorDescription = nil
+                self.finish(place: place, names: names, provider: "OSM", completion: completion)
+                return
+            }
+
+            let reason: String
+            if let error {
+                let ns = error as NSError
+                reason = "网络错误（\(ns.domain) \(ns.code)）"
+            } else if let status, !(200..<300).contains(status) {
+                reason = "HTTP \(status)"
+            } else {
+                reason = "返回里没有解析出地名"
+            }
+            if attempt < 2 {
+                // 境外网络偶发抖动：与 Android 一样再试一次。
+                self.lastErrorDescription = "OSM 兜底重试中（\(reason)）"
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                    self.fetchNominatim(
+                        place: place,
+                        generation: generation,
+                        attempt: attempt + 1,
+                        completion: completion
+                    )
+                }
+                return
+            }
+            self.lastErrorDescription = "OSM 兜底失败：\(reason)"
+            self.inFlight = false
+        }.resume()
+    }
+
+    /// 成功收尾：落盘 + 主线程回调。
+    private func finish(
+        place: Place,
+        names: DistrictNames,
+        provider: String,
+        completion: ((DistrictNames) -> Void)?
+    ) {
+        inFlight = false
+        DispatchQueue.main.async {
+            self.lastProvider = provider
+            self.save(place: place, names: names, provider: provider)
+            completion?(names)
+        }
+    }
+
+    /// 「只有国家一级」的弱结果：值得继续找细节（Apple 对境外常见）。
+    private static func isWeak(_ names: DistrictNames?, country: String?) -> Bool {
+        guard let names else { return true }
+        guard let countryName = DistrictNaming.clean(country) else { return false }
+        return names.full == countryName
+    }
+
+    /// `CLGeocoder` 逐字段快照，给「诊断」看。
+    private static func describe(_ mark: CLPlacemark) -> String {
+        func value(_ text: String?) -> String {
+            guard let text, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+            return text
+        }
+        return [
+            "locality=\(value(mark.locality))",
+            "subLocality=\(value(mark.subLocality))",
+            "subAdmin=\(value(mark.subAdministrativeArea))",
+            "admin=\(value(mark.administrativeArea))",
+            "country=\(value(mark.country))",
+        ].joined(separator: " ")
+    }
+
+    /// 失败原因的一行说明。
     private static func describe(error: Error?, hasPlacemark: Bool) -> String {
         if let error {
             let ns = error as NSError
             return "\(ns.domain) \(ns.code)"
         }
         return hasPlacemark ? "各级地名都为空" : "系统没有返回地址"
+    }
+
+    /// Nominatim 的 `accept-language`：中文界面用 zh-CN。
+    private static var nominatimLanguage: String {
+        AppLanguage.geocoderLocale.identifier.replacingOccurrences(of: "_", with: "-")
     }
 
     /// 同一地点的判定键：坐标取 4 位小数（约 11 m），GPS 抖动不算换了地点。
@@ -139,8 +277,7 @@ final class DistrictStore {
     /// 把 `CLPlacemark` 的各级字段交给 `DistrictNaming.composeNames`；任何一级有值就出名字。
     ///
     /// 境外地址（Apple 常只给 `locality` / `administrativeArea` / `country`）必须有结果：
-    /// 旧实现把「区县」当必需项，`subLocality` 一缺就整串退化成 nil，界面只能显示预设城市名
-    /// —— 这就是用户看到的「选了外国城市没有反查出来」。
+    /// 早先的实现把「区县」当必需项，`subLocality` 一缺就整串退化成 nil，界面只能显示预设城市名。
     static func names(from mark: CLPlacemark) -> DistrictNames? {
         guard var names = DistrictNaming.composeNames(
             district: mark.subLocality ?? mark.subAdministrativeArea,
@@ -155,6 +292,14 @@ final class DistrictStore {
         return names
     }
 
+    /// 诊断：缓存里的名字来自哪儿、最近一次失败原因、`CLGeocoder` 到底回了什么。
+    func diagnosticsSummary() -> String {
+        var parts: [String] = ["来源：\(lastProvider)"]
+        if let lastErrorDescription { parts.append(lastErrorDescription) }
+        parts.append("CLGeocoder：\(lastAppleFields)")
+        return parts.joined(separator: " · ")
+    }
+
     private func needsRefresh(_ place: Place) -> Bool {
         guard defaults.string(forKey: Key.full) != nil else { return true }
         if defaults.string(forKey: Key.language) != AppLanguage.code { return true }
@@ -165,7 +310,7 @@ final class DistrictStore {
         return DistrictNaming.shouldQuery(movedKm: moved, ageSeconds: age)
     }
 
-    private func save(place: Place, names: DistrictNames) {
+    private func save(place: Place, names: DistrictNames, provider: String) {
         defaults.set(names.full, forKey: Key.full)
         defaults.set(names.short, forKey: Key.short)
         defaults.set(names.countryCode, forKey: Key.country)
@@ -173,5 +318,6 @@ final class DistrictStore {
         defaults.set(place.longitude, forKey: Key.longitude)
         defaults.set(Date().timeIntervalSince1970, forKey: Key.fetchedAt)
         defaults.set(AppLanguage.code, forKey: Key.language)
+        defaults.set(provider, forKey: Key.provider)
     }
 }

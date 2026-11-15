@@ -131,6 +131,16 @@ struct SettingsView: View {
                         }
                         .font(.system(size: 12))
                         .foregroundStyle(palette.onSurfaceVariant)
+
+                        // 抓取失败时不用等下一次自动重试：现场手动抓一次，结果立刻写回上面那几行。
+                        Button {
+                            model.refreshKeyTime()
+                        } label: {
+                            Text("立即同步关键时间")
+                                .font(.system(size: 12))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
 
                     Divider()
@@ -208,16 +218,14 @@ struct SettingsView: View {
 
     private var districtSummary: String {
         let text = model.districtName?.full ?? "暂无"
-        // 反查失败时把原因带上：境外坐标只有真机能验证，控制台看不到的话至少界面上能看到。
-        guard let error = DistrictStore.shared.lastErrorDescription else { return text }
-        return "\(text)（最近一次失败：\(error)）"
+        // 带上来源（Apple / OSM 兜底）、失败原因与 CLGeocoder 的原始字段：
+        // 境外坐标只有真机能验证，界面上能看到这些才好判断是「只回了国家」还是「直接报错」。
+        return "\(text) · \(DistrictStore.shared.diagnosticsSummary())"
     }
 
     private var keyTimeSummary: String {
-        guard let schedule = model.keyTime else { return "暂无" }
-        let bands = schedule.bands.map { $0.text }.joined(separator: "、")
-        let temperature = schedule.temperature?.label ?? "温度未标注"
-        return bands.isEmpty ? temperature : "\(bands) · \(temperature)"
+        let status = model.keyTimeStatus
+        return status.isEmpty ? "尚未抓取" : status
     }
 
     private var keepScreenOnBinding: Binding<Bool> {

@@ -29,10 +29,11 @@ struct ContentView: View {
                             districtName: cityText,
                             weather: model.weather,
                             keyBands: model.keyTime?.bands ?? [],
-                            // 定位还没回来时先不画旧地点的关键时段色段与字色（与 Android 的 waitingForFix 判定一致）。
-                            bandColor: model.waitingForFix
-                                ? nil
-                                : HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
+                            // 关键时段的色段**不看定位**：它是「真太阳时 0–24 时」轴上的固定区间，
+                            // 与经纬度无关。之前这里叠了 `waitingForFix` 判定，定位没回来（室内很常见）
+                            // 就整块不画，看起来就是「关键时间完全不显示」。
+                            bandColor: axisBandColor,
+                            // 字色/圆点仍然等定位：真太阳时本身依赖经度，等真位置回来再染色才对。
                             inkColor: (inKeyTime && !model.waitingForFix)
                                 ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
                                 : nil,
@@ -104,6 +105,17 @@ struct ContentView: View {
             return preset
         }
         return "-"
+    }
+
+    /// 时间轴上关键时段的颜色。
+    ///
+    /// 优先按页面给出的温度标记（冻或温 = 绿 / 热或温 = 红）；温度标记缺失（页面改版）时
+    /// 退到当日强调色 —— 宁可颜色语义不准，也不要让「有关键时间却什么都看不到」重演。
+    /// 设置页「诊断 → 关键时间」会写清当前是「温度未标注」还是具体温度。
+    private var axisBandColor: Color? {
+        guard let schedule = model.keyTime else { return nil }
+        let isDay = model.snapshot.isDay
+        return HeroPalette.band(schedule.temperature, isDay: isDay) ?? HeroPalette.accent(isDay: isDay)
     }
 
     /// 当前真太阳时是否落在某个关键时段内。

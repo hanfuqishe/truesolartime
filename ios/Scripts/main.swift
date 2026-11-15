@@ -191,6 +191,63 @@ expect("同步窗口 01:00–05:00", TakeTimeParsing.isInsideSyncWindow(offsetMi
     && TakeTimeParsing.isInsideSyncWindow(offsetMinutes: 299)
     && !TakeTimeParsing.isInsideSyncWindow(offsetMinutes: 300))
 
+// 真实页面片段：2026-11-15 抓自 https://www.duosuccess.com/tcm/001a01080301b01a.htm，
+// 保留页面里的标签、全角空格与 &nbsp;，用来保证「HTML → 时段 + 温度」这条链路离线可测。
+let realPageFragment = """
+<p style="margin-top: 0; margin-bottom: 0">有效期限：列印後 110日內 &nbsp; Expiration: 110 days after printing</p>
+<p>	服用時間&nbsp; Take Time : 15:00-17:00　20:00-22:00　10:00-12:00　(凍或溫 Cold or Mild)</p>
+<p>&nbsp;</p>
+"""
+let realSchedule = TakeTimeParsing.parse(html: realPageFragment)
+expect("真实页面片段：解析出 3 段", realSchedule?.bands.count == 3, "actual=\(realSchedule?.bands.count ?? -1)")
+expect(
+    "真实页面片段：时段与顺序一致",
+    realSchedule?.bands.map(\.text) == ["15:00-17:00", "20:00-22:00", "10:00-12:00"],
+    "actual=\(String(describing: realSchedule?.bands.map(\.text)))"
+)
+expect("真实页面片段：温度是冻或温", realSchedule?.temperature == .coldOrMild)
+
+// 温度标注：中文兜底（页面把英文标记删掉时仍能决定绿/红）
+expect("中文「凍或溫」也识别为冻或温", TakeTimeParsing.parseTemperature("(凍或溫)") == .coldOrMild)
+expect("中文「热或温」也识别为热或温", TakeTimeParsing.parseTemperature("（热或温）") == .hotOrMild)
+
+// 时间段提取：跨午夜 / 去重 / 拒绝零长度
+expect(
+    "跨午夜时段 22:00-02:00",
+    TakeTimeParsing.bands(in: "Take Time : 22:00-02:00").first?.text == "22:00-02:00"
+)
+expect("重复的时间段只留一条", TakeTimeParsing.bands(in: "10:00-12:00 10:00-12:00").count == 1)
+expect("零长度时段被丢弃", TakeTimeParsing.bands(in: "10:00-10:00").isEmpty)
+expect("紧挨着写的时间段都能取到", TakeTimeParsing.bands(in: "15:00-17:0020:00-22:00").count == 2)
+
+// 编码兜底：页面混入非法 UTF-8 字节时，Android 的 reader 会替换字符继续读，
+// iOS 的严格 UTF-8 解码却会整串返回 nil —— 这条断言保证页面不再整块丢。
+var brokenBytes = Array(realPageFragment.utf8)
+if let index = brokenBytes.firstIndex(of: 0xE6) { brokenBytes[index] = 0xFF }
+let brokenHTML = TakeTimeParsing.decodeHTML(Data(brokenBytes))
+expect("损坏的 UTF-8 字节也能解码", brokenHTML != nil)
+expect(
+    "损坏字节后仍能解析出 3 段",
+    TakeTimeParsing.parse(html: brokenHTML ?? "")?.bands.count == 3,
+    "actual=\(TakeTimeParsing.parse(html: brokenHTML ?? "")?.bands.count ?? -1)"
+)
+
+// 锚点缺失 / 锚点离时间段很远：仍然要能救回来
+expect(
+    "锚点缺失时退回全文",
+    TakeTimeParsing.parse(html: "<p>08:30-09:30 (Hot or Mild)</p>")?.bands.first?.text == "08:30-09:30"
+)
+let farAnchor = "Take Time" + String(repeating: "x", count: 600) + " 05:00-06:00 (Hot or Mild)"
+expect(
+    "时间段离锚点很远也能解析",
+    TakeTimeParsing.parse(html: farAnchor)?.bands.first?.text == "05:00-06:00"
+)
+
+// 缓存值兼容：老版本存 rawValue，新版本与 Android 一样存 cold/hot
+expect("旧缓存 rawValue 仍能读", TakeTemperature.fromStorageKey("coldOrMild") == .coldOrMild)
+expect("新缓存 cold/hot 也能读", TakeTemperature.fromStorageKey("hot") == .hotOrMild)
+expect("未知的温度值当作没有标注", TakeTemperature.fromStorageKey("weird") == nil)
+
 print("== 区划名拼接 ==")
 expect(
     "中文：市+区县",
@@ -333,6 +390,61 @@ expect(
 expect("中文判定：纯中文 → true", DistrictNaming.isChineseGrouping(["黄浦区", "上海市"]))
 expect("中文判定：混拉丁字母 → false", !DistrictNaming.isChineseGrouping(["Manhattan", "纽约"]))
 expect("中文判定：全空 → false", !DistrictNaming.isChineseGrouping([nil, "", "[]"]))
+
+print("== OSM Nominatim 兜底（境外区划名）==")
+let nominatimURL = NominatimReverse.url(latitude: 40.7128, longitude: -74.0060, language: "zh-CN")
+let nominatimURLText = nominatimURL?.absoluteString ?? ""
+expect(
+    "请求地址是官方 https 端点",
+    nominatimURLText.hasPrefix("https://nominatim.openstreetmap.org/reverse?"),
+    "actual=\(nominatimURLText)"
+)
+expect("zoom=18（街区级）", nominatimURLText.contains("zoom=18"))
+expect("addressdetails=1", nominatimURLText.contains("addressdetails=1"))
+expect("format=jsonv2", nominatimURLText.contains("format=jsonv2"))
+expect("accept-language 跟随界面语言", nominatimURLText.contains("accept-language=zh-CN"))
+expect(
+    "经纬度保留 6 位小数",
+    nominatimURLText.contains("lat=40.712800") && nominatimURLText.contains("lon=-74.006000"),
+    "actual=\(nominatimURLText)"
+)
+expect("UA 能标识应用与版本", NominatimReverse.userAgent.contains("TrueSolarTime-iOS"))
+
+// 纽约·曼哈顿的典型返回（字段名与 OSM 一致：city_district / city / state / country）
+let manhattanJSON = """
+{"place_id":1,"lat":"40.75","lon":"-73.99",
+ "address":{"city_district":"Manhattan","city":"New York","state":"New York","country":"United States","country_code":"us"},
+ "display_name":"Manhattan, New York, United States"}
+"""
+let manhattanNames = NominatimReverse.names(json: manhattanJSON, prefersChinese: true)
+expect("OSM：区 + 市 + 国家（取最细三级）", manhattanNames?.full == "Manhattan, New York, United States",
+       "actual=\(manhattanNames?.full ?? "nil")")
+expect("OSM：短名是最细一级", manhattanNames?.short == "Manhattan", "actual=\(manhattanNames?.short ?? "nil")")
+expect("OSM：国家码小写", manhattanNames?.countryCode == "us", "actual=\(manhattanNames?.countryCode ?? "nil")")
+
+// 只有市 + 国家（Apple 常只给到这一级，OSM 兜底同样要能出名字）
+let dubaiJSON = """
+{"address":{"city":"Dubai","country":"United Arab Emirates","country_code":"AE"}}
+"""
+let dubaiNames = NominatimReverse.names(json: dubaiJSON, prefersChinese: true)
+expect("OSM：市 + 国家", dubaiNames?.full == "Dubai, United Arab Emirates", "actual=\(dubaiNames?.full ?? "nil")")
+expect("OSM：大写的国家码也归一化", dubaiNames?.countryCode == "ae", "actual=\(dubaiNames?.countryCode ?? "nil")")
+
+// OSM 的多语言值「New York;紐約」：中文界面取含汉字的那一段（Android 取第一段）
+let multilingualJSON = """
+{"address":{"city":"New York;紐約","state":"紐約州","country":"美国","country_code":"US"}}
+"""
+let multilingualNames = NominatimReverse.names(json: multilingualJSON, prefersChinese: true)
+expect("OSM：多语言值取含汉字的那一段", multilingualNames?.full == "紐約, 紐約州, 美国",
+       "actual=\(multilingualNames?.full ?? "nil")")
+expect(
+    "OSM：没有汉字时取第一段",
+    NominatimReverse.languageSegment("Paris;巴黎", prefersChinese: false) == "Paris"
+)
+
+expect("OSM：地址为空返回 nil", NominatimReverse.names(json: "{\"address\":{}}", prefersChinese: true) == nil)
+expect("OSM：非法 JSON 返回 nil", NominatimReverse.names(json: "not json", prefersChinese: true) == nil)
+expect("汉字判定", NominatimReverse.isCJK("区") && NominatimReverse.isCJK("紐") && !NominatimReverse.isCJK("A"))
 
 print("== 真太阳时 → 系统时刻（给本地通知排时间）==")
 // 上海：真太阳时 15:00 应落在北京时间约 14:38（真太阳时快 21~22 分）

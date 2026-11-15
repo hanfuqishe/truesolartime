@@ -35,10 +35,27 @@ enum TakeTemperature: String {
     case coldOrMild
     case hotOrMild
 
+    /// 界面上的说法（简体中文，与 Android / 鸿蒙一致）。
     var label: String {
         switch self {
-        case .coldOrMild: return "寒或溫"
-        case .hotOrMild: return "熱或溫"
+        case .coldOrMild: return "冻或温"
+        case .hotOrMild: return "热或温"
+        }
+    }
+
+    /// 存进偏好设置的值（与 Android 的 `cold` / `hot` 对应）。
+    var storageKey: String {
+        switch self {
+        case .coldOrMild: return "cold"
+        case .hotOrMild: return "hot"
+        }
+    }
+
+    static func fromStorageKey(_ raw: String?) -> TakeTemperature? {
+        switch raw {
+        case "cold", TakeTemperature.coldOrMild.rawValue: return .coldOrMild
+        case "hot", TakeTemperature.hotOrMild.rawValue: return .hotOrMild
+        default: return nil
         }
     }
 }
@@ -57,8 +74,9 @@ struct TakeTimeSchedule: Equatable {
 /// 从「西格瑪食療」页面解析「服用時間 Take Time」。
 ///
 /// 规则与 Android 版一致：页面给出的时间一律当作**真太阳时**，不做任何换算；
-/// 只在页面那段文字里找 `HH:MM-HH:MM` 形式的区间，标记只认英文
-/// `Cold or Mild` / `Hot or Mild`（分别对应绿、红）。
+/// 在「Take Time」锚点附近（以及兜底的全文里）找 `HH:MM-HH:MM` 形式的区间，
+/// 温度标记先认英文 `Cold or Mild` / `Hot or Mild`（分别对应绿、红），
+/// 英文缺失时再认中文「凍或溫 / 冻或温」「熱或溫 / 热或温」。
 enum TakeTimeParsing {
 
     static let pageURL = URL(string: "https://www.duosuccess.com/tcm/001a01080301b01a.htm")!
@@ -78,24 +96,62 @@ enum TakeTimeParsing {
     static let retrySeconds: TimeInterval = 60 * 60
 
     static func parse(html: String) -> TakeTimeSchedule? {
-        let text = html
+        let text = plainText(html: html)
+        for source in windows(in: text) {
+            let found = bands(in: source)
+            if !found.isEmpty {
+                return TakeTimeSchedule(bands: found, temperature: parseTemperature(source))
+            }
+        }
+        return nil
+    }
+
+    /// HTML → 纯文本（去标签、还原常见实体）。纯函数，便于离线断言。
+    static func plainText(html: String) -> String {
+        html
             .replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&#160;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
+    }
 
-        let source: String
-        if let range = text.range(of: anchor, options: .caseInsensitive) {
-            let start = text.distance(from: text.startIndex, to: range.lowerBound)
-            let end = min(text.count, start + windowChars)
-            source = String(text.dropFirst(start).prefix(end - start))
-        } else {
-            source = text
+    /// 把服务器返回的字节解码成文本。
+    ///
+    /// 页面声明的是 UTF-8，但镜像站/历史页面可能混入 Big5/GBK 字节。Foundation 的严格 UTF-8
+    /// 解码遇到**任何一个**非法字节就整串返回 nil —— 这正是「抓到了页面却解析不出关键时间」的一类
+    /// 隐形失败（Android 的 `InputStreamReader` 会把坏字节替换成 U+FFFD 继续读，照样能匹配到
+    /// ASCII 的时间段）。所以先严格 UTF-8，失败退 ISO-8859-1（逐字节无损映射），保证时间段与
+    /// `Cold or Mild` 这些 ASCII 信息永远不会因为编码问题丢掉。
+    static func decodeHTML(_ data: Data) -> String? {
+        if let text = String(data: data, encoding: .utf8) { return text }
+        if let text = String(data: data, encoding: .isoLatin1) { return text }
+        return nil
+    }
+
+    /// 候选窗口：先在每个「Take Time」锚点后取 [windowChars] 个字符；一个锚点都没有时退回全文。
+    /// 锚点可能出现在导航/目录里，所以逐处尝试，最后再兜一次全文（页面改版把时间段挪远也能救回来）。
+    static func windows(in text: String) -> [String] {
+        var starts: [Int] = []
+        var searchRange = text.startIndex..<text.endIndex
+        while let range = text.range(of: anchor, options: .caseInsensitive, range: searchRange) {
+            starts.append(text.distance(from: text.startIndex, to: range.lowerBound))
+            searchRange = range.upperBound..<text.endIndex
+            if starts.count >= 8 { break }
         }
+        guard !starts.isEmpty else { return [text] }
+        var result: [String] = starts.map { start in
+            let end = min(text.count, start + windowChars)
+            return String(text.dropFirst(start).prefix(end - start))
+        }
+        result.append(text)
+        return result
+    }
 
+    /// 从一段文字里取出所有 `HH:MM-HH:MM` 时间段（去重，长度 1…1439 分钟）。纯函数。
+    static func bands(in source: String) -> [TakeBand] {
         let regex = try? NSRegularExpression(pattern: rangePattern)
         let ns = source as NSString
-        var bands: [TakeBand] = []
+        var result: [TakeBand] = []
         regex?.enumerateMatches(in: source, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
             guard let match, match.numberOfRanges == 5 else { return }
             guard
@@ -109,16 +165,20 @@ enum TakeTimeParsing {
                 ),
                 start != end
             else { return }
-            bands.append(TakeBand(startMinute: start, endMinute: end))
+            let band = TakeBand(startMinute: start, endMinute: end)
+            guard (1..<TakeBand.minutesPerDay).contains(band.lengthMinutes) else { return }
+            guard !result.contains(band) else { return }
+            result.append(band)
         }
-        let valid = bands.filter { (1..<TakeBand.minutesPerDay).contains($0.lengthMinutes) }
-        guard !valid.isEmpty else { return nil }
-        return TakeTimeSchedule(bands: valid, temperature: parseTemperature(source))
+        return result
     }
 
     static func parseTemperature(_ text: String) -> TakeTemperature? {
         if text.range(of: "Cold or Mild", options: .caseInsensitive) != nil { return .coldOrMild }
         if text.range(of: "Hot or Mild", options: .caseInsensitive) != nil { return .hotOrMild }
+        // 中文兜底：页面把英文标记删掉时仍能着色（Android 只认英文，这里是严格超集）。
+        if text.contains("凍或溫") || text.contains("冻或温") { return .coldOrMild }
+        if text.contains("熱或溫") || text.contains("热或温") { return .hotOrMild }
         return nil
     }
 

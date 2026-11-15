@@ -29,13 +29,18 @@ final class LocationProvider: NSObject, ObservableObject {
         manager.requestWhenInUseAuthorization()
     }
 
-    /// 开始每分钟采样；启动时立即请求一次。
+    /// 开始每分钟采样；已授权时立刻请求一次。
+    ///
+    /// 定时器**无条件装上**：首次启动时权限往往还是 `.notDetermined`，早先这里直接 return，
+    /// 结果用户点「允许」之后只剩 `locationManagerDidChangeAuthorization` 那一次单点定位 ——
+    /// 那次若失败（室内很常见），就再也没有下一次采样，界面会一直停在「等定位」状态。
     func startSampling(interval: TimeInterval = 60, onFix: @escaping (CLLocation) -> Void) {
         self.onFix = onFix
-        guard hasPermission else { return }
 
         timer?.invalidate()
-        requestSample()
+        if hasPermission {
+            requestSample()
+        }
 
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.requestSample()

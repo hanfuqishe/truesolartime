@@ -19,6 +19,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var keepScreenOn: Bool = false
     /// 天气取不到时给界面看的说明（成功时为空串）。
     @Published private(set) var weatherStatus: String = ""
+    /// 关键时间（抓取）的状态说明，设置页「诊断」用；随抓取结果变化。
+    @Published private(set) var keyTimeStatus: String = ""
     @Published var message: String?
 
     private let settings = AppSettings()
@@ -34,6 +36,7 @@ final class AppModel: ObservableObject {
         mapStyle = settings.mapStyle
         weather = WeatherStore.shared.cached(for: settings.place)
         keyTime = KeyTimeStore.shared.schedule()
+        keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
         districtName = DistrictStore.shared.cachedNames(for: settings.place)
         keepScreenOn = settings.keepScreenOn
         applyKeepScreenOn()
@@ -56,6 +59,12 @@ final class AppModel: ObservableObject {
             let status = self.weather == nil ? WeatherStore.shared.diagnosticsSummary() : ""
             if status != self.weatherStatus {
                 self.weatherStatus = status
+            }
+            // 关键时间的抓取状态每秒同步一次（每秒读一次偏好设置，代价可以忽略），
+            // 这样设置页「诊断」一打开就能看到最新结果，不用手动刷新。
+            let keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
+            if keyTimeStatus != self.keyTimeStatus {
+                self.keyTimeStatus = keyTimeStatus
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -89,6 +98,9 @@ final class AppModel: ObservableObject {
         let watchdog = Timer(timeInterval: 20, repeats: false) { [weak self] _ in
             guard let self, self.waitingForFix else { return }
             self.message = "尚未收到定位结果，可能需要在空旷处等待；也可手动设置经纬度"
+            // 一直等不到定位时不要再拿「等定位」当遮罩：会把关键时段的颜色一起藏起来
+            // （关键时段是地点无关的，只有「当前是否落在时段内」才依赖经度）。
+            self.waitingForFix = false
         }
         RunLoop.main.add(watchdog, forMode: .common)
         fixWatchdog = watchdog
@@ -201,9 +213,21 @@ final class AppModel: ObservableObject {
         KeyTimeStore.shared.requestRefresh { [weak self] schedule in
             guard let self else { return }
             self.keyTime = schedule
+            self.keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
             // 关键时间可能刚更新，重排「进入关键时间」报时。
             self.rescheduleReminders()
         }
+    }
+
+    /// 设置页「立即同步关键时间」：绕过节流强行抓一次，并把结果写回界面。
+    func refreshKeyTime() {
+        KeyTimeStore.shared.refreshNow { [weak self] schedule in
+            guard let self else { return }
+            self.keyTime = schedule
+            self.keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
+            self.rescheduleReminders()
+        }
+        keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
     }
 
     /// 区划名反查带回国家码时写进 `place`：标准时区由它决定（`ZoneTable`），
