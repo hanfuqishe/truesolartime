@@ -4,8 +4,13 @@
 
 全部由代码绘制（Pillow + Windows 系统字体），不使用任何外部素材。
 用法：
-    python make_marketing.py            # 生成 7 个 PNG 并自校验
+    python make_marketing.py            # 生成 7 张 + 裁切预览图，并自校验
     python make_marketing.py --verify   # 只校验已生成的文件
+
+版式原则（App Store 产品页 hero 会对标题图做**居中裁切**）：
+    所有关键内容（文字 + 卡片）都落在画面**中间 60% 宽**以内，超宽那张收进中间 50%，
+    即左右各留 20%/25% 纯背景，横裁后再窄也不会切掉字。
+    构图改为居中对称：金色短横 → 主标题 → 读数行 → 副标 → 手机截图（居中偏下、出血到底边）。
 
 设计约定（与 App 一致）：
     夜间深蓝背景 #0B1220 -> #16203A，右上角金色径向光晕（<=12%）
@@ -44,8 +49,7 @@ DIM = (154, 167, 191)      # #9AA7BF
 DIV = (74, 86, 112)
 
 SHOT_ASPECT = 2556 / 1179  # 截图 高/宽
-# 裁切起点：自动扫描截图里「主卡片」（圆角大卡）的上边缘，再向上留 4px 极小留白，
-# 这样卡片内容从主卡顶部干净开始，不会切出半截页头/页头残影。
+# 裁切起点：自动扫描截图里「主卡片」（圆角大卡）的上边缘，再向上留 4px 极小留白。
 # 需要人工指定时把 CROP_TOP_OVERRIDE 设为截图像素坐标（如 349），否则为 None 走自动检测。
 CROP_TOP_OVERRIDE = None
 CROP_PAD = 4
@@ -91,6 +95,10 @@ def text_width(text: str, size: int, bold: bool = False) -> float:
     return font(size, bold).getlength(text)
 
 
+def runs_width(runs) -> float:
+    return sum(text_width(t, s, b) for t, _c, b, s in runs)
+
+
 def fit_size(text: str, bold: bool, max_w: float, size: int, min_size: int = 10) -> int:
     """把字号缩到文字宽度不超过 max_w（保持原始字号优先）。"""
     size = int(size)
@@ -127,15 +135,20 @@ def gradient(size, c0, c1, axis=(0.25, 0.75)) -> Image.Image:
     return small.resize(size, Image.BICUBIC)
 
 
-def add_glow(img: Image.Image, center, radius: float, color, max_alpha: float) -> Image.Image:
-    """右上角柔和的径向光晕（半径内 0 -> 边缘满，透明度上限 max_alpha）。"""
+def _radial_mask(size, center, radius: float, max_alpha: float) -> Image.Image:
     r = int(radius)
-    if r <= 2:
-        return img
     grad = Image.radial_gradient("L").resize((r * 2, r * 2), Image.BICUBIC)
     grad = grad.point(lambda v: int(((1.0 - v / 255.0) ** 1.65) * max_alpha * 255))
-    mask = Image.new("L", img.size, 0)
+    mask = Image.new("L", size, 0)
     paste_clipped(mask, grad, (center[0] - r, center[1] - r))
+    return mask
+
+
+def add_glow(img: Image.Image, center, radius: float, color, max_alpha: float) -> Image.Image:
+    """背景层柔和的径向光晕（中心最亮，透明度上限 max_alpha）。"""
+    if int(radius) <= 2:
+        return img
+    mask = _radial_mask(img.size, center, radius, max_alpha)
     img.paste(Image.new("RGB", img.size, color), (0, 0), mask)
     return img
 
@@ -146,13 +159,9 @@ def add_bloom(img: Image.Image, center, radius: float, color, max_alpha: float) 
     夜间截图与背景同色系时，背景层的光晕会被卡片挡住；这层很淡的加光让
     「右上角金色光晕」在实际画面里仍然可见（峰值仍 <= 12%）。
     """
-    r = int(radius)
-    if r <= 2:
+    if int(radius) <= 2:
         return img
-    grad = Image.radial_gradient("L").resize((r * 2, r * 2), Image.BICUBIC)
-    grad = grad.point(lambda v: int(((1.0 - v / 255.0) ** 1.65) * max_alpha * 255))
-    mask = Image.new("L", img.size, 0)
-    paste_clipped(mask, grad, (center[0] - r, center[1] - r))
+    mask = _radial_mask(img.size, center, radius, max_alpha)
     layer = Image.new("RGB", img.size, (0, 0, 0))
     layer.paste(Image.new("RGB", img.size, color), (0, 0), mask)
     return ImageChops.screen(img, layer)
@@ -186,18 +195,22 @@ def paste_card(
     canvas: Image.Image,
     shot: Image.Image,
     card_w: int,
-    right_x: int,
+    center_x: int,
     y_top: int,
     radius_frac: float = 0.04,
     stroke_alpha: float = 0.08,
     shadow_frac: float = 0.010,
     shadow_strength: float = 0.62,
 ):
-    """把截图缩放进圆角卡片（带 8% 白描边 + 高斯阴影），允许出血出界。"""
+    """把截图放进居中圆角卡片（8% 白描边 + 高斯阴影），卡片可向下出血出界。
+
+    card_h 由传入 shot 的宽高比决定（标题图传的是「已裁到主卡片上沿」的图，
+    横版截屏传的是完整截图）。
+    """
     card_w = int(card_w)
-    card_h = int(round(card_w * SHOT_ASPECT))
+    card_h = int(round(card_w * shot.height / shot.width))
     radius = max(8, int(round(radius_frac * card_w)))
-    x0 = int(right_x) - card_w
+    x0 = int(center_x) - card_w // 2
     y0 = int(y_top)
 
     blur = max(6.0, shadow_frac * canvas.width)
@@ -274,125 +287,104 @@ def crop_frac() -> float:
     return _CROP_CACHE["top"] / _CROP_CACHE["h"]
 
 
-# ---------------------------------------------------------------- 文本排版
+def card_shot() -> Image.Image:
+    """主截图裁到主卡片上沿（含 4px 留白），供居中卡片使用。"""
+    if "shot" not in _CROP_CACHE:
+        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+            shot = im.convert("RGB")
+        _CROP_CACHE["shot"] = shot.crop((0, crop_top_px(), shot.width, shot.height))
+    return _CROP_CACHE["shot"]
 
 
-def draw_runs(draw: ImageDraw.ImageDraw, x: float, baseline: float, runs) -> float:
-    """按 run 依次画同一行的多段文字（不同颜色 / 字重 / 字号）。"""
+# ---------------------------------------------------------------- 居中排版
+
+
+def center_runs(draw: ImageDraw.ImageDraw, cx: float, cy: float, runs) -> tuple:
+    """在 (cx, cy) 处水平+垂直居中画一行多 run 文字，返回其横坐标区间。"""
+    asc = max(metrics(s, b)[0] for _t, _c, b, s in runs)
+    desc = max(metrics(s, b)[1] for _t, _c, b, s in runs)
+    total = runs_width(runs)
+    x = cx - total / 2
+    baseline = cy + (asc - desc) / 2
+    x0 = x
     for text, color, bold, size in runs:
         f = font(size, bold)
         draw.text((x, baseline), text, font=f, fill=color, anchor="ls")
         x += f.getlength(text)
-    return x
+    return (x0, x)
 
 
-def draw_block(draw: ImageDraw.ImageDraw, x: float, center_y: float, lines) -> tuple:
-    """竖向排一条文字块（每行可含多 run），返回块的外接框 (l, t, r, b)。
-
-    line: {"runs": [(text, color, bold, size)], "gap": 行后间距}
-    或    {"bar": (w, h, color), "gap": 行后间距}
-    """
-    heights = []
-    for ln in lines:
-        if "bar" in ln:
-            heights.append(ln["bar"][1])
-        else:
-            heights.append(max(metrics(r[3], r[2])[0] + metrics(r[3], r[2])[1] for r in ln["runs"]))
-    total = sum(heights) + sum(ln.get("gap", 0) for ln in lines[:-1])
-    y = center_y - total / 2
-    top = y
-    right = x
-    for i, ln in enumerate(lines):
-        if "bar" in ln:
-            w, h, color = ln["bar"]
-            draw.rectangle([x, y + h * 0.25, x + w, y + h * 0.25 + max(3, h * 0.3)], fill=color)
-            right = max(right, x + w)
-        else:
-            asc = max(metrics(r[3], r[2])[0] for r in ln["runs"])
-            right = max(right, draw_runs(draw, x, y + asc, ln["runs"]))
-        y += heights[i] + (ln.get("gap", 0) if i < len(lines) - 1 else 0)
-    return (x, top, right, y)
+def center_bar(draw: ImageDraw.ImageDraw, cx: float, cy: float,
+               w: float, h: float, color) -> tuple:
+    """居中金色短横。"""
+    draw.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=color)
+    return (cx - w / 2, cx + w / 2)
 
 
-def draw_vertical(draw: ImageDraw.ImageDraw, cx: float, center_y: float,
-                  text: str, size: int, color, gap_frac: float = 0.32,
-                  bold: bool = False) -> None:
-    """竖排小字：逐字居中自上而下排列。"""
-    step = size * (1.0 + gap_frac)
-    total = step * len(text) - size * gap_frac
-    y = center_y - total / 2
-    for ch in text:
-        draw.text((cx, y + step / 2), ch, font=font(size, bold), fill=color, anchor="mm")
-        y += step
+def _safe_bounds(W: int, safe: float) -> tuple:
+    """中间 safe 宽度的安全区边界（像素）。"""
+    return (W * (0.5 - safe / 2), W * (0.5 + safe / 2))
+
+
+def _report_safe(name: str, text_box, card_box, W: int, safe: float) -> None:
+    """打印文字 / 卡片占画面宽度的区间，并校验是否落在中间安全区内。"""
+    lo, hi = _safe_bounds(W, safe)
+    t0, t1 = text_box
+    c0, c1 = card_box
+    inside = t0 >= lo and t1 <= hi and c0 >= lo and c1 <= hi
+    print(f"  {name}: text {t0 / W:.1%}..{t1 / W:.1%}W   card {c0 / W:.1%}..{c1 / W:.1%}W"
+          f"   safe ±{safe / 2:.0%} ({lo / W:.0%}..{hi / W:.0%}W)  "
+          f"{'PASS' if inside else 'FAIL'}")
+    if not inside:
+        print(f"  WARN {name}: 内容超出居中安全区")
 
 
 # ---------------------------------------------------------------- 三种版式
 
 
-def _check_bleed(box, H: int, tag: str, W: int) -> None:
-    """确认卡片确实延伸到画布上下边缘（出血）且没有把底部留空。"""
-    x0, y0, cw, ch = box
-    if y0 + ch < H:
-        print(f"  WARN {tag}: card bottom {y0 + ch} < canvas H {H}")
-    if y0 > 0:
-        print(f"  WARN {tag}: card top does not bleed (y0={y0})")
-    if x0 < 0.5 * W:
-        print(f"  WARN {tag}: card intrudes into left half (x0={x0})")
-
-
-def _check_gap(bbox, box, margin: int, W: int, tag: str) -> None:
-    """打印文案区与卡片的关系，确认左边距 >= 5%W 且文案不与卡片重叠。"""
-    l, t, r, b = bbox
-    x0 = box[0]
-    print(f"  {tag}: text x={l}..{r:.0f} (left margin {l / W:.1%}W), "
-          f"card x0={x0} ({x0 / W:.1%}W), gap {x0 - r:.0f}px")
-
-    if l < 0.05 * W:
-        print(f"  WARN {tag}: left margin {l / W:.1%}W < 5%W")
-    if r > x0:
-        print(f"  WARN {tag}: text overlaps card ({r:.0f} > {x0})")
-
-
 def build_title(W: int, H: int, spec: dict) -> Image.Image:
-    """标题图：夜间深蓝渐变 + 金色光晕，左文案 / 右截图卡片（出血）。"""
+    """标题图：居中对称构图（文字在上、手机卡片居中偏下并向下出血）。"""
     canvas = gradient((W, H), BG_TOP, BG_BOT)
-    add_glow(canvas, (int(W * 0.87), int(H * 0.08)), W * 0.55, GOLD, spec["glow"])
+    add_glow(canvas, (int(W * 0.87), int(H * 0.06)), W * 0.42, GOLD, spec["glow"])
 
-    shot = Image.open(SHOT_DIR / SHOT_FILE).convert("RGB")
+    shot = card_shot()
     card_w = int(round(W * spec["card_w"]))
     canvas, box = paste_card(
         canvas, shot, card_w,
-        right_x=int(W * 1.012), y_top=-int(round(crop_frac() * card_w * SHOT_ASPECT)),
+        center_x=W // 2, y_top=int(round(H * spec["card_top"])),
         shadow_frac=0.008,
     )
-    _check_bleed(box, H, "title", W)
 
-    m = int(round(W * 0.060))
-    zone = W * 0.42 - m
+    cx = W / 2
+    d = ImageDraw.Draw(canvas)
+    zone = W * spec["safe"] * 0.94          # 文字不贴满安全区
     t_size = fit_size(TXT_TITLE, True, zone, int(H * spec["title_h"]))
-    tag_size = fit_size(TXT_TAGLINE, False, zone, int(H * spec["tag_h"]))
     num_size = int(H * spec["num_h"])
     while num_size > 10 and _num_width(num_size) > zone:
         num_size = int(num_size * 0.97)
+    tag_size = fit_size(TXT_TAGLINE, False, zone, int(H * spec["tag_h"]))
     bul_size = fit_size(TXT_BULLETS, False, zone, int(H * spec["bul_h"]))
 
-    lines = [
-        {"bar": (int(W * 0.048), int(H * 0.006), GOLD), "gap": int(H * 0.030)},
-        {"runs": [(TXT_TITLE, BODY, True, t_size)], "gap": int(H * 0.024)},
-        {"runs": [(TXT_TAGLINE, DIM, False, tag_size)], "gap": int(H * 0.016)},
-        {"runs": [
+    text_box = [W, 0]
+    for rect in (
+        center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"], H * spec["bar_h"], GOLD),
+        center_runs(d, cx, H * spec["title_cy"], [(TXT_TITLE, BODY, True, t_size)]),
+        center_runs(d, cx, H * spec["num_cy"], [
             ("真太陽時 ", DIM, False, num_size),
             (NUM_TRUE, GOLD, True, num_size),
             ("  ·  ", DIV, False, num_size),
             ("標準時間 ", DIM, False, num_size),
             (NUM_STD, BODY, True, num_size),
-        ], "gap": int(H * 0.020)},
-        {"runs": [(TXT_BULLETS, DIM, False, bul_size)], "gap": 0},
-    ]
-    bbox = draw_block(ImageDraw.Draw(canvas), m, H * 0.5, lines)
-    _check_gap(bbox, box, m, W, "title")
+        ]),
+        center_runs(d, cx, H * spec["tag_cy"], [(TXT_TAGLINE, DIM, False, tag_size)]),
+        center_runs(d, cx, H * spec["bul_cy"], [(TXT_BULLETS, DIM, False, bul_size)]),
+    ):
+        text_box[0] = min(text_box[0], rect[0])
+        text_box[1] = max(text_box[1], rect[1])
+
     # 顶层柔光：夜间截图与背景同色系，背景层光晕被卡片挡住，这里补一层很淡的加光
-    canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, 0.09)
+    canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, spec["bloom"])
+    _report_safe(f"title {W}x{H}", text_box, (box[0], box[0] + box[2]), W, spec["safe"])
     return canvas
 
 
@@ -403,73 +395,175 @@ def _num_width(size: int) -> float:
 
 
 def build_search(W: int, H: int, spec: dict) -> Image.Image:
-    """搜索结果图：更暗背景 + 更简洁文案，左 1/3 名称，右 2/3 截图卡片。"""
+    """搜索结果图：同样居中对称，但只留「名称 + 一句话」+ 手机卡片。"""
     canvas = gradient((W, H), SEARCH_TOP, SEARCH_BOT)
-    add_glow(canvas, (int(W * 0.88), int(H * 0.06)), W * 0.50, GOLD, spec["glow"])
+    add_glow(canvas, (int(W * 0.87), int(H * 0.05)), W * 0.40, GOLD, spec["glow"])
 
-    shot = Image.open(SHOT_DIR / SHOT_FILE).convert("RGB")
+    shot = card_shot()
     card_w = int(round(W * spec["card_w"]))
     canvas, box = paste_card(
         canvas, shot, card_w,
-        right_x=int(W * 1.010), y_top=-int(round(crop_frac() * card_w * SHOT_ASPECT)),
+        center_x=W // 2, y_top=int(round(H * spec["card_top"])),
         shadow_frac=0.008,
     )
-    _check_bleed(box, H, "search", W)
 
-    m = int(round(W * 0.060))
-    zone = W * 0.33 - m
+    cx = W / 2
+    d = ImageDraw.Draw(canvas)
+    zone = W * spec["safe"] * 0.94
     name_size = fit_size(TXT_SEARCH_NAME, True, zone, int(H * spec["name_h"]))
     line_size = fit_size(TXT_SEARCH_LINE, False, zone, int(H * spec["line_h"]))
 
-    lines = [
-        {"bar": (int(W * 0.040), int(H * 0.006), GOLD), "gap": int(H * 0.028)},
-        {"runs": [(TXT_SEARCH_NAME, BODY, True, name_size)], "gap": int(H * 0.022)},
-        {"runs": [(TXT_SEARCH_LINE, DIM, False, line_size)], "gap": 0},
-    ]
-    bbox = draw_block(ImageDraw.Draw(canvas), m, H * 0.5, lines)
-    _check_gap(bbox, box, m, W, "search")
-    canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, 0.06)
+    text_box = [W, 0]
+    for rect in (
+        center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"], H * spec["bar_h"], GOLD),
+        center_runs(d, cx, H * spec["name_cy"], [(TXT_SEARCH_NAME, BODY, True, name_size)]),
+        center_runs(d, cx, H * spec["line_cy"], [(TXT_SEARCH_LINE, DIM, False, line_size)]),
+    ):
+        text_box[0] = min(text_box[0], rect[0])
+        text_box[1] = max(text_box[1], rect[1])
+
+    canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, spec["bloom"])
+    _report_safe(f"search {W}x{H}", text_box, (box[0], box[0] + box[2]), W, spec["safe"])
     return canvas
 
 
+def draw_vertical(draw: ImageDraw.ImageDraw, cx: float, center_y: float,
+                  text: str, size: int, color, gap_frac: float = 0.22,
+                  bold: bool = False) -> None:
+    """竖排小字：逐字居中自上而下排列。"""
+    step = size * (1.0 + gap_frac)
+    total = step * len(text) - size * gap_frac
+    y = center_y - total / 2
+    for ch in text:
+        draw.text((cx, y + step / 2), ch, font=font(size, bold), fill=color, anchor="mm")
+        y += step
+
+
 def build_screen(W: int, H: int) -> Image.Image:
-    """横版截屏占位：同一张截图居中（不旋转不拉伸），两侧竖排小字填充留白。"""
+    """横版截屏占位：同一张截图完整居中（不旋转不拉伸），两侧竖排小字填充留白。"""
     canvas = gradient((W, H), BG_TOP, BG_BOT)
     add_glow(canvas, (int(W * 0.5), int(-H * 0.35)), W * 0.45, GOLD, 0.06)
 
     shot = Image.open(SHOT_DIR / SHOT_FILE).convert("RGB")
     card_h = H * 0.84
     card_w = card_h / SHOT_ASPECT
-    right_x = int(W / 2 + card_w / 2)
     canvas, _ = paste_card(
         canvas, shot, card_w,
-        right_x=right_x, y_top=int(round((H - card_h) / 2)),
+        center_x=W // 2, y_top=int(round((H - card_h) / 2)),
         shadow_frac=0.010, shadow_strength=0.70,
     )
 
     d = ImageDraw.Draw(canvas)
     side = max(20, int(H * 0.048))
     # 左「真太陽時」用金色（对应 App 里金色真太阳时数字），右「標準時間」用白色
-    draw_vertical(d, W * 0.115, H * 0.5, TXT_SIDE_L, side, GOLD, gap_frac=0.22)
-    draw_vertical(d, W * 0.885, H * 0.5, TXT_SIDE_R, side, BODY, gap_frac=0.22)
+    draw_vertical(d, W * 0.115, H * 0.5, TXT_SIDE_L, side, GOLD)
+    draw_vertical(d, W * 0.885, H * 0.5, TXT_SIDE_R, side, BODY)
+    return canvas
+
+
+# ---------------------------------------------------------------- 裁切模拟预览
+
+
+PREVIEW_PANEL_H = 900
+
+
+def _preview_dims() -> tuple:
+    """裁切模拟预览图的尺寸（左侧完整图 + 右侧中间 60% 裁切图 + 标签行）。"""
+    W, H = EXPECTED["title-5244x2950.png"]
+    cw = round(W * 0.6)
+    aw = round(W * PREVIEW_PANEL_H / H)
+    bw = round(cw * PREVIEW_PANEL_H / H)
+    margin = round(PREVIEW_PANEL_H * 0.04)
+    gap = round(PREVIEW_PANEL_H * 0.05)
+    label = round(PREVIEW_PANEL_H * 0.09)
+    return (margin * 2 + aw + gap + bw, margin + PREVIEW_PANEL_H + label + margin // 2)
+
+
+def build_preview() -> Image.Image:
+    """并排展示：完整标题图（标出裁切边界）vs 按中间 60% 宽裁切后的效果（同高）。"""
+    W, H = EXPECTED["title-5244x2950.png"]
+    cw = round(W * 0.6)
+    x0 = (W - cw) // 2
+
+    with Image.open(BASE / "title-5244x2950.png") as im:
+        full = im.convert("RGB")
+    cropped = full.crop((x0, 0, x0 + cw, H))
+
+    ph = PREVIEW_PANEL_H
+    panel_a = full.resize((round(W * ph / H), ph), Image.LANCZOS)
+    panel_b = cropped.resize((round(cw * ph / H), ph), Image.LANCZOS)
+
+    margin = round(ph * 0.04)
+    gap = round(ph * 0.05)
+    label_h = round(ph * 0.09)
+    total = (margin * 2 + panel_a.width + gap + panel_b.width,
+             margin + ph + label_h + margin // 2)
+    canvas = Image.new("RGB", total, (8, 12, 22))
+    canvas.paste(panel_a, (margin, margin))
+    canvas.paste(panel_b, (margin + panel_a.width + gap, margin))
+
+    d = ImageDraw.Draw(canvas)
+    fs = max(14, round(ph * 0.033))
+    baseline = margin + ph + round(label_h * 0.55)
+    d.text((margin, baseline), f"完整标题图  {W}x{H}（金线 = 裁切边界）",
+           font=font(fs), fill=DIM, anchor="ls")
+    d.text((margin + panel_a.width + gap, baseline),
+           f"模拟居中裁切 60%  {cw}x{H}",
+           font=font(fs), fill=GOLD, anchor="ls")
+
+    # 左图：标出 20% / 80% 两条裁切边界；两张都加细描边
+    line_color = (128, 116, 82)
+    for frac in (0.2, 0.8):
+        lx = margin + panel_a.width * frac
+        d.line([lx, margin, lx, margin + ph], fill=line_color, width=max(1, round(ph * 0.0025)))
+    for box in ((margin, margin, margin + panel_a.width, margin + ph),
+                (margin + panel_a.width + gap, margin,
+                 margin + panel_a.width + gap + panel_b.width, margin + ph)):
+        d.rectangle(box, outline=(42, 54, 84), width=max(1, round(ph * 0.002)))
     return canvas
 
 
 # ---------------------------------------------------------------- 参数与主流程
 
+# card_top / *_cy 都是「占画布高度」的比例；card_w / bar_w 是「占画布宽度」的比例。
 TITLE_SPECS = {
-    (5244, 2950): dict(card_w=0.395, title_h=0.112, tag_h=0.0300, num_h=0.0360,
-                       bul_h=0.0270, glow=0.12),
-    (3840, 1646): dict(card_w=0.360, title_h=0.140, tag_h=0.0400, num_h=0.0470,
-                       bul_h=0.0350, glow=0.12),
+    # 16:9：文字全部落在中间 60% 内（实测 30% W 上下），卡片 26% W 居中
+    (5244, 2950): dict(card_w=0.260, card_top=0.582, safe=0.60,
+                       bar_cy=0.185, bar_w=0.050, bar_h=0.006,
+                       title_cy=0.300, title_h=0.125,
+                       num_cy=0.418, num_h=0.038,
+                       tag_cy=0.474, tag_h=0.030,
+                       bul_cy=0.520, bul_h=0.024,
+                       glow=0.12, bloom=0.09),
+    # 超宽 2.33:1：只占 50%，留出更多余量（文字约 35% W）
+    (3840, 1646): dict(card_w=0.215, card_top=0.660, safe=0.50,
+                       bar_cy=0.150, bar_w=0.045, bar_h=0.007,
+                       title_cy=0.300, title_h=0.135,
+                       num_cy=0.450, num_h=0.045,
+                       tag_cy=0.535, tag_h=0.038,
+                       bul_cy=0.600, bul_h=0.030,
+                       glow=0.12, bloom=0.09),
 }
 
 SEARCH_SPECS = {
-    (5244, 2950): dict(card_w=0.360, name_h=0.082, line_h=0.0300, glow=0.08),
-    # 3:2 与小尺寸画布更「方」，卡片要再放大一点，底部才能整块出血（圆角完全出画）
-    (3840, 2560): dict(card_w=0.375, name_h=0.070, line_h=0.0300, glow=0.08),
-    (1920, 1280): dict(card_w=0.375, name_h=0.070, line_h=0.0300, glow=0.08),
+    (5244, 2950): dict(card_w=0.260, card_top=0.470, safe=0.60,
+                       bar_cy=0.190, bar_w=0.040, bar_h=0.006,
+                       name_cy=0.262, name_h=0.105,
+                       line_cy=0.360, line_h=0.032,
+                       glow=0.08, bloom=0.06),
+    (3840, 2560): dict(card_w=0.300, card_top=0.430, safe=0.60,
+                       bar_cy=0.180, bar_w=0.040, bar_h=0.006,
+                       name_cy=0.242, name_h=0.095,
+                       line_cy=0.335, line_h=0.032,
+                       glow=0.08, bloom=0.06),
+    (1920, 1280): dict(card_w=0.300, card_top=0.430, safe=0.60,
+                       bar_cy=0.180, bar_w=0.040, bar_h=0.006,
+                       name_cy=0.242, name_h=0.095,
+                       line_cy=0.335, line_h=0.032,
+                       glow=0.08, bloom=0.06),
 }
+
+EXPECTED["preview-crop-simulation.png"] = _preview_dims()
 
 
 def build_all() -> None:
@@ -482,6 +576,7 @@ def build_all() -> None:
     for name in ("screenshot-2556x1179.png", "screenshot-2622x1206.png"):
         W, H = EXPECTED[name]
         _save(build_screen(W, H), name)
+    _save(build_preview(), "preview-crop-simulation.png")
 
 
 def _save(img: Image.Image, name: str) -> None:
