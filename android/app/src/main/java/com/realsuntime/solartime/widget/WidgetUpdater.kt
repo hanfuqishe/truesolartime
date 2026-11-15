@@ -242,6 +242,8 @@ object WidgetUpdater {
     private const val CELL_HEIGHT_RATIO = 0.54f
     /** 主时钟行盒 = 1.2em（字体 ascent 0.9 + descent 0.3）。 */
     private const val CLOCK_LINE_BOX_EM = 1.2f
+    /** 时钟行的宽度安全系数：给「桌面实际字宽与 Paint 量测的偏差」留余量，避免秒被挤掉一位。 */
+    private const val CLOCK_ROW_SAFETY = 0.90f
     /** 主字号 ≈ 栏宽 × 这个比例（实测 0.27~0.29，只为估算竖向预算，不参与最终字号）。 */
     private const val CLOCK_EM_PER_COLUMN = 0.28f
     /** 密度的合理区间：任何 ROM 给出 0 / 极小 / 荒谬的 density 都不许让字号、宽度塌成 0。 */
@@ -1133,9 +1135,17 @@ object WidgetUpdater {
         val mainRatio = paint.measureText(MAIN_TEXT_SAMPLE) / probePx
         val secondsRatio = paint.measureText(SECOND_SAMPLE) / probePx
         val colonRatio = paint.measureText(":") / probePx
-        val gapPx = TEXT_GAP_DP * density
+        // 「行内剩余宽度」反算：主钟的盒子 = 栏宽 −（冒号 + 两位秒的实测宽度）− 两段间距。
+        // 布局里主钟已经改成 weight=1（冒号与秒先按自然宽度排完，剩下的全给主钟），
+        // 所以这里算出来的就是这个盒子的宽度；秒再也不会因为主钟太宽而被挤掉一位。
+        // 冒号/秒都是主钟的一半，宽度随主字号线性变化，一次解方程即可。
+        val secondsAndColonRatio = (secondsRatio + colonRatio) / 2f
+        val gapsPx = (TEXT_GAP_DP * 2f + SECOND_WIDTH_SLACK_DP / 2f) * density
+        val bodyPx = (columnWidthPx - gapsPx).coerceAtLeast(1f)
+        // 行宽安全系数：桌面实际渲染的字宽/间距与我们用 Paint 量出来的可能有几个百分点出入
+        // （小米实测差到 ~9%，秒就被挤掉一位）。宁可整行窄一点，也不裁字。
         val fittedPx = if (mainRatio > 0f) {
-            (columnWidthPx - gapPx) / (mainRatio + (secondsRatio + colonRatio) / 2f)
+            bodyPx * CLOCK_ROW_SAFETY / (mainRatio + secondsAndColonRatio)
         } else {
             0f
         }
