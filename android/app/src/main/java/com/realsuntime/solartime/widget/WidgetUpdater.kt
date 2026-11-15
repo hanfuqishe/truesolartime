@@ -207,7 +207,7 @@ object WidgetUpdater {
     private const val SECOND_SAMPLE = "00"
 
     /** 秒数宽度的余量：等宽字体下切点本就精确，只留一点防亚像素裁边。 */
-    private const val SECOND_WIDTH_SLACK_DP = 0.75f
+    private const val SECOND_WIDTH_SLACK_DP = 2.0f
     /** 「添加到桌面」请求的记账文件与键名。 */
     private const val PIN_PREFS = "widget_pin"
     private const val KEY_PIN_BASELINE = "baseline"
@@ -227,12 +227,41 @@ object WidgetUpdater {
      * 所以「按整屏宽封顶」还不够，再乘这个系数才是真实可用宽度。
      */
     private const val CELL_SCREEN_FRACTION = 0.95f
+    /** 时间未知时的占位符（绝不写 00:00，见 [minimalViews]）。 */
+    private const val PLACEHOLDER_TIME = "--:--"
+    /** 除时钟行以外所有行的合计高度（dp，含时间轴与上下各 10dp 内边距），450 档实测。 */
+    private const val CONTENT_FIXED_DP = 143.3f
+    /** 时间轴行（13dp + 3dp 上边距）。内容放不下时最先收掉它。 */
+    private const val AXIS_ROW_DP = 16f
+    /** 收紧时上下内边距 10dp → 4dp 省下的高度（dp）。 */
+    private const val PADDING_SAVE_DP = 12f
+    /** 内容列左右内边距（与布局 XML 对齐；收紧时用于 setViewPadding）。 */
+    private const val SIDE_PADDING_DP = 14f
+    private const val COMPACT_SIDE_PADDING_DP = 10f
+    /** 格子高 ≈ 格子宽(dp) × 这个系数（实测 450: 0.56、600: 0.54，取小值偏保守）。 */
+    private const val CELL_HEIGHT_RATIO = 0.54f
+    /** 主时钟行盒 = 1.2em（字体 ascent 0.9 + descent 0.3）。 */
+    private const val CLOCK_LINE_BOX_EM = 1.2f
+    /** 主字号 ≈ 栏宽 × 这个比例（实测 0.27~0.29，只为估算竖向预算，不参与最终字号）。 */
+    private const val CLOCK_EM_PER_COLUMN = 0.28f
+    /** 密度的合理区间：任何 ROM 给出 0 / 极小 / 荒谬的 density 都不许让字号、宽度塌成 0。 */
+    private const val MIN_DENSITY = 1.0f
+    private const val MAX_DENSITY = 8.0f
+    /** 格子宽度的合理区间（dp）：算出来的一律夹进这个范围，避免 0 宽导致字号 0。 */
+    private const val MIN_CELL_WIDTH_DP = 100f
+    private const val MAX_CELL_WIDTH_DP = 4000f
     /** 华为「字体粗细」每 +1.0 字重带来的字宽增长（实测 1.18→+4.1%、1.59→+8.5%）。 */
     private const val BOLD_WIDTH_PER_WEIGHT_UNIT = 0.22f
     /** 字宽放大系数的封顶（最粗档也不许把主时钟缩得太小）。 */
     private const val BOLD_WIDTH_MAX = 1.10f
-    /** 华为写在 `Settings.System` 里的「字体粗细」键；没有这个键的机型（小米/原生）完全不受影响。 */
+    /** 华为写在 `Settings.System` 里的「字体粗细」键（乘法通道）。 */
     private const val WEIGHT_SCALE_KEY = "font_weight_scale"
+    /** AOSP / HyperOS / 原生写的加性字重偏移（`Configuration.fontWeightAdjustment` 的来源），0~1000。 */
+    private const val WEIGHT_ADJUSTMENT_KEY = "font_weight_adjustment"
+    /** 加性通道拉满（1000）时按「最粗」处理：字宽 +8%（华为 1.59 档实测 +6.5%，取保守值）。 */
+    private const val AOSP_BOLD_WIDTH_MAX = 1.08f
+    /** 加性通道的量程上限（AOSP 用 0~1000 表示字重偏移）。 */
+    private const val AOSP_ADJUSTMENT_MAX = 1000f
     // 秒与冒号的字号不再固定：恒为主字号的 1/2（见 applyClockSizing），布局里的 23dp 只是预览初值。
     private const val DATE_TEXT_DP = 11f
     /**
@@ -285,26 +314,40 @@ object WidgetUpdater {
     fun refreshAll(context: Context, forceChronometer: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java))
-        val location = resolveLocation(context)
+        // 定位/设置读取本身就可能抛（偏好文件损坏、Place 字段非法……）。它挂在所有渲染之前，
+        // 一旦抛出去整轮刷新就没了 —— 桌面只剩 initialLayout（标准时间自走、真太阳时停在占位的
+        // 00:00、其余全空），这是用户报过的「卡片全空」最可能的成因。这里一律兜住并退回默认地点。
+        val location = runCatching { resolveLocation(context) }.getOrElse { error ->
+            Log.w(TAG, "resolveLocation failed, falling back to Place.DEFAULT", error)
+            LocationState(Place.DEFAULT, hasFix = false)
+        }
         val place = location.place
         // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
         // 否则定位变化后首页会一直显示启动时那个默认位置的地名。
-        DistrictResolver.requestRefresh(context, place)
-        WeatherRepository.requestRefresh(context, place)
+        // 三条侧链互不相干，任何一条失败都不许挡住主渲染。
+        runCatching { DistrictResolver.requestRefresh(context, place) }
+            .onFailure { Log.w(TAG, "district refresh failed", it) }
+        runCatching { WeatherRepository.requestRefresh(context, place) }
+            .onFailure { Log.w(TAG, "weather refresh failed", it) }
         // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
-        TakeTimeRepository.requestRefresh(context)
+        runCatching { TakeTimeRepository.requestRefresh(context) }
+            .onFailure { Log.w(TAG, "key-time refresh failed", it) }
         if (ids.isEmpty()) {
-            cancelTick(context)
+            runCatching { cancelTick(context) }
             return
         }
         // 先排下一分钟再刷新：刷新途中出任何异常（或者进程被系统冻结）都不会把链条断掉。
-        scheduleNextTick(context, place)
-        val fallbackSeconds = solarSecondOf(
-            Math.floorMod(
-                System.currentTimeMillis() + solarOffsetMillis(Instant.now(), place),
-                DAY_MILLIS,
-            ),
-        )
+        runCatching { scheduleNextTick(context, place) }
+            .onFailure { Log.w(TAG, "scheduleNextTick failed", it) }
+        // 兜底时刻同样兜住：算不出来就传 null，让最小版面写 `--:--` 而不是 00:00。
+        val fallbackSeconds = runCatching {
+            solarSecondOf(
+                Math.floorMod(
+                    System.currentTimeMillis() + solarOffsetMillis(Instant.now(), place),
+                    DAY_MILLIS,
+                ),
+            )
+        }.getOrNull()
         // 各机型/桌面给到的尺寸不同：按可用宽度与折算后的高度换算字号，2 行高时压缩留白。
         // 单个实例出错（尺寸异常、缓存里是坏 JSON、位图分配失败……）不能连累其它实例，
         // 否则桌面会整块显示「加载失败」——这里逐个兜住，失败就退成只显示时刻的最小版面。
@@ -337,10 +380,18 @@ object WidgetUpdater {
         KeyTimeChime.schedule(context)
     }
 
-    /** 刷新失败时的兜底版面：只显示真太阳时的「时:分」，不含位图与 Chronometer。 */
-    private fun minimalViews(context: Context, solarSeconds: Long): RemoteViews =
+    /**
+     * 刷新失败时的兜底版面：只显示真太阳时的「时:分」，不含位图与 Chronometer。
+     *
+     * [solarSeconds] 允许为 null（真太阳时算不出来）：这时写 `--:--` 占位，**绝不能写 00:00** ——
+     * 用户会把「00:00」当成「真太阳时是零点」，从而认为整个 App 坏了（旧版最小版面就报过这个）。
+     */
+    private fun minimalViews(context: Context, solarSeconds: Long?): RemoteViews =
         RemoteViews(context.packageName, R.layout.widget_solar_time_minimal).apply {
-            setTextViewText(R.id.widget_minimal_time, clockText(solarSeconds))
+            setTextViewText(
+                R.id.widget_minimal_time,
+                solarSeconds?.takeIf { it in 0 until DAY_MILLIS / 1000 }?.let(::clockText) ?: PLACEHOLDER_TIME,
+            )
         }
 
     fun buildViews(
@@ -388,8 +439,39 @@ object WidgetUpdater {
         val keyTime = TakeTimeRepository.schedule(context)
         val solarSecondsOfDay = solarSeconds.toDouble()
         val keyColor = if (location.hasFix) activeKeyColor(keyTime, solarSecondsOfDay, isDay) else null
-        val showAxis = !singleRow || large
+        var showAxis = !singleRow || large
         val showHourly = !singleRow || large
+        // 竖向预算：格子按**像素**固定，而版面是按 dp 排的 —— 显示密度被抬高（长辈关怀的 600）
+        // 或格子偏矮时，内容就装不下，最后一行会被裁掉半截（实测华为 600 档：格子 164dp、
+        // 内容 185dp，逐时天气行只露出上半截）。按「先压留白 → 再收时间轴」的顺序收紧，
+        // 只有还不够时才让主时钟缩一点。常规 450 档实测不紧（内容 199dp ≤ 可用 207dp），
+        // 一个字节都不动。
+        val fitMetrics = renderMetrics(context)
+        val cellDp = cellWidthDp(fitMetrics, widthDp)
+        val columnPx = ((cellDp * fitMetrics.density -
+            (if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP) * fitMetrics.density) / 2f)
+            .coerceAtLeast(1f)
+        val clockRowDp = CLOCK_LINE_BOX_EM * columnPx * CLOCK_EM_PER_COLUMN / fitMetrics.density
+        val availableDp = cellDp * CELL_HEIGHT_RATIO
+        // 注意比的是**本进程原始密度**：fitMetrics.density 已经夹到出厂密度了，跟出厂比较永远相等。
+        val rawDensity = context.resources.displayMetrics.density
+        val factoryDp = factoryDensity(context)
+        val densityOverridden = factoryDp in MIN_DENSITY..MAX_DENSITY && rawDensity > factoryDp + 0.01f
+        var contentDp = CONTENT_FIXED_DP + clockRowDp
+        var compressPadding = false
+        // 收紧到最后一档才缩字号：给时钟行留出剩余预算（下限 12dp，免得缩成一条线）。
+        var clockRowBudgetDp = 0f
+        if (densityOverridden && !singleRow && showAxis && contentDp > availableDp) {
+            Log.d(TAG, "vertical tight: content=${contentDp}dp avail=${availableDp}dp -> hide axis + tighter padding")
+            showAxis = false
+            compressPadding = true
+            contentDp -= AXIS_ROW_DP + PADDING_SAVE_DP
+        }
+        if (densityOverridden && !singleRow && contentDp > availableDp) {
+            clockRowBudgetDp = (availableDp - (contentDp - clockRowDp)).coerceAtLeast(12f)
+            Log.d(TAG, "vertical still tight: shrink clock row to ${clockRowBudgetDp}dp (was ${clockRowDp}dp)")
+            contentDp = availableDp
+        }
         // 只有**平板**才在富余空间里加料（手机上一加就显满，实测 P40 Pro 的 5x2 卡片
         // 折算 262dp，够高但不该再塞东西）：
         // 高度富余 → 加一行日出/正午/日落；再富余一截 → 加第二排逐时天气（后 6 小时）。
@@ -416,7 +498,17 @@ object WidgetUpdater {
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
-            val mainPx = applyClockSizing(context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude), compact, this)
+            val mainPx = applyClockSizing(
+                context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude),
+                compact, this, clockRowBudgetDp,
+            )
+            if (compressPadding) {
+                // 上下内边距 10dp/9dp → 4dp：内容更紧时先把留白压掉，比收掉整行信息温和得多。
+                val d = renderMetrics(context).density
+                val side = (if (compact) COMPACT_SIDE_PADDING_DP else SIDE_PADDING_DP) * d
+                val v = 4f * d
+                setViewPadding(R.id.widget_content, side.toInt(), v.toInt(), side.toInt(), v.toInt())
+            }
             if (showAxis) {
                 bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
             } else {
@@ -1014,12 +1106,13 @@ object WidgetUpdater {
         coordinates: String,
         compact: Boolean,
         views: RemoteViews,
+        clockRowBudgetDp: Float = 0f,
     ): Float {
         val metrics = renderMetrics(context)
         val density = metrics.density
         val totalWidthPx = cellWidthDp(metrics, widthDp) * density
         val chromeDp = if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP
-        val columnWidthPx = (totalWidthPx - chromeDp * density) / 2f
+        val columnWidthPx = ((totalWidthPx - chromeDp * density) / 2f).coerceAtLeast(0f)
 
         // 两条规则与首页大卡片一致：
         //   1. 秒（和它前面的冒号）**恒为主字号的一半**；
@@ -1049,8 +1142,17 @@ object WidgetUpdater {
         // 加粗会把字渲染得更宽（见 boldWidthFactor）：主时钟按系数缩小，把多出来的宽度让给秒，
         // 否则最粗档两位秒会被挤出栏宽只剩一位。系数 ≤1.0 时这一步是恒等变换。
         val bold = boldWidthFactor(context)
-        val mainPx = (fittedPx * clockSafetyFactor(context, metrics) / bold)
+        var mainPx = (fittedPx * clockSafetyFactor(context, metrics) / bold)
             .coerceIn(dpToPx(MIN_MAIN_TEXT_DP, metrics), probePx)
+            .coerceAtLeast(dpToPx(MIN_MAIN_TEXT_DP, metrics))
+        if (clockRowBudgetDp > 0f) {
+            // 竖向预算兜底：时钟行（1.2em 行盒）不得超过分配到的 dp，否则最后一行会被裁。
+            val cap = clockRowBudgetDp * density / CLOCK_LINE_BOX_EM
+            if (cap < mainPx) {
+                Log.d(TAG, "clock shrink for vertical budget: ${mainPx}px -> ${cap}px")
+                mainPx = cap.coerceAtLeast(dpToPx(MIN_MAIN_TEXT_DP, metrics) / 2f)
+            }
+        }
         val halfPx = mainPx / 2f
 
         views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
@@ -1062,11 +1164,12 @@ object WidgetUpdater {
         views.setTextViewTextSize(R.id.widget_solar_colon, TypedValue.COMPLEX_UNIT_PX, halfPx)
         views.setTextViewTextSize(R.id.widget_solar_sec, TypedValue.COMPLEX_UNIT_PX, halfPx)
         // Chronometer 的文本是「M:SS」，把宽度限成两位数字再配合右对齐，只露出秒数。
-        views.setInt(
-            R.id.widget_solar_sec,
-            "setMaxWidth",
-            (halfPx * secondsRatio * bold + SECOND_WIDTH_SLACK_DP * density).toInt(),
-        )
+        val secondsMaxWidth =
+            (halfPx * secondsRatio * bold + SECOND_WIDTH_SLACK_DP * density).toInt().coerceAtLeast(1)
+        views.setInt(R.id.widget_solar_sec, "setMaxWidth", secondsMaxWidth)
+        // 左侧标准时间的秒是 TextClock（文本恒为两位 ss），同样限宽 + 右对齐：
+        // 万一这一行被栏宽挤到，宁可裁掉空白也不要把一位数字拦腰截断（小米实测过）。
+        views.setInt(R.id.widget_civil_sec, "setMaxWidth", secondsMaxWidth)
 
         // 日期与经纬度同一行。两个都是「小字」，但**必须一起缩**：
         // 早先只让日期按可用宽度收缩、并允许缩到 8dp，而经纬度是定死的 10dp，于是窄一点的
@@ -1158,13 +1261,18 @@ object WidgetUpdater {
      */
     private fun renderMetrics(context: Context): DisplayMetrics {
         val base = context.resources.displayMetrics
+        val baseDensity = base.density.takeIf { it.isFinite() && it > 0f } ?: MIN_DENSITY
         val factory = factoryDensity(context)
-        val density = if (factory > 0f) minOf(base.density, factory) else base.density
-        if (density == base.density) return base
+        // 只在出厂密度「看起来合理」时才夹取。`init_dpi` 缺失（部分 HyperOS / 原生）或被人为改成
+        // 0 / 极小值时，绝不能把 density 夹成 0 —— 那会让 dpToPx、字号、setMaxWidth 全变 0，
+        // 整张卡片一片空白（用户报过的「只有标准时间、真太阳时 00:00、其余全空」就是这个量级的事故）。
+        val density = if (factory in MIN_DENSITY..MAX_DENSITY) minOf(baseDensity, factory) else baseDensity
+        val safe = density.coerceIn(MIN_DENSITY, MAX_DENSITY)
+        if (safe == base.density) return base
         return DisplayMetrics().also {
             it.setTo(base)
-            it.density = density
-            it.scaledDensity = density * (base.scaledDensity / base.density)
+            it.density = safe
+            it.scaledDensity = safe * (base.scaledDensity / baseDensity)
         }
     }
 
@@ -1196,9 +1304,12 @@ object WidgetUpdater {
      */
     private fun cellWidthDp(metrics: DisplayMetrics, widthDp: Int): Float {
         // 桌面的格子两侧还有一圈内缩（华为 1200px 屏上格子 1134px），所以不能直接拿整屏宽度封顶。
-        val screenDp = metrics.widthPixels / metrics.density * CELL_SCREEN_FRACTION
+        val density = metrics.density.takeIf { it.isFinite() && it > 0f } ?: MIN_DENSITY
+        val screenPx = metrics.widthPixels.coerceAtLeast(1)
+        val screenDp = screenPx / density.coerceIn(MIN_DENSITY, MAX_DENSITY) * CELL_SCREEN_FRACTION
         val reported = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
-        return minOf(reported, screenDp)
+        // 下限 100dp：任何异常（宽高为 0、密度荒谬）都不许把格子宽度算成 0，否则字号一起归零。
+        return minOf(reported, screenDp).coerceIn(MIN_CELL_WIDTH_DP, MAX_CELL_WIDTH_DP)
     }
 
     /**
@@ -1229,12 +1340,23 @@ object WidgetUpdater {
      * **缺这个键**（小米 / 原生）直接返回 1.0 —— 零影响。
      */
     private fun boldWidthFactor(context: Context): Float {
-        val w = runCatching {
+        // 通道 1（华为 EMUI / HarmonyOS）：乘法字重 font_weight_scale，>1.0 才算加粗。
+        val huawei = runCatching {
             Settings.System.getFloat(context.contentResolver, WEIGHT_SCALE_KEY)
-        }.getOrNull() ?: return 1f
-        if (!w.isFinite()) return 1f
-        val excess = (w - 1f).coerceAtLeast(0f)
-        return (1f + excess * BOLD_WIDTH_PER_WEIGHT_UNIT).coerceAtMost(BOLD_WIDTH_MAX)
+        }.getOrNull()?.takeIf { it.isFinite() }?.let { w ->
+            (1f + (w - 1f).coerceAtLeast(0f) * BOLD_WIDTH_PER_WEIGHT_UNIT).coerceAtMost(BOLD_WIDTH_MAX)
+        } ?: 1f
+        // 通道 2（AOSP / HyperOS / 原生）：加性字重偏移 font_weight_adjustment，0~1000，
+        // 1000 就是「最粗」。红米实测：这个键设成 1000 时，只读华为键的实现会把秒裁成一位。
+        val aosp = runCatching {
+            Settings.Secure.getInt(context.contentResolver, WEIGHT_ADJUSTMENT_KEY)
+        }.getOrDefault(0).let { adj ->
+            if (adj <= 0) 1f else {
+                val t = (adj.coerceAtMost(AOSP_ADJUSTMENT_MAX.toInt()) / AOSP_ADJUSTMENT_MAX)
+                1f + t * (AOSP_BOLD_WIDTH_MAX - 1f)
+            }
+        }
+        return maxOf(huawei, aosp).coerceAtMost(AOSP_BOLD_WIDTH_MAX)
     }
 
     /**

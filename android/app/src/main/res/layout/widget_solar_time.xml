@@ -8,6 +8,7 @@
     android:background="@drawable/widget_background_night">
 
     <LinearLayout
+        android:id="@+id/widget_content"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical"
@@ -260,7 +261,7 @@
                                 android:fontFamily="@font/card_sans_widget"
                                 android:id="@+id/widget_solar_time"
                                 style="@style/WidgetClockMain"
-                                android:text="00:00"
+                                android:text="--:--"
                                 android:textColor="#FFFFC65C"
                                 tools:ignore="HardcodedText" />
 

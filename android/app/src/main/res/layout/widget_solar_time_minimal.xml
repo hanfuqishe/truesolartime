@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:includeFontPadding="false"
         android:maxLines="1"
-        android:text="00:00"
+        android:text="--:--"
         android:textColor="#FFFFC65C"
         android:textSize="30dp"
         tools:ignore="HardcodedText" />

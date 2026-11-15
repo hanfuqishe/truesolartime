@@ -81,6 +81,9 @@
     <!-- 由 TextClock 逐秒自走的秒数，垂直位置需与冒号一致 -->
     <style name="WidgetClockSecondTicked">
         <item name="android:layout_width">wrap_content</item>
+        <item name="android:gravity">end</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">none</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
         <item name="android:fontFamily">@font/card_sans_widget</item>
