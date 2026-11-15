@@ -146,6 +146,9 @@
     <string name="weather_hour">%1$d時</string>
     <string name="weather_now">現在</string>
     <string name="weather_attribution">天氣資料 © Open-Meteo.com（CC BY 4.0）</string>
+    <string name="section_diagnostics">診斷</string>
+    <string name="diagnostics_desc">系統字型/密度設定與最近一次小工具建構的唯讀快照。桌面小工具顯示不正常時，把它整段傳給開發者。</string>
+    <string name="diagnostics_open">查看診斷資訊</string>
     <string-array name="weekdays_short">
         <item>週日</item>
         <item>週一</item>

@@ -146,6 +146,9 @@
     <string name="weather_hour">%1$d:00</string>
     <string name="weather_now">Now</string>
     <string name="weather_attribution">Weather data © Open-Meteo.com (CC BY 4.0)</string>
+    <string name="section_diagnostics">Diagnostics</string>
+    <string name="diagnostics_desc">Read-only snapshot of system font/density settings and the last widget build. Send it to the developer when the home-screen widget looks wrong.</string>
+    <string name="diagnostics_open">View diagnostics</string>
     <string-array name="weekdays_short">
         <item>Sun</item>
         <item>Mon</item>

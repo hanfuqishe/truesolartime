@@ -24,6 +24,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
@@ -104,6 +105,10 @@ fun SettingsSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        var showDiagnostics by remember { mutableStateOf(false) }
+        if (showDiagnostics) {
+            DiagnosticsDialog(onDismiss = { showDiagnostics = false })
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -333,6 +338,21 @@ fun SettingsSheet(
                     )
                 }
                 Switch(checked = keepScreenOn, onCheckedChange = onToggleKeepScreenOn)
+            }
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(14.dp))
+            Text(stringResource(R.string.section_diagnostics), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.diagnostics_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { showDiagnostics = true }) {
+                Text(stringResource(R.string.diagnostics_open))
             }
 
             Spacer(Modifier.height(20.dp))

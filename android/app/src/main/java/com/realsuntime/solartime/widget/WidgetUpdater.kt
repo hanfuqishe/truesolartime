@@ -23,6 +23,7 @@ import com.realsuntime.solartime.MainActivity
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.CityIndex
+import com.realsuntime.solartime.data.DiagStore
 import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.LocationTracker
@@ -319,22 +320,38 @@ object WidgetUpdater {
         // 定位/设置读取本身就可能抛（偏好文件损坏、Place 字段非法……）。它挂在所有渲染之前，
         // 一旦抛出去整轮刷新就没了 —— 桌面只剩 initialLayout（标准时间自走、真太阳时停在占位的
         // 00:00、其余全空），这是用户报过的「卡片全空」最可能的成因。这里一律兜住并退回默认地点。
+        val refreshDiag = mutableListOf<Pair<String, String>>()
+        refreshDiag += "时间" to DiagStore.now()
         val location = runCatching { resolveLocation(context) }.getOrElse { error ->
             Log.w(TAG, "resolveLocation failed, falling back to Place.DEFAULT", error)
+            refreshDiag += "定位" to ("失败，" + DiagStore.describe(error))
             LocationState(Place.DEFAULT, hasFix = false)
         }
+        if (refreshDiag.none { it.first == "定位" }) {
+            refreshDiag += "定位" to ("成功，hasFix=" + location.hasFix)
+        }
+        refreshDiag += "地区名" to (DistrictResolver.cachedName(context) ?: "（无缓存）")
+        refreshDiag += "小组件数量" to ids.size.toString()
         val place = location.place
         // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
         // 否则定位变化后首页会一直显示启动时那个默认位置的地名。
         // 三条侧链互不相干，任何一条失败都不许挡住主渲染。
         runCatching { DistrictResolver.requestRefresh(context, place) }
-            .onFailure { Log.w(TAG, "district refresh failed", it) }
+            .onFailure {
+                Log.w(TAG, "district refresh failed", it)
+                refreshDiag += "区划请求" to ("失败，" + DiagStore.describe(it))
+            }
         runCatching { WeatherRepository.requestRefresh(context, place) }
-            .onFailure { Log.w(TAG, "weather refresh failed", it) }
+            .onFailure {
+                Log.w(TAG, "weather refresh failed", it)
+                refreshDiag += "天气请求" to ("失败，" + DiagStore.describe(it))
+            }
         // 关键时间每天在 01:00–05:00 随机时刻同步一次，失败每小时重试，结果缓存 7 天。
         runCatching { TakeTimeRepository.requestRefresh(context) }
             .onFailure { Log.w(TAG, "key-time refresh failed", it) }
         if (ids.isEmpty()) {
+            refreshDiag += "结果" to "成功（桌面上没有小组件，只更新了缓存）"
+            DiagStore.recordRefresh(context, refreshDiag)
             runCatching { cancelTick(context) }
             return
         }
@@ -366,9 +383,20 @@ object WidgetUpdater {
                         "max=${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)}x" +
                         "${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)}",
                 )
-                buildViews(context, location, widthDp, heightDp, id, forceChronometer)
-            }.onFailure {
-                Log.w(TAG, "buildViews($id) failed, falling back to minimal", it)
+                val buildDiag = mutableListOf<Pair<String, String>>()
+                buildDiag += "时间" to DiagStore.now()
+                buildDiag += "AppWidget id" to id.toString()
+                buildDiag += "options min" to (widthDp.toString() + "x" + heightDp + "dp")
+                buildDiag += "options max" to (options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)
+                    .toString() + "x" + options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) + "dp")
+                buildDiag += "reported W×H(dp)" to (widthDp.toString() + "x" + heightDp + "dp")
+                val built = buildViews(context, location, widthDp, heightDp, id, forceChronometer, buildDiag)
+                buildDiag += "结果" to "成功"
+                DiagStore.recordWidgetBuild(context, buildDiag)
+                built
+            }.onFailure { error ->
+                Log.w(TAG, "buildViews($id) failed, falling back to minimal", error)
+                DiagStore.recordWidgetBuildFailure(context, id, error)
             }.getOrNull() ?: minimalViews(context, fallbackSeconds)
             runCatching { manager.updateAppWidget(id, updates) }.onFailure { error ->
                 // 系统可能直接拒收这棵 RemoteViews（例如 Android 17 的位图内存上限），
@@ -379,7 +407,11 @@ object WidgetUpdater {
             }
         }
         // 关键时间可能刚更新，重排「进入关键时间」报时（关闭时这里是空操作）。
-        KeyTimeChime.schedule(context)
+        runCatching { KeyTimeChime.schedule(context) }.onFailure {
+            refreshDiag += "报时排程" to ("失败，" + DiagStore.describe(it))
+        }
+        refreshDiag += "结果" to "成功"
+        DiagStore.recordRefresh(context, refreshDiag)
     }
 
     /**
@@ -403,6 +435,8 @@ object WidgetUpdater {
         heightDp: Int = 0,
         widgetId: Int = 0,
         forceChronometer: Boolean = false,
+        /** 诊断页用：把这次构建的关键参数收集起来（null = 不收集）。 */
+        diag: MutableList<Pair<String, String>>? = null,
     ): RemoteViews {
         val place = location.place
         val now = Instant.now()
@@ -456,13 +490,13 @@ object WidgetUpdater {
         val clockRowDp = CLOCK_LINE_BOX_EM * columnPx * CLOCK_EM_PER_COLUMN / fitMetrics.density
         val availableDp = cellDp * CELL_HEIGHT_RATIO
         // 注意比的是**本进程原始密度**：fitMetrics.density 已经夹到出厂密度了，跟出厂比较永远相等。
-        val rawDensity = context.resources.displayMetrics.density
-        val factoryDp = factoryDensity(context)
-        val densityOverridden = factoryDp in MIN_DENSITY..MAX_DENSITY && rawDensity > factoryDp + 0.01f
+        val densityOverridden = verticalFitEnabled(context)
         var contentDp = CONTENT_FIXED_DP + clockRowDp
         var compressPadding = false
         // 收紧到最后一档才缩字号：给时钟行留出剩余预算（下限 12dp，免得缩成一条线）。
         var clockRowBudgetDp = 0f
+        val denseLayout = compact
+        val cellWidthDpValue = cellDp
         if (densityOverridden && !singleRow && showAxis && contentDp > availableDp) {
             Log.d(TAG, "vertical tight: content=${contentDp}dp avail=${availableDp}dp -> hide axis + tighter padding")
             showAxis = false
@@ -502,8 +536,17 @@ object WidgetUpdater {
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             val mainPx = applyClockSizing(
                 context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude),
-                compact, this, clockRowBudgetDp,
+                compact, this, clockRowBudgetDp, diag,
             )
+            diag?.apply {
+                add("单行版面 singleRow" to singleRow.toString())
+                add("紧凑版面 compact" to denseLayout.toString())
+                add("时间轴显示" to showAxis.toString())
+                add("逐时行显示" to showHourly.toString())
+                add("压缩内边距" to compressPadding.toString())
+                add("格子宽度预算 cellDp" to cellWidthDpValue.toString())
+                add("时钟行预算(dp)" to clockRowBudgetDp.toString())
+            }
             if (compressPadding) {
                 // 上下内边距 10dp/9dp → 4dp：内容更紧时先把留白压掉，比收掉整行信息温和得多。
                 val d = renderMetrics(context).density
@@ -557,6 +600,14 @@ object WidgetUpdater {
             )
             val utcLabel = TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds)
             val cityText = if (location.hasFix) city.text else ""
+            diag?.apply {
+                add("档位 tier" to city.tier.toString())
+                add("地区名文本" to (cityText.ifBlank { "（空）" }))
+                add("UTC 标签" to (
+                    if (city.showUtc) TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds)
+                    else "（本档收起）"
+                    ))
+            }
             // 对齐跟着档位走（与首页一致）：0 档贴右（贴着分界）→ 1 档居中 → 2/3 档贴左；
             // 档 3 的省略号由布局里的 ellipsize="end" + maxLines="1" 保证。
             // TextView#setGravity 带 @RemotableViewMethod，可以交给宿主进程执行。
@@ -1117,6 +1168,7 @@ object WidgetUpdater {
         compact: Boolean,
         views: RemoteViews,
         clockRowBudgetDp: Float = 0f,
+        diag: MutableList<Pair<String, String>>? = null,
     ): Float {
         val metrics = renderMetrics(context)
         val density = metrics.density
@@ -1185,6 +1237,14 @@ object WidgetUpdater {
         val secondsMaxWidth =
             (halfPx * secondsRatio * bold + SECOND_WIDTH_SLACK_DP * density).toInt().coerceAtLeast(1)
         views.setInt(R.id.widget_solar_sec, "setMaxWidth", secondsMaxWidth)
+        diag?.apply {
+            add("主时钟 mainPx" to mainPx.toInt().toString())
+            add("秒 setMaxWidth(px)" to secondsMaxWidth.toString())
+            add("clockSafetyFactor" to clockSafetyFactor(context, metrics).toString())
+            add("boldWidthFactor" to bold.toString())
+            add("renderDensity" to density.toString())
+            add("格子宽度 cellWidthDp" to cellWidthDp(metrics, widthDp).toString())
+        }
         // 左侧标准时间的秒是 TextClock（文本恒为两位 ss），同样限宽 + 右对齐：
         // 万一这一行被栏宽挤到，宁可裁掉空白也不要把一位数字拦腰截断（小米实测过）。
         views.setInt(R.id.widget_civil_sec, "setMaxWidth", secondsMaxWidth)
@@ -1277,6 +1337,52 @@ object WidgetUpdater {
      * （见 [clockSafetyFactor]），主时钟就撑破栏宽 —— 表现就是「11:46」被裁成「11:4」、秒整段消失、
      * 变高的时钟行再把逐时天气挤出格子（只露出半个「多云」）。
      */
+    /**
+     * 诊断页用：把「测量与密度」这一块算出来（只读、全程兜异常）。
+     * 这些都是 [WidgetUpdater] 内部真正在用的值，和 logcat 的 `SolarWidget` 行同源。
+     */
+    internal fun metricsSummary(context: Context): List<Pair<String, String>> = runCatching {
+        val dm = context.resources.displayMetrics
+        val metrics = renderMetrics(context)
+        val factory = factoryDensity(context)
+        listOf(
+            "dm.density" to dm.density.toString(),
+            "renderDensity(实际使用)" to metrics.density.toString(),
+            "dm.densityDpi" to dm.densityDpi.toString(),
+            "dm.scaledDensity" to dm.scaledDensity.toString(),
+            "fontScale" to context.resources.configuration.fontScale.toString(),
+            "init_dpi" to settingValue(context, "secure", "init_dpi"),
+            "factoryDensity = init_dpi/160" to factory.toString(),
+            "init_dpi 可用" to if (factory in MIN_DENSITY..MAX_DENSITY) "是" else "否（改用 dm.density）",
+            "display_density_forced" to settingValue(context, "secure", "display_density_forced"),
+            "屏幕 px" to (dm.widthPixels.toString() + "x" + dm.heightPixels),
+            "屏幕 dp" to ((dm.widthPixels / metrics.density).toInt().toString() + "x" +
+                (dm.heightPixels / metrics.density).toInt()),
+            "cellWidthDp(默认宽度)" to cellWidthDp(metrics, 0).toString(),
+            "clockSafetyFactor" to clockSafetyFactor(context, metrics).toString(),
+            "boldWidthFactor" to boldWidthFactor(context).toString(),
+            "竖向自适应生效" to if (verticalFitEnabled(context)) "是（显示密度高于出厂）" else "否",
+            "API<31 跳过 setGravity" to if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) "是" else "否",
+        )
+    }.getOrElse { listOf("读取失败" to DiagStore.describe(it)) }
+
+    /** 读一个系统设置键；不存在返回字符串 `null`（诊断页要求显式显示 null）。 */
+    private fun settingValue(context: Context, namespace: String, key: String): String = runCatching {
+        val value = if (namespace == "system") {
+            Settings.System.getString(context.contentResolver, key)
+        } else {
+            Settings.Secure.getString(context.contentResolver, key)
+        }
+        value ?: "null"
+    }.getOrElse { "读取失败: " + DiagStore.describe(it) }
+
+    /** 竖向自适应是否会对这台机器生效：显示密度被抬到出厂密度之上（老系统没有 init_dpi 时为 false）。 */
+    internal fun verticalFitEnabled(context: Context): Boolean = runCatching {
+        val raw = context.resources.displayMetrics.density
+        val factory = factoryDensity(context)
+        factory in MIN_DENSITY..MAX_DENSITY && raw > factory + 0.01f
+    }.getOrDefault(false)
+
     private fun renderMetrics(context: Context): DisplayMetrics {
         val base = context.resources.displayMetrics
         val baseDensity = base.density.takeIf { it.isFinite() && it > 0f } ?: MIN_DENSITY
