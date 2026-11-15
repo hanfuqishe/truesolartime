@@ -227,6 +227,12 @@ object WidgetUpdater {
      * 所以「按整屏宽封顶」还不够，再乘这个系数才是真实可用宽度。
      */
     private const val CELL_SCREEN_FRACTION = 0.95f
+    /** 华为「字体粗细」每 +1.0 字重带来的字宽增长（实测 1.18→+4.1%、1.59→+8.5%）。 */
+    private const val BOLD_WIDTH_PER_WEIGHT_UNIT = 0.22f
+    /** 字宽放大系数的封顶（最粗档也不许把主时钟缩得太小）。 */
+    private const val BOLD_WIDTH_MAX = 1.10f
+    /** 华为写在 `Settings.System` 里的「字体粗细」键；没有这个键的机型（小米/原生）完全不受影响。 */
+    private const val WEIGHT_SCALE_KEY = "font_weight_scale"
     // 秒与冒号的字号不再固定：恒为主字号的 1/2（见 applyClockSizing），布局里的 23dp 只是预览初值。
     private const val DATE_TEXT_DP = 11f
     /**
@@ -1040,7 +1046,10 @@ object WidgetUpdater {
         } else {
             0f
         }
-        val mainPx = (fittedPx * clockSafetyFactor(context, metrics))
+        // 加粗会把字渲染得更宽（见 boldWidthFactor）：主时钟按系数缩小，把多出来的宽度让给秒，
+        // 否则最粗档两位秒会被挤出栏宽只剩一位。系数 ≤1.0 时这一步是恒等变换。
+        val bold = boldWidthFactor(context)
+        val mainPx = (fittedPx * clockSafetyFactor(context, metrics) / bold)
             .coerceIn(dpToPx(MIN_MAIN_TEXT_DP, metrics), probePx)
         val halfPx = mainPx / 2f
 
@@ -1056,7 +1065,7 @@ object WidgetUpdater {
         views.setInt(
             R.id.widget_solar_sec,
             "setMaxWidth",
-            (halfPx * secondsRatio + SECOND_WIDTH_SLACK_DP * density).toInt(),
+            (halfPx * secondsRatio * bold + SECOND_WIDTH_SLACK_DP * density).toInt(),
         )
 
         // 日期与经纬度同一行。两个都是「小字」，但**必须一起缩**：
@@ -1205,6 +1214,27 @@ object WidgetUpdater {
         // 拿它比较永远判成「没被抬高」，余量就白设了。
         val overridden = factory > 0f && context.resources.displayMetrics.density > factory + 0.01f
         return if (overridden) LARGE_DISPLAY_CLOCK_SAFETY else 1f
+    }
+
+    /**
+     * 华为「字体粗细」（`Settings.System.font_weight_scale`）带来的**字宽放大系数**。
+     *
+     * EMUI 的加粗是渲染层描粗，笔画变粗的同时**推进宽度也会涨一点**：同一串数字实测
+     * 0.79 → 1.18 时主时钟「12:33」的推进宽度 +4.1%，拖到最右 **1.59** 时 +8.5%。
+     * 栏宽是固定的、主时钟又正好铺满栏宽 —— 于是最粗档「秒」被挤出栏宽，两位秒只剩一位
+     * （实测 `12:33:5` / `12:54:1`）。这里把字重折成宽度系数：主时钟按它缩、秒宽按它放宽。
+     *
+     * 基准取 **1.0**：`font_weight_scale ≤ 1.0` 一律 1.0（默认档 0.79、长辈关怀档 1.0 都走这条，
+     * 与改造前逐像素一致）；1.0 以上每 +1.0 字重加 22%，封顶 1.10（覆盖实测最粗的 1.59）。
+     * **缺这个键**（小米 / 原生）直接返回 1.0 —— 零影响。
+     */
+    private fun boldWidthFactor(context: Context): Float {
+        val w = runCatching {
+            Settings.System.getFloat(context.contentResolver, WEIGHT_SCALE_KEY)
+        }.getOrNull() ?: return 1f
+        if (!w.isFinite()) return 1f
+        val excess = (w - 1f).coerceAtLeast(0f)
+        return (1f + excess * BOLD_WIDTH_PER_WEIGHT_UNIT).coerceAtMost(BOLD_WIDTH_MAX)
     }
 
     /**
