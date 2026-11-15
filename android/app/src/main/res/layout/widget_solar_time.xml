@@ -18,16 +18,101 @@
         android:paddingBottom="10dp">
 
     <!-- 顶部标签行：整行一个逻辑单元（UTC · 地区 · 真太阳时 · 时辰），四档退化见
-         WidgetUpdater.planCityLabel —— 默认地区贴右 → 收起「真太阳时」后居中 → 再收起 UTC 后贴左，
-         仍放不下就省略号（贴左）；任何档位时辰都贴整行最右。
-         放在内容列里（不是叠在 FrameLayout 顶部），这样它会跟着整块内容一起居中。 -->
+         WidgetUpdater.planCityLabel，两个容器的可见性由 WidgetUpdater 按档位二选一：
+           * 档 0 用 widget_top_row_default —— 整行分左右两半（各占一半，与下面两列等宽一致）：
+             左半 `UTC` 贴左、地区贴右（右端贴着两半的分界）；右半「真太阳时」贴左、时辰贴右；
+           * 档 1/2/3 用 widget_top_row —— 合并成一条：收起「真太阳时」后地区居中 →
+             再收起 UTC 后地区贴左，仍放不下就省略号（贴左）。
+         任何档位时辰都贴整行最右。放在内容列里（不是叠在 FrameLayout 顶部），
+         这样它会跟着整块内容一起居中。 -->
+
+    <!-- 档 0：左右两半各自排，几何与首页大卡片 HeroCard 的档 0 完全一致。 -->
+    <LinearLayout
+        android:id="@+id/widget_top_row_default"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- 左半：`UTC` 贴最左，地区吃满剩余宽度并贴右 —— 文字右端正好落在整行的 50% 分界上。 -->
+        <LinearLayout
+            android:id="@+id/widget_top_default_left"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_top_utc_default"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/widget_label_civil"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11dp" />
+
+            <TextView
+                android:id="@+id/widget_city_default"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:maxLines="1"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11dp"
+                tools:text="上海市黄浦区" />
+        </LinearLayout>
+
+        <!-- 右半：从分界处起排，先让出一个间距，再「真太阳时」贴左、时辰贴最右。 -->
+        <LinearLayout
+            android:id="@+id/widget_top_default_right"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp">
+
+            <TextView
+                android:id="@+id/widget_top_solar_default"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/widget_label_solar"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11dp" />
+
+            <TextView
+                android:id="@+id/widget_top_shichen_default"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="end"
+                android:maxLines="1"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11dp"
+                tools:text="辰时 · 初" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 档 1/2/3：合并成一条（默认隐藏，由 WidgetUpdater 按档位切换）。 -->
     <LinearLayout
         android:id="@+id/widget_top_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="2dp"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/widget_top_utc"
@@ -39,7 +124,8 @@
             android:textColor="#CCFFFFFF"
             android:textSize="11dp" />
 
-        <!-- 地区：宽度吃满 UTC 与「真太阳时」之间的剩余空间，对齐由 setGravity 按档位下发。 -->
+        <!-- 档 1/2/3 的地区：宽度吃满「UTC（档 1 还在）与时辰」之间的剩余空间，
+             对齐由代码用 setGravity 下发（档 1 居中、档 2/3 贴左）。 -->
         <TextView
             android:id="@+id/widget_city"
             android:layout_width="0dp"

@@ -140,6 +140,20 @@ object WidgetUpdater {
     /** 顶部标签行里相邻两段文本之间的间距（与布局里的 marginStart/End 一致）。 */
     private const val CITY_LABEL_GAP_DP = 8f
 
+    /**
+     * 顶部标签行的控件 id，**两套**都要一起下发（见 [build] 里的说明）：
+     *
+     * - 档 0 用两半结构的 `*_default` 那一套；
+     * - 档 1-3 用合并单行的那一套（`widget_top_utc` / `widget_city` / …）。
+     *
+     * 同一个布局里 id 不能重名，所以档 0 的容器另起了一套 id；容器可见性互斥，
+     * 但文本、可见性与对齐都统一按这两个数组下发，避免哪一套漏更新留下旧文字。
+     */
+    private val TOP_ROW_UTC_IDS = intArrayOf(R.id.widget_top_utc_default, R.id.widget_top_utc)
+    private val TOP_ROW_CITY_IDS = intArrayOf(R.id.widget_city_default, R.id.widget_city)
+    private val TOP_ROW_SOLAR_IDS = intArrayOf(R.id.widget_top_solar_default, R.id.widget_top_solar)
+    private val TOP_ROW_SHICHEN_IDS = intArrayOf(R.id.widget_top_shichen_default, R.id.widget_top_shichen)
+
     /** 汉字/全角字符与拉丁字符的字宽比例（单位都是「字号」）。 */
     private const val FULL_WIDTH_EM = 1.0f
     private const val LATIN_EM = 0.55f
@@ -387,26 +401,42 @@ object WidgetUpdater {
             // 顶部标签行（整行一个逻辑单元）：`UTC+8` 直接写偏移，与首页一致 —— 一张卡片上
             // 「标准时间」到底是哪个时区的，一眼就能看出来。地区按四档退化（见 planCityLabel），
             // 时辰在下面的 hasFix 分支里写入。
-            setTextViewText(
-                R.id.widget_top_utc,
-                TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds),
-            )
-            setTextViewText(R.id.widget_civil_date, date)
+            //
+            // 档 0 与档 1-3 的排布**结构**不同，布局里因此有两套容器 + 两套同义控件
+            // （RemoteViews 改不了 layout_weight / 宽度，只能准备两份）：
+            //   * 档 0 → widget_top_row_default：整行分左右两半，左半 `UTC` 贴左 + 地区贴右
+            //     （右端落在 50% 分界上），右半「真太阳时」贴左 + 时辰贴最右 —— 与首页 HeroCard 档 0 同一几何；
+            //   * 档 1-3 → widget_top_row：合并成一条，地区对齐由 setGravity 按档位下发。
+            // 两个容器互斥，文本 / 可见性 / 对齐对两套控件一起下发（同一布局里 id 不能重名）。
             val city = cityLabel(context, place, widthDp, compact)
-            setTextViewText(R.id.widget_city, if (location.hasFix) city.text else "")
-            // 对齐跟着档位走（与首页一致）：0 档贴右 → 1 档居中 → 2/3 档贴左；
+            val topRowDefault = city.tier == 0
+            setViewVisibility(
+                R.id.widget_top_row_default,
+                if (topRowDefault) View.VISIBLE else View.GONE,
+            )
+            setViewVisibility(
+                R.id.widget_top_row,
+                if (topRowDefault) View.GONE else View.VISIBLE,
+            )
+            val utcLabel = TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds)
+            val cityText = if (location.hasFix) city.text else ""
+            // 对齐跟着档位走（与首页一致）：0 档贴右（贴着分界）→ 1 档居中 → 2/3 档贴左；
             // 档 3 的省略号由布局里的 ellipsize="end" + maxLines="1" 保证。
             // TextView#setGravity 带 @RemotableViewMethod，可以交给宿主进程执行。
-            setInt(R.id.widget_city, "setGravity", gravityFor(city.align))
+            // 只下发 setGravity，不碰 transformationMethod 之类非 RemoteViews 属性。
+            for (utcId in TOP_ROW_UTC_IDS) setTextViewText(utcId, utcLabel)
+            for (cityId in TOP_ROW_CITY_IDS) {
+                setTextViewText(cityId, cityText)
+                setInt(cityId, "setGravity", gravityFor(city.align))
+            }
             // 档 1 起收起「真太阳时」，档 2 起连 UTC 一起收起：把位置让给长地名。
-            setViewVisibility(
-                R.id.widget_top_utc,
-                if (city.showUtc) View.VISIBLE else View.GONE,
-            )
-            setViewVisibility(
-                R.id.widget_top_solar,
-                if (city.showSolarLabel) View.VISIBLE else View.GONE,
-            )
+            for (utcId in TOP_ROW_UTC_IDS) {
+                setViewVisibility(utcId, if (city.showUtc) View.VISIBLE else View.GONE)
+            }
+            for (solarId in TOP_ROW_SOLAR_IDS) {
+                setViewVisibility(solarId, if (city.showSolarLabel) View.VISIBLE else View.GONE)
+            }
+            setTextViewText(R.id.widget_civil_date, date)
             if (location.hasFix) {
                 setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
                 // base 取「当前真太阳时整分的时刻」，且与上面同一套取样：
@@ -427,7 +457,8 @@ object WidgetUpdater {
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
                 applySolarColor(keyColor ?: defaultSolarColor(isDay), this)
-                setTextViewText(R.id.widget_top_shichen, shichenText(context, solarSecondsOfDay))
+                val shichen = shichenText(context, solarSecondsOfDay)
+                for (shichenId in TOP_ROW_SHICHEN_IDS) setTextViewText(shichenId, shichen)
                 setTextViewText(
                     R.id.widget_coordinates,
                     TimeText.coordinates(context, place.latitude, place.longitude),
@@ -438,7 +469,7 @@ object WidgetUpdater {
                 setViewVisibility(R.id.widget_solar_colon, View.GONE)
                 setViewVisibility(R.id.widget_solar_sec, View.GONE)
                 applySolarColor(defaultSolarColor(isDay), this)
-                setTextViewText(R.id.widget_top_shichen, "")
+                for (shichenId in TOP_ROW_SHICHEN_IDS) setTextViewText(shichenId, "")
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
             bindSunRow(context, place, now, zone, showSunRow && location.hasFix, this)
@@ -612,7 +643,9 @@ object WidgetUpdater {
     /**
      * 地名的四档显示（与首页大卡片顶部那一行同一套语义）。
      *
-     * 顶行横跨整行：`UTC+8` 在左、地区居中、时辰在右。
+     * 档 0 与档 1-3 用的是布局里的**两个容器**（见 [build]）：档 0 的两半结构里
+     * `UTC+8` 在左半最左、地区贴在左半最右（即整行 50% 分界），「真太阳时」从分界右侧起排、
+     * 时辰贴整行最右；档 1-3 合并成一条，`UTC+8` 在左、地区在中间、时辰在最右。
      *
      * - **档 0**：`UTC` 与「真太阳时」都还在，地区在**左半**（UTC 到「真太阳时」之间）**贴右**；
      * - **档 1**：收起「真太阳时」，地区在 UTC 与时辰之间**居中**；
