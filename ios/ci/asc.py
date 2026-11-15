@@ -413,14 +413,22 @@ def cmd_builds(args, token: str) -> int:
             "filter[app]": app_id,
             "sort": "-uploadedDate",
             "limit": "10",
-            "include": "preReleaseVersion",
+            "include": "preReleaseVersion,buildBetaDetail",
         })
         included = {(i.get("type"), i.get("id")): i for i in (resp.get("included") or [])}
         rows = []
         for b in resp.get("data") or []:
             a = b.get("attributes") or {}
-            rel = ((b.get("relationships") or {}).get("preReleaseVersion") or {}).get("data") or {}
-            pre = included.get(("preReleaseVersions", rel.get("id"))) or {}
+            rels = b.get("relationships") or {}
+            pre = included.get(
+                ("preReleaseVersions", ((rels.get("preReleaseVersion") or {}).get("data") or {}).get("id")),
+                {},
+            )
+            beta = included.get(
+                ("buildBetaDetails", ((rels.get("buildBetaDetail") or {}).get("data") or {}).get("id")),
+                {},
+            )
+            ba = beta.get("attributes") or {}
             rows.append({
                 "id": b["id"],
                 "build": a.get("version"),
@@ -429,6 +437,9 @@ def cmd_builds(args, token: str) -> int:
                 "uploaded": a.get("uploadedDate"),
                 "expired": a.get("expired"),
                 "minOs": a.get("minOsVersion"),
+                "encryption": a.get("usesNonExemptEncryption"),
+                "internal": ba.get("internalBuildState"),
+                "external": ba.get("externalBuildState"),
             })
         pending = [r for r in rows if r["state"] == "PROCESSING"]
         if not pending or time.time() >= deadline:
@@ -437,15 +448,23 @@ def cmd_builds(args, token: str) -> int:
         time.sleep(20)
 
     print(f"\nTestFlight 构建（前 {len(rows)} 个，按上传时间倒序）：")
-    print(f"  {'build':>6}  {'version':<10} {'state':<12} {'uploaded':<22} expired")
+    print(f"  {'build':>6}  {'version':<10} {'state':<12} {'internal':<20} {'external':<20} "
+          f"{'encryption':<10} uploaded")
     for r in rows:
         print(f"  {str(r['build']):>6}  {str(r['version']):<10} {str(r['state']):<12} "
-              f"{str(r['uploaded']):<22} {r['expired']}")
+              f"{str(r['internal']):<20} {str(r['external']):<20} "
+              f"{str(r['encryption']):<10} {r['uploaded']}")
 
     lines = ["", "### TestFlight 构建", "",
-             "| build | 版本 | 状态 | 上传时间 |", "| --- | --- | --- | --- |"]
+             "| build | 版本 | 处理状态 | 内测状态 | 外测状态 | 出口合规 | 上传时间 |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        lines.append(f"| {r['build']} | {r['version']} | {r['state']} | {r['uploaded']} |")
+        lines.append(f"| {r['build']} | {r['version']} | {r['state']} | {r['internal']} | "
+                     f"{r['external']} | {r['encryption']} | {r['uploaded']} |")
+    if rows and rows[0]["encryption"] is None:
+        lines += ["", "⚠️ `usesNonExemptEncryption` 未设置 → TestFlight 里这个构建会显示"
+                      "「缺少出口合规信息」，需要在网页上答一次（或给 Info.plist 加 "
+                      "`ITSAppUsesNonExemptEncryption`）。"]
     if args.expect:
         hit = [r for r in rows if str(r["build"]) == str(args.expect)]
         if hit:
