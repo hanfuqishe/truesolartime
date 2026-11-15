@@ -1,19 +1,57 @@
 name: iOS TestFlight
 
-# 有付费开发者账号后的正式出包流程：自动签名 → archive → 导出 ipa → 上传 TestFlight。
-# 需要三个仓库 secret（Settings → Secrets and variables → Actions）：
-#   APPSTORE_KEY_ID         App Store Connect API 的 Key ID
-#   APPSTORE_ISSUER_ID      Issuer ID
-#   APPSTORE_PRIVATE_KEY    AuthKey_XXXX.p8 的完整内容
-# 手动触发即可；上传成功后到 App Store Connect → TestFlight 处理构建。
+# 正式出包：手工签名 → archive → 导出 ipa → 上传 TestFlight。
+#
+# 为什么不用「自动签名」（Run #2 / Run #3 的教训）：
+#   个人开发者账号下一个已注册设备都没有，xcodebuild -allowProvisioningUpdates
+#   只会去申请 iOS App Development 描述文件，而 Development 描述文件必须绑设备：
+#     error: Your team has no devices from which to generate a provisioning profile.
+#   硬指定 CODE_SIGN_IDENTITY="Apple Distribution" 又会被判成设置冲突：
+#     error: TrueSolarTime has conflicting provisioning settings.
+#
+# 现在走「手工签名」：用 App Store Connect API 自己申请
+#   * Apple Distribution 证书   POST /v1/certificates (DISTRIBUTION)
+#   * IOS_APP_STORE 描述文件    POST /v1/profiles     (IOS_APP_STORE)
+# 这两样都**不需要任何设备**，然后在 xcodebuild 里
+#   CODE_SIGN_STYLE=Manual + PROVISIONING_PROFILE_SPECIFIER=<uuid>
+# 就能归档出可分发的 ipa。细节见 ios/ci/asc.py 顶部注释。
+#
+# 需要的仓库配置（Settings → Secrets and variables → Actions）：
+#   secret  APPSTORE_KEY_ID / APPSTORE_ISSUER_ID / APPSTORE_PRIVATE_KEY（团队 Key，Admin）
+#   variable APPLE_TEAM_ID
+#
+# 手动触发；上传成功后到 App Store Connect → TestFlight 等处理（几分钟到半小时）。
 
 on:
   workflow_dispatch:
     inputs:
       changelog:
-        description: 'TestFlight 里显示的构建说明（可留空）'
+        description: '构建说明（只写进运行摘要；altool 不传这个字段，TestFlight 页面里填）'
         required: false
         default: ''
+      skip_upload:
+        description: '只出包不上传（排错时用，会有 artifact 可下载）'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+env:
+  BUNDLE_ID: com.realsuntime.solartime
+  SCHEME: TrueSolarTime
+  XCODE_PROJECT: TrueSolarTime.xcodeproj
+  APP_NAME: TrueSolarTime
+  PROFILE_PREFIX: TrueSolarTimeCI-
+  APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+  APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+  APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+  APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
 
 jobs:
   testflight:
@@ -26,55 +64,117 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+          /usr/bin/openssl version
+          python3 --version
+          echo "team=$APPLE_TEAM_ID bundle=$BUNDLE_ID"
 
       - name: 安装 XcodeGen
         run: brew install xcodegen
+
+      - name: 准备 Python（cryptography / PyJWT）
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --quiet --disable-pip-version-check \
+            "cryptography>=42" "PyJWT>=2.8"
+          "$RUNNER_TEMP/venv/bin/python" -c "import cryptography, jwt; print('cryptography', cryptography.__version__, '/ PyJWT', jwt.__version__)"
+          echo "PY=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: 本地自检（JWT / CSR）
+        run: '"$PY" ios/ci/asc.py selfcheck --out-dir "$RUNNER_TEMP/selfcheck"'
 
       - name: 由 project.yml 生成工程
         working-directory: ios
         run: xcodegen generate
 
       - name: 准备 API Key
-        env:
-          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
         run: |
-          mkdir -p ~/private_keys
-          printf '%s' "$APPSTORE_PRIVATE_KEY" > ~/private_keys/AuthKey_"$APPSTORE_KEY_ID".p8
-          chmod 600 ~/private_keys/AuthKey_"$APPSTORE_KEY_ID".p8
-
-      - name: Archive（自动签名）
-        working-directory: ios
-        env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-        run: |
-          if [ -z "$APPLE_TEAM_ID" ]; then
-            echo "::error::缺少仓库变量 APPLE_TEAM_ID（开发者后台 Membership 里的 Team ID）"
-            exit 1
+          set -euo pipefail
+          if [ -z "${APPSTORE_PRIVATE_KEY:-}" ]; then
+            echo "::error::缺少 secret APPSTORE_PRIVATE_KEY"; exit 1
           fi
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$HOME/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          chmod 600 "$HOME/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          export APPSTORE_KEY_PATH="$HOME/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+          echo "APPSTORE_KEY_PATH=$APPSTORE_KEY_PATH" >> "$GITHUB_ENV"
+          echo "key 文件：$APPSTORE_KEY_PATH ($(wc -c < "$APPSTORE_KEY_PATH") 字节)"
+
+      - name: 诊断 App Store Connect 账号状态
+        run: |
+          set -euo pipefail
+          "$PY" ios/ci/asc.py preflight --json-out "$RUNNER_TEMP/preflight.json"
+          # GITHUB_ENV 里的值对当前 shell 无效，直接从文件里读出来打印
+          echo "pass-through: $(grep '^HAS_APP_RECORD=' "$GITHUB_ENV")"
+
+      - name: 申请 Distribution 证书 + App Store 描述文件
+        run: |
+          set -euo pipefail
+          "$PY" ios/ci/asc.py signing --out-dir "$RUNNER_TEMP/signing" \
+            --profile-prefix "$PROFILE_PREFIX"
+
+      - name: 证书装进临时钥匙串
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/ci-signing.keychain-db"
+          P12="$RUNNER_TEMP/dist.p12"
+          # macOS 自带的 /usr/bin/openssl 是 LibreSSL，导出的 p12 用传统
+          # PBE 算法，Security.framework 一定能读；Homebrew 的 OpenSSL 3
+          # 默认 AES-256 + PBKDF2，security import 常报 MAC verification failed。
+          if ! /usr/bin/openssl pkcs12 -export -inkey "$SIGN_KEY_PATH" -in "$SIGN_CERT_PATH" \
+                 -out "$P12" -passout pass:ci -name "Apple Distribution" 2>"$RUNNER_TEMP/p12.log"; then
+            echo "LibreSSL 导出失败，退回 openssl 3 + legacy 参数"
+            cat "$RUNNER_TEMP/p12.log" || true
+            openssl pkcs12 -export -legacy -inkey "$SIGN_KEY_PATH" -in "$SIGN_CERT_PATH" \
+              -out "$P12" -passout pass:ci -name "Apple Distribution"
+          fi
+          ls -l "$P12"
+
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P ci \
+            -T /usr/bin/codesign -T /usr/bin/security -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          echo "--- 钥匙串里的签名身份 ---"
+          security find-identity -v -p codesigning "$KEYCHAIN" || true
+          security find-identity -v -p codesigning | grep -q "Apple Distribution" \
+            || echo "::warning::find-identity 没列出 Apple Distribution（可能是缺 WWDR 中间证书），继续尝试 archive"
+
+      - name: Archive（手工签名）
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/$APP_NAME.xcarchive"
+          set -x
           xcodebuild archive \
-            -project TrueSolarTime.xcodeproj \
-            -scheme TrueSolarTime \
+            -project "$XCODE_PROJECT" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/TrueSolarTime.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_"$APPSTORE_KEY_ID".p8 \
-            -authenticationKeyID "$APPSTORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            -archivePath "$ARCHIVE" \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            -quiet
+          set +x
+          /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' \
+            "$ARCHIVE/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' \
+            "$ARCHIVE/Info.plist"
+          # 确认包真的用分发证书签了
+          codesign -dv --verbose=4 "$ARCHIVE/Products/Applications/$APP_NAME.app" 2>&1 | head -n 20
 
-      - name: 导出 ipa（app-store-connect）
-        working-directory: ios
-        env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      - name: 导出 ipa（app-store-connect / manual）
         run: |
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/$APP_NAME.xcarchive"
+          EXPORT="$RUNNER_TEMP/export"
+          PLIST="$RUNNER_TEMP/ExportOptions.plist"
+          rm -rf "$EXPORT"
+          cat > "$PLIST" <<PLIST_EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -82,36 +182,148 @@ jobs:
             <key>method</key>
             <string>app-store-connect</string>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
             <key>uploadSymbols</key>
             <true/>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
             <key>destination</key>
             <string>export</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$BUNDLE_ID</key>
+              <string>$PROFILE_UUID</string>
+            </dict>
           </dict>
           </plist>
-          PLIST
+          PLIST_EOF
+          cat "$PLIST"
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/TrueSolarTime.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_"$APPSTORE_KEY_ID".p8 \
-            -authenticationKeyID "$APPSTORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT" \
+            -exportOptionsPlist "$PLIST"
+          ls -lh "$EXPORT"
+          IPA=$(ls "$EXPORT"/*.ipa | head -n 1)
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+          # 校验 ipa 里的签名与描述文件
+          unzip -l "$IPA" | head -n 20
+          unzip -o -q "$IPA" -d "$RUNNER_TEMP/ipacheck" "Payload/$APP_NAME.app/embedded.mobileprovision" || true
+          if [ -f "$RUNNER_TEMP/ipacheck/Payload/$APP_NAME.app/embedded.mobileprovision" ]; then
+            security cms -D -i "$RUNNER_TEMP/ipacheck/Payload/$APP_NAME.app/embedded.mobileprovision" \
+              > "$RUNNER_TEMP/profile.plist"
+            /usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist"
+            /usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist"
+            /usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$RUNNER_TEMP/profile.plist" || echo "（ProvisionsAllDevices 缺省 → 非企业包，正常）"
+            /usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$RUNNER_TEMP/profile.plist" || echo "（get-task-allow 缺省 → false，正常）"
+          fi
 
       - name: 上传到 TestFlight
-        env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          CHANGELOG: ${{ github.event.inputs.changelog }}
+        id: upload
         run: |
-          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -n 1)
-          echo "上传 $IPA"
-          echo "构建说明（请在 TestFlight 页面填写）：$CHANGELOG"
-          # altool 用于上传构建到 App Store Connect（不支持 --whats-new，
-          # 「此版本的新增内容」在 TestFlight / 版本信息页填）
-          xcrun altool --upload-app -f "$IPA" -t ios \
-            --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tail -n 40
+          set -euo pipefail
+          if [ "${HAS_APP_RECORD:-no}" != "yes" ]; then
+            echo "::warning title=缺少 App 记录::App Store Connect 里还没有 $BUNDLE_ID 的 App 记录（产品页），构建无处可传。ipa 已保存为 artifact。"
+            cat <<'MSG'
+          ======================================================================
+          上传这一步被跳过：App Store Connect 里没有 Bundle ID 为
+            com.realsuntime.solartime
+          的 App 记录。altool 会直接报
+            No suitable application records were found
+          ----------------------------------------------------------------------
+          需要你在网页上手动建（API 创建需要额外字段，不在本工作流里做）：
+            1. 打开 https://appstoreconnect.apple.com/apps
+            2. 左上角「+」→「New App」
+            3. Platform: iOS；Name: 任意（如「真太阳时时钟」）
+               Primary Language: 简体中文
+               Bundle ID: com.realsuntime.solartime
+               SKU: 任意唯一字符串（如 realsuntime-solartime）
+            4. 保存后重跑本工作流（Actions → iOS TestFlight → Run workflow）
+          ======================================================================
+          MSG
+            {
+              echo "### 上传未执行：缺少 App 记录"
+              echo ""
+              echo "Bundle ID \`$BUNDLE_ID\` 在 App Store Connect 里还没有 App 记录，altool 会报 \`No suitable application records were found\`。"
+              echo ""
+              echo "**下一步（用户操作，网页）：** https://appstoreconnect.apple.com/apps → 左上角 \`+\` → \`New App\`"
+              echo "→ Platform \`iOS\` / Bundle ID 选 \`$BUNDLE_ID\` / SKU 任意唯一值 → 保存后重跑本工作流。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "${{ inputs.skip_upload }}" = "true" ]; then
+            echo "skip_upload=true，按输入跳过上传"
+            echo "### 按输入跳过上传（skip_upload=true）" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "IPA = $IPA"
+          # 首选 altool（简单、日志好读）；Xcode 16 起也可能已经移除，那就直接走兜底。
+          if xcrun --find altool >/dev/null 2>&1; then
+            echo "使用: $(xcrun --find altool)"
+            set +e
+            xcrun altool --upload-app -f "$IPA" -t ios \
+              --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 \
+              | tee "$RUNNER_TEMP/upload.log"
+            rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              echo "UPLOADED=yes(altool)" >> "$GITHUB_ENV"
+              echo "### 已上传：altool 返回 0" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::warning::altool 退出码 $rc，改走 xcodebuild destination=upload 兜底"
+          else
+            echo "::warning::当前 Xcode 没有 altool，改走 xcodebuild destination=upload 兜底"
+            : > "$RUNNER_TEMP/upload.log"
+          fi
+          exit 1
+
+      - name: 上传兜底：xcodebuild destination=upload
+        if: failure() && env.HAS_APP_RECORD == 'yes'
+        run: |
+          set -euo pipefail
+          echo "--- altool 日志尾部 ---"
+          tail -n 60 "$RUNNER_TEMP/upload.log" || true
+          echo "--- 改用 xcodebuild -exportArchive（destination=upload）---"
+          PLIST="$RUNNER_TEMP/ExportOptions-upload.plist"
+          sed 's|<string>export</string>|<string>upload</string>|' \
+            "$RUNNER_TEMP/ExportOptions.plist" > "$PLIST"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/$APP_NAME.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export-upload" \
+            -exportOptionsPlist "$PLIST" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APPSTORE_KEY_PATH" \
+            -authenticationKeyID "$APPSTORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
+          echo "UPLOADED=yes(xcodebuild-upload)" >> "$GITHUB_ENV"
+          echo "### 已上传：xcodebuild destination=upload" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 运行摘要
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### 关键信息"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| Bundle ID | \`$BUNDLE_ID\` |"
+            echo "| Team ID | \`$APPLE_TEAM_ID\` |"
+            echo "| App 记录 | ${HAS_APP_RECORD:-未知} |"
+            echo "| 证书 | ${CERT_ID:-未申请} |"
+            echo "| 描述文件 | ${PROFILE_NAME:-未申请} (\`${PROFILE_UUID:-n/a}\`) |"
+            echo "| 上传 | ${UPLOADED:-no} |"
+            if [ -n "${CHANGELOG:-}" ]; then echo "| 构建说明 | $CHANGELOG |"; fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CHANGELOG: ${{ inputs.changelog }}
 
       - name: 保留 ipa 备查
         if: always()
@@ -120,3 +332,4 @@ jobs:
           name: TrueSolarTime-export-ipa
           path: ${{ runner.temp }}/export/*.ipa
           if-no-files-found: warn
+          retention-days: 30
