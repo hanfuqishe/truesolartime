@@ -256,6 +256,13 @@ def _gen_key_and_csr(common_name: str):
     return key_pem, csr_pem, key
 
 
+def unwrap(resp: dict) -> dict:
+    """POST/PATCH 的响应长这样：{"data": {"type": ..., "id": ..., "attributes": {...}}}"""
+    if isinstance(resp, dict) and isinstance(resp.get("data"), dict):
+        return resp["data"]
+    return resp
+
+
 def _create_cert(token: str, csr_pem: str) -> dict:
     payload = {
         "data": {
@@ -263,7 +270,7 @@ def _create_cert(token: str, csr_pem: str) -> dict:
             "attributes": {"certificateType": "DISTRIBUTION", "csrContent": csr_pem},
         }
     }
-    return api("POST", "/v1/certificates", token, payload=payload)
+    return unwrap(api("POST", "/v1/certificates", token, payload=payload))
 
 
 def _distribution_certs(token: str) -> list[dict]:
@@ -355,7 +362,7 @@ def cmd_signing(args, token: str) -> int:
             },
         }
     }
-    profile = api("POST", "/v1/profiles", token, payload=payload)
+    profile = unwrap(api("POST", "/v1/profiles", token, payload=payload))
     pa = profile.get("attributes") or {}
     uuid = pa.get("uuid")
     content = pa.get("profileContent")
