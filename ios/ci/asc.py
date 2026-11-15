@@ -442,9 +442,16 @@ def cmd_builds(args, token: str) -> int:
                 "external": ba.get("externalBuildState"),
             })
         pending = [r for r in rows if r["state"] == "PROCESSING"]
-        if not pending or time.time() >= deadline:
+        # 刚上传的构建可能还没出现在列表里，这时候也要继续等
+        missing_expected = bool(args.expect) and not any(
+            str(r["build"]) == str(args.expect) for r in rows
+        )
+        if (not pending and not missing_expected) or time.time() >= deadline:
             break
-        print(f"… 还有 {len(pending)} 个构建在处理中，20 秒后再查")
+        if missing_expected:
+            print(f"… build {args.expect} 还没出现在列表里，20 秒后再查")
+        else:
+            print(f"… 还有 {len(pending)} 个构建在处理中，20 秒后再查")
         time.sleep(20)
 
     print(f"\nTestFlight 构建（前 {len(rows)} 个，按上传时间倒序）：")
