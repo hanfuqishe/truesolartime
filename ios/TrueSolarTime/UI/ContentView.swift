@@ -20,29 +20,35 @@ struct ContentView: View {
                 VStack(spacing: 14) {
                     header
 
-                    HeroCard(
-                        snapshot: model.snapshot,
-                        districtName: cityText,
-                        weather: model.weather,
-                        keyBands: model.keyTime?.bands ?? [],
-                        // 定位还没回来时先不画旧地点的关键时段色段与字色（与 Android 的 waitingForFix 判定一致）。
-                        bandColor: model.waitingForFix
-                            ? nil
-                            : HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
-                        inkColor: (inKeyTime && !model.waitingForFix)
-                            ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
-                            : nil,
-                        inKeyTime: inKeyTime,
-                        coordinates: TimeFormat.coordinates(
-                            latitude: model.place.latitude,
-                            longitude: model.place.longitude
+                    // 卡片区（大卡片 / 太阳 / 地图）统一不跟随系统「粗体文本」：
+                    // 版式是按固定 em 排的，笔画一变粗，栏宽、行高、分档都会跟着偏。
+                    // 页头与版本号仍跟随系统设置（见 CardLegibility.swift）。
+                    Group {
+                        HeroCard(
+                            snapshot: model.snapshot,
+                            districtName: cityText,
+                            weather: model.weather,
+                            keyBands: model.keyTime?.bands ?? [],
+                            // 定位还没回来时先不画旧地点的关键时段色段与字色（与 Android 的 waitingForFix 判定一致）。
+                            bandColor: model.waitingForFix
+                                ? nil
+                                : HeroPalette.band(model.keyTime?.temperature, isDay: model.snapshot.isDay),
+                            inkColor: (inKeyTime && !model.waitingForFix)
+                                ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
+                                : nil,
+                            inKeyTime: inKeyTime,
+                            coordinates: TimeFormat.coordinates(
+                                latitude: model.place.latitude,
+                                longitude: model.place.longitude
+                            )
                         )
-                    )
 
 
-                    SunCard(snapshot: model.snapshot)
+                        SunCard(snapshot: model.snapshot)
 
-                    MapCard(place: model.place, mapStyle: model.mapStyle)
+                        MapCard(place: model.place, mapStyle: model.mapStyle)
+                    }
+                    .cardLegibilityRegular()
 
                     Text(versionLabel)
                         .font(.system(size: 12))

@@ -11,7 +11,8 @@ import { TimeFormat } from '../core/TimeFormat';
 import { ZoneTable } from '../core/ZoneTable';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
-import { MeasureUtils, router } from '@kit.ArkUI';
+import { font, MeasureUtils, router } from '@kit.ArkUI';
+import { CARD_FONT_MEDIUM, CARD_FONT_REGULAR } from '../common/CardFont';
 import { weatherIcon } from '../common/WeatherIcon';
 import { AppStore } from '../services/Store';
 import { AppInfo } from '../services/AppInfo';
@@ -137,6 +138,8 @@ struct Index {
   @State dateRowWidth: number = 0;
   /** 「每 1fp 占多少 vp」的缓存，避免每次重建都去量文本。 */
   private clockRatioCache: number = 0;
+  /** 系统字体「行盒 / 字号」比例，量一次缓存（钉卡片行高用）。 */
+  private lineBoxRatioCache: number = 0;
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
   @State palette: AppPalette = paletteFor(true);
   @State place: Place = Place.DEFAULT;
@@ -188,6 +191,11 @@ struct Index {
   private mapBaseZoom: number = DEFAULT_ZOOM;
 
   aboutToAppear(): void {
+    // 卡片自带字体：在这里（页面侧）注册才真正生效 —— 在 UIAbility 里注册实测不生效
+    // （卡片仍用系统字面；见 harmony/docs/font-weight.md）。registerFont 是同步的，
+    // 所以第一帧就用的自带字面，不会先按系统字体闪一帧。
+    font.registerFont({ familyName: CARD_FONT_REGULAR, familySrc: $rawfile('font/card_sans_regular.ttf') });
+    font.registerFont({ familyName: CARD_FONT_MEDIUM, familySrc: $rawfile('font/card_sans_medium.ttf') });
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
     this.reloadSettings();
@@ -518,13 +526,16 @@ struct Index {
     }
     const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
     const size: number = this.cs(10);
+    // 量宽必须指定卡片自带字族：默认字族会跟着系统「字体粗细」变宽，判断结果就会随设置漂。
     const dateWidth: number = utils.measureTextSize({
       textContent: dateText,
-      fontSize: size + 'fp'
+      fontSize: size + 'fp',
+      fontFamily: CARD_FONT_REGULAR
     }).width as number;
     const coordWidth: number = utils.measureTextSize({
       textContent: coordText,
-      fontSize: size + 'fp'
+      fontSize: size + 'fp',
+      fontFamily: CARD_FONT_REGULAR
     }).width as number;
     return dateWidth + coordWidth + vp2px(8) <= vp2px(this.dateRowWidth);
   }
@@ -716,9 +727,13 @@ struct Index {
           Row() {
             Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
               .fontSize(this.cs(12))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#CCFFFFFF')
             Text(this.districtLabel())
               .fontSize(this.cs(12))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#B3FFFFFF')
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -730,17 +745,23 @@ struct Index {
           Row() {
             Text(TimeFormat.clock(this.standardSecond))
               .fontSize(this.clockMainSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockMainSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor('#FFFFFF')
               .maxLines(1)
             Text(':')
               .fontSize(this.clockSecondSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor('#FFFFFF')
               .maxLines(1)
               .margin({ bottom: this.clockSecondLift() })
             Text(pad2(this.standardSecond % 60))
               .fontSize(this.clockSecondSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor('#FFFFFF')
               .maxLines(1)
@@ -770,9 +791,13 @@ struct Index {
           Row() {
             Text('真太阳时时钟')
               .fontSize(this.cs(12))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#CCFFFFFF')
             Text(`${this.snapshot.shichenName} · ${this.snapshot.shichenHalf}`)
               .fontSize(this.cs(12))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#B3FFFFFF')
               .maxLines(1)
               .textAlign(TextAlign.End)
@@ -783,17 +808,23 @@ struct Index {
           Row() {
             Text(TimeFormat.clock(this.solarSecond))
               .fontSize(this.clockMainSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockMainSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor(this.solarColor())
               .maxLines(1)
             Text(':')
               .fontSize(this.clockSecondSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor(this.solarColor())
               .maxLines(1)
               .margin({ bottom: this.clockSecondLift() })
             Text(pad2(this.solarSecond % 60))
               .fontSize(this.clockSecondSize())
+              .fontFamily(this.cardFont(FontWeight.Medium))
+              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
               .fontWeight(FontWeight.Medium)
               .fontColor(this.solarColor())
               .maxLines(1)
@@ -812,6 +843,8 @@ struct Index {
       Row() {
         Text(this.dateTail())
           .fontSize(this.cs(10))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(10)))
           .fontColor('#B3FFFFFF')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -819,6 +852,8 @@ struct Index {
         if (this.coordinatesFit(this.dateTail(), TimeFormat.coordinates(this.place.latitude, this.place.longitude))) {
           Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
             .fontSize(this.cs(10))
+            .fontFamily(this.cardFont(FontWeight.Normal))
+            .lineHeight(this.cardLineHeight(this.cs(10)))
             .fontColor('#B3FFFFFF')
             .maxLines(1)
             .textAlign(TextAlign.End)
@@ -880,6 +915,8 @@ struct Index {
           Column() {
             Text(label)
               .fontSize(this.cs(10))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.hourlyTextColor())
               .maxLines(1)
             Image(weatherIcon(index < this.hourIcons.length ? this.hourIcons[index] : 'unknown'))
@@ -889,6 +926,8 @@ struct Index {
               .margin({ top: 3 })
             Text(index < this.hourConds.length ? this.hourConds[index] : '')
               .fontSize(this.cs(10))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.hourlyTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -922,10 +961,14 @@ struct Index {
       Row() {
         Text('太阳')
           .fontSize(this.cs(13))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(13)))
           .fontColor(this.palette.subtle)
           .layoutWeight(1)
         Text(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`)
           .fontSize(this.cs(11))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(11)))
           .fontColor(this.palette.accent)
       }
       .width('100%')
@@ -950,9 +993,13 @@ struct Index {
           Column() {
             Text('日出')
               .fontSize(this.cs(10))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
               .fontSize(this.cs(17))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(17)))
               .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
@@ -961,9 +1008,13 @@ struct Index {
           Column() {
             Text('上中天')
               .fontSize(this.cs(10))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
               .fontSize(this.cs(17))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(17)))
               .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
@@ -972,9 +1023,13 @@ struct Index {
           Column() {
             Text('日落')
               .fontSize(this.cs(10))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.palette.subtle)
             Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
               .fontSize(this.cs(17))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(17)))
               .fontColor(this.palette.text)
               .margin({ top: 2 })
           }
@@ -994,6 +1049,8 @@ struct Index {
       } else {
         Text(this.sunSummary())
           .fontSize(this.cs(11))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(11)))
           .fontColor(this.palette.subtle)
           .margin({ top: 8 })
           .width('100%')
@@ -1016,10 +1073,14 @@ struct Index {
       Row() {
         Text('位置地图')
           .fontSize(13)
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(13))
           .fontColor(this.palette.subtle)
           .layoutWeight(1)
         Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
           .fontSize(11)
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(11))
           .fontColor(this.palette.subtle)
       }
       .width('100%')
@@ -1079,6 +1140,8 @@ struct Index {
 
       Text(`${this.mapAttribution} · ${this.mapZoom} 级 · 双指缩放`)
         .fontSize(10)
+        .fontFamily(this.cardFont(FontWeight.Normal))
+        .lineHeight(this.cardLineHeight(10))
         .fontColor(this.palette.subtle)
         .margin({ top: 6 })
         .width('100%')
@@ -1212,8 +1275,16 @@ struct Index {
     const probe: number = 100;
     // measureTextSize 的返回值是 **px**（fontSize 的 number 单位是 fp），所以比例是「px / 1fp」；
     // 下面算可用宽度时也用 px，两边单位必须一致（踩过坑：拿 vp 除 px 比例，字号会被压到下限）。
-    const mainW: number = utils.measureTextSize({ textContent: '00:00', fontSize: probe }).width as number;
-    const secW: number = utils.measureTextSize({ textContent: ':00', fontSize: probe / 2 }).width as number;
+    const mainW: number = utils.measureTextSize({
+      textContent: '00:00',
+      fontSize: probe,
+      fontFamily: CARD_FONT_MEDIUM
+    }).width as number;
+    const secW: number = utils.measureTextSize({
+      textContent: ':00',
+      fontSize: probe / 2,
+      fontFamily: CARD_FONT_MEDIUM
+    }).width as number;
     const ratio: number = (mainW + secW + vp2px(HERO_CLOCK_SECONDS_GAP)) / probe;
     this.clockRatioCache = ratio;
     return ratio;
@@ -1237,6 +1308,44 @@ struct Index {
   /** 半高秒往上抬一点，让它的基线与主数字对齐（按主字号等比）。 */
   private clockSecondLift(): number {
     return Math.round(this.clockMainSize() * 0.12);
+  }
+
+  /**
+   * 系统字体的「行盒 / 字号」比例（只量一次）。
+   *
+   * 卡片改用自带字体后，行盒高会跟着字体自身的 hhea/typo 度量走（这两份子集是 1.20em），
+   * 与系统字体的行盒不同 → 卡片高度会变。这里量的是**系统字体**的比例，
+   * 再把卡片文本的 `lineHeight` 钉到同一个比例，版面与改造前一致；
+   * 不在代码里写死 1.265 / 1.347 这类具体数字。
+   */
+  private systemLineBoxRatio(): number {
+    if (this.lineBoxRatioCache > 0) {
+      return this.lineBoxRatioCache;
+    }
+    const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
+    const probe: number = 100;
+    // measureTextSize 的高度是 px、fontSize 的 number 单位是 fp，先换算到同一单位再取比值。
+    const lineHeightPx: number =
+      utils.measureTextSize({ textContent: 'Hg', fontSize: probe }).height as number;
+    const ratio: number = lineHeightPx > 0 ? lineHeightPx / vp2px(probe) : 0;
+    if (ratio > 0) {
+      this.lineBoxRatioCache = ratio;
+    }
+    return ratio;
+  }
+
+  /** 卡片文本的行高（fp）：字号 × 系统字体行盒比例，保证行盒与系统字体时一致。 */
+  private cardLineHeight(size: number): number {
+    const ratio: number = this.systemLineBoxRatio();
+    if (ratio <= 0) {
+      return size;
+    }
+    return Math.round(size * ratio * 10) / 10;
+  }
+
+  /** 卡片文本的字族：按请求字重选自带字面，避免系统在缺字重时合成粗体。 */
+  private cardFont(weight: FontWeight): string {
+    return weight === FontWeight.Medium ? CARD_FONT_MEDIUM : CARD_FONT_REGULAR;
   }
 
   private wideCardMinHeight(): number {
