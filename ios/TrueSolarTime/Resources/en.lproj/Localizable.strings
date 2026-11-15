@@ -5,8 +5,6 @@
 "app.name" = "True Solar Clock";
 "app.tagline" = "Noon is when the sun crosses your local meridian";
 "app.version" = "Version %@";
-"common.ok" = "OK";
-"common.notice" = "Notice";
 "common.settings" = "Settings";
 "common.none" = "None";
 

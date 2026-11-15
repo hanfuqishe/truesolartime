@@ -155,6 +155,9 @@ struct SettingsView: View {
             }
             .background(palette.background.ignoresSafeArea())
             .foregroundStyle(palette.onSurface)
+            // 「通知权限没开」这类消息是在这一页产生的；设置页是 sheet，会盖住主界面的
+            // Toast，所以这里自己挂一个（同一套 Toast，1.8 秒自动消失、不拦点击）。
+            .toast(message: $model.message)
             .navigationTitle(L("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

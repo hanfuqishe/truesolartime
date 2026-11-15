@@ -71,16 +71,11 @@ struct ContentView: View {
                 SettingsView(model: model)
                     .environment(\.isDay, model.snapshot.isDay)
             }
-            .alert(L("common.notice"), isPresented: Binding(
-                get: { model.message != nil },
-                set: { if !$0 { model.message = nil } }
-            )) {
-                Button(L("common.ok"), role: .cancel) { model.message = nil }
-            } message: {
-                Text(model.message ?? "")
-            }
+            // 原来的「提示 / 好」弹窗已删除：这些消息都是纯告知，改成底部 Toast，
+            // 1.8 秒自动消失、不拦点击（见 `Toast.swift`）。
         }
         .environment(\.isDay, model.snapshot.isDay)
+        .toast(message: $model.message)
         .task {
             model.requestLocationPermissionIfNeeded()
             model.startGpsTracking(announce: false)

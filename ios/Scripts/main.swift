@@ -875,6 +875,29 @@ expect(
         == tier1Divider
 )
 
+print("== 提示形式：只用非阻塞 Toast，不用需要点击的模态 ==")
+// 用户明确要求：告知类消息一律 Toast（或直接去掉），不许用 alert / confirmationDialog。
+// 这里扫一遍 UI 源码，防止以后又冒出模态提示。
+var modalHits: [String] = []
+let uiRoot = iosRoot.appendingPathComponent("TrueSolarTime")
+if let enumerator = FileManager.default.enumerator(at: uiRoot, includingPropertiesForKeys: nil) {
+    for case let url as URL in enumerator where url.pathExtension == "swift" {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+        if text.contains(".alert(") || text.contains("confirmationDialog") {
+            modalHits.append(url.lastPathComponent)
+        }
+    }
+}
+expect(
+    "源码里没有 alert / confirmationDialog",
+    modalHits.isEmpty,
+    "仍在使用：\(modalHits.sorted().joined(separator: ", "))"
+)
+expect(
+    "Toast 停留时长在 1.5~2 秒之间",
+    ToastTiming.duration >= 1.5 && ToastTiming.duration <= 2.0,
+    "actual=\(ToastTiming.duration)"
+)
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")

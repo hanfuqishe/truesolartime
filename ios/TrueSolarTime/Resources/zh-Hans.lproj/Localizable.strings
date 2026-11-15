@@ -5,8 +5,6 @@
 "app.name" = "真太阳时时钟";
 "app.tagline" = "以太阳经过当地子午线的时刻为正午";
 "app.version" = "版本 %@";
-"common.ok" = "好";
-"common.notice" = "提示";
 "common.settings" = "设置";
 "common.none" = "暂无";
 
