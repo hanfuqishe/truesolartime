@@ -8,7 +8,7 @@ import com.realsuntime.solartime.widget.WidgetUpdater
 import java.util.Locale
 
 /**
- * 诊断页的纯文本报告。**只读**，每一行都是 `键 = 值`，方便对方截屏后肉眼对。
+ * 诊断页的纯文本报告。**只读**，每一行都是 `键 = 值`，方便对方整段复制后我们肉眼对。
  *
  * 设计约束：
  * * 任何一项读取失败只显示 `读取失败: xxx`，绝不让整个页面崩掉（每块都 runCatching）；
