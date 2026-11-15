@@ -52,11 +52,17 @@ struct ContentView: View {
                         MapCard(place: model.place, mapStyle: model.mapStyle)
                     }
 
+                    // 版本号同时是「隐藏的诊断入口」：连续点 7 次（间隔 ≤2 秒）才在设置页
+                    // 露出「诊断」区块。不显眼、不会误触，也不写偏好设置（重启回到隐藏）。
                     Text(versionLabel)
                         .font(.system(size: 12))
                         .foregroundStyle(palette.onSurfaceVariant)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            model.registerVersionTap()
+                        }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)

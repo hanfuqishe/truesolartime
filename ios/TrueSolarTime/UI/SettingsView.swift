@@ -121,26 +121,32 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider()
+                    // 「诊断」默认整个隐藏（连标题、三行状态与「立即同步关键时间」按钮一起）：
+                    // 只有连点 7 次首页版本号后 `model.showDiagnostics` 才为 true，
+                    // 而且是本次 App 生命周期内的内存开关，重启回到隐藏。
+                    // 诊断的代码全部保留，只是默认没有入口。
+                    if model.showDiagnostics {
+                        Divider()
 
-                    section(title: L("settings.sectionDiagnostics")) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            diagnosticLine(title: L("settings.diagWeather"), value: WeatherStore.shared.diagnosticsSummary())
-                            diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
-                            diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.onSurfaceVariant)
+                        section(title: L("settings.sectionDiagnostics")) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                diagnosticLine(title: L("settings.diagWeather"), value: WeatherStore.shared.diagnosticsSummary())
+                                diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
+                                diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
+                            }
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.onSurfaceVariant)
 
-                        // 抓取失败时不用等下一次自动重试：现场手动抓一次，结果立刻写回上面那几行。
-                        Button {
-                            model.refreshKeyTime()
-                        } label: {
-                            Text(L("settings.syncKeyTime"))
-                                .font(.system(size: 12))
+                            // 抓取失败时不用等下一次自动重试：现场手动抓一次，结果立刻写回上面那几行。
+                            Button {
+                                model.refreshKeyTime()
+                            } label: {
+                                Text(L("settings.syncKeyTime"))
+                                    .font(.system(size: 12))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
 
                     Divider()

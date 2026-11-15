@@ -55,6 +55,7 @@
 "settings.diagDistrict" = "区划名";
 "settings.diagKeyTime" = "关键时间";
 "settings.syncKeyTime" = "立即同步关键时间";
+"settings.diagnosticsUnlocked" = "已开启诊断";
 "settings.sectionAbout" = "关于计算";
 "settings.aboutBody" = "真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。";
 "settings.done" = "完成";

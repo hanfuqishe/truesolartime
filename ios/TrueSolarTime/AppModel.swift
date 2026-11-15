@@ -21,6 +21,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var weatherStatus: String = ""
     /// 关键时间（抓取）的状态说明，设置页「诊断」用；随抓取结果变化。
     @Published private(set) var keyTimeStatus: String = ""
+    /// 设置页「诊断」区块是否可见。
+    ///
+    /// 默认隐藏：**连续点 7 次版本号**（相邻两次间隔 ≤2 秒）才打开，见 `registerVersionTap()`。
+    /// 刻意不写 UserDefaults —— 只在本次 App 生命周期内有效，重启回到隐藏。
+    @Published private(set) var showDiagnostics = false
     @Published var message: String?
 
     private let settings = AppSettings()
@@ -28,6 +33,8 @@ final class AppModel: ObservableObject {
     private var clockTimer: Timer?
     private var fixWatchdog: Timer?
     private var announcedFirstFix = false
+    /// 「连点 7 次版本号」的计数器（纯逻辑在 `Core/DiagnosticsUnlock.swift`）。
+    private var diagnosticsUnlock = DiagnosticsUnlock()
 
     init() {
         place = settings.place
@@ -260,6 +267,19 @@ final class AppModel: ObservableObject {
             chimeEnabled: keyTimeChimeEnabled,
             shichenEnabled: remindersEnabled
         )
+    }
+
+    // MARK: - 隐藏的诊断入口
+
+    /// 记录一次「点版本号」。连点 7 次（相邻两次 ≤2 秒）后打开设置页的「诊断」区块，
+    /// 并 Toast 一句「已开启诊断」。已经打开后不再重复提示。
+    ///
+    /// 这个开关**不持久化**：`showDiagnostics` 只在内存里，App 重启就回到隐藏。
+    func registerVersionTap() {
+        guard !showDiagnostics else { return }
+        guard diagnosticsUnlock.register() else { return }
+        showDiagnostics = true
+        message = L("settings.diagnosticsUnlocked")
     }
 
     // MARK: - 设置

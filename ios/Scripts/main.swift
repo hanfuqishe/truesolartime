@@ -898,6 +898,42 @@ expect(
     ToastTiming.duration >= 1.5 && ToastTiming.duration <= 2.0,
     "actual=\(ToastTiming.duration)"
 )
+print("== 隐藏的诊断入口（连点 7 次版本号）==")
+// 断言「7 次 + 2 秒窗口」的判定：这是唯一能打开诊断区块的途径。
+let tapBase = date("2026-11-15T04:00:00Z")
+
+var unlock = DiagnosticsUnlock()
+var unlockedAt: Int?
+for (index, offset) in [0.0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8].enumerated() {
+    let fired = unlock.register(at: tapBase.addingTimeInterval(offset))
+    if fired { unlockedAt = index + 1 }
+}
+expect("连点 7 次刚好解锁（第 7 次触发）", unlockedAt == 7, "actual=\(unlockedAt.map(String.init) ?? "nil")")
+
+var unlockSix = DiagnosticsUnlock()
+var firedEarly = false
+for offset in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] {
+    if unlockSix.register(at: tapBase.addingTimeInterval(offset)) { firedEarly = true }
+}
+expect("只有 6 次不解锁", !firedEarly)
+
+var unlockGap = DiagnosticsUnlock()
+var firedAfterGap = false
+// 前 4 次连击，停 3 秒（> 2 秒窗口），后面 6 次连击：从 1 重新数，6 次仍不够 7 次。
+for offset in [0.0, 0.2, 0.4, 0.6, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6] {
+    if unlockGap.register(at: tapBase.addingTimeInterval(offset)) { firedAfterGap = true }
+}
+expect("中间停超过 2 秒会从头数", !firedAfterGap)
+expect("诊断开关不持久化（默认 false）", DiagnosticsUnlock.requiredTaps == 7 && DiagnosticsUnlock.maxInterval == 2)
+
+// 三语都有「已开启诊断」这条文案。
+expect(
+    "「已开启诊断」三语齐全",
+    !L10n.t("settings.diagnosticsUnlocked", language: .simplified).isEmpty
+        && L10n.t("settings.diagnosticsUnlocked", language: .simplified) != "settings.diagnosticsUnlocked"
+        && L10n.t("settings.diagnosticsUnlocked", language: .traditional) == "已開啟診斷"
+        && L10n.t("settings.diagnosticsUnlocked", language: .english) == "Diagnostics enabled"
+)
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")

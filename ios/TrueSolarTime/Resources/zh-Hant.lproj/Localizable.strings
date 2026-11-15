@@ -56,6 +56,7 @@
 "settings.diagDistrict" = "行政區名";
 "settings.diagKeyTime" = "關鍵時段";
 "settings.syncKeyTime" = "立即同步關鍵時段";
+"settings.diagnosticsUnlocked" = "已開啟診斷";
 "settings.sectionAbout" = "關於計算";
 "settings.aboutBody" = "真太陽時依太陽的實際位置計時：先由當地經度相對東經 120° 的偏差修正時差（每 1° 相差 4 分鐘），再疊加因地球軌道偏心率與黃赤交角產生的均時差。十二時辰依真太陽時劃分，子時自 23:00 起，每兩小時一個時辰。";
 "settings.done" = "完成";
