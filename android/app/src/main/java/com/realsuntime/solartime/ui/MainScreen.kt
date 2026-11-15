@@ -45,7 +45,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,7 +73,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -251,18 +249,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             ) {
                 // 平板/宽屏：大卡片与太阳卡片并排（1:1、等高），卡片内容整体缩放到手机上那个比例。
                 val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
-                val baseDensity = LocalDensity.current
                 // 自适应缩放：让「卡片的逻辑宽度」恒等于手机卡的 334dp，于是无论平板多宽，
                 // 卡片里的版式都和手机一模一样，只是整体按比例放大/缩小。
                 // （写死 1.35 会在 640dp 的小平板上出问题：分栏后每张卡只有 294dp，内容会被截断。）
                 val cardWidth = (maxWidth - CARD_GAP) / 2
                 val cardScale = (cardWidth / PHONE_CARD_WIDTH).coerceIn(MIN_CARD_SCALE, MAX_CARD_SCALE)
-                val scaledDensity = remember(baseDensity, cardScale) {
-                    Density(
-                        density = baseDensity.density * cardScale,
-                        fontScale = baseDensity.fontScale,
-                    )
-                }
 
                 Column {
                     Header(
@@ -277,6 +268,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                     if (wide) {
                         // IntrinsicSize.Max + fillMaxHeight：两卡取较高的那张作行高，底边自然对齐。
+                        // LockedCardDensity 放在 Box 里面（与改动前同一层级）：字体缩放锁死，
+                        // 同时几何缩放照旧参与固有测量，IntrinsicSize.Max 不受影响。
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -284,7 +277,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
                         ) {
                             Box(Modifier.weight(1f).fillMaxHeight()) {
-                                CompositionLocalProvider(LocalDensity provides scaledDensity) {
+                                LockedCardDensity(scale = cardScale) {
                                     HeroCard(
                                         snapshot = snapshot,
                                         districtName = cityText,
@@ -296,7 +289,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 }
                             }
                             Box(Modifier.weight(1f).fillMaxHeight()) {
-                                CompositionLocalProvider(LocalDensity provides scaledDensity) {
+                                LockedCardDensity(scale = cardScale) {
                                     SunCard(
                                         snapshot = snapshot,
                                         modifier = Modifier.fillMaxHeight(),
@@ -307,26 +300,37 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         }
 
                     } else {
-                        HeroCard(
-                            snapshot = snapshot,
-                            districtName = cityText,
-                            coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
-                            waitingForFix = waitingForFix,
-                            extras = heroExtras,
-                        )
+                        // 手机：卡片按 100% 排版，字号同样锁死（见 LockedCardDensity）。
+                        LockedCardDensity {
+                            HeroCard(
+                                snapshot = snapshot,
+                                districtName = cityText,
+                                coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                                waitingForFix = waitingForFix,
+                                extras = heroExtras,
+                            )
+                        }
                         Spacer(Modifier.height(14.dp))
 
-                        SunCard(snapshot = snapshot)
+                        LockedCardDensity {
+                            SunCard(snapshot = snapshot)
+                        }
                     }
                     Spacer(Modifier.height(14.dp))
 
-                    MapCard(
-                        place = place,
-                        mapStyle = mapStyle,
-                        mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
-                    )
+                    // 地图卡片同样锁字号：卡上有标题、经纬度、版权三处文本，
+                    // 跟着系统放大就会把地图挤小（视口是按 dp 宽高比算的）。
+                    LockedCardDensity {
+                        MapCard(
+                            place = place,
+                            mapStyle = mapStyle,
+                            mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
+                        )
+                    }
                     Spacer(Modifier.height(14.dp))
 
+                    // 页脚与顶部标题不锁：它们不是「版式即内容」的卡片，
+                    // 跟随系统字号更符合可读性预期（设置页同理）。
                     Text(
                         text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
                         style = MaterialTheme.typography.bodySmall,
@@ -454,7 +458,12 @@ private fun HeroCard(
             // SubcomposeLayout 参与固有测量会抛异常），再用 TextMeasurer 量各段文本的自然宽度。
             var cityRowWidthPx by remember { mutableStateOf(0f) }
             val cityRowMeasurer = rememberTextMeasurer()
-            val cityRowStyle = MaterialTheme.typography.labelMedium
+            // 字重显式写死（labelMedium 的默认值就是 Medium），并用 cardFontWeight 抵掉系统
+            // 「粗体字」的字重调整：不抵掉的话同一行在这台机器上比在别的机器上宽，
+            // 四档退化会提前/延后。
+            val cityRowStyle = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = cardFontWeight(FontWeight.Medium),
+            )
             val cityRowGap = 8.dp
             val cityRowGapPx = with(LocalDensity.current) { cityRowGap.toPx() }
             // 档 0 左半：地区文字与竖线之间留出的间隙。竖线正落在两半分界上，
@@ -509,7 +518,8 @@ private fun HeroCard(
             // 上延段的顶端要和**标签文字的上沿**齐平（不是标签行的顶边）：文字画在行盒（lineHeight）
             // 里、上下各留一半行距，所以字形上沿比行盒顶边还要低 (行高 − 字号) / 2；
             // 标签行万一比文本本身更高（居中对齐），再补上差值的一半。
-            // 字号/行高都从同一套 style 里取，换字体、改字号或系统字体缩放都会自动跟上。
+            // 字号/行高都从同一套 style 里取；卡片内 fontScale 已锁成 1，所以这里的 px 与
+            // 系统字体缩放无关。
             val insetDensity = LocalDensity.current
             val labelTextHeightPx = cityRowMeasurer
                 .measure(solarLabel, cityRowStyle, maxLines = 1)
@@ -702,7 +712,10 @@ private fun HeroCard(
             // SubcomposeLayout 参与固有测量会抛异常），再用 TextMeasurer 量两者自然宽度。
             var statsRowWidthPx by remember { mutableStateOf(0f) }
             val rowMeasurer = rememberTextMeasurer()
-            val labelStyle = MaterialTheme.typography.labelSmall
+            // 同上：日期行/经纬度也把字重钉死（并抵掉系统加粗），避免这一行被撑宽、把经纬度挤掉。
+            val labelStyle = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = cardFontWeight(FontWeight.Medium),
+            )
             val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
             val dateWidthPx = rowMeasurer.measure(dateTail, labelStyle).size.width.toFloat()
             val coordWidthPx = if (coordinates.isEmpty()) {
@@ -865,6 +878,7 @@ private fun HeroHourly(cells: List<HourCell>) {
                 Text(
                     text = cell.label,
                     style = MaterialTheme.typography.labelSmall,
+                    fontWeight = cardFontWeight(FontWeight.Medium),
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                 )
@@ -876,6 +890,7 @@ private fun HeroHourly(cells: List<HourCell>) {
                 Text(
                     text = cell.condition,
                     style = MaterialTheme.typography.labelSmall,
+                    fontWeight = cardFontWeight(FontWeight.Medium),
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -897,12 +912,20 @@ private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
  * 2. **整段时间正好撑满可用宽度**：用固定样本按 100sp 量出「主字号 + 半高秒」的实际宽度，
  *    再按这一栏的可用宽度反推主字号 —— 数字是等宽（`tnum`），所以不同时刻的宽度一致，
  *    不会忽宽忽窄。这样手机、平板（并排两栏、卡片被缩放）都自动铺满，不需要手调参数。
+ *
+ * 字号反推只在 `fontScale == 1` 时成立：探针按 sp 量、最终也按 sp 渲染，两者之间差的就是
+ * `fontScale`；外层 `LockedCardDensity` 已把它锁成 1，所以「1sp = 1dp」在这里恒成立
+ * （秒数那个 `(mainSp * 0.12f).dp` 的下沉量也是按这条前提写的：1sp 与 1dp 等值）。
+ * 字重走 `cardFontWeight`：显式给出目标字重，并把系统「粗体字」的调整量抵掉。
  */
 @Composable
 private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val baseStyle = TextStyle(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")
+    val baseStyle = TextStyle(
+        fontWeight = cardFontWeight(FontWeight.Medium),
+        fontFeatureSettings = "tnum",
+    )
     val probeSp = 100f
     // 用「88:88」与「:88」作样本：等宽数字下与实际渲染同宽，和具体时刻无关。
     val mainProbePx = measurer
@@ -973,12 +996,16 @@ private fun SunCard(
                 Text(
                     text = stringResource(R.string.sun_section_title),
                     style = MaterialTheme.typography.titleSmall,
+                    // 字重显式写出（titleSmall 默认就是 Medium），并用 cardFontWeight 抵掉
+                    // 系统「粗体字」的调整量。
+                    fontWeight = cardFontWeight(FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = stringResource(R.string.altitude, snapshot.altitudeDegrees),
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = cardFontWeight(FontWeight.Medium),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -1010,6 +1037,7 @@ private fun SunCard(
                         TimeFormat.clock(snapshot.sunsetTrueSolar),
                     ),
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = cardFontWeight(FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -1026,6 +1054,7 @@ private fun SunCard(
                         )
                     },
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = cardFontWeight(FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1039,12 +1068,17 @@ private fun SunTimeItem(label: String, time: LocalTime?, modifier: Modifier = Mo
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = cardFontWeight(FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = TimeFormat.clock(time),
-            style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"),
+            style = TextStyle(
+                fontSize = 17.sp,
+                fontWeight = cardFontWeight(FontWeight.Medium),
+                fontFeatureSettings = "tnum",
+            ),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )

@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realsuntime.solartime.data.MapConfig
@@ -41,6 +42,12 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 
+/**
+ * 地图卡片。
+ *
+ * 字号缩放由调用方锁死（`MainScreen` 里用 `LockedCardDensity` 包住，fontScale 恒为 1）；
+ * 这里的字重也一律显式写出，避免被系统「粗体字」的字重调整带偏。
+ */
 @Composable
 fun MapCard(
     place: Place,
@@ -63,12 +70,14 @@ fun MapCard(
                 Text(
                     text = stringResource(R.string.location_map_title),
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = cardFontWeight(FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = TimeText.coordinates(context, place.latitude, place.longitude),
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = cardFontWeight(FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -89,6 +98,7 @@ fun MapCard(
             Text(
                 text = attributionText(context, mapStyle, style),
                 style = MaterialTheme.typography.bodySmall,
+                fontWeight = cardFontWeight(FontWeight.Normal),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
