@@ -34,6 +34,11 @@ on:
         type: boolean
         required: false
         default: false
+      verify_only:
+        description: '只查 App Store Connect 里的构建状态（不构建不上传，约 1 分钟）'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -67,6 +72,7 @@ jobs:
       #   or later, included in Xcode 26 or later.
       # 镜像里 26.x 是预装的（非默认），所以这里挑最新的稳定版切过去。
       - name: 选择 Xcode（需要 iOS 26 SDK）
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           echo "--- 已安装的 Xcode ---"
@@ -91,6 +97,7 @@ jobs:
           xcodebuild -showsdks | grep -i iphoneos || true
 
       - name: 显示工具链
+        if: ${{ !inputs.verify_only }}
         run: |
           xcodebuild -version
           swift --version
@@ -99,9 +106,11 @@ jobs:
           echo "team=$APPLE_TEAM_ID bundle=$BUNDLE_ID"
 
       - name: 安装 XcodeGen
+        if: ${{ !inputs.verify_only }}
         run: brew install xcodegen
 
       - name: 准备 Python（cryptography / PyJWT）
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/venv"
@@ -111,9 +120,11 @@ jobs:
           echo "PY=$RUNNER_TEMP/venv/bin/python" >> "$GITHUB_ENV"
 
       - name: 本地自检（JWT / CSR）
+        if: ${{ !inputs.verify_only }}
         run: '"$PY" ios/ci/asc.py selfcheck --out-dir "$RUNNER_TEMP/selfcheck"'
 
       - name: 由 project.yml 生成工程
+        if: ${{ !inputs.verify_only }}
         working-directory: ios
         run: xcodegen generate
 
@@ -138,12 +149,14 @@ jobs:
           echo "pass-through: $(grep '^HAS_APP_RECORD=' "$GITHUB_ENV")"
 
       - name: 申请 Distribution 证书 + App Store 描述文件
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           "$PY" ios/ci/asc.py signing --out-dir "$RUNNER_TEMP/signing" \
             --profile-prefix "$PROFILE_PREFIX"
 
       - name: 证书装进临时钥匙串
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           KEYCHAIN="$RUNNER_TEMP/ci-signing.keychain-db"
@@ -173,6 +186,7 @@ jobs:
             || echo "::warning::find-identity 没列出 Apple Distribution（可能是缺 WWDR 中间证书），继续尝试 archive"
 
       - name: Archive（手工签名）
+        if: ${{ !inputs.verify_only }}
         working-directory: ios
         run: |
           set -euo pipefail
@@ -194,10 +208,15 @@ jobs:
             "$ARCHIVE/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' \
             "$ARCHIVE/Info.plist"
+          BUILD_NO=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' \
+            "$ARCHIVE/Info.plist")
+          echo "BUNDLE_BUILD=$BUILD_NO" >> "$GITHUB_ENV"
+          echo "本次 upload 的 build 号：$BUILD_NO"
           # 确认包真的用分发证书签了
           codesign -dv --verbose=4 "$ARCHIVE/Products/Applications/$APP_NAME.app" 2>&1 | head -n 20
 
       - name: 导出 ipa（app-store-connect / manual）
+        if: ${{ !inputs.verify_only }}
         run: |
           set -euo pipefail
           ARCHIVE="$RUNNER_TEMP/$APP_NAME.xcarchive"
@@ -252,6 +271,7 @@ jobs:
           fi
 
       - name: 上传到 TestFlight
+        if: ${{ !inputs.verify_only }}
         id: upload
         run: |
           set -euo pipefail
@@ -333,6 +353,19 @@ jobs:
             -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID"
           echo "UPLOADED=yes(xcodebuild-upload)" >> "$GITHUB_ENV"
           echo "### 已上传：xcodebuild destination=upload" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 验证 TestFlight 构建（GET /v1/builds）
+        if: always() && env.HAS_APP_RECORD == 'yes'
+        run: |
+          set -euo pipefail
+          if [ "${UPLOADED:-no}" = "no" ]; then
+            echo "本次没有上传（UPLOADED=${UPLOADED:-未设置}），只列出账号里现有的构建"
+            "$PY" ios/ci/asc.py builds --wait 0 || true
+          else
+            # 上传刚完成时 Apple 还在处理，最多等 10 分钟
+            "$PY" ios/ci/asc.py builds --wait 600 --expect "${BUNDLE_BUILD:-}"
+          fi
+
 
       - name: 运行摘要
         if: always()

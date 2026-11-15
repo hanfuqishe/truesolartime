@@ -393,6 +393,81 @@ def cmd_signing(args, token: str) -> int:
     return 0
 
 
+# ----------------------------------------------------------------- builds
+
+def cmd_builds(args, token: str) -> int:
+    """查 TestFlight 里的构建（GET /v1/builds），确认上传的包到底进去了没有。"""
+    apps = list_all("/v1/apps", token, {"filter[bundleId]": args.bundle_id})
+    if not apps:
+        print(f"::{args.bundle_id} 在 App Store Connect 里没有 App 记录", file=sys.stderr)
+        return 1
+    app = apps[0]
+    app_id = app["id"]
+    print(f"App = {(app.get('attributes') or {}).get('name')!r} "
+          f"(id={app_id}, sku={(app.get('attributes') or {}).get('sku')!r})")
+
+    deadline = time.time() + args.wait
+    rows: list[dict] = []
+    while True:
+        resp = api("GET", "/v1/builds", token, params={
+            "filter[app]": app_id,
+            "sort": "-uploadedDate",
+            "limit": "10",
+            "include": "preReleaseVersion",
+        })
+        included = {(i.get("type"), i.get("id")): i for i in (resp.get("included") or [])}
+        rows = []
+        for b in resp.get("data") or []:
+            a = b.get("attributes") or {}
+            rel = ((b.get("relationships") or {}).get("preReleaseVersion") or {}).get("data") or {}
+            pre = included.get(("preReleaseVersions", rel.get("id"))) or {}
+            rows.append({
+                "id": b["id"],
+                "build": a.get("version"),
+                "version": (pre.get("attributes") or {}).get("version"),
+                "state": a.get("processingState"),
+                "uploaded": a.get("uploadedDate"),
+                "expired": a.get("expired"),
+                "minOs": a.get("minOsVersion"),
+            })
+        pending = [r for r in rows if r["state"] == "PROCESSING"]
+        if not pending or time.time() >= deadline:
+            break
+        print(f"… 还有 {len(pending)} 个构建在处理中，20 秒后再查")
+        time.sleep(20)
+
+    print(f"\nTestFlight 构建（前 {len(rows)} 个，按上传时间倒序）：")
+    print(f"  {'build':>6}  {'version':<10} {'state':<12} {'uploaded':<22} expired")
+    for r in rows:
+        print(f"  {str(r['build']):>6}  {str(r['version']):<10} {str(r['state']):<12} "
+              f"{str(r['uploaded']):<22} {r['expired']}")
+
+    lines = ["", "### TestFlight 构建", "",
+             "| build | 版本 | 状态 | 上传时间 |", "| --- | --- | --- | --- |"]
+    for r in rows:
+        lines.append(f"| {r['build']} | {r['version']} | {r['state']} | {r['uploaded']} |")
+    if args.expect:
+        hit = [r for r in rows if str(r["build"]) == str(args.expect)]
+        if hit:
+            lines.append("")
+            lines.append(f"本次上传的 build `{args.expect}`：**{hit[0]['state']}**")
+        else:
+            lines.append("")
+            lines.append(f"⚠️ 没查到 build `{args.expect}`（App Store Connect 可能还在接收）")
+    target = os.environ.get("GITHUB_STEP_SUMMARY")
+    if target:
+        with open(target, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+
+    bad = [r for r in rows if r["state"] in ("INVALID", "FAILED")]
+    if bad:
+        print(f"\n::error::{len(bad)} 个构建被 Apple 判为 INVALID/FAILED", file=sys.stderr)
+        return 1
+    if rows and all(r["state"] == "PROCESSING" for r in rows):
+        print("\n::warning::构建还在 PROCESSING，通常几分钟到半小时；稍后重跑本步骤可再确认")
+    return 0
+
+
 # ----------------------------------------------------------------- selfcheck
 
 def cmd_selfcheck(args, token_unused=None) -> int:
@@ -462,6 +537,10 @@ def main(argv: list[str]) -> int:
     sc = sub.add_parser("selfcheck", help="本地自检（不联网）")
     sc.add_argument("--out-dir")
 
+    sb = sub.add_parser("builds", help="查 TestFlight 构建状态")
+    sb.add_argument("--wait", type=int, default=0, help="等待处理的秒数")
+    sb.add_argument("--expect", default=None, help="期望出现的 build 号")
+
     args = p.parse_args(argv)
 
     if args.cmd == "selfcheck":
@@ -486,6 +565,8 @@ def main(argv: list[str]) -> int:
             return cmd_preflight(args, token)
         if args.cmd == "signing":
             return cmd_signing(args, token)
+        if args.cmd == "builds":
+            return cmd_builds(args, token)
     except AscError as exc:
         print(f"\n::error::{exc}", file=sys.stderr)
         return 1
