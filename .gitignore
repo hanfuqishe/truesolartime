@@ -35,3 +35,9 @@ dist/
 
 # 鸿蒙签名材料（含口令，绝不入库）
 harmony/.sign/
+
+
+# 商店截图与营销图（37 MB 二进制，本地生成、不入库）
+# 生成脚本与说明仍然入库，见 docs/store-shots/marketing/make_marketing.py
+docs/store-shots/**/*.png
+docs/store-shots/**/*.jpg
