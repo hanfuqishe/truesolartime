@@ -408,6 +408,7 @@ object WidgetUpdater {
             //     （右端落在 50% 分界上），右半「真太阳时」贴左 + 时辰贴最右 —— 与首页 HeroCard 档 0 同一几何；
             //   * 档 1-3 → widget_top_row：合并成一条，地区对齐由 setGravity 按档位下发。
             // 两个容器互斥，文本 / 可见性 / 对齐对两套控件一起下发（同一布局里 id 不能重名）。
+            // 竖分隔线同理有两份（见下面 dividerReachesLabelRow 那一段）。
             val city = cityLabel(context, place, widthDp, compact)
             val topRowDefault = city.tier == 0
             setViewVisibility(
@@ -417,6 +418,21 @@ object WidgetUpdater {
             setViewVisibility(
                 R.id.widget_top_row,
                 if (topRowDefault) View.GONE else View.VISIBLE,
+            )
+            // 竖分隔线（整行 50% 处那条）：档 0 的标签行仍是左右两半 —— 左半地区贴右、右半
+            // 「真太阳时」贴左，两半的分界**就是**下面两列的分界，所以那条线要从标签行顶部
+            // 一路贯到两列底部；档 1~3 标签行已合并成一整行，线只盖下方两列（规则见
+            // SmallRowLayout.dividerReachesLabelRow）。
+            // 布局里为此有两条线、落在同一个 x 上：上延档位让短线 INVISIBLE（保留占位，两列的
+            // 宽度与行高都不变），其余档位让高线 GONE —— 两条同时可见会在同一段上叠成更深的一截。
+            val dividerReachesLabelRow = SmallRowLayout.dividerReachesLabelRow(city.tier)
+            setViewVisibility(
+                R.id.widget_divider_tier0,
+                if (dividerReachesLabelRow) View.VISIBLE else View.GONE,
+            )
+            setViewVisibility(
+                R.id.widget_divider_short,
+                if (dividerReachesLabelRow) View.INVISIBLE else View.VISIBLE,
             )
             val utcLabel = TimeFormat.utcOffsetLabel(zone.rules.getOffset(now).totalSeconds)
             val cityText = if (location.hasFix) city.text else ""

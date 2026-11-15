@@ -26,242 +26,276 @@
          任何档位时辰都贴整行最右。放在内容列里（不是叠在 FrameLayout 顶部），
          这样它会跟着整块内容一起居中。 -->
 
-    <!-- 档 0：左右两半各自排，几何与首页大卡片 HeroCard 的档 0 完全一致。 -->
+    <!-- 标签行 + 两列：外面这层横向 LinearLayout 只为一件事 —— 让档 0 那条「高竖线」
+         拿到「标签行 + 两列」的确切高度。横向 LinearLayout 量完子项、自己高度定下来之后，
+         会把 layout_height="match_parent" 的子项按最终高度再量一次（forceUniformHeight），
+         FrameLayout 里的竖线因此能贯穿整块内容；档 1/2/3 时那条线是 gone，几何完全不变。 -->
     <LinearLayout
-        android:id="@+id/widget_top_row_default"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="2dp"
-        android:baselineAligned="false"
-        android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <!-- 左半：`UTC` 贴最左，地区吃满剩余宽度并贴右 —— 文字右端正好落在整行的 50% 分界上。 -->
-        <LinearLayout
-            android:id="@+id/widget_top_default_left"
+        <FrameLayout
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/widget_top_utc_default"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="@string/widget_label_civil"
-                android:textColor="#CCFFFFFF"
-                android:textSize="11dp" />
-
-            <TextView
-                android:id="@+id/widget_city_default"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:gravity="end"
-                android:maxLines="1"
-                android:textColor="#CCFFFFFF"
-                android:textSize="11dp"
-                tools:text="上海市黄浦区" />
-        </LinearLayout>
-
-        <!-- 右半：从分界处起排，先让出一个间距，再「真太阳时」贴左、时辰贴最右。 -->
-        <LinearLayout
-            android:id="@+id/widget_top_default_right"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="8dp">
-
-            <TextView
-                android:id="@+id/widget_top_solar_default"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/widget_label_solar"
-                android:textColor="#CCFFFFFF"
-                android:textSize="11dp" />
-
-            <TextView
-                android:id="@+id/widget_top_shichen_default"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:gravity="end"
-                android:maxLines="1"
-                android:textColor="#CCFFFFFF"
-                android:textSize="11dp"
-                tools:text="辰时 · 初" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- 档 1/2/3：合并成一条（默认隐藏，由 WidgetUpdater 按档位切换）。 -->
-    <LinearLayout
-        android:id="@+id/widget_top_row"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="2dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/widget_top_utc"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="@string/widget_label_civil"
-            android:textColor="#CCFFFFFF"
-            android:textSize="11dp" />
-
-        <!-- 档 1/2/3 的地区：宽度吃满「UTC（档 1 还在）与时辰」之间的剩余空间，
-             对齐由代码用 setGravity 下发（档 1 居中、档 2/3 贴左）。 -->
-        <TextView
-            android:id="@+id/widget_city"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:gravity="end"
-            android:maxLines="1"
-            android:textColor="#CCFFFFFF"
-            android:textSize="11dp"
-            tools:text="上海市黄浦区" />
-
-        <TextView
-            android:id="@+id/widget_top_solar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/widget_label_solar"
-            android:textColor="#CCFFFFFF"
-            android:textSize="11dp" />
-
-        <!-- 时辰：任何档位都保留，始终贴整行最右。 -->
-        <TextView
-            android:id="@+id/widget_top_shichen"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#CCFFFFFF"
-            android:textSize="11dp"
-            tools:text="辰时 · 初" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <LinearLayout
-            android:id="@+id/widget_civil_column"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <!-- 标准时间交给 TextClock：宿主进程按整分/整秒自行走时，
-                     既不依赖本 App 的刷新闹钟，也保证秒与分在同一时刻进位。 -->
-                <TextClock
-                    android:id="@+id/widget_civil_time"
-                    style="@style/WidgetClockMain"
-                    android:format12Hour="HH:mm"
-                    android:format24Hour="HH:mm"
-                    android:text="00:00"
-                    android:textColor="#FFFFFFFF"
-                    tools:ignore="HardcodedText" />
-
-                <TextView
-                    android:id="@+id/widget_civil_colon"
-                    style="@style/WidgetClockColon"
-                    android:text=":"
-                    tools:ignore="HardcodedText" />
-
-                <TextClock
-                    android:id="@+id/widget_civil_sec"
-                    style="@style/WidgetClockSecondTicked"
-                    android:format12Hour="ss"
-                    android:format24Hour="ss"
-                    android:text="00"
-                    tools:ignore="HardcodedText" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="1dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="8dp"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="6dp"
-            android:background="#33FFFFFF"
-            android:orientation="vertical" />
-        <LinearLayout
-            android:id="@+id/widget_solar_column"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:layout_weight="1">
+
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/widget_solar_time"
-                    style="@style/WidgetClockMain"
-                    android:text="00:00"
-                    android:textColor="#FFFFC65C"
-                    tools:ignore="HardcodedText" />
+                <!-- 档 0：左右两半各自排，几何与首页大卡片 HeroCard 的档 0 完全一致。 -->
+                <LinearLayout
+                    android:id="@+id/widget_top_row_default"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <!--
-                  冒号与秒默认隐藏：桌面「添加小组件」的系统预览直接渲染这份布局，
-                  此时还没有 base，Chronometer 会显示一段被裁掉的时间（看着像多出一个括号）。
-                  真正刷新时由 WidgetUpdater 把它们设为可见。
-                -->
-                <TextView
-                    android:id="@+id/widget_solar_colon"
-                    style="@style/WidgetClockColonSolar"
-                    android:text=":"
-                    android:visibility="invisible"
-                    tools:ignore="HardcodedText" />
+                    <!-- 左半：`UTC` 贴最左，地区吃满剩余宽度并贴右 —— 文字右端正好落在整行的 50% 分界上。 -->
+                    <LinearLayout
+                        android:id="@+id/widget_top_default_left"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:baselineAligned="false"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-                <!--
-                  秒数：Chronometer 自己每秒走一格，并且每次都按 base 重算到下一整秒的延时，
-                  不会像翻页器那样越走越慢；宽度由 setMaxWidth 限成两位数字、右对齐，
-                  于是只露出「0:SS」里的后两位。
-                -->
-                <Chronometer
-                    android:id="@+id/widget_solar_sec"
-                    style="@style/WidgetClockSecondChrono"
-                    android:visibility="invisible"
-                    tools:ignore="HardcodedText" />
+                        <TextView
+                            android:id="@+id/widget_top_utc_default"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/widget_label_civil"
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="11dp" />
+
+                        <TextView
+                            android:id="@+id/widget_city_default"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:ellipsize="end"
+                            android:gravity="end"
+                            android:maxLines="1"
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="11dp"
+                            tools:text="上海市黄浦区" />
+                    </LinearLayout>
+
+                    <!-- 右半：从分界处起排，先让出一个间距，再「真太阳时」贴左、时辰贴最右。 -->
+                    <LinearLayout
+                        android:id="@+id/widget_top_default_right"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:baselineAligned="false"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="8dp">
+
+                        <TextView
+                            android:id="@+id/widget_top_solar_default"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/widget_label_solar"
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="11dp" />
+
+                        <TextView
+                            android:id="@+id/widget_top_shichen_default"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:ellipsize="end"
+                            android:gravity="end"
+                            android:maxLines="1"
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="11dp"
+                            tools:text="辰时 · 初" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 档 1/2/3：合并成一条（默认隐藏，由 WidgetUpdater 按档位切换）。 -->
+                <LinearLayout
+                    android:id="@+id/widget_top_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/widget_top_utc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/widget_label_civil"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="11dp" />
+
+                    <!-- 档 1/2/3 的地区：宽度吃满「UTC（档 1 还在）与时辰」之间的剩余空间，
+                         对齐由代码用 setGravity 下发（档 1 居中、档 2/3 贴左）。 -->
+                    <TextView
+                        android:id="@+id/widget_city"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="end"
+                        android:maxLines="1"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="11dp"
+                        tools:text="上海市黄浦区" />
+
+                    <TextView
+                        android:id="@+id/widget_top_solar"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/widget_label_solar"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="11dp" />
+
+                    <!-- 时辰：任何档位都保留，始终贴整行最右。 -->
+                    <TextView
+                        android:id="@+id/widget_top_shichen"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="11dp"
+                        tools:text="辰时 · 初" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:id="@+id/widget_civil_column"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <!-- 标准时间交给 TextClock：宿主进程按整分/整秒自行走时，
+                                 既不依赖本 App 的刷新闹钟，也保证秒与分在同一时刻进位。 -->
+                            <TextClock
+                                android:id="@+id/widget_civil_time"
+                                style="@style/WidgetClockMain"
+                                android:format12Hour="HH:mm"
+                                android:format24Hour="HH:mm"
+                                android:text="00:00"
+                                android:textColor="#FFFFFFFF"
+                                tools:ignore="HardcodedText" />
+
+                            <TextView
+                                android:id="@+id/widget_civil_colon"
+                                style="@style/WidgetClockColon"
+                                android:text=":"
+                                tools:ignore="HardcodedText" />
+
+                            <TextClock
+                                android:id="@+id/widget_civil_sec"
+                                style="@style/WidgetClockSecondTicked"
+                                android:format12Hour="ss"
+                                android:format24Hour="ss"
+                                android:text="00"
+                                tools:ignore="HardcodedText" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/widget_divider_short"
+                        android:layout_width="1dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginTop="6dp"
+                        android:layout_marginEnd="8dp"
+                        android:layout_marginBottom="6dp"
+                        android:background="#33FFFFFF"
+                        android:orientation="vertical" />
+                    <LinearLayout
+                        android:id="@+id/widget_solar_column"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/widget_solar_time"
+                                style="@style/WidgetClockMain"
+                                android:text="00:00"
+                                android:textColor="#FFFFC65C"
+                                tools:ignore="HardcodedText" />
+
+                            <!--
+                              冒号与秒默认隐藏：桌面「添加小组件」的系统预览直接渲染这份布局，
+                              此时还没有 base，Chronometer 会显示一段被裁掉的时间（看着像多出一个括号）。
+                              真正刷新时由 WidgetUpdater 把它们设为可见。
+                            -->
+                            <TextView
+                                android:id="@+id/widget_solar_colon"
+                                style="@style/WidgetClockColonSolar"
+                                android:text=":"
+                                android:visibility="invisible"
+                                tools:ignore="HardcodedText" />
+
+                            <!--
+                              秒数：Chronometer 自己每秒走一格，并且每次都按 base 重算到下一整秒的延时，
+                              不会像翻页器那样越走越慢；宽度由 setMaxWidth 限成两位数字、右对齐，
+                              于是只露出「0:SS」里的后两位。
+                            -->
+                            <Chronometer
+                                android:id="@+id/widget_solar_sec"
+                                style="@style/WidgetClockSecondChrono"
+                                android:visibility="invisible"
+                                tools:ignore="HardcodedText" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+
+            <!-- 档 0 专用：从标签行顶部一路贯到两列底部的竖线。与上面两列行里那条短线
+                 **互斥**显示（同一个 x，同时画会叠出更深的一截），由 WidgetUpdater 按档位切换。 -->
+            <LinearLayout
+                android:id="@+id/widget_divider_tier0"
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:layout_gravity="center_horizontal"
+                android:background="#33FFFFFF"
+                android:orientation="vertical"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 
 
     <!-- 日期与经纬度同一行：日期吃满剩余宽度，经纬度贴右。
-         竖分隔线在上面的两栏行里，不会再伸进这一行。 -->
+         竖分隔线只到上面两列那一行为止（档 0 的高竖线也一样），不会再伸进这一行。 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

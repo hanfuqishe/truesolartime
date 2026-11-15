@@ -145,4 +145,31 @@ class SmallRowLayoutTest {
         assertEquals(0, SmallRowLayout.cityRowTier(utc, fitsLeft, 52f, 60f, row, gap))
         assertEquals(1, SmallRowLayout.cityRowTier(utc, fitsLeft + 1f, 52f, 60f, row, gap))
     }
+
+    // ---- 竖分隔线要不要上延到标签行顶部 ----
+
+    @Test
+    fun dividerReachesLabelRowOnlyInTierZero() {
+        // 档 0 的标签行是左右两半，50% 分界与下方两列的分界是同一条线 → 上延
+        assertTrue(SmallRowLayout.dividerReachesLabelRow(0))
+        // 档 1~3 标签行已合并成一整行，线只盖下方两列
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(1))
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(2))
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(3))
+        // 越界值一律不上延（只有档 0 这一种结构需要）
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(-1))
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(4))
+    }
+
+    @Test
+    fun dividerFollowsTheTierBoundaries() {
+        // 用 [cityRowTier] 的边界把「上延与否」串起来：地区 148 宽仍是档 0（上延），
+        // 149 起变档 1（不上延）—— 与真实渲染同一条判定。
+        val short = SmallRowLayout.cityRowTier(44f, 148f, 52f, 60f, 400f, 8f)
+        val long = SmallRowLayout.cityRowTier(44f, 149f, 52f, 60f, 400f, 8f)
+        assertEquals(0, short)
+        assertEquals(1, long)
+        assertTrue(SmallRowLayout.dividerReachesLabelRow(short))
+        assertFalse(SmallRowLayout.dividerReachesLabelRow(long))
+    }
 }

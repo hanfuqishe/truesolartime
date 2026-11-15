@@ -486,128 +486,177 @@ private fun HeroCard(
                 gap = cityRowGapPx,
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onSizeChanged { cityRowWidthPx = it.width.toFloat() },
-                verticalAlignment = Alignment.CenterVertically,
-                // 档 0 是两半各自排（间距在两半内部），档 1~3 才需要元素之间统一留间距。
-                horizontalArrangement = if (cityRowTier == 0) {
-                    Arrangement.Start
-                } else {
-                    Arrangement.spacedBy(cityRowGap)
-                },
-            ) {
-                if (cityRowTier == 0) {
-                    // 档 0：左右两半各占整行一半（与下面两列等宽）。
-                    // 左半 `UTC` 贴左、地区贴右（贴着两半的分界）；右半「真太阳时」贴左、时辰贴右。
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(cityRowGap),
-                    ) {
-                        Text(
-                            text = utcLabel,
-                            style = cityRowStyle,
-                            color = HeroPalette.LABEL,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = cityLabel,
-                            style = cityRowStyle,
-                            color = HeroPalette.LABEL_DIM,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
-                            // 吃满 UTC 之后的剩余宽度，`TextAlign.End` 才有把文字推到分界处的余量。
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+            // 竖分隔线的上端跟着档位走：
+            //   档 0 —— 标签行仍是左右两半（左半地区贴右、右半「真太阳时」贴左），两半的分界就是
+            //           下面两列的分界，所以线要从标签行顶部一路画下来才连得上；
+            //   档 1~3 —— 标签行已合并成一整行，线只盖下方两列（与以前一样）。
+            // 两段线共用下面这套尺寸（左右各让 12dp，中心仍落在整行 50% 上）。
+            val dividerColor = Color(0x33FFFFFF)
+            val dividerWidth = 1.dp
+            val dividerSideInset = 12.dp
+            // 两列行里的那条线从 3dp 处起画，档 0 的上延段要接到它的顶端，所以多补 3dp。
+            val dividerTopPadding = 3.dp
+            val dividerColumnHeight = 58.dp
+            var labelRowHeightPx by remember { mutableStateOf(0f) }
+            // 标签行与两列放进同一个 Box，档 0 那条线才能当 overlay 画到标签行顶部。
+            // 高度只能用 onSizeChanged 量（不能用 BoxWithConstraints：卡片在 IntrinsicSize.Max 里，
+            // SubcomposeLayout 参与固有测量会抛异常）。
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
-                            .weight(1f)
-                            // 两半各自贴着分界，这里再留一个间距，否则地区与「真太阳时」会挤在一起。
-                            .padding(start = cityRowGap),
+                            .fillMaxWidth()
+                            .onSizeChanged {
+                                cityRowWidthPx = it.width.toFloat()
+                                labelRowHeightPx = it.height.toFloat()
+                            },
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(cityRowGap),
+                        // 档 0 是两半各自排（间距在两半内部），档 1~3 才需要元素之间统一留间距。
+                        horizontalArrangement = if (cityRowTier == 0) {
+                            Arrangement.Start
+                        } else {
+                            Arrangement.spacedBy(cityRowGap)
+                        },
                     ) {
-                        Text(
-                            text = solarLabel,
-                            style = cityRowStyle,
-                            color = HeroPalette.LABEL,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = shichenLabel,
-                            style = cityRowStyle,
-                            color = HeroPalette.LABEL_DIM,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.weight(1f),
-                        )
+                        if (cityRowTier == 0) {
+                            // 档 0：左右两半各占整行一半（与下面两列等宽）。
+                            // 左半 `UTC` 贴左、地区贴右（贴着两半的分界）；右半「真太阳时」贴左、时辰贴右。
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(cityRowGap),
+                            ) {
+                                Text(
+                                    text = utcLabel,
+                                    style = cityRowStyle,
+                                    color = HeroPalette.LABEL,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = cityLabel,
+                                    style = cityRowStyle,
+                                    color = HeroPalette.LABEL_DIM,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    // 吃满 UTC 之后的剩余宽度，`TextAlign.End` 才有把文字推到分界处的余量。
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    // 两半各自贴着分界，这里再留一个间距，否则地区与「真太阳时」会挤在一起。
+                                    .padding(start = cityRowGap),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(cityRowGap),
+                            ) {
+                                Text(
+                                    text = solarLabel,
+                                    style = cityRowStyle,
+                                    color = HeroPalette.LABEL,
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    text = shichenLabel,
+                                    style = cityRowStyle,
+                                    color = HeroPalette.LABEL_DIM,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else {
+                            // 档 1：收掉「真太阳时」，整行当一个整体 —— UTC 贴左、时辰贴右、地区居中。
+                            // 档 2/3：再收掉 UTC —— 地区贴左（档 3 尾部省略号）。任何档位时辰都贴整行最右。
+                            if (cityRowTier == 1) {
+                                Text(
+                                    text = utcLabel,
+                                    style = cityRowStyle,
+                                    color = HeroPalette.LABEL,
+                                    maxLines = 1,
+                                )
+                            }
+                            Text(
+                                text = cityLabel,
+                                style = cityRowStyle,
+                                color = HeroPalette.LABEL_DIM,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = if (cityRowTier == 1) TextAlign.Center else TextAlign.Start,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = shichenLabel,
+                                style = cityRowStyle,
+                                color = HeroPalette.LABEL_DIM,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                            )
+                        }
                     }
-                } else {
-                    // 档 1：收掉「真太阳时」，整行当一个整体 —— UTC 贴左、时辰贴右、地区居中。
-                    // 档 2/3：再收掉 UTC —— 地区贴左（档 3 尾部省略号）。任何档位时辰都贴整行最右。
-                    if (cityRowTier == 1) {
-                        Text(
-                            text = utcLabel,
-                            style = cityRowStyle,
-                            color = HeroPalette.LABEL,
-                            maxLines = 1,
+
+                    // 下面两列时间内容：左标准时、右真太阳时。
+                    // 两列之间那条竖线在这里；档 0 时它还要向上延伸到标签行顶部（见上面
+                    // Box 里的 overlay）。
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        // 左：当地标准时间（所在地的法定时区；中国境内就是北京时间，
+                        // 出国或手工指定外地坐标时换成当地标准时。时区标签在上面的整行里）
+                        Column(modifier = Modifier.weight(1f)) {
+                            HeroClock(
+                                text = TimeFormat.clock(snapshot.localStandardTime),
+                                seconds = snapshot.localStandardTime.second,
+                                color = Color.White,
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .padding(
+                                    start = dividerSideInset,
+                                    end = dividerSideInset,
+                                    top = dividerTopPadding,
+                                )
+                                .width(dividerWidth)
+                                .height(dividerColumnHeight)
+                                .background(dividerColor),
                         )
+
+                        // 右：真太阳时（逐秒刷新）
+                        Column(modifier = Modifier.weight(1f)) {
+                            if (waitingForFix) {
+                                HeroClock(text = "--:--", seconds = null, color = solarColor)
+                            } else {
+                                HeroClock(
+                                    text = "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                                    seconds = snapshot.trueSolarTime.second,
+                                    color = solarColor,
+                                )
+                            }
+                        }
                     }
-                    Text(
-                        text = cityLabel,
-                        style = cityRowStyle,
-                        color = HeroPalette.LABEL_DIM,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = if (cityRowTier == 1) TextAlign.Center else TextAlign.Start,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = shichenLabel,
-                        style = cityRowStyle,
-                        color = HeroPalette.LABEL_DIM,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.End,
-                    )
-                }
-            }
-
-            // 下面两列时间内容：左标准时、右真太阳时，竖分隔线仍留在两列之间。
-            Row(modifier = Modifier.fillMaxWidth()) {
-                // 左：当地标准时间（所在地的法定时区；中国境内就是北京时间，
-                // 出国或手工指定外地坐标时换成当地标准时。时区标签在上面的整行里）
-                Column(modifier = Modifier.weight(1f)) {
-                    HeroClock(
-                        text = TimeFormat.clock(snapshot.localStandardTime),
-                        seconds = snapshot.localStandardTime.second,
-                        color = Color.White,
-                    )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .padding(start = 12.dp, end = 12.dp, top = 3.dp)
-                        .width(1.dp)
-                        .height(58.dp)
-                        .background(Color(0x33FFFFFF)),
-                )
-
-                // 右：真太阳时（逐秒刷新）
-                Column(modifier = Modifier.weight(1f)) {
-                    if (waitingForFix) {
-                        HeroClock(text = "--:--", seconds = null, color = solarColor)
-                    } else {
-                        HeroClock(
-                            text = "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
-                            seconds = snapshot.trueSolarTime.second,
-                            color = solarColor,
+                // 档 0 的上延段：从标签行顶端补到两列那条线的起点，两段接起来是一条从内容顶部
+                // 通到两列底部的整线。这里用与下面两列**同一套**排布（左右各 weight 1、中间
+                // 1dp + 左右各 12dp）来摆这一小段线，四舍五入后 x 与下面那条严格重合，
+                // 接缝处不会错开 1px。
+                if (cityRowTier == 0 && labelRowHeightPx > 0f) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier
+                                .padding(start = dividerSideInset, end = dividerSideInset)
+                                .width(dividerWidth)
+                                .height(
+                                    with(LocalDensity.current) { labelRowHeightPx.toDp() } +
+                                        dividerTopPadding,
+                                )
+                                .background(dividerColor),
                         )
+                        Spacer(Modifier.weight(1f))
                     }
                 }
             }
