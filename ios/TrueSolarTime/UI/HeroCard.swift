@@ -29,24 +29,43 @@ struct HeroCard: View {
     /// 卡片宽度：先用「屏宽 − 左右内边距」当首帧估值，随后由 GeometryReader 量出的真实值覆盖。
     /// 若初值给 0，第一帧会按极小宽度算出超大字号，看起来就是卡片被撑出屏幕。
     @State private var cardWidth: CGFloat = UIScreen.main.bounds.width - 40
+    /// 顶部标签行的实测尺寸：宽度决定四档退化，高度决定竖分隔线的上端。
+    @State private var labelRowSize: CGSize = .zero
+    /// 时钟行的实测高度：竖分隔线的长度跟着它走（不写死）。
+    @State private var clockRowHeight: CGFloat = 0
 
     private let cardPadding: CGFloat = 18
     private let columnGap: CGFloat = 12
     private let dividerWidth: CGFloat = 1
+    /// 标签行的字号。卡片的字号是固定 `.system(size:)`（不跟 Dynamic Type，见 `CardLegibility`），
+    /// 量宽度也用同一个字号，判档结果才与渲染一致。
+    private static let labelFontSize: CGFloat = 12
+    private static let labelFont = UIFont.systemFont(ofSize: HeroCard.labelFontSize)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
-                standardColumn
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // 顶部标签行（`UTC+8` · 城市 · `真太阳时` · 时辰）是**整行一个逻辑单元**，
+            // 与下面两列放在同一个 ZStack 里：档 0 时那条竖线要从标签行一路贯下来。
+            // 分档规则见 `HeroRowTier`（与 Android `SmallRowLayout.cityRowTier` 逐条对应）。
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    labelRow
+                        .padding(.bottom, 2)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: HeroLabelRowSizeKey.self, value: proxy.size)
+                            }
+                        )
 
-                Rectangle()
-                    .fill(.white.opacity(0.2))
-                    .frame(width: dividerWidth, height: clockHeight * 0.72)
-                    .padding(.horizontal, columnGap)
+                    clockRow
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: HeroClockRowHeightKey.self, value: proxy.size.height)
+                            }
+                        )
+                }
 
-                solarColumn
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                dividerLine
             }
 
             dateAndWeatherRow
@@ -84,46 +103,159 @@ struct HeroCard: View {
                 cardWidth = width
             }
         }
+        .onPreferenceChange(HeroLabelRowSizeKey.self) { size in
+            if abs(size.width - labelRowSize.width) > 0.5 || abs(size.height - labelRowSize.height) > 0.5 {
+                labelRowSize = size
+            }
+        }
+        .onPreferenceChange(HeroClockRowHeightKey.self) { height in
+            if abs(height - clockRowHeight) > 0.5 {
+                clockRowHeight = height
+            }
+        }
     }
 
-    // MARK: - 两栏
+    // MARK: - 顶部标签行（四档退化）
 
-    private var standardColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text(snapshot.utcLabel)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.8))
-                Spacer(minLength: 4)
-                Text(districtName)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+    /// 当前档位。宽度全部用 `UIFont` 量（与渲染同一字号、同一字体），纯计算、无副作用。
+    private var rowTier: HeroRowTier.Tier {
+        HeroRowTier.tier(
+            utcWidth: textWidth(snapshot.utcLabel),
+            cityWidth: textWidth(districtName),
+            labelWidth: textWidth(L("hero.trueSolar")),
+            shichenWidth: textWidth(shichenText),
+            rowWidth: labelRowWidth
+        )
+    }
+
+    /// 整行可用宽度：优先用实测值（第一帧还没量到时退回「卡片内宽」的估值）。
+    private var labelRowWidth: CGFloat {
+        labelRowSize.width > 0 ? labelRowSize.width : rowContentWidth
+    }
+
+    private var shichenText: String {
+        "\(snapshot.shichenName) · \(snapshot.shichenHalf)"
+    }
+
+    private func textWidth(_ text: String) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        return (text as NSString).size(withAttributes: [.font: Self.labelFont]).width
+    }
+
+    private var labelRow: some View {
+        let tier = rowTier
+        return HStack(spacing: HeroRowTier.showsSolarLabel(tier: tier) ? 0 : HeroRowTier.gap) {
+            if HeroRowTier.showsSolarLabel(tier: tier) {
+                // 档 0：左右两半各占整行一半（与下面两列等宽）。
+                // 左半 `UTC` 贴左、城市贴右（贴着两半分界，尾部再让 6pt 不贴线）；
+                // 右半「真太阳时」贴左（先让一个间距）、时辰贴右。
+                HStack(spacing: HeroRowTier.gap) {
+                    utcLabel
+                        .fixedSize(horizontal: true, vertical: false)
+                    cityLabel(alignment: .trailing)
+                        .padding(.trailing, HeroRowTier.cityEndInset)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: HeroRowTier.gap) {
+                    solarLabel
+                        .fixedSize(horizontal: true, vertical: false)
+                    shichenLabel(alignment: .trailing)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, HeroRowTier.gap)
+            } else {
+                // 档 1：收掉「真太阳时」—— `UTC` 贴左、城市在 UTC 与时辰之间居中、时辰贴右。
+                // 档 2/3：再收掉 UTC —— 城市贴左、时辰贴右（档 3 时城市自然被省略号截尾）。
+                if HeroRowTier.showsUTC(tier: tier) {
+                    utcLabel
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                cityLabel(alignment: HeroRowTier.cityCentered(tier: tier) ? .center : .leading)
+                shichenLabel(alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    private var utcLabel: some View {
+        Text(snapshot.utcLabel)
+            .font(.system(size: Self.labelFontSize))
+            .foregroundStyle(.white.opacity(0.8))
+            .lineLimit(1)
+    }
+
+    private var solarLabel: some View {
+        Text(L("hero.trueSolar"))
+            .font(.system(size: Self.labelFontSize))
+            .foregroundStyle(.white.opacity(0.8))
+            .lineLimit(1)
+    }
+
+    /// 城市是这一行里唯一可压缩的文本：给它剩余宽度 + 指定对齐，放不下时尾部省略号。
+    private func cityLabel(alignment: Alignment) -> some View {
+        Text(districtName)
+            .font(.system(size: Self.labelFontSize))
+            .foregroundStyle(.white.opacity(0.7))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: alignment)
+    }
+
+    private func shichenLabel(alignment: Alignment) -> some View {
+        Text(shichenText)
+            .font(.system(size: Self.labelFontSize))
+            .foregroundStyle(.white.opacity(0.7))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: alignment)
+    }
+
+    // MARK: - 竖分隔线
+
+    /// 竖线几何：档 0 的总高度 = 标签行高 + 时钟行高（上端与「真太阳时」文字上沿齐平）；
+    /// 其它档只覆盖时钟行。
+    private var dividerGeometry: HeroRowTier.DividerGeometry {
+        HeroRowTier.divider(
+            tier: rowTier,
+            labelRowHeight: labelRowSize.height,
+            clockRowHeight: clockRowHeight,
+            labelTopInset: labelTopInset
+        )
+    }
+
+    /// 行盒里字形上沿之上的空白：上端要与**文字上沿**齐平，而不是行盒顶边。
+    private var labelTopInset: CGFloat {
+        max((Self.labelFont.lineHeight - Self.labelFontSize) / 2, 0)
+    }
+
+    private var dividerLine: some View {
+        let geometry = dividerGeometry
+        return Rectangle()
+            .fill(.white.opacity(0.2))
+            .frame(width: dividerWidth, height: geometry.height)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .offset(y: geometry.top)
+            .allowsHitTesting(false)
+    }
+
+    // MARK: - 两栏时钟
+
+    private var clockRow: some View {
+        HStack(alignment: .top, spacing: 0) {
             FittingClock(
                 main: String(format: "%02d:%02d", snapshot.beijingTime.hour, snapshot.beijingTime.minute),
                 seconds: String(format: "%02d", snapshot.beijingTime.second),
                 color: .white,
                 availableWidth: columnWidth
             )
-            .padding(.top, 2)
-        }
-    }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-    private var solarColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text(L("hero.trueSolar"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.8))
-                Spacer(minLength: 4)
-                Text("\(snapshot.shichenName) · \(snapshot.shichenHalf)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-            }
+            // 原来这里放的是「1pt 线 + 左右各 12pt」的分隔块；线改成整块卡片的 overlay 之后，
+            // 仍占同样的宽度，两列宽度与字号推算都不变。
+            Color.clear
+                .frame(width: dividerWidth + columnGap * 2, height: 0)
 
             FittingClock(
                 main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
@@ -132,7 +264,7 @@ struct HeroCard: View {
                 color: inkColor ?? HeroPalette.accent(isDay: snapshot.isDay),
                 availableWidth: columnWidth
             )
-            .padding(.top, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -201,6 +333,25 @@ struct HeroCard: View {
 }
 
 private struct HeroCardWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// 顶部标签行的实测尺寸（宽决定四档，高决定竖线的上端）。
+private struct HeroLabelRowSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next.width > 0 || next.height > 0 {
+            value = next
+        }
+    }
+}
+
+/// 时钟行的实测高度（竖线的长度跟着它走）。
+private struct HeroClockRowHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())

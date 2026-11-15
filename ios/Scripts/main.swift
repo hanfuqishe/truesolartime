@@ -772,6 +772,109 @@ expect(
     "未知 key 原样返回",
     L10n.t("no.such.key", language: .simplified) == "no.such.key"
 )
+print("== 大卡片顶部标签行的四档退化（与 Android SmallRowLayout 对齐）==")
+// 固定参数：间距 8、城市与竖线之间 6、其余是各段文本的自然宽度。
+let heroGap: CGFloat = HeroRowTier.gap
+let heroInset: CGFloat = HeroRowTier.cityEndInset
+expect("间距 8pt / 间隙 6pt", heroGap == 8 && heroInset == 6, "gap=\(heroGap) inset=\(heroInset)")
+
+func tierOf(_ utc: CGFloat, _ city: CGFloat, _ label: CGFloat, _ shichen: CGFloat, _ width: CGFloat) -> HeroRowTier.Tier {
+    HeroRowTier.tier(
+        utcWidth: utc,
+        cityWidth: city,
+        labelWidth: label,
+        shichenWidth: shichen,
+        rowWidth: width
+    )
+}
+
+// 尚未量出行宽（第一帧）→ 按档 0 排，免得闪一下「只剩城市」。
+expect("未测量按档 0", tierOf(40, 300, 60, 100, 0) == .allFour)
+expect("极宽是档 0", tierOf(40, 100, 60, 100, 2000) == .allFour)
+
+// 档 0 → 档 1 的边界：左半 = utc 40 + (city + 6) + gap 8 ≤ 半宽 200  →  city ≤ 146。
+expect("半宽刚好放下（city=146）是档 0", tierOf(40, 146, 60, 100, 400) == .allFour)
+expect("城市再多 1pt（147）就落到档 1", tierOf(40, 147, 60, 100, 400) == .noSolarLabel)
+
+// 档 1 → 档 2 的边界：utc 40 + (city + 6) + 时辰 100 + 16 ≤ 400  →  city ≤ 238。
+expect("整行刚好放下（city=238）是档 1", tierOf(40, 238, 60, 100, 400) == .noSolarLabel)
+expect("再宽 1pt（239）就落到档 2", tierOf(40, 239, 60, 100, 400) == .cityAndShichen)
+
+// 档 2 → 档 3 的边界：(city + 6) + 时辰 100 + 8 ≤ 400  →  city ≤ 286。
+expect("城市 + 时辰刚好放下（city=286）是档 2", tierOf(40, 286, 60, 100, 400) == .cityAndShichen)
+expect("城市再宽（287）落到档 3（尾部省略号）", tierOf(40, 287, 60, 100, 400) == .cityTruncated)
+
+// 极窄：连「城市 + 时辰」都放不下就是档 3。
+expect("极窄（60pt）是档 3", tierOf(40, 100, 60, 100, 60) == .cityTruncated)
+
+// 6pt 间隙确实计入：行宽 96（半宽 48）、UTC 40 时，城市只有 0 宽才装得下左半。
+expect("空城市不算间隙（档 0）", tierOf(40, 0, 10, 10, 96) == .allFour)
+expect("城市宽 1pt 就要计入 6pt 间隙（落到档 1）", tierOf(40, 1, 10, 10, 96) == .noSolarLabel)
+
+// 每一档能看见哪几段：时辰任何档都在，且排在最右。
+expect(
+    "档 0 四段都显示",
+    HeroRowTier.labels(tier: .allFour) == [.utc, .city, .solarLabel, .shichen]
+)
+expect(
+    "档 1 收掉「真太阳时」",
+    HeroRowTier.labels(tier: .noSolarLabel) == [.utc, .city, .shichen]
+)
+expect(
+    "档 2 再收掉 UTC",
+    HeroRowTier.labels(tier: .cityAndShichen) == [.city, .shichen]
+)
+expect(
+    "档 3 与档 2 相同（城市截尾）",
+    HeroRowTier.labels(tier: .cityTruncated) == [.city, .shichen]
+)
+expect(
+    "任何档位都保留时辰",
+    HeroRowTier.Tier.allCases.allSatisfy { HeroRowTier.labels(tier: $0).contains(.shichen) }
+)
+expect(
+    "只有档 1 城市居中",
+    !HeroRowTier.cityCentered(tier: .allFour)
+        && HeroRowTier.cityCentered(tier: .noSolarLabel)
+        && !HeroRowTier.cityCentered(tier: .cityAndShichen)
+        && !HeroRowTier.cityCentered(tier: .cityTruncated)
+)
+
+// 竖分隔线：只有档 0 向上延伸到标签行。
+expect(
+    "只有档 0 的竖线延伸到标签行",
+    HeroRowTier.dividerReachesLabelRow(tier: .allFour)
+        && !HeroRowTier.dividerReachesLabelRow(tier: .noSolarLabel)
+        && !HeroRowTier.dividerReachesLabelRow(tier: .cityAndShichen)
+        && !HeroRowTier.dividerReachesLabelRow(tier: .cityTruncated)
+)
+// 标签行高 16（含 2pt 下间距）、时钟行高 40、文字上沿内缩 2。
+// 档 0：总高度 = 16 + 40，上端在 2 → top 2 / height 54。
+// 档 1~3：只盖时钟行 → top 16 / height 40。
+let tier0Divider = HeroRowTier.divider(
+    tier: .allFour, labelRowHeight: 16, clockRowHeight: 40, labelTopInset: 2
+)
+expect(
+    "档 0 的线总高 = 标签行 + 时钟行，上端与文字上沿齐平",
+    tier0Divider.top == 2 && tier0Divider.height == 54,
+    "top=\(tier0Divider.top) height=\(tier0Divider.height)"
+)
+let tier1Divider = HeroRowTier.divider(
+    tier: .noSolarLabel, labelRowHeight: 16, clockRowHeight: 40, labelTopInset: 2
+)
+expect(
+    "档 1 的线只盖时钟行",
+    tier1Divider.top == 16 && tier1Divider.height == 40,
+    "top=\(tier1Divider.top) height=\(tier1Divider.height)"
+)
+expect(
+    "档 2 / 档 3 的线与档 1 相同",
+    HeroRowTier.divider(tier: .cityAndShichen, labelRowHeight: 16, clockRowHeight: 40, labelTopInset: 2)
+        == tier1Divider
+        && HeroRowTier.divider(tier: .cityTruncated, labelRowHeight: 16, clockRowHeight: 40, labelTopInset: 2)
+        == tier1Divider
+)
+
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")
