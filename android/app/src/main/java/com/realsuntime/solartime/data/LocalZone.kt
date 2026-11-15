@@ -33,9 +33,26 @@ object LocalZone {
         fallbackSeconds = SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude),
     )
 
+    /**
+     * 这个地点算不算「中国境内」——决定是否强制 Asia/Shanghai（全境统一 +8）。
+     *
+     * **不能只看经纬度包围盒**：73–135°E / 18–54°N 这个矩形把印度、尼泊尔、
+     * 东南亚一大片都框进去了。新德里（77.2°E, 28.6°N）就在框内，之前会被当成
+     * 中国而显示 UTC+8、并且逆地理跑去问高德（境外查不到）。
+     * 有国家码时以国家码为准，没有才退回包围盒。
+     */
+    fun isInChina(context: Context, place: Place): Boolean {
+        val code = place.countryCode?.takeUnless { it.isBlank() }
+            ?: DistrictResolver.cachedCountryCode(context, place).takeIf { it.isNotBlank() }
+        if (code != null) {
+            val c = code.lowercase()
+            return c == "cn" || c == "hk" || c == "mo" || c == "tw"
+        }
+        return SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+    }
     /** 观测点此刻的法定时区；`TextClock#setTimeZone` 也吃它的 [ZoneId.id]。 */
     fun zoneIdFor(context: Context, place: Place, now: Instant): ZoneId {
-        if (SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)) return ZoneId.of("Asia/Shanghai")
+        if (isInChina(context, place)) return ZoneId.of("Asia/Shanghai")
         val standard = standardOffsetSeconds(context, place)
         val system = ZoneId.systemDefault()
         // 比的是**标准**偏移而不是当前偏移：德国夏天设备时区是 +2、表里是 +1，按当前偏移比会

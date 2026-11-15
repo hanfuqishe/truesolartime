@@ -80,8 +80,10 @@ class WidgetUpdaterTest {
     @Test
     fun cityRowBudgetsFollowTheSameGeometryAsTheHeroCard() {
         // 400dp 的卡片、常规内边距 14dp：整行 372dp = 33.82 个字宽，左右两半各 16.91。
+        // 档 0 要再从「左半」里扣掉 UTC(34dp)、两段之间的间距(8dp) 与地区与竖线之间的
+        // 间隙(6dp, 与布局里 widget_city_default 的 marginEnd 一致)：16.91 − 3.09 − 0.73 − 0.55。
         val budgets = WidgetUpdater.cityRowBudgets(400f, compact = false)
-        assertEquals(13.09f, budgets.tier0, 0.02f)
+        assertEquals(12.55f, budgets.tier0, 0.02f)
         assertEquals(24.55f, budgets.tier1, 0.02f)
         assertEquals(28.36f, budgets.tier2, 0.02f)
         // 档 0 的上限确实来自「左半」：比档 1 窄得多，同一段地名会先在档 0 放不下。

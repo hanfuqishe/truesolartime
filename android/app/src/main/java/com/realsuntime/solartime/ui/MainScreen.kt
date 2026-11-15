@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -456,6 +457,10 @@ private fun HeroCard(
             val cityRowStyle = MaterialTheme.typography.labelMedium
             val cityRowGap = 8.dp
             val cityRowGapPx = with(LocalDensity.current) { cityRowGap.toPx() }
+            // 档 0 左半：地区文字与竖线之间留出的间隙。竖线正落在两半分界上，
+            // 右半「真太阳时」从分界右侧 8dp 起排，左侧再留 6dp，线两侧都不会贴着字。
+            val cityEndInset = 6.dp
+            val cityEndInsetPx = with(LocalDensity.current) { cityEndInset.toPx() }
             val utcLabel = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds)
             val cityLabel = districtName ?: ""
             val solarLabel = stringResource(R.string.widget_label_solar)
@@ -470,7 +475,10 @@ private fun HeroCard(
             val cityWidthPx = if (cityLabel.isEmpty()) {
                 0f
             } else {
-                cityRowMeasurer.measure(cityLabel, cityRowStyle).size.width.toFloat()
+                // 档 0 里地区右侧还要让出 cityEndInset，判档时一并算进宽度，
+                // 否则那一档会「看起来刚好放下、实际被挤掉 6dp」。
+                cityRowMeasurer.measure(cityLabel, cityRowStyle).size.width.toFloat() +
+                    cityEndInsetPx
             }
             val solarLabelWidthPx =
                 cityRowMeasurer.measure(solarLabel, cityRowStyle).size.width.toFloat()
@@ -498,6 +506,20 @@ private fun HeroCard(
             val dividerTopPadding = 3.dp
             val dividerColumnHeight = 58.dp
             var labelRowHeightPx by remember { mutableStateOf(0f) }
+            // 上延段的顶端要和**标签文字的上沿**齐平（不是标签行的顶边）：文字画在行盒（lineHeight）
+            // 里、上下各留一半行距，所以字形上沿比行盒顶边还要低 (行高 − 字号) / 2；
+            // 标签行万一比文本本身更高（居中对齐），再补上差值的一半。
+            // 字号/行高都从同一套 style 里取，换字体、改字号或系统字体缩放都会自动跟上。
+            val insetDensity = LocalDensity.current
+            val labelTextHeightPx = cityRowMeasurer
+                .measure(solarLabel, cityRowStyle, maxLines = 1)
+                .size.height.toFloat()
+            val labelFontSizePx = with(insetDensity) { cityRowStyle.fontSize.toPx() }
+            val labelLineHeightPx = with(insetDensity) {
+                cityRowStyle.lineHeight.takeOrElse { cityRowStyle.fontSize }.toPx()
+            }
+            val dividerTopInsetPx = ((labelLineHeightPx - labelFontSizePx) / 2f).coerceAtLeast(0f) +
+                ((labelRowHeightPx - labelTextHeightPx) / 2f).coerceAtLeast(0f)
             // 标签行与两列放进同一个 Box，档 0 那条线才能当 overlay 画到标签行顶部。
             // 高度只能用 onSizeChanged 量（不能用 BoxWithConstraints：卡片在 IntrinsicSize.Max 里，
             // SubcomposeLayout 参与固有测量会抛异常）。
@@ -539,8 +561,11 @@ private fun HeroCard(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.End,
-                                    // 吃满 UTC 之后的剩余宽度，`TextAlign.End` 才有把文字推到分界处的余量。
-                                    modifier = Modifier.weight(1f),
+                                    // 吃满 UTC 之后的剩余宽度，`TextAlign.End` 才有把文字推到分界处的余量；
+                                    // 尾部再让出 6dp，地区与竖线之间留出明显间隙（不与线贴在一起）。
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = cityEndInset),
                                 )
                             }
                             Row(
@@ -639,21 +664,29 @@ private fun HeroCard(
                     }
                 }
 
-                // 档 0 的上延段：从标签行顶端补到两列那条线的起点，两段接起来是一条从内容顶部
-                // 通到两列底部的整线。这里用与下面两列**同一套**排布（左右各 weight 1、中间
-                // 1dp + 左右各 12dp）来摆这一小段线，四舍五入后 x 与下面那条严格重合，
+                // 档 0 的上延段：从**标签文字上沿**补到两列那条线的起点，两段接起来是一条从
+                // 文字顶部通到两列底部的整线。这里用与下面两列**同一套**排布（左右各 weight 1、
+                // 中间 1dp + 左右各 12dp）来摆这一小段线，四舍五入后 x 与下面那条严格重合，
                 // 接缝处不会错开 1px。
                 if (cityRowTier == 0 && labelRowHeightPx > 0f) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                    // 顶端下移 dividerTopInsetPx（= 行盒里字形上沿之上的空白），高度同比减掉，
+                    // 底端仍接在两列那条线上。
+                    val overlayHeightPx = (
+                        labelRowHeightPx +
+                            with(insetDensity) { dividerTopPadding.toPx() } -
+                            dividerTopInsetPx
+                        ).coerceAtLeast(0f)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = with(insetDensity) { dividerTopInsetPx.toDp() }),
+                    ) {
                         Spacer(Modifier.weight(1f))
                         Box(
                             modifier = Modifier
                                 .padding(start = dividerSideInset, end = dividerSideInset)
                                 .width(dividerWidth)
-                                .height(
-                                    with(LocalDensity.current) { labelRowHeightPx.toDp() } +
-                                        dividerTopPadding,
-                                )
+                                .height(with(insetDensity) { overlayHeightPx.toDp() })
                                 .background(dividerColor),
                         )
                         Spacer(Modifier.weight(1f))

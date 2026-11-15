@@ -141,6 +141,15 @@ object WidgetUpdater {
     private const val CITY_LABEL_GAP_DP = 8f
 
     /**
+     * 档 0 左半：地区文字右端与竖线之间的间隙。
+     *
+     * 竖线落在整行 50% 分界上，右半的「真太阳时」从分界右侧 8dp 起排；左半的地区若贴到分界上，
+     * 就会紧贴着线（实测只剩 1px）。所以地区右侧再让出 6dp —— 与布局里 `widget_city_default`
+     * 的 `layout_marginEnd="6dp"`、首页 `HeroCard` 档 0 的 `padding(end = 6.dp)` 三处一致。
+     */
+    private const val CITY_END_INSET_DP = 6f
+
+    /**
      * 顶部标签行的控件 id，**两套**都要一起下发（见 [build] 里的说明）：
      *
      * - 档 0 用两半结构的 `*_default` 那一套；
@@ -614,7 +623,8 @@ object WidgetUpdater {
      * 顶部标签行留给地名的宽度上限（单位：字号 em，1.0 = 一个汉字宽），三档一一对应首页
      * `SmallRowLayout.cityRowTier` 的判定：
      *
-     * - [tier0]：档 0 —— 与首页同一套几何，地区要能塞进**左半**（整行一半减去 UTC 与间距）。
+     * - [tier0]：档 0 —— 与首页同一套几何，地区要能塞进**左半**（整行一半减去 UTC、
+     *   两段之间的间距、以及地区与竖线之间的 [CITY_END_INSET_DP]）。
      *   右半连「真太阳时 + 时辰」都装不下时档 0 不可能成立，这里返回负数，让所有地名退到档 1。
      * - [tier1]：收起「真太阳时」后，UTC + 地区 + 时辰 装进整行。
      * - [tier2]：再收起 UTC，地区 + 时辰 装进整行（再宽就是档 3：贴左 + 省略号）。
@@ -631,11 +641,13 @@ object WidgetUpdater {
         val solarLabelEm = SOLAR_LABEL_DP / CITY_TEXT_DP
         val shichenEm = SHICHEN_DP / CITY_TEXT_DP
         val gapEm = CITY_LABEL_GAP_DP / CITY_TEXT_DP
+        val cityEndEm = CITY_END_INSET_DP / CITY_TEXT_DP
         val halfEm = rowEm / 2f
         // 档 0 要求右半装得下「真太阳时 + 时辰」，与首页两半等宽一致。
         val rightHalfFits = solarLabelEm + shichenEm + gapEm <= halfEm
         return CityRowBudgets(
-            tier0 = if (rightHalfFits) halfEm - utcEm - gapEm else -1f,
+            // 左半：UTC + 间距 + 地区 + 地区与竖线之间的间隙。
+            tier0 = if (rightHalfFits) halfEm - utcEm - gapEm - cityEndEm else -1f,
             tier1 = rowEm - utcEm - shichenEm - 2f * gapEm,
             tier2 = rowEm - shichenEm - gapEm,
         )

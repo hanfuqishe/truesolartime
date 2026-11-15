@@ -184,7 +184,7 @@ object DistrictResolver {
             handler.postDelayed({ inFlight.set(false) }, LOOKUP_TIMEOUT_MILLIS)
             // 中文界面优先高德（区县名更细），但高德只认真实中国境内的坐标；
             // 境外城市用它必然查不到，于是永远不显示区划名 —— 这种情况改走 OSM。
-            val inChina = SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+            val inChina = LocalZone.isInChina(app, place)
             if (prefersChineseNames(app) && inChina) {
                 if (!startAmap(app, place)) inFlight.set(false)
             } else {
@@ -233,7 +233,7 @@ object DistrictResolver {
                 }
                 // 境外坐标绝不能回退到高德：它对国外点会返回毫不相干的中国地名
                 // （实测纽约坐标拿到了「哈尔滨市松北区」）。中国境内才走高德兜底。
-                val inChina = SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+                val inChina = LocalZone.isInChina(app, place)
                 if (!inChina || !startAmap(app, place)) {
                     inFlight.set(false)
                 }

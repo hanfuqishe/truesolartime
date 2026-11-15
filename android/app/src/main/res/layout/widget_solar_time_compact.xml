@@ -80,6 +80,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
+                            android:layout_marginEnd="6dp"
                             android:layout_weight="1"
                             android:ellipsize="end"
                             android:gravity="end"
@@ -280,13 +281,17 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 档 0 专用：从标签行顶部一路贯到两列底部的竖线。与上面两列行里那条短线
-                 **互斥**显示（同一个 x，同时画会叠出更深的一截），由 WidgetUpdater 按档位切换。 -->
+            <!-- 档 0 专用：从（标签文字上沿）一路贯到两列底部的竖线。与上面两列行里那条短线
+                 **互斥**显示（同一个 x，同时画会叠出更深的一截），由 WidgetUpdater 按档位切换。
+                 layout_marginTop 让线的顶端与标签文字的上沿齐平：TextView 的文字上方还留着
+                 字体自身的行距/内边距（11dp 字实测约 3dp），线从标签行顶边起画就会高出这一截。
+                 下边距不加，match_parent 减掉上边距后底端仍然落在两列底部。 -->
             <LinearLayout
                 android:id="@+id/widget_divider_tier0"
                 android:layout_width="1dp"
                 android:layout_height="match_parent"
                 android:layout_gravity="center_horizontal"
+                android:layout_marginTop="3dp"
                 android:background="#33FFFFFF"
                 android:orientation="vertical"
                 android:visibility="gone" />
