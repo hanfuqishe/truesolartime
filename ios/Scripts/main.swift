@@ -233,6 +233,107 @@ expect(
     String(format: "actual=%.1f", DistrictNaming.distanceKm(31.2304, 121.4737, 39.9042, 116.4074))
 )
 
+print("== 境外区划名（CLGeocoder 字段缺失时的逐级降级）==")
+// 典型境外结果：Apple 只给 locality + administrativeArea + country，没有 subLocality。
+// 旧实现把区县当必需项，这种情况会整串返回 nil（界面只剩预设城市名）。
+let newYorkOnly = DistrictNaming.composeNames(
+    district: nil,
+    city: "New York",
+    region: "New York",
+    country: "United States",
+    prefersChinese: true
+)
+expect("缺区县也要出名字（不再返回 nil）", newYorkOnly != nil, "actual=\(String(describing: newYorkOnly))")
+expect(
+    "境外：市 + 国家（州与市同名去重）",
+    newYorkOnly?.full == "New York, United States",
+    "actual=\(newYorkOnly?.full ?? "nil")"
+)
+expect("境外：短名取最细一级", newYorkOnly?.short == "New York", "actual=\(newYorkOnly?.short ?? "nil")")
+
+let manhattan = DistrictNaming.composeNames(
+    district: "Manhattan",
+    city: "New York",
+    region: "New York",
+    country: "United States",
+    prefersChinese: true
+)
+expect(
+    "境外：区+市+国家取最细三级",
+    manhattan?.full == "Manhattan, New York, United States",
+    "actual=\(manhattan?.full ?? "nil")"
+)
+// 回归断言：中文界面的「市+区县」直连不能套到拉丁名字上（旧实现拼出 New YorkManhattan）。
+expect(
+    "境外：拉丁名字不再被直连成 New YorkManhattan",
+    manhattan?.full != "New YorkManhattan" && manhattan?.full.contains(", ") == true,
+    "actual=\(manhattan?.full ?? "nil")"
+)
+
+// 中英混排：Apple 的 zh_CN 常常给「英文区名 + 中文市/州名」，不能崩、也不能粘在一起。
+let mixedNames = DistrictNaming.composeNames(
+    district: "Manhattan",
+    city: "纽约",
+    region: "纽约州",
+    country: "美国",
+    prefersChinese: true
+)
+expect("中英混排：逗号拼接", mixedNames?.full == "Manhattan, 纽约, 纽约州", "actual=\(mixedNames?.full ?? "nil")")
+expect("中英混排：短名是最细一级", mixedNames?.short == "Manhattan", "actual=\(mixedNames?.short ?? "nil")")
+
+expect(
+    "只有州/省也能显示",
+    DistrictNaming.composeNames(
+        district: nil, city: nil, region: "California", country: "United States", prefersChinese: true
+    )?.full == "California, United States"
+)
+expect(
+    "只有国家也能显示",
+    DistrictNaming.composeNames(
+        district: nil, city: nil, region: nil, country: "United States", prefersChinese: true
+    )?.full == "United States"
+)
+expect(
+    "所有级别都没有才返回 nil",
+    DistrictNaming.composeNames(district: nil, city: nil, region: nil, country: nil, prefersChinese: true) == nil
+)
+expect(
+    "空串 / 空白 / [] 一律当作没有",
+    DistrictNaming.composeNames(
+        district: "", city: "  ", region: "[]", country: "United States", prefersChinese: true
+    )?.full == "United States"
+)
+
+// 中文写法仍然走「市+区县」直连，而且不把国家名拼进去。
+expect(
+    "中文：市+区县（国家名不参与）",
+    DistrictNaming.composeNames(
+        district: "黄浦区", city: "上海市", region: "上海市", country: "中国", prefersChinese: true
+    )?.full == "上海市黄浦区"
+)
+expect(
+    "中文：只有市时退回市",
+    DistrictNaming.composeNames(
+        district: nil, city: "上海市", region: nil, country: "中国", prefersChinese: true
+    )?.full == "上海市"
+)
+expect(
+    "中文：占位值「市辖区」不参与",
+    DistrictNaming.composeNames(
+        district: "某县", city: "市辖区", region: "河北省", country: "中国", prefersChinese: true
+    )?.full == "河北省某县"
+)
+expect(
+    "非中文界面：中文名也用逗号",
+    DistrictNaming.composeNames(
+        district: "黄浦区", city: "上海市", region: nil, country: nil, prefersChinese: false
+    )?.full == "黄浦区, 上海市"
+)
+
+expect("中文判定：纯中文 → true", DistrictNaming.isChineseGrouping(["黄浦区", "上海市"]))
+expect("中文判定：混拉丁字母 → false", !DistrictNaming.isChineseGrouping(["Manhattan", "纽约"]))
+expect("中文判定：全空 → false", !DistrictNaming.isChineseGrouping([nil, "", "[]"]))
+
 print("== 真太阳时 → 系统时刻（给本地通知排时间）==")
 // 上海：真太阳时 15:00 应落在北京时间约 14:38（真太阳时快 21~22 分）
 let shanghaiDay = date("2026-11-12T04:00:00Z")

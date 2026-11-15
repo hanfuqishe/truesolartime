@@ -123,7 +123,7 @@ final class AppModel: ObservableObject {
 
     // MARK: - 位置
 
-    /// 手动指定坐标。
+    /// 手动指定坐标（用户明确选的地点）。
     ///
     /// `countryCode` 一定要带上：内置城市都已知国家，靠它直接查 `ZoneTable` 得到法定时区；
     /// 丢了它就只能按经度近似（德里 77.2°E 会被算成 UTC+5，正确是 UTC+5:30）。
@@ -134,13 +134,16 @@ final class AppModel: ObservableObject {
         countryCode: String? = nil
     ) {
         stopGpsTracking()
-        updatePlace(Place(
-            latitude: latitude,
-            longitude: longitude,
-            source: .manual,
-            label: label,
-            countryCode: countryCode
-        ))
+        updatePlace(
+            Place(
+                latitude: latitude,
+                longitude: longitude,
+                source: .manual,
+                label: label,
+                countryCode: countryCode
+            ),
+            userChosen: true
+        )
     }
 
     func usePreset(_ preset: Place) {
@@ -152,7 +155,10 @@ final class AppModel: ObservableObject {
         )
     }
 
-    private func updatePlace(_ newPlace: Place) {
+    /// - Parameter userChosen: 用户**明确选了这个地点**（常用城市 / 手工坐标）。此时无条件发起一次
+    ///   区划名反查，不受「距上次反查不到 5 km」的缓存判定阻挡 —— 否则同城换点或上次反查失败后，
+    ///   卡片会一直停在预设城市名上（境外城市尤其明显）。
+    private func updatePlace(_ newPlace: Place, userChosen: Bool = false) {
         let previous = place
         settings.place = newPlace
         place = newPlace
@@ -162,15 +168,17 @@ final class AppModel: ObservableObject {
             newPlace.latitude, newPlace.longitude
         ) > DistrictNaming.moveThresholdKm
 
-        if moved {
-            // 换了城市：立刻把上一个地点的地名/天气撤掉，别让卡片挂着旧地址。
-            // 新地址查到之前，`districtName` 为 nil，卡片退回显示城市名（preset 的 label）。
+        if moved || userChosen {
+            // 换了地点：立刻把上一个地点的区划名撤掉，新名字回来之前卡片显示预设城市名 / 减号。
+            // （`cachedNames(for:)` 自带 5 km 校验，跨城时必然得到 nil。）
             districtName = DistrictStore.shared.cachedNames(for: newPlace)
+        }
+        if moved {
             weather = WeatherStore.shared.cached(for: newPlace)
         }
 
-        if moved || previous.source != newPlace.source {
-            refreshData()
+        if moved || userChosen || previous.source != newPlace.source {
+            refreshData(forceDistrict: userChosen)
             rescheduleReminders()
         }
     }
@@ -178,12 +186,14 @@ final class AppModel: ObservableObject {
     // MARK: - 数据刷新
 
     /// 天气、区划、关键时间各自带缓存，命中缓存时不会重复联网。
-    func refreshData(forceWeather: Bool = false) {
+    ///
+    /// - Parameter forceDistrict: 用户刚选了地点，忽略区划缓存的 5 km / 30 天判定，强制反查一次。
+    func refreshData(forceWeather: Bool = false, forceDistrict: Bool = false) {
         let currentPlace = place
         WeatherStore.shared.requestRefresh(place: currentPlace, force: forceWeather) { [weak self] snapshot in
             self?.weather = snapshot
         }
-        DistrictStore.shared.requestRefresh(place: currentPlace) { [weak self] names in
+        DistrictStore.shared.requestRefresh(place: currentPlace, force: forceDistrict) { [weak self] names in
             guard let self else { return }
             self.districtName = names
             self.adoptCountryCodeIfNeeded(names.countryCode)

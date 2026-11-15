@@ -207,8 +207,10 @@ struct SettingsView: View {
     }
 
     private var districtSummary: String {
-        guard let names = model.districtName else { return "暂无" }
-        return names.full
+        let text = model.districtName?.full ?? "暂无"
+        // 反查失败时把原因带上：境外坐标只有真机能验证，控制台看不到的话至少界面上能看到。
+        guard let error = DistrictStore.shared.lastErrorDescription else { return text }
+        return "\(text)（最近一次失败：\(error)）"
     }
 
     private var keyTimeSummary: String {

@@ -12,6 +12,9 @@ struct DistrictNames: Equatable {
 /// 把反查到的各级行政区划拼成显示名。纯逻辑，便于自检。
 enum DistrictNaming {
 
+    /// 高德 / 系统逆地理用来占位、本身不是地名的上级字段。
+    static let placeholderRegions: Set<String> = ["市辖区", "县", "省直辖县级行政区划", "自治区直辖县级行政区划"]
+
     /// 中文界面：与 Android 版 `pickNames` 一致 —— 优先「市 + 区县」（直辖市时市与省同名），
     /// 区县名已带上级前缀就不再重复；没有区县时退回市，再退回省。
     static func joinChinese(
@@ -19,7 +22,7 @@ enum DistrictNaming {
         city: String?,
         region: String?
     ) -> DistrictNames? {
-        let placeholders: Set<String> = ["市辖区", "县", "省直辖县级行政区划", "自治区直辖县级行政区划"]
+        let placeholders = placeholderRegions
         let countyName = clean(county)
         let cityName = clean(city).flatMap { placeholders.contains($0) ? nil : $0 }
         let regionName = clean(region).flatMap { placeholders.contains($0) ? nil : $0 }
@@ -57,6 +60,63 @@ enum DistrictNaming {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
         guard !trimmed.isEmpty, trimmed != "[]" else { return nil }
         return trimmed
+    }
+
+    /// 反查字段（可能缺级）→ 卡片上那一行地名。**任何一级有值就出名字**，不会因为缺区县返回 nil。
+    ///
+    /// 这是修复「境外城市选完看不到区划名」的核心：
+    ///
+    /// 1. 中文界面、且这几级名字确实是中文写法 → 沿用 Android `pickNames` 的「市+区县」直连
+    ///    （如「上海市黄浦区」）；
+    /// 2. 其余情况（境外坐标；或 Apple 给的「Manhattan」+「纽约」这种中英混排）→ 由细到粗用
+    ///    逗号连接（同 Android `composeNames`）。之前不区分语言一律走「市+区县」直连，
+    ///    拉丁名字会被拼成「New YorkManhattan」这种怪串；
+    /// 3. 国家名只作最粗一级兜底：Apple 对境外常只给 `locality`+`country`，甚至只给 `country`。
+    ///
+    /// - Parameters:
+    ///   - district: 区 / 县 / 街道（`CLPlacemark.subLocality` 或 `subAdministrativeArea`）
+    ///   - city: 市（`locality`）
+    ///   - region: 省 / 州（`administrativeArea`）
+    ///   - country: 国家（`country`），只用来兜底，不参与中文拼法
+    ///   - prefersChinese: 界面语言是否为中文
+    static func composeNames(
+        district: String?,
+        city: String?,
+        region: String?,
+        country: String? = nil,
+        prefersChinese: Bool
+    ) -> DistrictNames? {
+        let county = clean(district).flatMap { placeholderRegions.contains($0) ? nil : $0 }
+        let town = clean(city).flatMap { placeholderRegions.contains($0) ? nil : $0 }
+        let regionName = clean(region).flatMap { placeholderRegions.contains($0) ? nil : $0 }
+        let countryName = clean(country)
+
+        if prefersChinese,
+           isChineseGrouping([county, town, regionName]),
+           let chinese = joinChinese(county: county, city: town, region: regionName) {
+            return chinese
+        }
+        // 逐级降级：区县 → 市 → 州/省 → 国家，取最细的三级；只要有一级非空就有名字。
+        return compose(parts: [county, town, regionName, countryName])
+    }
+
+    /// 这三级名字能不能按中文习惯直接相连：至少有一个汉字，且一个拉丁字母都没有。
+    ///
+    /// 「黄浦区」+「上海市」→ true（拼成「上海市黄浦区」）；
+    /// 「Manhattan」+「纽约」→ false（用逗号，免得拼出「纽约Manhattan」）。
+    static func isChineseGrouping(_ values: [String?]) -> Bool {
+        var hasChinese = false
+        for value in values {
+            guard let name = clean(value) else { continue }
+            for scalar in name.unicodeScalars {
+                if (0x4E00...0x9FFF).contains(scalar.value) || (0x3400...0x4DBF).contains(scalar.value) {
+                    hasChinese = true
+                } else if (0x41...0x5A).contains(scalar.value) || (0x61...0x7A).contains(scalar.value) {
+                    return false
+                }
+            }
+        }
+        return hasChinese
     }
 
     /// 与上次反查的坐标相距是否已超过阈值（公里）。
