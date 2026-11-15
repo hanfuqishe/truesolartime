@@ -1,20 +1,42 @@
 package com.realsuntime.solartime.ui
 
+import android.content.ContentResolver
+import android.content.Context
+import android.database.ContentObserver
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 
 /**
  * 卡片里锁死的字号缩放系数。
  *
  * 首页大卡片 / 太阳卡片 / 地图卡片是「版式即内容」的界面：数字必须正好撑满一栏、
  * 行高与竖分隔线的接缝都按固定 em 算出来、顶部标签行还要按文字宽度分四档退化。
- * 系统「字体大小」「粗体字」以及长辈关怀（超大字体）会把 `LocalDensity.fontScale`
+ * 系统「字体大小」以及长辈关怀（超大字体）会把 `LocalDensity.fontScale`
  * 调大，上面这些假设全部失效（文字溢出、行高变化、档位判断偏早/偏晚），
  * 所以卡片内部一律按 [CARD_FONT_SCALE] 排版 —— 与日历、时钟类应用的做法一致。
  *
@@ -23,7 +45,63 @@ import androidx.compose.ui.unit.Density
 internal const val CARD_FONT_SCALE = 1f
 
 /**
- * 把 [content] 内的 `LocalDensity` 换成「[scale] 倍的几何缩放 + 字号不缩放」。
+ * 卡片字重诊断日志的 tag。
+ *
+ * 华为这类 ROM 的「加粗」不走 AOSP 的 `Configuration.fontWeightAdjustment`，命令行
+ * `settings get` 也未必能一次看全（键名、默认值、是否被 `Settings.System` 接管都可能变），
+ * 所以 App 自己把「它看到的字重环境 + 一组探针字宽」打成一行，任何时候都能用
+ * `adb logcat -s SolarTimeCard:W` 抓到现场事实。这行日志只在启动 / 系统配置变化时打，
+ * 不参与任何界面逻辑，留着比删掉有用。
+ */
+internal const val CARD_FONT_TAG = "SolarTimeCard"
+
+/** 华为 EMUI / HarmonyOS「加粗字体」写在 `Settings.System` 里的乘法字重键。 */
+private const val HUAWEI_WEIGHT_SCALE_KEY = "font_weight_scale"
+
+/** 同上的「正常态参照值」键（部分 EMUI 版本会额外写一份 1.0 的基准）。 */
+private const val HUAWEI_WEIGHT_SCALE_NORMAL_KEY = "font_weight_scale_normal"
+
+/** AOSP Android 12+ 的加法字重键（`Configuration.fontWeightAdjustment` 的来源）。 */
+private const val AOSP_WEIGHT_ADJUSTMENT_KEY = "font_weight_adjustment"
+
+/**
+ * 卡片排版看到的「系统字重环境」。
+ *
+ * [weightAdjustment] 是加法通道（AOSP 的 `fontWeightAdjustment`）；
+ * [scaleRatio] 是乘法通道的**比值**（华为 `font_weight_scale / font_weight_scale_normal`，正常态 1）。
+ *
+ * 为什么要存比值而不是原始值：这台华为的正常态是 `font_weight_scale = 0.79`、
+ * `font_weight_scale_normal = 0.79`，绝对值和 1 差得很远。把 0.79 当倍率会把正常态的卡片
+ * 反过来加粗 1.27 倍 —— 必须相对 normal 取比值，「加粗」才体现为 ratio > 1。
+ * 原始值留着给诊断日志。
+ */
+internal data class CardFontEnv(
+    val weightAdjustment: Int = 0,
+    val scaleRatio: Float = 1f,
+    val rawScale: Float? = null,
+    val rawScaleNormal: Float? = null,
+) {
+    /** 系统是否正开着某种「加粗」。 */
+    val boldActive: Boolean
+        get() = weightAdjustment != 0 ||
+            (scaleRatio.isFinite() && scaleRatio > 0f && scaleRatio != 1f)
+
+    /** 把期望字重换算成应该请求的字重。 */
+    fun weightFor(nominal: FontWeight): FontWeight =
+        FontWeight(CardFontMath.requestWeight(nominal.weight, weightAdjustment, scaleRatio))
+}
+
+/**
+ * 供卡片内部读取的字重环境；由 [LockedCardDensity] 提供，默认值表示「系统没加粗」。
+ *
+ * 卡片全部包在 [LockedCardDensity] 里，所以这个默认值只在「万一有人把卡片文本拿到
+ * 锁密度之外渲染」时生效 —— 那时退回「不补偿」，至少不会把字重算错。
+ */
+internal val LocalCardFontEnv = staticCompositionLocalOf { CardFontEnv() }
+
+/**
+ * 把 [content] 内的 `LocalDensity` 换成「[scale] 倍的几何缩放 + 字号不缩放」，
+ * 同时把系统「加粗」的字重环境算好放进 [LocalCardFontEnv]。
  *
  * 只改 `fontScale`，不动 `density`：dp 尺寸、圆角、间距、`Modifier.height(IntrinsicSize.Max)`
  * 的固有测量全部保持原样，被替换的只有 sp → px 的换算（`fontScale` 恒为 1）。
@@ -43,30 +121,276 @@ internal fun LockedCardDensity(
             fontScale = CARD_FONT_SCALE,
         )
     }
-    CompositionLocalProvider(LocalDensity provides locked, content = content)
+    val env = rememberCardFontEnv()
+    CompositionLocalProvider(
+        LocalDensity provides locked,
+        LocalCardFontEnv provides env,
+        content = {
+            // 诊断日志（每个配置只打一行），必须在锁过的 density 里量探针，
+            // 才能和卡片里真实的 sp → px 换算一致。
+            CardFontDiagnostics(env)
+            content()
+        },
+    )
 }
 
 /**
- * 可以提供给卡片文本的字重 —— **系统「粗体字」被抵消掉了**。
+ * 读一次系统字重环境。
  *
- * 只把 `fontWeight` 写成固定值还不够：Android 12 起系统会在**渲染时**把
- * `Configuration.fontWeightAdjustment`（「设置 → 显示 → 字体与显示大小 → 加粗」，
- * 实测这台 ROM 上是 +300）加到每个字形上，加在写死的字重之上，于是同一段文本
- * 在加粗档位下更粗、略宽 1~3px。卡片的行宽/档位判断是按文字宽度算的，所以要一起抵掉：
+ * 加法通道直接取 `Configuration.fontWeightAdjustment`（它由框架从
+ * `Settings.Secure.font_weight_adjustment` 同步过来，API < 31 没有这个字段）。
  *
- *    实际字重 = 这里返回的字重 + 系统调整量 ≈ [nominal]
- *
- * [nominal] 传「不想被系统加粗影响时的目标字重」（卡片里是 Medium / Normal）。
- * 设置页用默认字重，不经过这里，于是它照旧跟着系统加粗走。
+ * 乘法通道读华为的两个键并取**比值**：`font_weight_scale / font_weight_scale_normal`。
+ * 这台 ELS-AN00 上正常态两个都是 0.79，所以比值正常态是 1.0；只有「加粗」把它抬上去，
+ * 比值才 > 1 —— 直接拿 0.79 当倍率会把正常态反过来加粗，是错的。
+ * 两个键任一缺失都退回 1f（不补偿），保证小米/原生这类没有这套键的 ROM 完全不受影响。
  */
-@Composable
-internal fun cardFontWeight(nominal: FontWeight): FontWeight {
-    // 调整量只在系统设置变化时变，且那次变化会重建 Activity，所以这里直接读。
+private fun readCardFontEnv(context: Context): CardFontEnv {
     val adjustment = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        LocalContext.current.resources.configuration.fontWeightAdjustment
+        try {
+            context.resources.configuration.fontWeightAdjustment
+        } catch (t: Throwable) {
+            0
+        }
     } else {
         0
     }
-    if (adjustment == 0) return nominal
-    return FontWeight((nominal.weight - adjustment).coerceIn(1, 1000))
+    val scale = readSystemFloat(context, HUAWEI_WEIGHT_SCALE_KEY)
+    val normal = readSystemFloat(context, HUAWEI_WEIGHT_SCALE_NORMAL_KEY)
+    return CardFontEnv(
+        weightAdjustment = adjustment,
+        scaleRatio = CardFontMath.huaweiScaleRatio(scale, normal),
+        rawScale = scale,
+        rawScaleNormal = normal,
+    )
+}
+
+/** 读 `Settings.System` 里的浮点键；键不存在或读不到时返回 null（**不是** 1f）。 */
+private fun readSystemFloat(context: Context, name: String): Float? {
+    return try {
+        val cr = context.contentResolver
+        if (Settings.System.getString(cr, name) == null) {
+            null
+        } else {
+            Settings.System.getFloat(cr, name, 1f).takeIf { it.isFinite() && it > 0f }
+        }
+    } catch (t: Throwable) {
+        // 个别 ROM 上读系统设置会抛 SecurityException / IllegalArgumentException（值不是数字）。
+        null
+    }
+}
+
+/**
+ * 订阅系统字重设置，变化时让卡片重新排版。
+ *
+ * 关键：华为的「加粗字体」**不一定**会改 `Configuration`，Activity 也就不一定重建。
+ * 如果只在组合时读一次，用户开加粗后卡片会一直沿用旧字重（看起来就是「补偿没生效」）。
+ * 所以这里额外挂一个 `ContentObserver` 直接盯那几个键，变了就把 [CardFontEnv] 换成新值，
+ * 依赖它的 `cardTextStyle` 会立刻重算字重。
+ */
+@Composable
+private fun rememberCardFontEnv(): CardFontEnv {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    var env by remember { mutableStateOf(readCardFontEnv(context)) }
+
+    // 配置变化（Activity 重建 / onConfigurationChanged）时重读一次，覆盖加法通道。
+    LaunchedEffect(configuration) {
+        val fresh = readCardFontEnv(context)
+        if (fresh != env) env = fresh
+    }
+
+    DisposableEffect(context) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                val fresh = readCardFontEnv(context)
+                if (fresh != env) {
+                    Log.w(
+                        CARD_FONT_TAG,
+                        "font env changed: adjustment=${fresh.weightAdjustment} ratio=${fresh.scaleRatio}" +
+                            " raw=${fresh.rawScale}/${fresh.rawScaleNormal}",
+                    )
+                    env = fresh
+                }
+            }
+        }
+        val cr: ContentResolver = context.contentResolver
+        try {
+            cr.registerContentObserver(Settings.System.getUriFor(HUAWEI_WEIGHT_SCALE_KEY), false, observer)
+            cr.registerContentObserver(Settings.System.getUriFor(HUAWEI_WEIGHT_SCALE_NORMAL_KEY), false, observer)
+            cr.registerContentObserver(Settings.Secure.getUriFor(AOSP_WEIGHT_ADJUSTMENT_KEY), false, observer)
+        } catch (t: Throwable) {
+            Log.w(CARD_FONT_TAG, "register font observer failed: $t")
+        }
+        onDispose {
+            try {
+                cr.unregisterContentObserver(observer)
+            } catch (t: Throwable) {
+                // 进程退出时 contentResolver 可能已失效，忽略。
+            }
+        }
+    }
+    return env
+}
+
+/**
+ * 卡片文本样式的唯一入口：把系统「加粗」抵消掉，并禁止字形合成。
+ *
+ * 做三件事：
+ * 1. `fontWeight` 用 [CardFontEnv.weightFor] 反解成请求字重 —— 抵掉加法 / 乘法两层加粗；
+ * 2. `fontSynthesis = FontSynthesis.None` —— Compose 在字族里找不到目标字重时会**合成**粗体
+ *    （把字形描粗），那会让「减字重」失效：请求 200 也照样被描成 Medium 的观感。
+ *    这里明确禁止合成，请求什么字重就渲染什么字重；
+ * 3. `fontFamily` 显式钉成 `sans-serif` —— 不让系统把「默认族」替换成别的加粗变体族。
+ *    Compose 的 `FontFamily.Default` 本来就映射到 `sans-serif`，所以这一条不改变外观，
+ *    只是把「默认」变成「写明」，防止 ROM 改动默认族时把卡片带偏。
+ *
+ * [base] 一般传 `MaterialTheme.typography.xxx`，[nominal] 传「不想被系统加粗影响」的目标字重
+ * （卡片里是 Medium / Normal）。设置页不经过这里，照旧跟随系统加粗。
+ */
+@Composable
+internal fun cardTextStyle(base: TextStyle, nominal: FontWeight): TextStyle {
+    val env = LocalCardFontEnv.current
+    return base.copy(
+        fontWeight = env.weightFor(nominal),
+        fontSynthesis = FontSynthesis.None,
+        fontFamily = base.fontFamily ?: FontFamily.SansSerif,
+    )
+}
+
+/** 卡片文本「按可用宽度缩字号」时的下限：9sp（卡片里 fontScale=1，等于 9dp）。 */
+internal val MIN_FIT_FONT_SIZE: TextUnit = 9.sp
+
+/**
+ * 把 [style] 的字号按可用宽度往下调，直到 [text] 单行放得下（最多迭代两次）。
+ *
+ * 为什么需要它：卡片已经锁了 `fontScale`，所以「系统字体大小」不会撑破版式；但「地区名」
+ * 这类**内容不定长**的文本仍可能超宽（长地名、系统加粗让笔画变宽、外文字符串更长）。
+ * 以前只能靠 `TextOverflow.Ellipsis` 砍字尾，用户看到的是「被省略」；这里改成先缩字号，
+ * 缩到 [minFontSize] 还放不下才交回给省略号。
+ *
+ * 只改 `fontSize`、**不动 `lineHeight`**：行高仍是原样式的那一档，所以标签行的高度、
+ * 下面两列的位置、竖线接缝都不会因为缩字号而变化 —— 「版式不破」优先于「字大」。
+ *
+ * 线性缩放（新字号 = 旧字号 × 可用/实测）在 1~3% 的调整范围内足够准；连测两轮是为了
+ * 兜住 hinting/字距带来的非线性残差。这里**不能**用 `BoxWithConstraints`：
+ * 卡片在宽屏分支里处于 `IntrinsicSize.Max` 下，SubcomposeLayout 参与固有测量会抛异常。
+ */
+internal fun fitTextStyle(
+    measurer: TextMeasurer,
+    text: String,
+    style: TextStyle,
+    maxWidthPx: Float,
+    minFontSize: TextUnit = MIN_FIT_FONT_SIZE,
+): TextStyle {
+    if (text.isEmpty() || maxWidthPx <= 0f) return style
+    if (style.fontSize == TextUnit.Unspecified) return style
+    var current = style
+    repeat(2) {
+        val width = measurer.measure(
+            text = text,
+            style = current,
+            maxLines = 1,
+            softWrap = false,
+        ).size.width.toFloat()
+        if (width <= maxWidthPx) return current
+        val factor = maxWidthPx / width
+        val next = current.fontSize * factor
+        if (next.value <= minFontSize.value) {
+            return if (current.fontSize.value <= minFontSize.value) {
+                current
+            } else {
+                current.copy(fontSize = minFontSize)
+            }
+        }
+        current = current.copy(fontSize = next)
+    }
+    return current
+}
+
+/** 探针字重：覆盖 Normal / Medium 附近，够看出「系统把字重加了多少」。 */
+private val PROBE_WEIGHTS = listOf(100, 300, 400, 500, 600, 700, 900)
+
+/** 上次打印过的那行，避免每个 `LockedCardDensity` 实例都重复打一遍。 */
+private var lastDiagnosticLine: String? = null
+
+/**
+ * 把「App 看到的字重环境」打成一行日志（`adb logcat -s SolarTimeCard:W`）。
+ *
+ * 探针在**锁过的** `LocalDensity` 里量：`88:88` / 100sp / `tnum`，这里量出来的宽度与卡片里
+ * 真实渲染用的是同一套换算。宽度随字重单调变化，于是对比加粗开/关两组宽度就能反推
+ * 「系统实际用了几号字重」，比只看设置值更硬 —— 有些 ROM 会把我们的请求钳到可用字重档位上。
+ *
+ * 第二行把**所有**名字里带 font / weight / bold 的设置键原样 dump 出来（System + Secure +
+ * Global 三张表）。华为/EMUI 的「加粗」到底是哪个键，不必猜：开一次加粗再抓一次日志，
+ * 两行一 diff 就看见了。这也顺带验证了「我们订的那几个键」确实是变化的那些键。
+ */
+@Composable
+private fun CardFontDiagnostics(env: CardFontEnv) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val measurer = rememberTextMeasurer()
+    LaunchedEffect(env, configuration) {
+        val probeStyle = TextStyle(fontSize = 100.sp, fontFeatureSettings = "tnum")
+        val widths = PROBE_WEIGHTS.joinToString(separator = ",") { weight ->
+            val w = measurer.measure(
+                text = "88:88",
+                style = probeStyle.copy(fontWeight = FontWeight(weight)),
+                maxLines = 1,
+            ).size.width
+            "$weight:$w"
+        }
+        val line = buildString {
+            append("mfr=").append(Build.MANUFACTURER)
+            append(" model=").append(Build.MODEL)
+            append(" sdk=").append(Build.VERSION.SDK_INT)
+            append(" fontScale=").append(configuration.fontScale)
+            append(" adjustment=").append(env.weightAdjustment)
+            append(" ratio=").append(env.scaleRatio)
+            append(" raw=").append(env.rawScale).append('/').append(env.rawScaleNormal)
+            append(" cardMedium=").append(env.weightFor(FontWeight.Medium).weight)
+            append(" cardNormal=").append(env.weightFor(FontWeight.Normal).weight)
+            append(" probe{").append(widths).append('}')
+        }
+        if (line != lastDiagnosticLine) {
+            lastDiagnosticLine = line
+            Log.w(CARD_FONT_TAG, line)
+            Log.w(CARD_FONT_TAG, "font settings: " + fontSettingDump(context))
+        }
+    }
+}
+
+/**
+ * 三张设置表里所有 font / weight / bold 相关键，排序后拼成一行。
+ *
+ * 只挑名字里带这三个词的键，所以不会把账号、ID 之类的东西写进日志。
+ * 用 `ContentResolver.query` 直接读设置表（`Settings.System.getAll` 是 @hide），
+ * 这样「ROM 到底用哪个键表示加粗」由日志自己回答，不用猜。
+ */
+private fun fontSettingDump(context: Context): String {
+    val sb = StringBuilder()
+    fun scan(prefix: String, uri: Uri) {
+        try {
+            val values = LinkedHashMap<String, String>()
+            context.contentResolver.query(uri, arrayOf("name", "value"), null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val name = c.getString(0) ?: continue
+                    values[name] = c.getString(1) ?: ""
+                }
+            }
+            values.entries
+                .filter { (k, _) ->
+                    val key = k.lowercase()
+                    key.contains("font") || key.contains("weight") || key.contains("bold")
+                }
+                .sortedBy { it.key }
+                .forEach { (k, v) -> sb.append(prefix).append('.').append(k).append('=').append(v).append(' ') }
+        } catch (t: Throwable) {
+            sb.append(prefix).append(".error=").append(t).append(' ')
+        }
+    }
+    scan("sys", Settings.System.CONTENT_URI)
+    scan("secure", Settings.Secure.CONTENT_URI)
+    scan("global", Settings.Global.CONTENT_URI)
+    return sb.toString().trim()
 }

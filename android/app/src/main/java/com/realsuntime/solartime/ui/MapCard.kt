@@ -69,15 +69,13 @@ fun MapCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.location_map_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = cardFontWeight(FontWeight.Medium),
+                    style = cardTextStyle(MaterialTheme.typography.titleSmall, FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = TimeText.coordinates(context, place.latitude, place.longitude),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = cardFontWeight(FontWeight.Normal),
+                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -97,8 +95,7 @@ fun MapCard(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = attributionText(context, mapStyle, style),
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = cardFontWeight(FontWeight.Normal),
+                style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

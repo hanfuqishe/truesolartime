@@ -461,9 +461,7 @@ private fun HeroCard(
             // 字重显式写死（labelMedium 的默认值就是 Medium），并用 cardFontWeight 抵掉系统
             // 「粗体字」的字重调整：不抵掉的话同一行在这台机器上比在别的机器上宽，
             // 四档退化会提前/延后。
-            val cityRowStyle = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = cardFontWeight(FontWeight.Medium),
-            )
+            val cityRowStyle = cardTextStyle(MaterialTheme.typography.labelMedium, FontWeight.Medium)
             val cityRowGap = 8.dp
             val cityRowGapPx = with(LocalDensity.current) { cityRowGap.toPx() }
             // 档 0 左半：地区文字与竖线之间留出的间隙。竖线正落在两半分界上，
@@ -502,6 +500,29 @@ private fun HeroCard(
                 rowWidth = cityRowWidthPx,
                 gap = cityRowGapPx,
             )
+
+            // 兜底的一档：到了档 1~3，「地区名」已经被挤成整行里唯一可压缩的文本。
+            // 这时不再只靠省略号砍字尾，而是**按自己这一行的可用宽度反算字号**：
+            // 缩小到放得下为止（下限 MIN_FIT_FONT_SIZE），连下限都放不下才交给省略号。
+            // 行高不跟着变（见 fitTextStyle），所以标签行高度、下面两列与竖线的位置都不动。
+            // 档 0 是「两半各自排」的宽屏形态，地区只在半行里有固定权位，维持原来的省略号策略。
+            val cityFitStyle = when (cityRowTier) {
+                0 -> cityRowStyle
+                1 -> fitTextStyle(
+                    measurer = cityRowMeasurer,
+                    text = cityLabel,
+                    style = cityRowStyle,
+                    maxWidthPx = (
+                        cityRowWidthPx - utcWidthPx - shichenWidthPx - cityRowGapPx * 2f
+                        ).coerceAtLeast(0f),
+                )
+                else -> fitTextStyle(
+                    measurer = cityRowMeasurer,
+                    text = cityLabel,
+                    style = cityRowStyle,
+                    maxWidthPx = (cityRowWidthPx - shichenWidthPx - cityRowGapPx).coerceAtLeast(0f),
+                )
+            }
 
             // 竖分隔线的上端跟着档位走：
             //   档 0 —— 标签行仍是左右两半（左半地区贴右、右半「真太阳时」贴左），两半的分界就是
@@ -615,7 +636,7 @@ private fun HeroCard(
                             }
                             Text(
                                 text = cityLabel,
-                                style = cityRowStyle,
+                                style = cityFitStyle,
                                 color = HeroPalette.LABEL_DIM,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -713,9 +734,7 @@ private fun HeroCard(
             var statsRowWidthPx by remember { mutableStateOf(0f) }
             val rowMeasurer = rememberTextMeasurer()
             // 同上：日期行/经纬度也把字重钉死（并抵掉系统加粗），避免这一行被撑宽、把经纬度挤掉。
-            val labelStyle = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = cardFontWeight(FontWeight.Medium),
-            )
+            val labelStyle = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium)
             val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
             val dateWidthPx = rowMeasurer.measure(dateTail, labelStyle).size.width.toFloat()
             val coordWidthPx = if (coordinates.isEmpty()) {
@@ -729,6 +748,17 @@ private fun HeroCard(
                 gapPx = gapPx,
                 availablePx = statsRowWidthPx,
             )
+            // 同理兜底：日期行也可能放不下（长城市名 + 天气 + 温度区间，再被经纬度挤）。
+            // 能收起经纬度就先收；收完还放不下就把日期行字号按可用宽度缩下来，
+            // 缩到下限仍放不下才交给省略号。行高不变，所以下面时间轴/逐时的位置不跳。
+            val dateFitStyle = fitTextStyle(
+                measurer = rowMeasurer,
+                text = dateTail,
+                style = labelStyle,
+                maxWidthPx = (
+                    statsRowWidthPx - if (showCoordinates) coordWidthPx + gapPx else 0f
+                    ).coerceAtLeast(0f),
+            )
 
             Row(
                 modifier = Modifier
@@ -738,7 +768,7 @@ private fun HeroCard(
             ) {
                 Text(
                     text = dateTail,
-                    style = labelStyle,
+                    style = dateFitStyle,
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -877,8 +907,7 @@ private fun HeroHourly(cells: List<HourCell>) {
             ) {
                 Text(
                     text = cell.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = cardFontWeight(FontWeight.Medium),
+                    style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                 )
@@ -889,8 +918,7 @@ private fun HeroHourly(cells: List<HourCell>) {
                 )
                 Text(
                     text = cell.condition,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = cardFontWeight(FontWeight.Medium),
+                    style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -922,9 +950,9 @@ private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
 private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val baseStyle = TextStyle(
-        fontWeight = cardFontWeight(FontWeight.Medium),
-        fontFeatureSettings = "tnum",
+    val baseStyle = cardTextStyle(
+        TextStyle(fontFeatureSettings = "tnum"),
+        FontWeight.Medium,
     )
     val probeSp = 100f
     // 用「88:88」与「:88」作样本：等宽数字下与实际渲染同宽，和具体时刻无关。
@@ -995,17 +1023,15 @@ private fun SunCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.sun_section_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    // 字重显式写出（titleSmall 默认就是 Medium），并用 cardFontWeight 抵掉
-                    // 系统「粗体字」的调整量。
-                    fontWeight = cardFontWeight(FontWeight.Medium),
+                    // 字重显式写出（titleSmall 默认就是 Medium），并由 cardTextStyle 抵掉
+                    // 系统「加粗」的加法 / 乘法两层调整。
+                    style = cardTextStyle(MaterialTheme.typography.titleSmall, FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = stringResource(R.string.altitude, snapshot.altitudeDegrees),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = cardFontWeight(FontWeight.Medium),
+                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Medium),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -1036,8 +1062,7 @@ private fun SunCard(
                         TimeFormat.clock(snapshot.sunriseTrueSolar),
                         TimeFormat.clock(snapshot.sunsetTrueSolar),
                     ),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = cardFontWeight(FontWeight.Normal),
+                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -1053,8 +1078,7 @@ private fun SunCard(
                             TimeFormat.clock(snapshot.solarNoonLocal),
                         )
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = cardFontWeight(FontWeight.Normal),
+                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1067,17 +1091,15 @@ private fun SunTimeItem(label: String, time: LocalTime?, modifier: Modifier = Mo
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = cardFontWeight(FontWeight.Medium),
+            style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = TimeFormat.clock(time),
-            style = TextStyle(
-                fontSize = 17.sp,
-                fontWeight = cardFontWeight(FontWeight.Medium),
-                fontFeatureSettings = "tnum",
+            style = cardTextStyle(
+                TextStyle(fontSize = 17.sp, fontFeatureSettings = "tnum"),
+                FontWeight.Medium,
             ),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
