@@ -15,7 +15,7 @@
     android:padding="12dp">
 
     <TextView
-        android:fontFamily="@font/card_sans_medium"
+        android:fontFamily="@font/card_sans_widget"
         android:id="@+id/widget_minimal_time"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

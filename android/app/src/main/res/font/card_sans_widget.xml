@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面小组件专用字体族：把 **100–900 每一档字重** 都指向同一份 `card_sans_medium.ttf`。
+
+  为什么不能直接用 `@font/card_sans_medium`（单文件、无字重声明）：RemoteViews 里的文字是
+  **桌面进程**用 TextView 渲染的，TextView / Skia 会按系统「字体粗细」把请求字重抬高
+  （华为 ELS-AN00：`font_weight_scale` 0.79 → 0.88，实测请求字重越过 400→500 这一档）。
+  一份只声明了单一字重的字体文件里找不到那个字重，Skia 就**合成粗体**（笔画外扩、字宽不变）——
+  于是「自带字体免疫描粗」在小组件上失效：实测墨迹 label +7.97%、时钟 +10.53%、
+  日期 +7.33%、逐时 +3.89%，而同样的字体、同样的字样在 App 进程（Compose，
+  显式 `fontSynthesis = None`）里是 0.00%。
+
+  这里把每个字重都声明成「已有字面」，Skia 无论被要求哪一档都能精确匹配，
+  不会轮到合成粗体。字面的观感与改造前的小组件完全一致（都是 Medium 那一份），
+  只是「系统调字重」这条通道被彻底堵死。
+
+  与 `ui/CardDensity.kt` 里 Compose 那边的 `FontFamily(card_sans_regular, card_sans_medium)`
+  + `fontSynthesis = None` 是同一个思路的两种写法：**请求什么字重，就渲染哪份字面，
+  绝不合成**。
+-->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="100" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="200" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="300" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="400" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="500" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="600" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="700" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="800" />
+    <font
+        android:font="@font/card_sans_medium"
+        android:fontStyle="normal"
+        android:fontWeight="900" />
+</font-family>

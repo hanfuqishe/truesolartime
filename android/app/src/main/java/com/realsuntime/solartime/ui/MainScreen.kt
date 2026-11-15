@@ -954,6 +954,10 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
         TextStyle(fontFeatureSettings = "tnum"),
         FontWeight.Medium,
     )
+    // 行高钉回「系统字体在同一个字号下的行盒」（见 rememberSystemLineBoxEm）：自带 Noto 的
+    // ascender 比原字体高，不钉的话两台机器的卡片高度分别 +4.9% / +2.7%。字号是下面算出来的，
+    // 所以这里不能交给 cardTextStyle，得在算完 mainSp / secondsSp 之后自己套。
+    val lineBoxEm = rememberSystemLineBoxEm()
     val probeSp = 100f
     // 用「88:88」与「:88」作样本：等宽数字下与实际渲染同宽，和具体时刻无关。
     val mainProbePx = measurer
@@ -989,14 +993,14 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
     ) {
         Text(
             text = text,
-            style = baseStyle.copy(fontSize = mainSp.sp),
+            style = baseStyle.copy(fontSize = mainSp.sp).pinSystemLineBox(lineBoxEm),
             color = color,
             maxLines = 1,
         )
         if (seconds != null) {
             Text(
                 text = ":%02d".format(seconds),
-                style = baseStyle.copy(fontSize = secondsSp.sp),
+                style = baseStyle.copy(fontSize = secondsSp.sp).pinSystemLineBox(lineBoxEm),
                 color = color,
                 maxLines = 1,
                 // 秒是半高，往上抬一点让它与主数字的基线齐平（间距按主字号等比）。

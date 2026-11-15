@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
@@ -73,6 +74,11 @@ internal const val CARD_FONT_TAG = "SolarTimeCard"
  *
  * 配合 [cardTextStyle] 里的 `fontSynthesis = FontSynthesis.None`：Compose 不会在字重对不上时
  * 合成假粗体，请求什么字重就渲染对应字面的字形。
+ *
+ * 两个 ttf 的**垂直度量**在本仓库里被改写过（`hhea` 900/−300 = 1.20 em、`head.yMax/yMin`
+ * 1160/−288、`OS/2.usWeightClass` 1000）：Compose 的行盒不会小于字体自身的 ascender+descender，
+ * 不压紧的话 `lineHeight` 根本写不进去，换字体后的卡片就比原来高 4.9% / 2.7%。详见
+ * `android/FONT-README.md` §3.1。
  */
 private val CardFontFamily = FontFamily(
     Font(R.font.card_sans_regular, weight = FontWeight.Normal),
@@ -279,6 +285,66 @@ internal fun cardTextStyle(base: TextStyle, nominal: FontWeight): TextStyle {
         fontWeight = env.weightFor(nominal),
         fontSynthesis = FontSynthesis.None,
         fontFamily = CardFontFamily,
+    ).pinSystemLineBox(rememberSystemLineBoxEm())
+}
+
+/**
+ * 「系统字族（原来那套字体）的行盒 ÷ 字号」，随机器而变：实测华为 ELS-AN00 的 HarmonyOS Sans
+ * ≈ **1.265 em**、小米 2312DRA50C 的 MiSans ≈ **1.347 em**；自带 Noto Sans SC 原始 hhea 是
+ * **1.448 em**（本仓库已把它压到 1.20 em，见 `android/FONT-README.md` §3.1）。
+ *
+ * 为什么需要它：换字体之后，凡是**没有显式 `lineHeight`** 的 `TextStyle`，行盒会跟着 Noto 的
+ * 行距一起变高 —— 实测卡片高度华为 618 → 648（+4.9%）、小米 660 → 678（+2.7%）。要钉回原尺寸，
+ * 最稳的办法不是写死一个「1.25em」之类的经验值（两台机器的原字体不同，写死必有一台对不上），
+ * 而是在运行时用**同一个** `TextMeasurer` 量一次系统字族在同一字号下的行盒，取比值当
+ * `lineHeight` 系数：换字体之前卡片用的就是这个行盒，所以量出来的高度与原版一致
+ * （实测两台机器的卡片 bbox 都正好回到 1088×618 / 1100×660）。
+ *
+ * 注意探针必须走 `FontFamily.Default`（= 系统字族）。华为的「字体粗细」只在**渲染层**描粗，
+ * 不改字形度量，所以这个比值与系统是否开着加粗无关、可以缓存。
+ */
+@Composable
+internal fun rememberSystemLineBoxEm(): Float {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    return remember(measurer, density) {
+        // 字号取大一点（100sp），把整数取整带来的相对误差压到 0.2% 以下。
+        val probeSp = 100f
+        val height = measurer.measure(
+            text = "88:88",
+            style = TextStyle(
+                fontFamily = FontFamily.Default,
+                fontSize = probeSp.sp,
+                fontFeatureSettings = "tnum",
+            ),
+            maxLines = 1,
+        ).size.height.toFloat()
+        val probePx = with(density) { probeSp.sp.toPx() }
+        if (height > 0f && probePx > 0f) height / probePx else 0f
+    }
+}
+
+/**
+ * 把 [TextStyle] 的行高钉成「系统字族在同一字号下的行盒」，于是自带字体更高的 ascender
+ * 不再撑高卡片。只处理**没写 `lineHeight`** 的样式：
+ *
+ * - 已写死的（Material 的 `labelMedium` / `labelSmall` / `bodySmall` … 全都有 `lineHeight`）
+ *   一个字节都不动 —— 它们本来就不受换字体影响；
+ * - `fontSize` 还没定的（例如 `HeroClock` 先拿到 `baseStyle`、字号后面才算出来）原样返回，
+ *   由调用方在算完字号之后自己调 [pinSystemLineBox]。
+ */
+internal fun TextStyle.pinSystemLineBox(em: Float): TextStyle {
+    if (em <= 0f) return this
+    if (lineHeight != TextUnit.Unspecified) return this
+    if (fontSize == TextUnit.Unspecified) return this
+    return copy(
+        lineHeight = (fontSize.value * em).sp,
+        // 行盒比字形高出来的那一截怎么分：居中（上下各一半）。写字形位置时明写出来，
+        // 免得 Compose 改默认值时卡片里的文字悄悄上下漂。
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None,
+        ),
     )
 }
 

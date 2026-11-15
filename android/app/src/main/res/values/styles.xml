@@ -3,11 +3,18 @@
 
     <!-- 主时钟的字号由 WidgetUpdater 按栏宽实测换算成 px 下发，这里的 42dp 只是布局预览
          与「最小版面」兜底用。小组件里所有字号都用 dp 而不是 sp：桌面单元格尺寸固定，
-         sp 会跟着系统「字体大小」放大，一放大版面就被挤出格子。 -->
+         sp 会跟着系统「字体大小」放大，一放大版面就被挤出格子。
+
+         `android:includeFontPadding` 全部为 **true**，这是有意的，别改回 false：
+         自带字体的 hhea（ascent/descent = 0.90/−0.30 em）被压紧成 1.20 em，好让 Compose
+         那边的 `lineHeight` 能生效（见 `ui/CardDensity.kt` 的 rememberSystemLineBoxEm）；
+         而小组件的行盒历来是 1.448 em（1.16 + 0.288）。`includeFontPadding=true` 用的是
+         FontMetrics.top/bottom，字体文件里这两个值仍是 1.16 / 0.288 em，于是桌面上的行盒、
+         基线位置与压紧前逐像素一致 —— 小组件的版面不因为卡片那边的改动而变。 -->
     <style name="WidgetClockMain">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
@@ -17,7 +24,7 @@
     <style name="WidgetClockSecondSolar">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
@@ -36,7 +43,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
@@ -53,7 +60,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
         <item name="android:textSize">23dp</item>
@@ -64,7 +71,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
         <item name="android:textSize">23dp</item>
@@ -76,7 +83,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">5dp</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>
@@ -86,7 +93,7 @@
 
     <!-- ????????????????????? -->
     <style name="WidgetHourLabel">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFeatureSettings">tnum</item>
@@ -97,7 +104,7 @@
     </style>
 
     <style name="WidgetHourIcon">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">24dp</item>
         <item name="android:layout_height">24dp</item>
         <item name="android:layout_marginTop">3dp</item>
@@ -105,7 +112,7 @@
     </style>
 
     <style name="WidgetHourCond">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">1dp</item>
@@ -126,7 +133,7 @@
 
 
     <style name="WidgetHourIconCompact">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">26dp</item>
         <item name="android:layout_height">26dp</item>
         <item name="android:layout_marginTop">2dp</item>
@@ -134,7 +141,7 @@
     </style>
 
     <style name="WidgetHourLabelCompact">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFeatureSettings">tnum</item>
@@ -145,7 +152,7 @@
     </style>
 
     <style name="WidgetHourCondCompact">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">1dp</item>
@@ -161,7 +168,7 @@
 
     <!-- 日出/正午/日落这一行的标签与时间：与逐时行同一档字号，标签淡一档。 -->
     <style name="WidgetSunLabel">
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:includeFontPadding">false</item>
@@ -174,7 +181,7 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginStart">4dp</item>
-        <item name="android:fontFamily">@font/card_sans_medium</item>
+        <item name="android:fontFamily">@font/card_sans_widget</item>
         <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:includeFontPadding">false</item>
         <item name="android:maxLines">1</item>

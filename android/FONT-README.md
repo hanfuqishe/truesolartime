@@ -64,13 +64,62 @@ py -3 -m fontTools.subset NotoSansSC-Medium.ttf  --text-file=chars_medium.txt `
 体积代价：Medium 1.19 MB + Regular 0.19 MB ≈ **1.39 MB**，release APK 2.00 MB → **2.88 MB**。
 若以后确认「地区名」可以接受回落，把 GB2312 那一档去掉重新子集即可，其余流程不变。
 
+## 3.1 垂直度量被改写过（别丢）
+
+两个 ttf 的**垂直度量**不是上游原值，是刻意的：
+
+| 字段 | 上游 / 子集后 | 本仓库 | 为什么 |
+|---|---|---|---|
+| `hhea.ascender` / `descender` | 1160 / −288（**1.448 em**） | **900 / −300（1.20 em）** | Compose 的行盒不会小于字体自身的 ascender+descender；压到 1.20 em 之后 `TextStyle.lineHeight` 才**能**生效，卡片高度才能钉回换字体前的 618 / 660 px |
+| `OS/2.sTypoAscender/Descender/LineGap` | 880 / −120 / 0 | 900 / −300 / 0 | 与 hhea 保持一致（`USE_TYPO_METRICS` 未置位，正常不被读取） |
+| `OS/2.usWinAscent/Descent` | 1160 / 288 | **1160 / 288（不动）** | 小组件若用 `includeFontPadding=true` 仍得到 1.448 em 的老行盒 |
+| `head.yMax/yMin` | 2927 / −1047（子集后残留的怪值） | 1160 / −288 | 同一目的：`FontMetrics.top/bottom` 合理 |
+| `OS/2.usWeightClass` | 500 / 400 | **1000 / 1000** | 让「请求字重比字面粗」的引擎（按 OS/2 判定的那类）不再合成粗体；Android 侧按字体族里声明的字重匹配，不受影响 |
+
+复现：`%TEMP%\solartime\patch_font_metrics.py` / `patch_weightclass.py`（只改度量表，
+**不动任何字形**，重算了表 checksum 与 `head.checkSumAdjustment`）。
+
+配套的 Compose 侧逻辑在 `ui/CardDensity.kt`：`rememberSystemLineBoxEm()` 运行时量一次**系统字族**
+的行盒/字号（华为 1.265 em、小米 1.347 em），`pinSystemLineBox()` 把它写成显式 `lineHeight`
+（居中分配多余空间）。两台机器的行高因此各自钉回原尺寸，不写死任何一台的数值。
+
 ## 4. 桌面小组件（RemoteViews）
 
 小组件只能走 XML：`res/values/styles.xml` 里 `WidgetClockMain` / `WidgetSunTime` / `WidgetHourLabel`
-等样式与各 `TextView` 都写了 `android:fontFamily="@font/card_sans_medium"`（统一 Medium：小组件
+等样式与各 `TextView` 都写了 `android:fontFamily="@font/card_sans_widget"`（统一 Medium：小组件
 原本就一半是 `sans-serif-medium`，混用两个字重会让同一屏里粗细不一）。
 
 - **API 26+ 可用**：`@font/` 资源在 XML 里从 Android 8.0 起被接受，RemoteViews 用 App 自己的
   Resources 解析，实测在 ELS-AN00（Android 12 / API 31）桌面上确实换成了自带字形。
 - **API 24/25**：`android:fontFamily` 指向资源时框架取不到字符串（`TypedArray.getString` 对
   reference 返回 null），TextView 退回默认族 —— 不崩，只是没换字体。
+
+### 4.1 为什么字体族不是单个 ttf：`res/font/card_sans_widget.xml`
+
+`@font/card_sans_medium` 指向**单个 ttf** 时，字体文件只声明了一个字重（`OS/2.usWeightClass`），
+桌面进程的 TextView / Skia 按系统「字体粗细」抬高请求字重后找不到对应字面，就**合成粗体**
+（笔画外扩、字宽不变）。所以小组件用 `card_sans_widget.xml` 把 **100–900 每一档**都映射到
+同一份 `card_sans_medium.ttf`：请求哪一档都精确命中真实字面，不轮到合成。
+
+实测（华为 ELS-AN00，`font_weight_scale` 0.79 ↔ 0.88，覆盖安装后**重启桌面**重新 inflate，
+避免 RemoteViews 缓存）：换成字体族后小组件整体墨迹比换之前**低约 12%**（那 12% 就是被去掉的
+合成粗体），即小组件现在渲染的是真正的 Medium 字面、与 App 里卡片同一档。
+
+### 4.2 残余：桌面进程的描粗去不掉（平台限制）
+
+换成字体族后，**华为那一档仍然能让小组件变粗**：0.79 → 0.88 时 label +9.2%、时钟 +2%、日期 +8.8%、
+逐时 +0.3%（城市名段最明显）。逐项排除过：
+
+| 试验 | 结果 |
+|---|---|
+| 字形是不是自己的？ | 是。放大 3× 与 App 内卡片逐字比对，字形一致（Noto 的 `1`/`5`/`~`/`°`/`阴` 全部对得上），字宽一字未变 |
+| 字体族声明 100–900 全档 | 无变化（残余描粗仍在） |
+| 字体文件 `OS/2.usWeightClass` 改成 1000（“已经是最粗”） | 无变化 |
+| `RemoteViews.setInt(id, "setPaintFlags", 清掉 FAKE_BOLD_TEXT_FLAG)` | 无变化（残余描粗仍在）；对照组显式**打开**该 flag 则墨迹 +37%，说明这个 flag 本身是可控的、但 ROM 的描粗不是它 |
+
+结论：EMUI / HarmonyOS 的「字体粗细」在**桌面进程**里对 RemoteViews 的文字另做了一层渲染期描粗，
+既不看字体声明的字重、也不走 `Paint` 的 fake-bold 标记 —— App 无法通过 XML 或 RemoteViews 关掉它。
+App 自己进程里的卡片之所以免疫，是因为 Compose 走 `fontSynthesis = None` + 自带 `Typeface`，
+不经过桌面那层。**替代方案都不划算**：把文字画成图片（`RemoteViews` 只支持位图）会失去
+`TextClock` / `Chronometer` 的自走秒与点击跳转，且每档字重都要重新出图；因此在小组件上接受
+「仍会随系统加粗变化 ~9%」，App 内的卡片则保持 0.00%。
