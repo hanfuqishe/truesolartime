@@ -134,11 +134,15 @@ object WidgetUpdater {
 
     /**
      * 顶部标签行里三段固定文本的估算宽度：`UTC+8`（5 个拉丁字符）、`真太阳时`（4 个汉字）、
-     * 时辰（如「辰时 · 初」：3 个汉字外加一个分隔点与空格）。
+     * 时辰（现在只显示时辰名，如「亥时」两个汉字；英文是 "Hai hour"，约 4 个字宽）。
+     *
+     * 时辰宽度**不再写死**：真机刷新时按本地化后的实际文案量（见 [cityLabel]），
+     * 这个常量只作默认估算（中文「亥时」＝两个汉字）。去掉「初/正」后时辰短了，
+     * 地名能占的宽度随之变大，档位自然往宽松的方向走。
      */
     private const val UTC_LABEL_DP = 34f
     private const val SOLAR_LABEL_DP = 4f * CITY_TEXT_DP
-    private const val SHICHEN_DP = 52f
+    private const val SHICHEN_DP = 2f * CITY_TEXT_DP
 
     /** 顶部标签行里相邻两段文本之间的间距（与布局里的 marginStart/End 一致）。 */
     private const val CITY_LABEL_GAP_DP = 8f
@@ -598,7 +602,10 @@ object WidgetUpdater {
             //   * 档 1-3 → widget_top_row：合并成一条，地区对齐由 setGravity 按档位下发。
             // 两个容器互斥，文本 / 可见性 / 对齐对两套控件一起下发（同一布局里 id 不能重名）。
             // 竖分隔线同理有两份（见下面 dividerReachesLabelRow 那一段）。
-            val city = cityLabel(context, place, widthDp, compact)
+            // 顶行留给地名的宽度要按**这次真要写的**时辰文案算：中文「亥时」两个汉字，
+            // 英文 "Hai hour" 更宽。去掉「初/正」后时辰短了，档位判定自动变宽松。
+            val shichenForWidth = cityTextEm(shichenText(context, solarSecondsOfDay))
+            val city = cityLabel(context, place, widthDp, compact, shichenForWidth)
             val topRowDefault = city.tier == 0
             setViewVisibility(
                 R.id.widget_top_row_default,
@@ -800,7 +807,13 @@ object WidgetUpdater {
      * 那一行能显示的地名：名字越长，依次让出「真太阳时」「UTC」的位置，
      * 而不是把名字截成「克孜勒苏柯尔克孜自治…」。
      */
-    private fun cityLabel(context: Context, place: Place, widthDp: Int, compact: Boolean): CityLabelPlan {
+    private fun cityLabel(
+        context: Context,
+        place: Place,
+        widthDp: Int,
+        compact: Boolean,
+        shichenEm: Float,
+    ): CityLabelPlan {
         // 兜底名与首页保持同一优先级：预设城市名优先，其次才用离线城市表里最近的城市。
         // 这样「点选纽约」时首页与桌面卡片写的是同一个名字。
         val presetLabel = place.labelResName?.let { TimeText.placeLabel(context, place) }.orEmpty()
@@ -815,7 +828,7 @@ object WidgetUpdater {
         // 换城市后立刻失效，绝不拿上一个城市的地名凑数。
         val names = DistrictResolver.cachedNamesFor(context, place)
         val totalWidthDp = if (widthDp > 0) widthDp.toFloat() else DEFAULT_WIDGET_WIDTH_DP
-        val budgets = cityRowBudgets(totalWidthDp, compact)
+        val budgets = cityRowBudgets(totalWidthDp, compact, shichenEm)
         return planCityLabel(names, fallback, budgets.tier0, budgets.tier1, budgets.tier2)
     }
 
@@ -828,10 +841,18 @@ object WidgetUpdater {
      *   右半连「真太阳时 + 时辰」都装不下时档 0 不可能成立，这里返回负数，让所有地名退到档 1。
      * - [tier1]：收起「真太阳时」后，UTC + 地区 + 时辰 装进整行。
      * - [tier2]：再收起 UTC，地区 + 时辰 装进整行（再宽就是档 3：贴左 + 省略号）。
+     *
+     * @param shichenEm 当前这次刷新要写入的时辰文本宽度（单位「字号」）。默认按中文「亥时」
+     *   两个汉字估算；调用方传本地化后的实际文案（英文 "Hai hour" 更宽），
+     *   这样去掉「初/正」后判档会自动跟着变宽，不必改常量。
      */
     internal data class CityRowBudgets(val tier0: Float, val tier1: Float, val tier2: Float)
 
-    internal fun cityRowBudgets(widthDp: Float, compact: Boolean): CityRowBudgets {
+    internal fun cityRowBudgets(
+        widthDp: Float,
+        compact: Boolean,
+        shichenEm: Float = SHICHEN_DP / CITY_TEXT_DP,
+    ): CityRowBudgets {
         val totalWidthDp = if (widthDp > 0f) widthDp else DEFAULT_WIDGET_WIDTH_DP
         val paddingDp = if (compact) 10f else 14f
         // 整行可用宽度：卡片宽度减去左右内边距（顶行横跨整行，不再按栏宽算），
@@ -839,7 +860,6 @@ object WidgetUpdater {
         val rowEm = (totalWidthDp - paddingDp * 2f) / CITY_TEXT_DP
         val utcEm = UTC_LABEL_DP / CITY_TEXT_DP
         val solarLabelEm = SOLAR_LABEL_DP / CITY_TEXT_DP
-        val shichenEm = SHICHEN_DP / CITY_TEXT_DP
         val gapEm = CITY_LABEL_GAP_DP / CITY_TEXT_DP
         val cityEndEm = CITY_END_INSET_DP / CITY_TEXT_DP
         val halfEm = rowEm / 2f
@@ -936,12 +956,9 @@ object WidgetUpdater {
         return if (inside) KeyTimePalette.ink(schedule.temperature, isDay) else null
     }
 
-    /** 时辰 + 时初／时正，与首页大卡片一致（如「午时 · 初」）。 */
-    private fun shichenText(context: Context, solarSecondsOfDay: Double): String {
-        val name = TimeText.shichenName(context, Shichen.indexOf(solarSecondsOfDay))
-        val half = TimeText.shichenHalf(context, Shichen.halfLabel(solarSecondsOfDay) == "正")
-        return context.getString(R.string.hero_shichen, name, half)
-    }
+    /** 时辰标签，与首页大卡片一致：只显示时辰名（如「亥时」/ "Hai hour"），不再带时初／时正。 */
+    private fun shichenText(context: Context, solarSecondsOfDay: Double): String =
+        TimeText.shichenName(context, Shichen.indexOf(solarSecondsOfDay))
 
     /** 真太阳时的默认色：白天白字、夜间金色，与首页大卡片一致。 */
     private fun defaultSolarColor(isDay: Boolean): Int =

@@ -136,8 +136,45 @@ class DistrictResolverTest {
     fun dropsRepeatedParentAndPlaceholders() {
         // Geocoder 有时把同一级填进两个字段；「市辖区」这类高德占位值也不该出现。
         assertEquals("Shanghai", DistrictResolver.composeNames(null, "Shanghai", "Shanghai")?.full)
-        assertEquals("某县, 河北省", DistrictResolver.composeNames("某县", "市辖区", "河北省")?.full)
+        // 中文名按中文习惯直接相连（不再用逗号）
+        assertEquals("河北省某县", DistrictResolver.composeNames("某县", "市辖区", "河北省")?.full)
         assertNull(DistrictResolver.composeNames(" ", "[]", null))
+    }
+
+    @Test
+    fun joinsLatinNamesWithCommaInsteadOfRunningThemTogether() {
+        // 境外城市：区县与城市之间必须有分隔符，不能拼成「New YorkManhattan」。
+        val manhattan = DistrictResolver.pickNames("Manhattan", "New York", "New York")
+        assertEquals("New York, Manhattan", manhattan?.full)
+        assertEquals("Manhattan", manhattan?.short)
+        // 中英混排（中文市名 + 英文区名）同样用逗号，免得拼出「纽约Manhattan」。
+        assertEquals("纽约, Manhattan", DistrictResolver.pickName("Manhattan", "纽约", null))
+    }
+
+    @Test
+    fun joinsChineseLevelsWithoutSeparator() {
+        // 中文三级：从粗到细直接相连。
+        assertEquals(
+            "广东省深圳市南山区",
+            DistrictResolver.composeNames("南山区", "深圳市", "广东省")?.full,
+        )
+        // 中英混排用逗号（含汉字但有拉丁字母 → 不算中文写法）。
+        assertEquals(
+            "Manhattan, 纽约, 纽约州",
+            DistrictResolver.composeNames("Manhattan", "纽约", "纽约州")?.full,
+        )
+        assertTrue(DistrictResolver.isChineseGrouping(listOf("黄浦区", "上海市")))
+        assertFalse(DistrictResolver.isChineseGrouping(listOf("Manhattan", "纽约")))
+    }
+
+    @Test
+    fun dedupesRepeatedEnglishLevels() {
+        // 「Tokyo」既是市又是都：只保留一次，别变成「Chiyoda, Tokyo, Tokyo」。
+        assertEquals("Chiyoda, Tokyo", DistrictResolver.composeNames("Chiyoda", "Tokyo", "Tokyo")?.full)
+        assertEquals(
+            "Manhattan, New York",
+            DistrictResolver.composeNames("Manhattan", "New York", "New York")?.full,
+        )
     }
 
     @Test

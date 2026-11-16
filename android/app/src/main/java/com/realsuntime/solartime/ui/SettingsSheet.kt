@@ -244,41 +244,6 @@ fun SettingsSheet(
             }
 
             Spacer(Modifier.height(18.dp))
-            Text(
-                text = stringResource(R.string.section_widget),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(6.dp))
-            FilledTonalButton(
-                onClick = {
-                    // 各桌面对「应用内添加」的支持参差不齐：Pixel 桌面会弹确认框，
-                    // 华为桌面也弹，但桌面这一屏满了就只 toast 一句「当前屏幕已经没有空间」，
-                    // 小米/红米甚至返回成功却什么都不做。所以只负责发出请求 + 记一笔基线，
-                    // 真正是否加上，等用户回到本页时用实例数结算（见下面的 ON_RESUME）。
-                    val requested = WidgetUpdater.requestPin(context)
-                    widgetMessage = if (requested) {
-                        context.getString(R.string.widget_add_waiting)
-                    } else {
-                        context.getString(R.string.widget_add_manual)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.widget_add_action))
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = widgetMessage ?: stringResource(R.string.widget_add_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (widgetMessage == null) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-            )
-
-            Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.reminder_title), style = MaterialTheme.typography.titleSmall)
@@ -365,6 +330,43 @@ fun SettingsSheet(
                     )
                 }
             }
+
+            Spacer(Modifier.height(18.dp))
+            // 「添加到桌面」放在页面下方、「诊断」正上方（不再夹在提醒开关之前）：
+            // 它是一次性动作，不是常用开关，跟着「关于/诊断」这类低频入口更顺。
+            Text(
+                text = stringResource(R.string.section_widget),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(6.dp))
+            FilledTonalButton(
+                onClick = {
+                    // 各桌面对「应用内添加」的支持参差不齐：Pixel 桌面会弹确认框，
+                    // 华为桌面也弹，但桌面这一屏满了就只 toast 一句「当前屏幕已经没有空间」，
+                    // 小米/红米甚至返回成功却什么都不做。所以只负责发出请求 + 记一笔基线，
+                    // 真正是否加上，等用户回到本页时用实例数结算（见上面的 ON_RESUME）。
+                    val requested = WidgetUpdater.requestPin(context)
+                    widgetMessage = if (requested) {
+                        context.getString(R.string.widget_add_waiting)
+                    } else {
+                        context.getString(R.string.widget_add_manual)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.widget_add_action))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = widgetMessage ?: stringResource(R.string.widget_add_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (widgetMessage == null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
 
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()

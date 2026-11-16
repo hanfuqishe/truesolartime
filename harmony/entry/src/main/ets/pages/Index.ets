@@ -4,6 +4,7 @@ import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
+import { PlaceBadgeLogic } from '../core/PlaceBadge';
 import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
@@ -141,6 +142,9 @@ struct Index {
   private clockRatioCache: number = 0;
   /** 系统字体「行盒 / 字号」比例，量一次缓存（钉卡片行高用）。 */
   private lineBoxRatioCache: number = 0;
+  /** 大卡片「地区」字号的缓存键与结果：名字／栏宽／语言变了才重新量。 */
+  private districtFontKey: string = '';
+  private districtFontFit: number = 0;
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
   @State palette: AppPalette = paletteFor(true);
   /** 配色模式：AUTO（按日出日落，默认）/ LIGHT / DARK，见 core/ThemeMode.ets。 */
@@ -584,9 +588,13 @@ struct Index {
     return parts.join(' · ');
   }
 
-  /** 右上角的位置标识：跟随 GPS 时显示「GPS」，其余情况显示当前地名（与 Android 的 Header.badge 一致）。 */
-  private locationBadge(): string {
-    return this.place.source === PlaceSource.GPS ? 'GPS' : this.districtLabel();
+  /**
+   * 标题行右侧是否显示「GPS」徽标：只有跟随 GPS 才显示（与 Android `HeaderBadge` 一致）。
+   *
+   * 预设城市 / 手动输入的经纬度一律不显示 —— 地名已经在大卡片里，标题行不占位。
+   */
+  private showsGpsBadge(): boolean {
+    return PlaceBadgeLogic.showsGps(this.place.source);
   }
 
   /**
@@ -604,6 +612,50 @@ struct Index {
       return this.district;
     }
     return this.placeName.length > 0 ? this.placeName : CITY_UNKNOWN;
+  }
+
+  /**
+   * 大卡片左栏「地区」的字号：名字太长时按这一栏的可用宽度逐档缩小（12 → 9fp，0.5 一档），
+   * 避免「New York, Manhattan」这种长名字被直接截成「New …」。缩到下限仍放不下才交给省略号
+   * （与 Android 卡片档 3 的兜底一致）。短名字仍是 12fp，字号不变。
+   */
+  private districtFontSize(): number {
+    const base: number = 12;
+    const min: number = 9;
+    const name: string = this.districtLabel();
+    const key: string = `${name}|${this.clockColumnWidth}|${this.language}|${this.isWideLayout() ? 1 : 0}`;
+    if (key === this.districtFontKey && this.districtFontFit > 0) {
+      return this.districtFontFit;
+    }
+    let fitted: number = base;
+    if (this.clockColumnWidth > 0 && name.length > 0) {
+      const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
+      // 量宽必须指定卡片自带字族：默认字族会跟着系统「字体粗细」变宽，判档就会随设置漂。
+      const utcWidth: number = utils.measureTextSize({
+        textContent: TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds),
+        fontSize: this.cs(base) + 'fp',
+        fontFamily: CARD_FONT_REGULAR
+      }).width as number;
+      // 8vp 是地区与 UTC 之间的间隔，再留 2vp 余量，免得刚好贴边被省略。
+      const available: number = vp2px(this.clockColumnWidth) - utcWidth - vp2px(10);
+      if (available > 0) {
+        fitted = min;
+        for (let size: number = base; size >= min; size -= 0.5) {
+          const width: number = utils.measureTextSize({
+            textContent: name,
+            fontSize: this.cs(size) + 'fp',
+            fontFamily: CARD_FONT_REGULAR
+          }).width as number;
+          if (width <= available) {
+            fitted = size;
+            break;
+          }
+        }
+      }
+    }
+    this.districtFontKey = key;
+    this.districtFontFit = fitted;
+    return fitted;
   }
 
   /**
@@ -724,18 +776,20 @@ struct Index {
           .margin({ top: 2 })
       }
       .alignItems(HorizontalAlign.Start)
-      // 地名要限宽：早先它没有约束、按内容取宽，长地名会把标题与副标题挤成窄条
-      // （Android 版修过同一个问题）。这里给标题列吃剩余宽度、地名最多占 40%，
-      // 超出右对齐省略——地名短时副标题仍能整行显示。
+      // 标题列吃剩余宽度；右边的「GPS」徽标只在跟随 GPS 时才条件渲染 ——
+      // 预设城市 / 手动坐标不显示任何位置标识，也不留占位空隙，标题自然变宽。
+      // （规则见 core/PlaceBadge，与 Android HeaderBadge 一致。）
       .layoutWeight(1)
-      Text(this.locationBadge())
-        .fontSize(12)
-        .fontColor(this.palette.accent)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .textAlign(TextAlign.End)
-        .constraintSize({ maxWidth: '40%' })
-        .margin({ right: 6 })
+      if (this.showsGpsBadge()) {
+        Text(PlaceBadgeLogic.GPS_TEXT)
+          .fontSize(12)
+          .fontColor(this.palette.accent)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.End)
+          .constraintSize({ maxWidth: '40%' })
+          .margin({ right: 6 })
+      }
       // 与 Android 一致：齿轮图标按钮，不再用「设置」文字
       SymbolGlyph($r('sys.symbol.gearshape_fill'))
         .fontSize(22)
@@ -765,9 +819,11 @@ struct Index {
               .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#CCFFFFFF')
             Text(this.districtLabel())
-              .fontSize(this.cs(12))
+              // 长地名（如「New York, Manhattan」）按栏宽自动缩小字号，别只留个「New …」；
+              // 缩到 9fp 仍放不下才交给省略号。短名字仍是 12fp。
+              .fontSize(this.cs(this.districtFontSize()))
               .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(12)))
+              .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
               .fontColor('#B3FFFFFF')
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -828,7 +884,7 @@ struct Index {
               .fontFamily(this.cardFont(FontWeight.Normal))
               .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#CCFFFFFF')
-            Text(`${this.snapshot.shichenName} · ${this.snapshot.shichenHalf}`)
+            Text(this.snapshot.shichenName)
               .fontSize(this.cs(12))
               .fontFamily(this.cardFont(FontWeight.Normal))
               .lineHeight(this.cardLineHeight(this.cs(12)))

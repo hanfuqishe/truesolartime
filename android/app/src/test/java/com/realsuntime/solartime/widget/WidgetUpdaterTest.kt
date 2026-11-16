@@ -84,11 +84,17 @@ class WidgetUpdaterTest {
         // 间隙(6dp, 与布局里 widget_city_default 的 marginEnd 一致)：16.91 − 3.09 − 0.73 − 0.55。
         val budgets = WidgetUpdater.cityRowBudgets(400f, compact = false)
         assertEquals(12.55f, budgets.tier0, 0.02f)
-        assertEquals(24.55f, budgets.tier1, 0.02f)
-        assertEquals(28.36f, budgets.tier2, 0.02f)
+        // 时辰现在只写时辰名（「亥时」两个汉字）：33.82 − 3.09 − 2 − 1.45 = 27.27。
+        assertEquals(27.27f, budgets.tier1, 0.02f)
+        // 档 2 再收起 UTC：33.82 − 2 − 0.73 = 31.09。
+        assertEquals(31.09f, budgets.tier2, 0.02f)
         // 档 0 的上限确实来自「左半」：比档 1 窄得多，同一段地名会先在档 0 放不下。
         assertTrue(budgets.tier0 < budgets.tier1)
         assertTrue(budgets.tier1 < budgets.tier2)
+        // 英文界面 "Hai hour" 约 4 个字宽：调用方按实际文案传入，档 1/2 的上限同步少 2 个字宽。
+        val latin = WidgetUpdater.cityRowBudgets(400f, compact = false, shichenEm = 4f)
+        assertEquals(budgets.tier1 - 2f, latin.tier1, 0.02f)
+        assertEquals(budgets.tier2 - 2f, latin.tier2, 0.02f)
         // 极窄的卡片连右半都装不下「真太阳时 + 时辰」：档 0 不可能成立。
         assertTrue(WidgetUpdater.cityRowBudgets(120f, compact = false).tier0 < 0f)
         // 没量到宽度时按默认 5x2 卡片宽估算，给出的上限仍然可用。

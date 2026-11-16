@@ -348,6 +348,10 @@ object DistrictResolver {
      * 区县名补上上级行政区划：优先市（直辖市时市与省同名，于是得到「上海市宝山区」），
      * 市缺失或只是「市辖区」这类占位值时用省；区县名本身已带上级前缀就不再重复。
      * 没有区县时退回市，再退回省。
+     *
+     * **分隔符按名字本身判断**（不是按界面语言）：中文名直接相连（「上海市宝山区」），
+     * 拉丁字母等非中文名用「, 」连接（「New York, Manhattan」）—— 否则境外城市会被拼成
+     * 「New YorkManhattan」这种粘在一起的怪串。
      */
     fun pickNames(district: String?, city: String?, province: String?): DistrictNames? {
         val county = cleanName(district)
@@ -358,7 +362,11 @@ object DistrictResolver {
             return DistrictNames(only, only)
         }
         val parent = listOfNotNull(town, region).firstOrNull { it != county }
-        val full = if (parent == null || county.startsWith(parent)) county else parent + county
+        val full = when {
+            parent == null || county.startsWith(parent) -> county
+            isChineseGrouping(listOf(parent, county)) -> parent + county
+            else -> "$parent, $county"
+        }
         // 短名只留区县；若区县就是全部（如县级市），短名与全名相同。
         return DistrictNames(full, county)
     }
@@ -368,8 +376,14 @@ object DistrictResolver {
         pickNames(district, city, province)?.full
 
     /**
-     * 非中文界面下的写法：由细到粗用逗号连接（如「Huangpu District, Shanghai」），
-     * 重复的上级只保留一次，短名取最细的一级。
+     * 由细到粗的各级行政区划拼成显示名，**分隔符按名字本身判断**：
+     *
+     * - 中文名（至少一个汉字、且没有拉丁字母）从粗到细直接相连：「广东省 + 深圳市 + 南山区」
+     *   拼成「广东省深圳市南山区」（上级已是下级前缀时只留一份）；
+     * - 其余（英文、中英混排）仍由细到粗用「, 」连接：「Manhattan, New York」。
+     *
+     * 重复的上级只保留一次（「New York」+「New York County」不会重复成两段），
+     * 占位字段丢弃，最多留三级 —— 太长会被小组件里的省略号吃掉。
      */
     fun composeNames(county: String?, city: String?, region: String?): DistrictNames? =
         composeNames(listOf(county, city, region))
@@ -380,10 +394,54 @@ object DistrictResolver {
             .mapNotNull { cleanName(it) }
             .filterNot { it in PLACEHOLDER_REGIONS }
             .distinct()
-            // 太长的没用：一串行政区划在小组件里会被省略号吃掉，只留最细的三级。
             .take(3)
         if (levels.isEmpty()) return null
-        return DistrictNames(levels.joinToString(", "), levels.first())
+        val full = if (isChineseGrouping(levels)) {
+            joinCoarsestFirst(levels)
+        } else {
+            levels.joinToString(", ")
+        }
+        return DistrictNames(full, levels.first())
+    }
+
+    /**
+     * 这几级名字能不能按中文习惯直接相连：**至少有一个汉字，且一个拉丁字母都没有**。
+     *
+     * 「黄浦区」+「上海市」→ true；「Manhattan」+「纽约」→ false（中英混排用逗号，
+     * 免得拼出「纽约Manhattan」）。规则与 iOS 的 `DistrictNaming.isChineseGrouping` 一致。
+     */
+    fun isChineseGrouping(values: List<String?>): Boolean {
+        var hasChinese = false
+        for (value in values) {
+            val name = cleanName(value) ?: continue
+            for (char in name) {
+                when {
+                    char in '\u4e00'..'\u9fff' || char in '\u3400'..'\u4dbf' -> hasChinese = true
+                    char in 'A'..'Z' || char in 'a'..'z' -> return false
+                }
+            }
+        }
+        return hasChinese
+    }
+
+    /**
+     * 中文名**从粗到细**直接相连（[levels] 是最细→最粗的顺序）。
+     *
+     * 上级已经包含在下一级开头时只留更长的那一份：「上海市」+「上海市黄浦区」→
+     * 「上海市黄浦区」，不会写成「上海市上海市黄浦区」。
+     */
+    private fun joinCoarsestFirst(levels: List<String>): String {
+        var joined = ""
+        for (index in levels.indices.reversed()) {
+            val name = levels[index]
+            joined = when {
+                joined.isEmpty() -> name
+                name.startsWith(joined) -> name
+                joined.endsWith(name) -> joined
+                else -> joined + name
+            }
+        }
+        return joined
     }
 
     /** 高德会把空字段填成空串或「[]」，这类值一律当作没有。 */

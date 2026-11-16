@@ -15,7 +15,8 @@ import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './cor
 import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
-import { Place } from './core/Place';
+import { Place, PlaceSource } from './core/Place';
+import { PlaceBadgeLogic } from './core/PlaceBadge';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
@@ -651,11 +652,26 @@ for (const item of equationCases) {
 // ---- 区划名 ----
 {
   const names = DistrictNameLogic.composeNames(['南山区', '深圳市', '广东省']);
-  check('composed names', names !== null && names.full === '南山区, 深圳市, 广东省', `${names ? names.full : 'null'}`);
+  check('composed names', names !== null && names.full === '广东省深圳市南山区', `${names ? names.full : 'null'}`);
   check('short name is finest level', names !== null && names.short === '南山区');
   check('placeholder dropped', DistrictNameLogic.composeNames(['市辖区', '北京市'])?.full === '北京市');
-  check('duplicate dropped', DistrictNameLogic.composeNames(['深圳', '深圳', '广东'])?.full === '深圳, 广东');
+  check('duplicate dropped', DistrictNameLogic.composeNames(['深圳', '深圳', '广东'])?.full === '广东深圳');
   check('empty gives null', DistrictNameLogic.composeNames(['', '[]', '  ']) === null);
+
+  // 分隔符按名字判断：英文名必须用「, 」连接，不能拼成「New YorkManhattan」。
+  const manhattan = DistrictNameLogic.pickNames('Manhattan', 'New York', 'New York');
+  equal('latin names joined with comma', 'New York, Manhattan', manhattan === null ? 'null' : manhattan.full);
+  equal('latin short name is district', 'Manhattan', manhattan === null ? 'null' : manhattan.short);
+  const dongcheng = DistrictNameLogic.pickNames('东城区', '北京市', '北京市');
+  equal('chinese names joined directly', '北京市东城区', dongcheng === null ? 'null' : dongcheng.full);
+  // 三段式：英文去重后保留最细三级、逗号连接；中文从粗到细直接相连。
+  const tokyo = DistrictNameLogic.composeNames(['Chiyoda', 'Tokyo', 'Tokyo']);
+  equal('latin levels deduped', 'Chiyoda, Tokyo', tokyo === null ? 'null' : tokyo.full);
+  const mixed = DistrictNameLogic.composeNames(['Manhattan', '纽约', '纽约州']);
+  equal('mixed grouping uses comma', 'Manhattan, 纽约, 纽约州', mixed === null ? 'null' : mixed.full);
+  check('chinese grouping detected',
+    DistrictNameLogic.isChineseGrouping(['黄浦区', '上海市']) &&
+    !DistrictNameLogic.isChineseGrouping(['Manhattan', '纽约']));
   const fallback = DistrictNameLogic.pickNames('', '深圳市', '广东省');
   check('fallback to city', fallback !== null && fallback.full === '深圳市', `${fallback ? fallback.full : 'null'}`);
   const shanghai = DistrictNameLogic.pickNames('黄浦区', '上海市', '上海市');
@@ -708,6 +724,13 @@ for (const item of equationCases) {
   equal('twenty presets', 20, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
+
+  // 标题行「GPS」徽标：只有跟随 GPS 才显示；预设城市 / 手动坐标什么都不显示
+  // （与 Android HeaderBadgeTest、首页 header 的条件渲染同一条规则）。
+  check('gps badge shown when following gps',
+    PlaceBadgeLogic.showsGps(PlaceSource.GPS) && PlaceBadgeLogic.GPS_TEXT === 'GPS');
+  check('gps badge hidden for preset and manual',
+    !PlaceBadgeLogic.showsGps(PlaceSource.MANUAL) && !PlaceBadgeLogic.showsGps(PlaceSource.DEFAULT));
 
   // 预设城市自带国家码：选中后就能当场按 ZoneTable 算出标准时区（与 Android ZoneTableTest 对齐）。
   let everyPresetHasCountry: boolean = true;

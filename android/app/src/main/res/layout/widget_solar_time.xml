@@ -125,7 +125,7 @@
                             android:maxLines="1"
                             android:textColor="#CCFFFFFF"
                             android:textSize="11dp"
-                            tools:text="辰时 · 初" />
+                            tools:text="辰时" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -187,7 +187,7 @@
                         android:maxLines="1"
                         android:textColor="#CCFFFFFF"
                         android:textSize="11dp"
-                        tools:text="辰时 · 初" />
+                        tools:text="辰时" />
                 </LinearLayout>
 
                 <LinearLayout

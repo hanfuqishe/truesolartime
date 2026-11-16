@@ -120,7 +120,9 @@ export class CardService {
     const data: CardData = new CardData();
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);
-    data.shichen = `${snapshot.shichenName} · ${snapshot.shichenHalf}`;
+    // 时辰只显示时辰名（如「亥时」）；时初／时正仍由 snapshot 算着，只是不再显示，
+    // 免得和 Android 桌面小组件、首页大卡片出现两种写法。
+    data.shichen = snapshot.shichenName;
     data.dateText = TimeFormat.dateCompact(now, language);
     // 卡片底色跟着「主题模式」走：自动＝按太阳，亮色/暗色＝强制（与首页大卡片同一套判定）。
     data.isDay = ThemeMode.isLight(AppStore.themeMode(), snapshot.isDay());

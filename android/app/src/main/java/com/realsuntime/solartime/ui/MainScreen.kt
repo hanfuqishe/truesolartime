@@ -85,7 +85,6 @@ import com.realsuntime.solartime.MainViewModel
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
-import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
@@ -262,11 +261,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                 Column {
                     Header(
-                        badge = if (place.source == PlaceSource.GPS) {
-                            stringResource(R.string.location_badge_gps)
-                        } else {
-                            cityText
-                        },
+                        // 只有跟随 GPS 才显示「GPS」徽标；预设城市 / 手动坐标什么都不显示
+                        // （地名在下面大卡片里，标题行不占位）。
+                        badge = HeaderBadge.textFor(
+                            place.source,
+                            stringResource(R.string.location_badge_gps),
+                        ),
                         onOpenSettings = { showSettings = true },
                     )
                     Spacer(Modifier.height(12.dp))
@@ -381,10 +381,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 /**
  * 顶部：标题、副标题，右侧是位置标识与设置按钮。
  *
- * 位置标识与鸿蒙版一致：跟随 GPS 时显示「GPS」，指定坐标时显示反查到的行政区划。
+ * 位置标识与鸿蒙版一致（规则见 [HeaderBadge]）：**只有跟随 GPS 时**才在齿轮左边显示
+ * 「GPS」小徽标；预设城市 / 手动坐标传 `null`，那一格**整个不渲染**，标题列自然吃满
+ * 剩余宽度，徽标与齿轮之间不会留下空出来的间距。
  */
 @Composable
-private fun Header(badge: String, onOpenSettings: () -> Unit) {
+private fun Header(badge: String?, onOpenSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -406,7 +408,7 @@ private fun Header(badge: String, onOpenSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (badge.isNotBlank()) {
+        if (badge != null) {
             Text(
                 text = badge,
                 style = MaterialTheme.typography.bodySmall,
@@ -483,13 +485,10 @@ private fun HeroCard(
             val utcLabel = TimeFormat.utcOffsetLabel(snapshot.localOffsetSeconds)
             val cityLabel = districtName ?: ""
             val solarLabel = stringResource(R.string.widget_label_solar)
-            // 时辰名走本地化字符串（英文本地化成 "Si hour"），与桌面卡片用同一套；
+            // 时辰只显示时辰名（如「亥时」／英文 "Hai hour"），与桌面卡片共用本地化字符串；
             // `snapshot.shichenName` 是固定的中文名，不能直接用，否则英文界面下两边写法不一致。
-            val shichenLabel = stringResource(
-                R.string.hero_shichen,
-                TimeText.shichenName(context, snapshot.shichenIndex),
-                TimeText.shichenHalf(context, snapshot.secondHalf),
-            )
+            // 时初／时正（`snapshot.shichenHalf`）仍照旧算着，只是不再显示。
+            val shichenLabel = TimeText.shichenName(context, snapshot.shichenIndex)
             val utcWidthPx = cityRowMeasurer.measure(utcLabel, cityRowStyle).size.width.toFloat()
             val cityWidthPx = if (cityLabel.isEmpty()) {
                 0f

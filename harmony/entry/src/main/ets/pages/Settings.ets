@@ -502,37 +502,6 @@ struct Settings {
           .cardStyle()
     .backgroundColor(this.palette.card)
 
-          // 桌面卡片：1.4.37 起开放（`CardService.CARD_ENTRY_ENABLED`）。
-          // 注意鸿蒙的 ArkTS 卡片做不到「非本地时间的分钟级自走」，卡片上的真太阳时最多
-          // 滞后约 30 分钟，所以说明里必须写清，别让用户当成秒表。
-          if (CARD_ENTRY_ENABLED) {
-            Column() {
-              this.sectionTitle('桌面卡片')
-              Text('把 2×4 的真太阳时卡片放到桌面：点下面按钮打开卡片页，选中「真太阳时」再点添加。')
-                .fontSize(10)
-                .fontColor(this.palette.subtle)
-                .margin({ top: 4 })
-                .width('100%')
-              Button('添加到桌面')
-                .fontSize(13)
-                .backgroundColor(this.palette.accent)
-                .fontColor(this.palette.onAccent)
-                .width('100%')
-                .height(38)
-                .margin({ top: 10 })
-                .onClick(() => {
-                  this.addCardToDesktop();
-                })
-              Text('注意：系统限制卡片内的时钟不能自走，卡片上的真太阳时最多滞后约 30 分钟；要看准点请打开应用。')
-                .fontSize(10)
-                .fontColor(this.palette.subtle)
-                .margin({ top: 8 })
-                .width('100%')
-            }
-            .cardStyle()
-            .backgroundColor(this.palette.card)
-          }
-
           // 提醒
           Column() {
             this.sectionTitle('提醒')
@@ -616,6 +585,38 @@ struct Settings {
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
+
+          // 桌面卡片：挪到页面下方、「诊断」正上方（与 Android 设置页同一顺序：
+          // 提醒 → 屏幕/主题 → 添加到桌面 → 诊断 → 关于）。1.4.37 起开放。
+          // 注意鸿蒙的 ArkTS 卡片做不到「非本地时间的分钟级自走」，卡片上的真太阳时最多
+          // 滞后约 30 分钟，所以说明里必须写清，别让用户当成秒表。
+          if (CARD_ENTRY_ENABLED) {
+            Column() {
+              this.sectionTitle('桌面卡片')
+              Text('把 2×4 的真太阳时卡片放到桌面：点下面按钮打开卡片页，选中「真太阳时」再点添加。')
+                .fontSize(10)
+                .fontColor(this.palette.subtle)
+                .margin({ top: 4 })
+                .width('100%')
+              Button('添加到桌面')
+                .fontSize(13)
+                .backgroundColor(this.palette.accent)
+                .fontColor(this.palette.onAccent)
+                .width('100%')
+                .height(38)
+                .margin({ top: 10 })
+                .onClick(() => {
+                  this.addCardToDesktop();
+                })
+              Text('注意：系统限制卡片内的时钟不能自走，卡片上的真太阳时最多滞后约 30 分钟；要看准点请打开应用。')
+                .fontSize(10)
+                .fontColor(this.palette.subtle)
+                .margin({ top: 8 })
+                .width('100%')
+            }
+            .cardStyle()
+            .backgroundColor(this.palette.card)
+          }
 
           // 诊断：天气源 / 逐时步长 / 数据过期分钟数 / 最近失败原因
           Column() {

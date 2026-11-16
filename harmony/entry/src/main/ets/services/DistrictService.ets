@@ -192,7 +192,9 @@ export class DistrictService {
         district = DistrictService.firstOf(fields, ['suburb', 'town', 'village', 'hamlet']);
       }
       const province: string = DistrictService.firstOf(fields, ['state', 'province', 'region']);
-      // 中文界面写「上海市黄浦区」，其他语言保持由细到粗的逗号写法。
+      // 分隔符由名字本身决定（core/DistrictName）：中文名「上海市黄浦区」直接相连，
+      // 英文名「New York, Manhattan」用逗号 —— 之前中文界面下拿英文名直接拼接，
+      // 会出现「New YorkManhattan」这种粘在一起的怪串。
       if (language.startsWith('zh')) {
         const names: DistrictNames | null = DistrictNameLogic.pickNames(district, city, province);
         if (names !== null) {

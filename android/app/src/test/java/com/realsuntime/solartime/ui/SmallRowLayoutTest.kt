@@ -116,6 +116,18 @@ class SmallRowLayoutTest {
     }
 
     @Test
+    fun longerLatinNameFallsToWiderTierInsteadOfStayingInTierZero() {
+        // 「New York, Manhattan」这类长拉丁名（约 170px）塞不进左半（44 + 170 + 8 > 150），
+        // 必须退到档 1/2 让地区横跨整行，而不是留在档 0 被半行宽度截成「New …」。
+        val longName = SmallRowLayout.cityRowTier(34f, 170f, 52f, 40f, 300f, 8f)
+        assertEquals(1, longName)
+        // 再长一点（整行也放不下 UTC + 地区 + 时辰）→ 档 2，地区贴左、时辰贴右。
+        assertEquals(2, SmallRowLayout.cityRowTier(34f, 230f, 52f, 40f, 300f, 8f))
+        // 时辰去掉「初/正」后变短，反而更容易留在档 1：同样宽度下档位只会更宽松，不会回归。
+        assertEquals(0, SmallRowLayout.cityRowTier(34f, 100f, 52f, 24f, 300f, 8f))
+    }
+
+    @Test
     fun cityRowHalvesAreEqualAndSumToTheRow() {
         // 档 0 的左右两半与下面两列等宽：各占整行一半
         val (left, right) = SmallRowLayout.cityRowHalves(400f)
