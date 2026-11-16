@@ -10,7 +10,8 @@ import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/
 import { TimeFormat } from '../core/TimeFormat';
 import { ZoneTable } from '../core/ZoneTable';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
-import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { HourPoint, WeatherLogic, WeatherSlot, WeatherSource, WeatherSnapshot } from '../core/Weather';
+import { ThemeMode } from '../core/ThemeMode';
 import { font, MeasureUtils, router } from '@kit.ArkUI';
 import { CARD_FONT_MEDIUM, CARD_FONT_REGULAR } from '../common/CardFont';
 import { weatherIcon } from '../common/WeatherIcon';
@@ -142,6 +143,8 @@ struct Index {
   private lineBoxRatioCache: number = 0;
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
   @State palette: AppPalette = paletteFor(true);
+  /** 配色模式：AUTO（按日出日落，默认）/ LIGHT / DARK，见 core/ThemeMode.ets。 */
+  @State themeMode: string = ThemeMode.AUTO;
   @State place: Place = Place.DEFAULT;
   @State placeName: string = '';
   @State district: string = '';
@@ -149,6 +152,10 @@ struct Index {
   @State weatherTemperature: string = WeatherLogic.PLACEHOLDER;
   @State weatherText: string = '';
   @State weatherRange: string = '';
+  /** 当前地点还没有缓存、正在取数：天气位显示「更新中…」而不是干等占位符。 */
+  @State weatherPending: boolean = false;
+  /** 当前缓存来自哪个源（open-meteo / 7timer）：底部那段署名跟着它切换。 */
+  @State weatherSource: string = WeatherSource.OPEN_METEO;
   @State hourLabels: string[] = [];
   @State hourConds: string[] = [];
   @State hourIcons: string[] = [];
@@ -232,6 +239,7 @@ struct Index {
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
     this.mapStyleKey = AppStore.mapStyle();
+    this.themeMode = AppStore.themeMode();
     this.recenterMap();
   }
 
@@ -372,6 +380,8 @@ struct Index {
     this.district = names === null ? '' : names.short;
     this.placeName = this.presetName();
 
+    // 天气缓存按地点区分：这两个读法都要求缓存坐标属于当前观测点（≤ 5 km），
+    // 所以换到新城市后这里立刻变空、只剩占位符，绝不会把上一个城市的读数安到新位置上。
     const weather: WeatherSnapshot | null = WeatherService.cached(this.place);
     if (weather !== null) {
       this.weatherTemperature = `${weather.temperatureC}°`;
@@ -380,49 +390,59 @@ struct Index {
       this.weatherTemperature = WeatherLogic.PLACEHOLDER;
       this.weatherText = '';
     }
+    // 缓存里的来源（主源 / 备用源）——底部署名与逐时步长都跟着它走；
+    // 当前地点没有任何可用缓存时按主源署名（备用源只在真实降级后出现）。
+    this.weatherSource = weather === null ? WeatherSource.OPEN_METEO : WeatherService.source();
 
-    const date: Date = new Date(now + SolarTimeMath.BEIJING_OFFSET_MILLIS);
+    // 日期与逐时格按**当地标准时**算（与左栏那个时钟同一口径），不是北京时间。
+    const zoneSeconds: number = this.zoneOffsetSeconds();
+    const date: Date = new Date(now + zoneSeconds * 1000);
     const dayStartUtc: number = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
     const range: number[] | null = WeatherLogic.temperatureRange(
       WeatherService.hourly(this.place),
       dayStartUtc,
       dayStartUtc + 86400000,
-      SolarTimeMath.BEIJING_OFFSET_MILLIS
+      zoneSeconds * 1000
     );
     this.weatherRange = range === null ? '' : `${range[0]}~${range[1]}°`;
-    // 六格逐时预报（首格标「现在」并用实时天气码），与桌面卡片同一套取数规则。
+    // 六格逐时预报：**槽位数恒为 6**，槽位之间的步长跟着数据源走
+    // （主源 1 小时 → 现在/22时/23时/0时/1时/2时；备用源 3 小时 → 现在/23时/2时/5时/8时/11时）。
     const hourLabelList: string[] = [];
     const conditions: string[] = [];
     const icons: string[] = [];
     const hourly: HourPoint[] = WeatherService.hourly(this.place);
-    const slots: number[] = WeatherLogic.slots(
+    const slotList: WeatherSlot[] = WeatherLogic.visibleSlots(
+      hourly,
       Math.floor(now / 1000),
-      SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000,
-      6,
-      1
+      zoneSeconds,
+      WeatherLogic.SLOT_COUNT,
+      WeatherService.stepHours()
     );
+    const slotLabels: string[] = WeatherLogic.slotLabels(slotList, zoneSeconds, language);
     const currentCode: number = weather === null ? -1 : weather.code;
-    for (let index = 0; index < slots.length; index++) {
-      const slot: number = slots[index];
+    for (let index = 0; index < slotList.length; index++) {
+      const slot: WeatherSlot = slotList[index];
       let point: HourPoint | null = null;
       for (const candidate of hourly) {
-        if (candidate.epochSeconds === slot) {
+        if (candidate.epochSeconds === slot.epochSeconds) {
           point = candidate;
           break;
         }
       }
       let code: number = point === null ? -1 : point.code;
-      if (index === 0 && currentCode >= 0) {
+      if (slot.isNow && currentCode >= 0) {
         code = currentCode;
       }
-      const localHour: number = Math.floor(((slot + SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000) % 86400) / 3600);
-      hourLabelList.push(index === 0 ? '现在' : `${localHour}时`);
+      const localHour: number = WeatherLogic.localHourOf(slot.epochSeconds, zoneSeconds);
+      hourLabelList.push(index < slotLabels.length ? slotLabels[index] : WeatherLogic.hourLabel(localHour, language));
       conditions.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
       icons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
     this.hourLabels = hourLabelList;
     this.hourConds = conditions;
     this.hourIcons = icons;
+    // 当前地点没有缓存、但正在取数：天气位显示「更新中…」，取完（成败都会落到这里）再改文案。
+    this.weatherPending = weather === null && WeatherService.isRefreshing();
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule === null || schedule.bands.length === 0) {
@@ -446,7 +466,14 @@ struct Index {
   }
 
   private refreshRemote(): void {
-    CardService.refresh().then(() => {
+    // 当前地点还没有缓存 → 立刻把天气位切成「更新中…」，别让用户盯着占位符猜。
+    if (WeatherService.cached(this.place) === null) {
+      this.weatherPending = true;
+    }
+    // 回到前台 / 换了地点：如果手里是低精度数据（7Timer! 3 小时），立刻尝试升级回 1 小时源，
+    // 不等 10 分钟的升级节流（这条 force 只用于「低精度」这一种情形）。
+    const force: boolean = WeatherService.shouldForceUpgrade();
+    CardService.refresh(force).then(() => {
       this.refreshDerived();
     }).catch((error: BusinessError) => {
       console.warn(`refresh failed: ${error.code} ${error.message}`);
@@ -550,7 +577,9 @@ struct Index {
       parts.push(this.weatherRange);
     }
     if (!hasWeather) {
-      parts.push(WeatherLogic.PLACEHOLDER);
+      // 换到新城市时缓存属于旧地点（按 ≤5 km 判定为无效）：这里只留占位符，
+      // 正在取数就写「更新中…」，绝不用上一个城市的读数顶替。
+      parts.push(this.weatherPending ? '更新中…' : WeatherLogic.PLACEHOLDER);
     }
     return parts.join(' · ');
   }
@@ -602,9 +631,14 @@ struct Index {
     }
   }
 
-  /** 是否按白天主题绘制：白天浅色纸面 + 橙卡，夜间整体深蓝。 */
+  /**
+   * 是否按「白天（亮色）」绘制。
+   *
+   * 由设置里的**主题三态**决定：自动＝看太阳是否在地平线之上（旧行为），
+   * 亮色/暗色＝强制，忽略日出日落。太阳弧上的圆点位置仍按真实太阳高度角算，不受这里影响。
+   */
   private isDayTheme(): boolean {
-    return this.snapshot.isDay();
+    return ThemeMode.isLight(this.themeMode, this.snapshot.isDay());
   }
 
   /** 真太阳时在白天用白字（橙色底上金色看不清），夜里用金色。 */
@@ -1378,7 +1412,8 @@ struct Index {
             this.sunCard()
           }
           this.mapCard()
-          Text(`v${AppInfo.versionName()} · 数据来源 Open-Meteo（CC BY 4.0）`)
+          // 数据来源署名跟着实际取到的源切换（主源 CC BY 4.0 是它的许可要求）。
+          Text(`v${AppInfo.versionName()} · 数据来源 ${WeatherSource.attribution(this.weatherSource)}`)
             .fontSize(10)
             .fontColor(this.palette.subtle)
             .margin({ top: 4, bottom: 8 })

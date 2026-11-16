@@ -20,7 +20,8 @@ import { SolarTimeMath } from '../core/SolarTimeMath';
 import { TimeFormat } from '../core/TimeFormat';
 import { ZoneTable } from '../core/ZoneTable';
 import { NearbyCity, CityIndex } from '../core/CityIndex';
-import { HourPoint, WeatherLogic, WeatherSnapshot } from '../core/Weather';
+import { HourPoint, WeatherLogic, WeatherSlot, WeatherSnapshot } from '../core/Weather';
+import { ThemeMode } from '../core/ThemeMode';
 import { AppStore } from './Store';
 import { DistrictService } from './DistrictService';
 import { KeyTimeService } from './KeyTimeService';
@@ -62,7 +63,6 @@ const CARD_GPS_INTERVAL_MILLIS: number = 5 * 60 * 1000;
  */
 const CARD_REFRESH_MINUTES: number = 5;
 const MINUTES_PER_DAY: number = 1440;
-const BEIJING_OFFSET_SECONDS: number = SolarTimeMath.BEIJING_OFFSET_MILLIS / 1000;
 
 export class CardData {
   /** 左栏地名（区县名，取不到时退回最近的城市名）。 */
@@ -122,7 +122,8 @@ export class CardService {
     data.city = CardService.cityName(place.latitude, place.longitude, language);
     data.shichen = `${snapshot.shichenName} · ${snapshot.shichenHalf}`;
     data.dateText = TimeFormat.dateCompact(now, language);
-    data.isDay = snapshot.isDay();
+    // 卡片底色跟着「主题模式」走：自动＝按太阳，亮色/暗色＝强制（与首页大卡片同一套判定）。
+    data.isDay = ThemeMode.isLight(AppStore.themeMode(), snapshot.isDay());
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     // 左栏标签要和 Android 一致显示 UTC 偏移：这里必须用**法定时区**的偏移，
@@ -138,12 +139,12 @@ export class CardService {
     const minutes: number = Math.round(SolarTimeMath.trueSolarOffsetSeconds(now, place.longitude) / 60);
     data.offsetMinutes = Math.max(MIN_OFFSET_MINUTES, Math.min(MAX_OFFSET_MINUTES, minutes));
 
-    const dayStart: number = CardService.dayStartMillis(now);
+    const dayStart: number = CardService.dayStartMillis(now, zoneSeconds);
     const range: number[] | null = WeatherLogic.temperatureRange(
       WeatherService.hourly(place),
       dayStart,
       dayStart + 24 * 3600 * 1000,
-      SolarTimeMath.BEIJING_OFFSET_MILLIS
+      zoneSeconds * 1000
     );
     if (range !== null) {
       data.temperatureRange = `${range[0]}~${range[1]}°`;
@@ -154,7 +155,7 @@ export class CardService {
     data.weatherSummary = weather === null
       ? WeatherLogic.PLACEHOLDER
       : `${weather.temperatureC}° ${WeatherLogic.conditionLabel(weather.code, language)}`;
-    CardService.fillHourly(data, now, place, weather === null ? -1 : weather.code, language);
+    CardService.fillHourly(data, now, place, weather === null ? -1 : weather.code, language, zoneSeconds);
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule !== null && schedule.bands.length > 0) {
@@ -178,20 +179,26 @@ export class CardService {
     return nearest === null ? '' : nearest.name;
   }
 
-  private static dayStartMillis(epochMillis: number): number {
-    const local: number = epochMillis + SolarTimeMath.BEIJING_OFFSET_MILLIS;
-    return local - (local % (24 * 3600 * 1000)) - SolarTimeMath.BEIJING_OFFSET_MILLIS;
+  /** 当地「今天 00:00」对应的 UTC 毫秒（用观测点自己的时区偏移，不是北京时间）。 */
+  private static dayStartMillis(epochMillis: number, zoneSeconds: number): number {
+    const offsetMillis: number = zoneSeconds * 1000;
+    const local: number = epochMillis + offsetMillis;
+    return local - (local % (24 * 3600 * 1000)) - offsetMillis;
   }
 
-  /** 逐时预报：从当前小时起六格，第一格标「现在」并用实时天气码。 */
-  private static fillHourly(data: CardData, now: number, place: Place, currentCode: number, language: string): void {
+  /** 逐时预报：从当前采样点起六格，第一格标「现在」并用实时天气码；步长跟随数据源（1 或 3 小时）。 */
+  private static fillHourly(data: CardData, now: number, place: Place, currentCode: number, language: string,
+      zoneSeconds: number): void {
     const hourly: HourPoint[] = WeatherService.hourly(place);
-    const slots: number[] = WeatherLogic.slots(now / 1000, BEIJING_OFFSET_SECONDS, HOUR_CELLS, 1);
+    const stepHours: number = WeatherService.stepHours();
+    const slots: WeatherSlot[] = WeatherLogic.visibleSlots(
+      hourly, Math.floor(now / 1000), zoneSeconds, HOUR_CELLS, stepHours);
+    const labels: string[] = WeatherLogic.slotLabels(slots, zoneSeconds, language);
     for (let index = 0; index < slots.length; index++) {
-      const slot: number = slots[index];
+      const slot: WeatherSlot = slots[index];
       let point: HourPoint | null = null;
       for (const candidate of hourly) {
-        if (candidate.epochSeconds === slot) {
+        if (candidate.epochSeconds === slot.epochSeconds) {
           point = candidate;
           break;
         }
@@ -200,22 +207,18 @@ export class CardService {
       if (index === 0 && currentCode >= 0) {
         code = currentCode;
       }
-      const localHour: number = Math.floor(((slot + BEIJING_OFFSET_SECONDS) % 86400) / 3600);
-      data.hourLabels.push(index === 0 ? CardService.nowLabel(language) : CardService.hourLabel(localHour, language));
+      const localHour: number = WeatherLogic.localHourOf(slot.epochSeconds, zoneSeconds);
+      data.hourLabels.push(index < labels.length
+        ? labels[index]
+        : CardService.hourLabel(localHour, language));
       data.hourConds.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
       data.hourIcons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
   }
 
-  private static nowLabel(language: string): string {
-    return language.startsWith('zh') ? '现在' : 'Now';
-  }
-
   private static hourLabel(hour: number, language: string): string {
     return language.startsWith('zh') ? `${hour}时` : `${hour}:00`;
   }
-
-  /** 天气图标名，对应 resources/base/media/wx_*.svg。 */
 
   /** 卡片布局按比例摆放色条，元素形如「长度,段号」。 */
   private static encodeSegments(segments: AxisSegment[]): string[] {
@@ -276,8 +279,10 @@ export class CardService {
   /**
    * 取一次天气、关键时间、区划名，然后刷新卡片。
    * 取数失败也照样推一次：至少时间与时辰是新的。
+   *
+   * @param force true = 忽略各种节流立刻取一次（应用回到前台 / 用户换了地点）。
    */
-  static async refresh(): Promise<void> {
+  static async refresh(force: boolean = false): Promise<void> {
     try {
       await CardService.syncGpsPlace();
     } catch (error) {
@@ -290,7 +295,7 @@ export class CardService {
       console.warn('district refresh failed');
     }
     try {
-      await WeatherService.refreshIfNeeded(place);
+      await WeatherService.refreshIfNeeded(place, force);
     } catch (error) {
       console.warn('weather refresh failed');
     }

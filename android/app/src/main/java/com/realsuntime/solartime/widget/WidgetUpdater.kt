@@ -445,7 +445,12 @@ object WidgetUpdater {
         val solarOffset = solarOffsetMillis(now, place)
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(now, place.longitude)
         val shichenIndex = Shichen.indexOf(trueSolarSeconds)
-        val isDay = SolarTimeMath.solarAltitudeDegrees(now, place.latitude, place.longitude) > -0.833
+        // 太阳是否在地平线上（事实，用于逐时图标的昼夜与日出弧；与配色无关）。
+        val sunIsUp = SolarTimeMath.solarAltitudeDegrees(now, place.latitude, place.longitude) > -0.833
+        // 卡片的昼夜配色：默认「自动」跟随日出日落（旧行为）；设置里强制亮色/暗色时忽略太阳高度角。
+        // 与首页同一套判定（AppSettings.themeMode，见 ThemeMode），只是那边读 Compose 的 StateFlow。
+        val themeMode = AppSettings(context).themeMode
+        val isDay = !themeMode.isDark(sunIsUp)
         // 真太阳时的秒由 Chronometer 自走，这里只负责写入「时:分」与它的基准时刻。
         // 两个细节必须一起处理，否则秒会与「时:分」、也与标准时间错位：
         // 1) 取样必须一次完成 —— now 与 elapsedRealtime 若分两次读，中间隔着的
@@ -459,6 +464,14 @@ object WidgetUpdater {
         val solarDayMillis = Math.floorMod(wallNowMillis + solarOffset, DAY_MILLIS)
         val solarSeconds = solarSecondOf(solarDayMillis)
         val date = dateText(context, civil, place, location.hasFix)
+        // 天气来源署名（Open-Meteo / 7Timer!）：只有真的在显示天气时才署名 —— 还没定位、
+        // 或两个源都失败且没有可显示的旧数据时，凭空写一个源名等于谎报数据出处。
+        val weatherSource = WeatherRepository.source(context)
+        val attribution = if (location.hasFix && WeatherRepository.cached(context, place) != null) {
+            TimeText.weatherSourceShort(context, weatherSource)
+        } else {
+            ""
+        }
         // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
         // 折算后不足两行的高度就算「一行卡片」。桌面一律按「一格 70dp」上报（实测 1 行报 46~52dp、
@@ -535,8 +548,15 @@ object WidgetUpdater {
             )
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             val mainPx = applyClockSizing(
-                context, widthDp, date, TimeText.coordinates(context, place.latitude, place.longitude),
-                compact, this, clockRowBudgetDp, diag,
+                context = context,
+                widthDp = widthDp,
+                date = date,
+                coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                attribution = attribution,
+                compact = compact,
+                views = this,
+                clockRowBudgetDp = clockRowBudgetDp,
+                diag = diag,
             )
             diag?.apply {
                 add("单行版面 singleRow" to singleRow.toString())
@@ -546,6 +566,11 @@ object WidgetUpdater {
                 add("压缩内边距" to compressPadding.toString())
                 add("格子宽度预算 cellDp" to cellWidthDpValue.toString())
                 add("时钟行预算(dp)" to clockRowBudgetDp.toString())
+                add("天气来源" to weatherSource.id)
+                add("逐时步长(小时)" to WeatherRepository.stepHours(context).toString())
+                add("来源署名" to attribution.ifBlank { "（不显示）" })
+                add("主题模式" to themeMode.name.lowercase(Locale.ROOT))
+                add("昼夜(经主题修正)" to if (isDay) "白天" else "夜间")
             }
             if (compressPadding) {
                 // 上下内边距 10dp/9dp → 4dp：内容更紧时先把留白压掉，比收掉整行信息温和得多。
@@ -676,7 +701,7 @@ object WidgetUpdater {
                 context, place, now, zone,
                 show = showHourly,
                 row = FIRST_HOUR_ROW,
-                firstSlotOffsetHours = 0,
+                skipSlots = 0,
                 hasFix = location.hasFix,
                 views = this,
             )
@@ -684,7 +709,7 @@ object WidgetUpdater {
                 context, place, now, zone,
                 show = showSecondHourRow,
                 row = SECOND_HOUR_ROW,
-                firstSlotOffsetHours = FIRST_HOUR_ROW.size,
+                skipSlots = FIRST_HOUR_ROW.size,
                 hasFix = location.hasFix,
                 views = this,
             )
@@ -991,7 +1016,7 @@ object WidgetUpdater {
     }
 
     /** 临时诊断：记录三个区域解析到的目标。 */
-    /** 底部小时预报：从当前时刻起每格 1 小时，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
+    /** 底部小时预报：从「现在」那一格起按数据源步长（1 小时 / 3 小时）取，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
     private fun bindHourly(
         context: Context,
         place: Place,
@@ -999,31 +1024,36 @@ object WidgetUpdater {
         zone: ZoneId,
         show: Boolean,
         row: HourRow,
-        firstSlotOffsetHours: Int,
+        skipSlots: Int,
         hasFix: Boolean,
         views: RemoteViews,
     ) {
-        val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
+        val hourly = WeatherRepository.hourly(context, place)
         views.setViewVisibility(row.rowId, if (show) View.VISIBLE else View.GONE)
         if (!show) return
 
-        val slots = WeatherRepository.slots(
-            // 第二排接在第一排后面：整体往后挪 firstSlotOffsetHours 小时。
-            nowEpochSeconds = now.epochSecond + firstSlotOffsetHours * 3600L,
+        val slots = WeatherRepository.visibleSlots(
+            points = hourly.points,
+            nowEpochSeconds = now.epochSecond,
             zoneOffsetSeconds = zone.rules.getOffset(now).totalSeconds,
             count = row.size,
-            stepHours = HOUR_STEP,
+            stepHours = hourly.stepHours,
+            // 第二排接在第一排后面：直接跳过前 6 格，不能按小时数硬挪（3 小时源的「6 格」是 18 小时）。
+            skip = skipSlots,
         )
+        val points = hourly.points.associateBy { it.epochSeconds }
         // 第一排的第一格标「现在」，用实时天气码，与日期行的读数保持一致。
         val currentCode = WeatherRepository.cached(context, place)?.code
         val unknown = context.getString(R.string.weather_unknown)
-        slots.forEachIndexed { index, epoch ->
-            val point = hourly[epoch]
-            val isNow = firstSlotOffsetHours == 0 && index == 0
+        slots.forEachIndexed { index, slot ->
+            val point = points[slot.epochSeconds]
+            val isNow = slot.isNow
+            val hour = Instant.ofEpochSecond(slot.epochSeconds).atZone(zone).hour
             val label = if (isNow) {
                 context.getString(R.string.weather_now)
             } else {
-                context.getString(R.string.weather_hour, Instant.ofEpochSecond(epoch).atZone(zone).hour)
+                // 标签用该采样点**实际**的本地小时数：3 小时源会得到 23时/2时/5时…，不是「现在 + n」。
+                context.getString(R.string.weather_hour, hour)
             }
             // 还没有定位时一律画占位符：兜底城市（内置默认坐标）的天气挂在这里会让人
             // 以为那就是当地的读数。
@@ -1036,7 +1066,6 @@ object WidgetUpdater {
             }
             views.setTextViewText(row.labelIds[index], label)
             val condition = code?.let { WeatherRepository.conditionOf(it) }
-            val hour = Instant.ofEpochSecond(epoch).atZone(zone).hour
             views.setImageViewResource(
                 row.iconIds[index],
                 condition?.let { conditionIcon(it, isDay = hour in 6..17) } ?: R.drawable.ic_wx_unknown,
@@ -1165,6 +1194,7 @@ object WidgetUpdater {
         widthDp: Int,
         date: String,
         coordinates: String,
+        attribution: String,
         compact: Boolean,
         views: RemoteViews,
         clockRowBudgetDp: Float = 0f,
@@ -1262,12 +1292,21 @@ object WidgetUpdater {
         val coordNaturalDp = COORD_TEXT_DP
         val dateNaturalWidth = measureTextWidth(date, dateNaturalDp, metrics)
         val coordNaturalWidth = if (coordinates.isEmpty()) 0f else measureTextWidth(coordinates, coordNaturalDp, metrics)
-        val dateGapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
+        val attrNaturalWidth =
+            if (attribution.isEmpty()) 0f else measureTextWidth(attribution, coordNaturalDp, metrics)
+        val dateGapPx = if (coordinates.isEmpty() && attribution.isEmpty()) 0f else COORD_GAP_DP * density
+        val attrGapPx = if (attribution.isEmpty()) 0f else COORD_GAP_DP * density
         val rowAvailablePx = totalWidthPx - chromeDp * density
-        // 空间不够同时显示「日期/天气」和经纬度时，**优先保住日期与天气，把经纬度整条隐藏**。
+        // 空间不够时，优先保住「日期/天气」，其次保署名（CC BY 4.0 要求注明出处），最后才保经纬度。
         // 宁可少一个次要信息，也不要让日期被压缩成省略号。
-        val showCoordinates = SmallRowLayout.shouldShowTrailing(
+        val showAttribution = SmallRowLayout.shouldShowTrailing(
             leadingWidthPx = dateNaturalWidth,
+            trailingWidthPx = attrNaturalWidth,
+            gapPx = dateGapPx,
+            availablePx = rowAvailablePx,
+        )
+        val showCoordinates = SmallRowLayout.shouldShowTrailing(
+            leadingWidthPx = dateNaturalWidth + if (showAttribution) attrNaturalWidth + attrGapPx else 0f,
             trailingWidthPx = coordNaturalWidth,
             gapPx = dateGapPx,
             availablePx = rowAvailablePx,
@@ -1285,11 +1324,21 @@ object WidgetUpdater {
         if (showCoordinates) {
             views.setTextViewTextSize(R.id.widget_coordinates, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp)
         }
+        // 署名与经纬度同一档小字：字号必须一起下发，否则窄卡片上这一行会一大一小。
+        views.setTextViewText(R.id.widget_attribution, attribution)
+        views.setViewVisibility(
+            R.id.widget_attribution,
+            if (showAttribution) View.VISIBLE else View.GONE,
+        )
+        if (showAttribution) {
+            views.setTextViewTextSize(R.id.widget_attribution, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp)
+        }
         Log.d(
             TAG,
             "smallText date=${"%.2f".format(Locale.ROOT, dateNaturalDp * dateScale)}dp " +
                 "coord=${if (showCoordinates) "%.2f".format(Locale.ROOT, coordNaturalDp) else "hidden"} " +
                 "scale=${"%.3f".format(Locale.ROOT, dateScale)} " +
+                "attr=${if (showAttribution) attribution else "hidden"} " +
                 "dateW=${dateNaturalWidth.toInt()} coordW=${coordNaturalWidth.toInt()} avail=${rowAvailablePx.toInt()}",
         )
         return mainPx
@@ -1612,9 +1661,6 @@ object WidgetUpdater {
     private val FIRST_HOUR_ROW = HourRow(R.id.widget_hour_row, HOUR_LABEL_IDS, HOUR_ICON_IDS, HOUR_COND_IDS)
     private val SECOND_HOUR_ROW = HourRow(R.id.widget_hour_row2, HOUR2_LABEL_IDS, HOUR2_ICON_IDS, HOUR2_COND_IDS)
 
-    /** 每格代表 1 小时。 */
-    private const val HOUR_STEP = 1
-
     fun cancelTick(context: Context) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         manager.cancel(tickIntent(context))
@@ -1823,7 +1869,7 @@ object WidgetUpdater {
         }
         // temperatureRange 返回的是 (最高, 最低)，显示顺序按「低 ~ 高」。
         val range = WeatherRepository.temperatureRange(
-            WeatherRepository.hourly(context, place),
+            WeatherRepository.hourly(context, place).points,
             civil.toLocalDate(),
             civil.zone,
         )?.let { context.getString(R.string.hero_temp_range, it.second, it.first) }

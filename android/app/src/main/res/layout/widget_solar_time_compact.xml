@@ -340,6 +340,19 @@
             android:maxLines="1"
             android:textColor="#CCFFFFFF"
             android:textSize="11dp" />
+
+        <!-- 天气数据来源署名（Open-Meteo / 7Timer!）：CC BY 4.0 要求注明出处，降级后也要跟着换名。
+             与经纬度同一行、同一档小字；宽度不够时**先保署名再保经纬度**（见 WidgetUpdater.applyClockSizing）。 -->
+        <TextView
+            android:fontFamily="@font/card_sans_widget"
+            android:id="@+id/widget_attribution"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:maxLines="1"
+            android:textColor="#99FFFFFF"
+            android:textSize="11dp"
+            android:visibility="gone" />
     </LinearLayout>
     <!-- 真太阳时 0–24 时的时间轴：彩色段是「服用时间」，白点是当前时刻；位图由 WidgetAxis 绘制。 -->
     <ImageView

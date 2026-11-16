@@ -13,7 +13,7 @@
 | 时辰（时初／时正、刻数、范围、倒计时） | ✅ | ✅ | 同一套 `Shichen` 逻辑；首页不显示刻数与下个时辰倒计时 |
 | 北京时间对照（经度修正 + 均时差） | ✅ | ✅ | 同一套计算；首页不展示总时差与拆解过程 |
 | 日出／上中天／日落、白昼时长、高度角、极昼极夜 | ✅ | ✅ | 同一套 NOAA 公式 |
-| 天气（气温 + WMO 天气码） | ✅ | ✅ | Open-Meteo，无需 Key；每 30 分钟取数、显示上保留最近 6 小时；主界面另有未来 6 格逐时预报与今日温度区间；换地点后新地点还没取到数时天气位与逐时格显示占位 `--`，不沿用旧地点的读数 |
+| 天气（气温 + WMO 天气码） | ✅ | ✅ | 主源 Open-Meteo（无需 Key，**逐时 1 小时粒度**）；失败 2 秒后重试一次，仍失败且缓存 ≤30 分钟就沿用缓存（不清空界面），缓存过期才降级到备用源 **7Timer!**（**逐时 3 小时粒度**）；每 30 分钟取数、显示上保留最近 24 小时，两源都失败时旧数据继续显示并在诊断里标「数据过期 N 分钟」；低精度（7Timer!）即使没过期也会每 10 分钟尝试升级回 Open-Meteo；主界面另有 6 格逐时预报（**槽位恒为 6 个**，步长跟随数据源）与今日温度区间；缓存按地点区分（≤5 km 匹配），换地点后新地点还没取到数时天气位与逐时格显示占位 `-`（取数中显示「更新中…」），不沿用旧地点的读数 |
 | 关键时间时间轴（「服用時間 Take Time」） | ✅ | ✅ | 同一套解析与 7 天缓存、01:00–05:00 随机同步；落到时段内时真太阳时数字改用时段配色（同 Android 的 `activeKeyColor`） |
 | 区划名（跟随界面语言，5 km / 30 天缓存） | ✅ | ✅ | 逆地理：系统 `geoLocationManager`，非中文界面走 OSM Nominatim；中文显示到「市+区」 |
 | 手动坐标 / 常用城市 / 定位 | ✅ | ✅ | 定位只用 `APPROXIMATELY_LOCATION`（±100 m 足够）；点「实时跟随GPS」后进入跟随 GPS 模式，见下 |
@@ -43,7 +43,8 @@ harmony/
 │   │   │   │   ├── TimeFormat.ets      时间／时长格式化（中英）
 │   │   │   │   ├── CityIndex.ets       250 个城市的离线表（中英双语）
 │   │   │   │   ├── TakeTime.ets        关键时间解析、缓存策略、时间轴分段
-│   │   │   │   ├── Weather.ets         天气码解析与分类
+│   │   │   │   ├── Weather.ets         天气解析、7Timer! 映射、6 槽排布、降级与升级判定
+│   │   │   │   ├── ThemeMode.ets       配色三态（自动／亮色／暗色）的纯逻辑
 │   │   │   │   ├── DistrictName.ets    区划名拼接规则
 │   │   │   │   ├── Chime.ets           报时窗口与下次交接时刻
 │   │   │   │   └── Place.ets           观测点模型与常用城市
@@ -52,7 +53,7 @@ harmony/
 │   │   │   │   ├── HttpUtil.ets        HTTP GET
 │   │   │   │   ├── LocationService.ets 定位与权限
 │   │   │   │   ├── DistrictService.ets 逆地理编码 + OSM 兜底
-│   │   │   │   ├── WeatherService.ets  天气取数与缓存
+│   │   │   │   ├── WeatherService.ets  天气取数、降级链（Open-Meteo → 7Timer!）与缓存
 │   │   │   │   ├── KeyTimeService.ets  关键时间抓取与缓存
 │   │   │   │   ├── ReminderService.ets 代理提醒发布／取消
 │   │   │   │   ├── ChimePlayer.ets     前台报时音（AVPlayer + rawfile）
@@ -64,7 +65,7 @@ harmony/
 │   │   └── resources/           字符串（中／英）、颜色、图标、form_config.json、报时音
 │   └── build-profile.json5
 ├── Tools/                        本地校验脚本（不需要 DevEco Studio）
-│   ├── verify-core.js            把 core/*.ets 当 TypeScript 编译并跑 159 项数值自检
+│   ├── verify-core.js            把 core/*.ets 当 TypeScript 编译并跑 377 项数值自检
 │   ├── core-check.ts             自检用例（期望值与 Android 单测一致）
 │   ├── check-ets.py              导入／导出、括号、ArkTS 禁用特性静态检查
 │   ├── gen-city-index.py         从 Android 城市表同步 CityIndex.ets
@@ -172,7 +173,7 @@ hvigor 的 `SignHap` 任务会自己去读这个文件，签出 `entry-default-s
 ```bash
 cd harmony/Tools
 npm install          # typescript + @types/node
-node verify-core.js  # 185 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
+node verify-core.js  # 377 项断言，期望值与 Android 单测、iOS Scripts/main.swift 一致
 node parse-ets.js    # 用 TypeScript 解析器检查 core/services/Ability 的语法（22 个文件）
 python check-ets.py  # 26 个 ArkTS 文件的导入导出一致性、括号平衡、禁用特性
 ```
@@ -215,18 +216,22 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 - **首页**：顶部标题 + 地名 + 「设置」按钮；下面是
   1. 大卡片（与桌面卡片同款版面，逐秒刷新，含时间轴与六格逐时预报；底色按昼夜切换：白天暖橙 + 白字、夜里深蓝 + 金字；真太阳时白天用淡金 `#FFE6B4`、夜里用金 `#F5D68A`，与安卓一致；落在关键时段里时改成同时段配色——白天数字用淡绿 `#BCF5CA`／淡红 `#FFC4C9`（与淡金同浓度），时间轴色段与圆点仍用深一档的 `#2E7D32`／`#B3261E`，夜里两者同用亮一档的 `#4CAF7D`／`#D9534F`）；
      整个页面也是两套主题（`common/Theme.ets`）：白天米白纸面 + 白卡片 + 深字，夜里 #0B1220 底 + #16203A 卡片 + 浅字；
+     用哪一套由设置页的**主题三态**决定（`core/ThemeMode.ets`，默认「自动」＝按日出日落；
+     「亮色」「暗色」＝强制，忽略日出日落；太阳弧上的圆点仍按真实太阳高度角摆放）；
   2. 太阳卡：虚线弧 + 地平线 + 柔光圆点标出当前太阳位置（对齐 Android 的 `SunArc`；虚线间隔、线宽与圆点半径沿用 Android 的像素值，按屏幕密度换算成 vp，两边看起来同一套虚线），
      底下是日出/上中天/日落与白昼时长；
   3. 位置地图卡：坐标 + 瓦片地图 + 底图来源（对齐 Android 的 `MapCard`，可双指/双击缩放）；
   4. 页脚（版本与数据来源）。
 - **设置页**（`pages/Settings.ets`）：当前位置与「实时跟随GPS」按钮、手动坐标、常用城市、地图底图
-  （自动／OpenStreetMap／高德矢量／高德卫星，与 Android 同一组选项）、两项提醒开关、屏幕常亮开关、关于。
+  （自动／OpenStreetMap／高德矢量／高德卫星，与 Android 同一组选项）、两项提醒开关、
+  「屏幕」片区的屏幕常亮开关与**主题三选**（自动／亮色／暗色）、**诊断**片区
+  （天气源、逐时步长、数据过期分钟数、最近一次取数结果与失败原因）、关于。
   返回首页时由 `Index.onPageShow` 重新读取偏好。
   应用只跑竖屏（`module.json5` 里 `EntryAbility` 的 `"orientation": "portrait"`）；「屏幕常亮」默认打开，
   由 `services/KeepAwake.ets` 调 `window.setWindowKeepScreenOn`，只在前台生效（退到后台系统照旧按休眠时间熄屏）。
   「常用城市」和「实时跟随GPS」都是一步到位的选择——**点完立即返回首页**（手动坐标仍停在设置页，
   并提示「已保存，返回首页生效」）。换地点后缓存里的天气属于旧坐标，显示层立刻把它判为无效
-  （天气位与逐时格退回 `--`），同时强制取一次新地点的天气，数据一到就显示（
+  （天气位与逐时格退回 `-`，取数中显示「更新中…」），同时强制取一次新地点的天气，数据一到就显示（
   `WeatherService.revision` / `DistrictService.revision` 让首页不等 30 秒的节流就重算）。
 
 关键时间不再单独占一张卡：它的色带只在两处时间轴（桌面卡片 / 首页大卡片）上呈现，
@@ -347,6 +352,6 @@ ArkUI 声明式界面无法脱离鸿蒙 SDK 编译，`pages/`、`widget/`、`*Ab
 
 ## 数据来源
 
-- 天气：Open-Meteo（CC BY 4.0）
+- 天气：Open-Meteo（CC BY 4.0）；降级时的备用源 7Timer!（界面底部署名随实际源切换）
 - 逆地理（非中文界面）：OpenStreetMap Nominatim（ODbL）
 - 关键时间：「西格瑪食療」<https://www.duosuccess.com/tcm/001a01080301b01a.htm> 的「服用時間 Take Time」

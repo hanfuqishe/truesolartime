@@ -1,5 +1,6 @@
 package com.realsuntime.solartime.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -43,6 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
+import com.realsuntime.solartime.data.ThemeMode
+import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.ChimeAlarm
@@ -61,6 +64,7 @@ fun SettingsSheet(
     keyTimeChimeEnabled: Boolean,
     keepScreenOn: Boolean,
     mapStyle: MapStyle,
+    themeMode: ThemeMode,
     onDismiss: () -> Unit,
     onRequestGps: () -> Unit,
     onApplyManual: (Double, Double, String) -> Unit,
@@ -70,6 +74,7 @@ fun SettingsSheet(
     onToggleKeyTimeChime: (Boolean) -> Unit,
     onToggleKeepScreenOn: (Boolean) -> Unit,
     onSelectMapStyle: (MapStyle) -> Unit,
+    onSelectTheme: (ThemeMode) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -340,6 +345,27 @@ fun SettingsSheet(
                 Switch(checked = keepScreenOn, onCheckedChange = onToggleKeepScreenOn)
             }
 
+            // 外观：主题。与「屏幕常亮」同属「外观 / 屏幕」这一片。
+            // 默认「自动」＝按日出日落（旧版本行为）；亮色/暗色是强制，首页大卡片与桌面卡片一起跟随。
+            Spacer(Modifier.height(14.dp))
+            Text(stringResource(R.string.theme_title), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.theme_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = mode == themeMode,
+                        onClick = { onSelectTheme(mode) },
+                        label = { Text(themeLabel(context, mode)) },
+                    )
+                }
+            }
+
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
@@ -368,11 +394,21 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(6.dp))
+            // 天气来源随实际数据源切换：降级到 7Timer! 后不能还署 Open-Meteo 的名。
             Text(
-                text = stringResource(R.string.weather_attribution),
+                text = TimeText.weatherAttribution(context, WeatherRepository.source(context)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
+
+/** 主题选项的本地化名称：自动 / 亮色 / 暗色。 */
+private fun themeLabel(context: Context, mode: ThemeMode): String = context.getString(
+    when (mode) {
+        ThemeMode.AUTO -> R.string.theme_auto
+        ThemeMode.LIGHT -> R.string.theme_light
+        ThemeMode.DARK -> R.string.theme_dark
+    },
+)

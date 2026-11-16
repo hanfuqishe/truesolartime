@@ -54,6 +54,15 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
         set(value) = prefs.edit().putBoolean(KEY_KEEP_SCREEN_ON, value).apply()
 
+    /**
+     * 界面与桌面卡片的配色模式（默认「自动」＝按日出日落，与旧版本行为一致）。
+     *
+     * 键名 `theme_mode`；值用枚举名（`AUTO` / `LIGHT` / `DARK`），读不出来时当「自动」。
+     */
+    var themeMode: ThemeMode
+        get() = ThemeMode.fromName(prefs.getString(KEY_THEME_MODE, null))
+        set(value) = prefs.edit().putString(KEY_THEME_MODE, value.name).apply()
+
     /** 上次为桌面卡片主动取 GPS 的时刻：卡片可见时最多 5 分钟取一次，避免每分钟都唤醒定位。 */
     var lastWidgetFixMillis: Long
         get() = prefs.getLong(KEY_LAST_WIDGET_FIX, 0L)
@@ -71,6 +80,7 @@ class AppSettings(context: Context) {
         const val KEY_HOURLY_CHIME = "hourly_chime"
         const val KEY_LOCATION_ASKED = "location_permission_requested"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_WIDGET_FIX = "last_widget_fix"
     }
 }

@@ -14,7 +14,9 @@ import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
-import { AppStore } from '../services/Store';
+import { ThemeMode } from '../core/ThemeMode';
+import { WeatherSource, WeatherLogic } from '../core/Weather';
+import { AppStore, WeatherDiag } from '../services/Store';
 import { AppInfo } from '../services/AppInfo';
 import { CardService, CARD_ENTRY_ENABLED } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
@@ -39,6 +41,14 @@ struct Settings {
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
   @State keepScreenOn: boolean = true;
+  /** 配色模式：AUTO（默认，按日出日落）/ LIGHT / DARK，见 core/ThemeMode.ets。 */
+  @State themeMode: string = ThemeMode.AUTO;
+  /** 诊断：天气源、逐时步长、数据过期分钟数与最近一次失败原因。 */
+  @State weatherSource: string = WeatherSource.OPEN_METEO;
+  @State weatherStep: number = 1;
+  @State weatherStatus: string = '';
+  @State weatherResult: string = '';
+  @State weatherFailure: string = '';
   /** 地图底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
   @State mapStyleKey: string = 'auto';
   @State locating: boolean = false;
@@ -67,6 +77,7 @@ struct Settings {
     this.keyTimeChime = AppStore.keyTimeChime();
     this.keepScreenOn = AppStore.keepScreenOn();
     this.mapStyleKey = AppStore.mapStyle();
+    this.themeMode = AppStore.themeMode();
     this.manualLatitude = this.place.latitude.toFixed(4);
     this.manualLongitude = this.place.longitude.toFixed(4);
     const labels: string[] = [];
@@ -74,8 +85,47 @@ struct Settings {
       labels.push(this.cityLabel(preset));
     }
     this.presetLabels = labels;
+    this.applyPalette();
+    this.reloadDiagnostics();
+  }
+
+  /**
+   * 页面配色：与首页同一套判定 —— 「自动」看太阳高度角（> -0.833° 为白天），
+   * 亮色/暗色直接强制。太阳弧之类的真实太阳量不受影响。
+   */
+  private applyPalette(): void {
     const altitude: number = SolarTimeMath.solarAltitudeDegrees(Date.now(), this.place.latitude, this.place.longitude);
-    this.palette = paletteFor(altitude > -0.833);
+    this.palette = paletteFor(ThemeMode.isLight(this.themeMode, altitude > -0.833));
+  }
+
+  /**
+   * 诊断数据（设置页底部「诊断」）：天气源 / 逐时步长 / 数据过期分钟数 / 最近失败原因。
+   *
+   * 键名与 Android 的 DiagReport 一致（`weather_source` / `weather_step` / `weather_age_minutes`），
+   * 用户截图时两边能直接对上。
+   */
+  private reloadDiagnostics(): void {
+    this.weatherSource = WeatherService.source();
+    this.weatherStep = WeatherService.stepHours();
+    const ageMinutes: number = WeatherService.ageMinutes();
+    // 低精度（7Timer! 3 小时）即使没过期也会被后台尽快升级回 1 小时源，这里把状态说清楚。
+    const lowPrecision: string = WeatherLogic.isLowPrecision(this.weatherSource, this.weatherStep)
+      ? '（低精度 3 小时数据，后台会每 10 分钟尝试升级回 1 小时源）'
+      : '';
+    // 缓存按地点区分（≤5 km）：有缓存但它属于上一个城市时，界面显示的是占位符。
+    const belongs: boolean = WeatherService.cached(this.place) !== null;
+    if (ageMinutes < 0) {
+      this.weatherStatus = '当前地点没有缓存（显示占位符）';
+    } else if (!belongs) {
+      this.weatherStatus = `当前地点没有缓存：旧缓存属于其他地点（显示占位符），数据已放置 ${ageMinutes} 分钟`;
+    } else if (ageMinutes <= 30) {
+      this.weatherStatus = `数据有效（${ageMinutes} 分钟前更新）${lowPrecision}`;
+    } else {
+      this.weatherStatus = `数据过期 ${ageMinutes} 分钟${lowPrecision}`;
+    }
+    const diag: WeatherDiag = AppStore.weatherDiag();
+    this.weatherResult = diag.result.length > 0 ? diag.result : '暂无记录';
+    this.weatherFailure = diag.failure;
   }
 
   /**
@@ -520,7 +570,7 @@ struct Settings {
           .cardStyle()
     .backgroundColor(this.palette.card)
 
-          // 屏幕
+          // 屏幕：常亮开关 + 主题三选（与 Android 的 SettingsSheet 同一片区、同一组语义）
           Column() {
             this.sectionTitle('屏幕')
             this.switchRow('屏幕常亮', '应用打开期间不自动熄屏（会更耗电）', this.keepScreenOn,
@@ -529,6 +579,79 @@ struct Settings {
                 AppStore.setKeepScreenOn(value);
                 KeepAwake.apply(this.context);
               })
+            Text('主题')
+              .fontSize(14)
+              .fontColor(this.palette.text)
+              .margin({ top: 14 })
+              .width('100%')
+            Text(ThemeMode.description(this.themeMode))
+              .fontSize(10)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 2 })
+              .width('100%')
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(ThemeMode.OPTIONS, (mode: string) => {
+                Text(ThemeMode.label(mode))
+                  .fontSize(12)
+                  .fontColor(mode === this.themeMode ? this.palette.onAccent : this.palette.text)
+                  .backgroundColor(mode === this.themeMode ? this.palette.accent : this.palette.chip)
+                  .borderRadius(14)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .margin({ right: 8, top: 8 })
+                  .onClick(() => {
+                    this.themeMode = ThemeMode.fromName(mode);
+                    AppStore.setThemeMode(this.themeMode);
+                    // 当场换色：用户不用返回首页就能看到效果（返回后由 Index.onPageShow 重新读取）。
+                    this.applyPalette();
+                  })
+              }, (mode: string) => mode)
+            }
+            .width('100%')
+            .margin({ top: 4 })
+            Text('光照与真太阳时的计算不受影响；太阳弧上的圆点永远按真实太阳高度角摆放。')
+              .fontSize(10)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 6 })
+              .width('100%')
+          }
+          .cardStyle()
+    .backgroundColor(this.palette.card)
+
+          // 诊断：天气源 / 逐时步长 / 数据过期分钟数 / 最近失败原因
+          Column() {
+            this.sectionTitle('诊断')
+            Text(`天气源：${WeatherSource.displayName(this.weatherSource)}`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 8 })
+              .width('100%')
+            Text(`逐时步长：${this.weatherStep} 小时（6 格共 ${this.weatherStep * 6} 小时）`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
+              .width('100%')
+            Text(`数据状态：${this.weatherStatus}`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
+              .width('100%')
+            Text(`最近一次取数：${this.weatherResult}`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
+              .width('100%')
+            if (this.weatherFailure.length > 0) {
+              Text(`最近失败原因：${this.weatherFailure}`)
+                .fontSize(11)
+                .fontColor('#D9534F')
+                .margin({ top: 4 })
+                .width('100%')
+            }
+            Text('天气缓存按地点区分：换了城市后，新地点没有缓存就显示占位符，不会沿用旧城市的读数。')
+              .fontSize(10)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 8 })
+              .width('100%')
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
@@ -547,7 +670,7 @@ struct Settings {
               .fontColor(this.palette.subtle)
               .margin({ top: 6 })
               .width('100%')
-            Text('数据来源：天气 Open-Meteo（CC BY 4.0）；区划名：系统逆地理编码 / OSM Nominatim。')
+            Text(`数据来源：天气 ${WeatherSource.attribution(this.weatherSource)}；区划名：系统逆地理编码 / OSM Nominatim。`)
               .fontSize(10)
               .fontColor(this.palette.subtle)
               .margin({ top: 6 })

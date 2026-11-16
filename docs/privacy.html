@@ -137,6 +137,12 @@
     <td><a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener">open-meteo.com/en/terms</a></td>
   </tr>
   <tr>
+    <td>7Timer!</td>
+    <td>备用天气源：Open-Meteo 请求失败时获取 3 小时粒度的天气</td>
+    <td>经纬度</td>
+    <td><a href="https://www.7timer.info/doc.php" target="_blank" rel="noopener">7timer.info/doc.php</a></td>
+  </tr>
+  <tr>
     <td>高德地图（AutoNavi）</td>
     <td>加载境内矢量地图与卫星影像瓦片</td>
     <td>地图瓦片坐标（含所在区域经纬度）</td>
@@ -223,7 +229,7 @@
       <strong>coordinates only</strong> to a geocoding service: Apple’s CLGeocoder on iOS, with OpenStreetMap
       Nominatim (nominatim.openstreetmap.org) as a fallback. No identifiers are included.</li>
   <li><strong>Weather</strong> — requested from Open-Meteo (open-meteo.com) using coordinates only; no API key, no
-      account.</li>
+      account. If that request fails, the app falls back to 7Timer! (7timer.info), again sending coordinates only.</li>
   <li><strong>Key-time schedule</strong> — read from the public page duosuccess.com. The request carries no
       information about you.</li>
 </ul>
@@ -243,6 +249,7 @@
   <tr><td>Apple CLGeocoder (iOS)</td><td>Reverse geocoding</td><td>Coordinates</td></tr>
   <tr><td>OpenStreetMap Nominatim</td><td>Fallback reverse geocoding</td><td>Coordinates, language, User-Agent</td></tr>
   <tr><td>Open-Meteo</td><td>Current weather &amp; hourly forecast</td><td>Coordinates</td></tr>
+  <tr><td>7Timer!</td><td>Fallback weather (3-hourly) when Open-Meteo fails</td><td>Coordinates</td></tr>
   <tr><td>duosuccess.com</td><td>Daily key-time schedule</td><td>None (plain page fetch)</td></tr>
 </table>
 <p>None of these requests include your name, device identifiers, or account information.</p>

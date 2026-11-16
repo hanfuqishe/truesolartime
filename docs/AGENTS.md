@@ -94,7 +94,7 @@ $env:DEVECO_SDK_HOME = "C:\Program Files\Huawei\DevEco Studio\sdk"
 swiftc -O ios/TrueSolarTime/Core/*.swift ios/Scripts/main.swift -o $env:TEMP\tst.exe; & $env:TEMP\tst.exe
 ```
 
-用例基线（随改动增长，以最新为准）：Android 157 条、鸿蒙 229 checks、iOS 138 项。
+用例基线（随改动增长，以最新为准）：Android 184 条（含天气步长 / 7Timer 降级 / 低精度升级 22 条、主题模式 5 条）、鸿蒙 229 checks、iOS 138 项。
 
 ---
 

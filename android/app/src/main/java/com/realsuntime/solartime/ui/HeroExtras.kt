@@ -30,9 +30,8 @@ internal data class HeroExtras(
     val temperature: TakeTemperature?,
 )
 
-/** 逐时预报的格数与步长（小时），与桌面卡片保持一致。 */
+/** 逐时预报的格数：**永远是 6 格**，格与格之间的步长跟随数据源（1 小时或 3 小时）。 */
 private const val HOUR_CELLS = 6
-private const val HOUR_STEP = 1
 
 internal fun loadHeroExtras(
     context: Context,
@@ -46,7 +45,7 @@ internal fun loadHeroExtras(
     val schedule = TakeTimeRepository.schedule(context)
     val cached = WeatherRepository.cached(context, place)
     val hourly = WeatherRepository.hourly(context, place)
-    val range = WeatherRepository.temperatureRange(hourly, date, civil.zone)
+    val range = WeatherRepository.temperatureRange(hourly.points, date, civil.zone)
 
     val condition = cached?.let { WeatherRepository.conditionOf(it.code) }
     val temperatureText = cached?.let { context.getString(R.string.weather_temp, it.temperatureC) }.orEmpty()
@@ -64,36 +63,46 @@ internal fun loadHeroExtras(
         dateText = TimeText.dateShortWithWeekday(context, date),
         weatherText = weatherText,
         rangeText = rangeText,
-        hourly = hourCells(context, place, now, cached?.code, zone),
+        hourly = hourCells(context, hourly, now, cached?.code, zone),
         bands = schedule?.bands.orEmpty(),
         temperature = schedule?.temperature,
     )
 }
 
-/** 从当前整点起的六格逐时预报；首格标「现在」并用实时天气码，与桌面卡片同一套规则。 */
+/**
+ * 从「现在」那一格起的六格逐时预报；首格标「现在」并用实时天气码，与桌面卡片同一套规则。
+ *
+ * 步长跟着数据源走：主源（Open-Meteo）1 小时一格 → 现在/22时/23时/0时/1时/2时；
+ * 备用源（7Timer!）3 小时一格 → 现在/23时/2时/5时/8时/11时。
+ * 标签一律用**该采样点的实际本地小时数**，不按「现在 + n 小时」推算。
+ */
 private fun hourCells(
     context: Context,
-    place: Place,
+    hourly: WeatherRepository.Hourly,
     now: Instant,
     currentCode: Int?,
     zone: ZoneOffset,
 ): List<HourCell> {
-    val hourly = WeatherRepository.hourly(context, place).associateBy { it.epochSeconds }
-    val slots = WeatherRepository.slots(
+    val points = hourly.points.associateBy { it.epochSeconds }
+    val slots = WeatherRepository.visibleSlots(
+        points = hourly.points,
         nowEpochSeconds = now.epochSecond,
         zoneOffsetSeconds = zone.totalSeconds,
         count = HOUR_CELLS,
-        stepHours = HOUR_STEP,
+        stepHours = hourly.stepHours,
     )
-    val current = WeatherRepository.cached(context, place)
     val unknown = context.getString(R.string.weather_unknown)
-    return slots.mapIndexed { index, epoch ->
-        val point = hourly[epoch]
-        val code = if (index == 0) current?.code ?: currentCode ?: point?.code else point?.code
+    return slots.map { slot ->
+        val point = points[slot.epochSeconds]
+        val code = if (slot.isNow) currentCode ?: point?.code else point?.code
         val condition = code?.let { WeatherRepository.conditionOf(it) }
-        val hour = Instant.ofEpochSecond(epoch).atZone(zone).hour
+        val hour = Instant.ofEpochSecond(slot.epochSeconds).atZone(zone).hour
         HourCell(
-            label = if (index == 0) context.getString(R.string.weather_now) else context.getString(R.string.weather_hour, hour),
+            label = if (slot.isNow) {
+                context.getString(R.string.weather_now)
+            } else {
+                context.getString(R.string.weather_hour, hour)
+            },
             condition = condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,
             iconRes = condition?.let { weatherIconRes(it, isDay = hour in 6..17) } ?: R.drawable.ic_wx_unknown,
         )

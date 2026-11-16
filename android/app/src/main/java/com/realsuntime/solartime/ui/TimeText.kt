@@ -74,8 +74,29 @@ object TimeText {
             },
         )
 
-    fun shichenName(context: Context, index: Int): String {
-        val names = context.resources.getStringArray(R.array.shichen_names)
+    /**
+     * 天气数据的来源署名：整句（首页页脚、设置页「关于」）。
+     *
+     * 主源 Open-Meteo 是 CC BY 4.0，必须署名；降级到 7Timer! 时不能还写着 Open-Meteo。
+     */
+    fun weatherAttribution(context: Context, source: WeatherRepository.Source): String =
+        context.getString(
+            when (source) {
+                WeatherRepository.Source.OPEN_METEO -> R.string.weather_attribution
+                WeatherRepository.Source.SEVEN_TIMER -> R.string.weather_attribution_7timer
+            },
+        )
+
+    /** 同上，但只给品牌短名（桌面卡片底部那一行小字，宽度很紧）。 */
+    fun weatherSourceShort(context: Context, source: WeatherRepository.Source): String =
+        context.getString(
+            when (source) {
+                WeatherRepository.Source.OPEN_METEO -> R.string.weather_source_openmeteo
+                WeatherRepository.Source.SEVEN_TIMER -> R.string.weather_source_7timer
+            },
+        )
+
+    fun shichenName(context: Context, index: Int): String {        val names = context.resources.getStringArray(R.array.shichen_names)
         return context.getString(R.string.shichen_name_format, names[index % names.size])
     }
 

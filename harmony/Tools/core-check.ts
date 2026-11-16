@@ -11,7 +11,8 @@ import { Shichen } from './core/Shichen';
 import { TimeFormat } from './core/TimeFormat';
 import { SolarTimeSnapshot } from './core/SolarSnapshot';
 import { CityIndex } from './core/CityIndex';
-import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint } from './core/Weather';
+import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint, WeatherSlot, WeatherSource, WeatherFallback } from './core/Weather';
+import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place } from './core/Place';
@@ -349,6 +350,302 @@ for (const item of equationCases) {
     '8:00 Clear 20°',
     WeatherLogic.forecastLabels(forecastPoints, Date.UTC(2026, 10, 2, 0, 30, 0) / 1000, 8 * 3600, 1, 'en-US')[0]
   );
+}
+
+// ---- 逐时行：步长跟随数据源（槽位数恒为 6 个）----
+{
+  /** 2026-11-16 的某个 UTC 时刻（避免手写魔数出错，与 Android 的 WeatherRepositoryTest 同一口径）。 */
+  const utcAt = (hour: number, minute: number = 0): number => Date.UTC(2026, 10, 16, hour, minute, 0) / 1000;
+  const hourlyPoints = (fromEpoch: number, count: number, stepHours: number): HourPoint[] => {
+    const points: HourPoint[] = [];
+    for (let index = 0; index < count; index++) {
+      points.push(new HourPoint(fromEpoch + index * stepHours * 3600, 10 + index, 1));
+    }
+    return points;
+  };
+  const localHours = (slots: WeatherSlot[], offsetSeconds: number): string =>
+    slots.map((slot: WeatherSlot): number => WeatherLogic.localHourOf(slot.epochSeconds, offsetSeconds)).join(',');
+  const labelsOf = (slots: WeatherSlot[], offsetSeconds: number, language: string): string =>
+    WeatherLogic.slotLabels(slots, offsetSeconds, language).join(',');
+
+  // 槽位数是版面常量：永远 6 格，变的只有步长。
+  equal('six hourly slots', 6, WeatherLogic.SLOT_COUNT);
+
+  // 主源（1 小时粒度）：本地 21:55 → 现在/22时/23时/0时/1时/2时，6 格覆盖 6 小时。
+  const now = utcAt(13, 55); // 本地 21:55（+08:00）
+  const oneHourPoints = hourlyPoints(utcAt(12), 12, 1); // 本地 20:00 起
+  const oneHourSlots = WeatherLogic.visibleSlots(oneHourPoints, now, 8 * 3600, WeatherLogic.SLOT_COUNT, 1);
+  equal('1h source keeps six slots', 6, oneHourSlots.length);
+  equal('1h slot local hours', '21,22,23,0,1,2', localHours(oneHourSlots, 8 * 3600));
+  equal('1h slot labels', '现在,22时,23时,0时,1时,2时', labelsOf(oneHourSlots, 8 * 3600, 'zh-CN'));
+  equal('1h slot labels in english', 'Now,22:00,23:00,0:00,1:00,2:00', labelsOf(oneHourSlots, 8 * 3600, 'en-US'));
+  equal('1h slots span five hours between first and last', 5 * 3600,
+    oneHourSlots[5].epochSeconds - oneHourSlots[0].epochSeconds);
+  equal('1h first slot is now', 1, oneHourSlots.filter((slot: WeatherSlot): boolean => slot.isNow).length);
+  check('1h now slot uses the latest point not in the future', oneHourSlots[0].epochSeconds === utcAt(13));
+
+  // 备用源（3 小时粒度）：本地 21:55 → 现在/23时/2时/5时/8时/11时，6 格覆盖 18 小时。
+  const threeHourPoints = hourlyPoints(utcAt(12), 8, 3); // 本地 20:00 起
+  const threeHourSlots = WeatherLogic.visibleSlots(threeHourPoints, now, 8 * 3600, WeatherLogic.SLOT_COUNT, 3);
+  equal('3h source keeps six slots', 6, threeHourSlots.length);
+  equal('3h slot local hours', '20,23,2,5,8,11', localHours(threeHourSlots, 8 * 3600));
+  equal('3h slot labels', '现在,23时,2时,5时,8时,11时', labelsOf(threeHourSlots, 8 * 3600, 'zh-CN'));
+  equal('3h slot labels in english', 'Now,23:00,2:00,5:00,8:00,11:00', labelsOf(threeHourSlots, 8 * 3600, 'en-US'));
+  // 6 格 × 3 小时 = 覆盖 18 小时；首格到末格起点是 5 个步长 = 15 小时。
+  equal('3h slots span fifteen hours between first and last', 15 * 3600,
+    threeHourSlots[5].epochSeconds - threeHourSlots[0].epochSeconds);
+  equal('3h first slot is the 20:00 reading', utcAt(12), threeHourSlots[0].epochSeconds);
+
+  // 第二排逐时行按「格数」跳过（不是按小时数硬挪：3 小时源的 6 格就是 18 小时）。
+  const secondRow = WeatherLogic.visibleSlots(threeHourPoints, now, 8 * 3600, WeatherLogic.SLOT_COUNT, 3, 6);
+  equal('second row skips six slots', '14,17,20,23,2,5', localHours(secondRow, 8 * 3600));
+  check('second row has no now slot', secondRow.filter((slot: WeatherSlot): boolean => slot.isNow).length === 0);
+
+  // 一个采样点都没有时也要排满 6 格（内容由界面填占位符），且按数据源的网格对齐。
+  const emptyThree = WeatherLogic.visibleSlots([], now, 8 * 3600, WeatherLogic.SLOT_COUNT, 3);
+  equal('empty 3h grid still has six slots', 6, emptyThree.length);
+  equal('empty 3h grid hours', '20,23,2,5,8,11', localHours(emptyThree, 8 * 3600));
+  check('empty 3h grid starts with now', emptyThree[0].isNow);
+  const emptyOne = WeatherLogic.visibleSlots([], now, 8 * 3600, WeatherLogic.SLOT_COUNT, 1);
+  equal('empty 1h grid aligns to the local hour', '21,22,23,0,1,2', localHours(emptyOne, 8 * 3600));
+
+  // 采样点全在未来 → 「现在」退回第一个点（宁可显示最近的预报，也不要空格）。
+  const futureOnly: HourPoint[] = [new HourPoint(utcAt(3), 5, 1), new HourPoint(utcAt(6), 6, 1)];
+  const futureSlots = WeatherLogic.visibleSlots(futureOnly, utcAt(0), 0, 3, 3);
+  equal('future-only anchor falls back to the first point', utcAt(3), futureSlots[0].epochSeconds);
+  equal('future-only slots step by the source', utcAt(9), futureSlots[2].epochSeconds);
+
+  // 3 小时网格对齐（UTC 的 0/3/6/…/21 点 —— 7Timer! 自己的采样网格）。
+  equal('align 3h drops to the grid', utcAt(3), WeatherLogic.alignToStep(utcAt(4), 3));
+  equal('align keeps grid points', utcAt(3), WeatherLogic.alignToStep(utcAt(3), 3));
+  equal('align 3h at 23:59', utcAt(21), WeatherLogic.alignToStep(utcAt(23, 59), 3));
+  equal('align 1h at 04:59', utcAt(4), WeatherLogic.alignToStep(utcAt(4, 59), 1));
+  equal('align 1h keeps whole hours', utcAt(4), WeatherLogic.alignToStep(utcAt(4), 1));
+  // 对齐后一定落在 UTC 0/3/6/…/21 上（换成 +08:00 就是本地 2/5/8/…/23 点，与 7Timer 的采样网格一致）。
+  equal('aligned 3h point sits on the utc grid', 0, WeatherLogic.alignToStep(utcAt(13, 55), 3) % (12 * 3600));
+  equal('aligned 3h point is local 20:00 at utc+8', 20, WeatherLogic.localHourOf(WeatherLogic.alignToStep(utcAt(13, 55), 3), 8 * 3600));
+  equal('local hour handles negative offsets', 23, WeatherLogic.localHourOf(utcAt(7), -8 * 3600));
+
+  // 7Timer! 真实返回（2026-11 抓取，上海坐标）走一遍完整链路：init + timepoint → 6 槽。
+  const realSevenTimer = '{"product":"civil","init":"2026111606","dataseries":[' +
+    '{"timepoint":3,"temp2m":16,"weather":"cloudynight"},' +
+    '{"timepoint":6,"temp2m":15,"weather":"cloudynight"},' +
+    '{"timepoint":9,"temp2m":14,"weather":"cloudynight"},' +
+    '{"timepoint":12,"temp2m":14,"weather":"cloudynight"},' +
+    '{"timepoint":15,"temp2m":13,"weather":"cloudynight"},' +
+    '{"timepoint":18,"temp2m":13,"weather":"cloudyday"},' +
+    '{"timepoint":21,"temp2m":15,"weather":"cloudyday"}]}';
+  const realPoints = WeatherLogic.parseSevenTimer(realSevenTimer);
+  equal('real 7timer payload yields seven points', 7, realPoints.length);
+  equal('first 7timer point is init + 3h', utcAt(9), realPoints[0].epochSeconds);
+  const realSlots = WeatherLogic.visibleSlots(realPoints, utcAt(13, 26), 8 * 3600, WeatherLogic.SLOT_COUNT, 3);
+  equal('real 7timer slots', '现在,23时,2时,5时,8时,11时', labelsOf(realSlots, 8 * 3600, 'zh-CN'));
+  // 「现在」取的是 20:00 那条（15°），不是第一个点（09:00Z 的 16°）—— 这就是 3 小时源的代价。
+  const realSnapshot = WeatherLogic.snapshotAt(realPoints, utcAt(13, 26));
+  equal('7timer current temperature comes from the latest point', 15, realSnapshot === null ? -1 : realSnapshot.temperatureC);
+  equal('7timer current code maps cloudy to overcast', 3, realSnapshot === null ? -1 : realSnapshot.code);
+}
+
+// ---- 7Timer! 解析与天气码映射 ----
+{
+  const utcAt = (hour: number, minute: number = 0): number => Date.UTC(2026, 10, 16, hour, minute, 0) / 1000;
+
+  // init 06:00Z + timepoint 3h / 6h → 09:00Z / 12:00Z；天气词带 day/night 后缀也能认。
+  const timepointJson = '{"product":"civil","init":"2026111606","dataseries":[' +
+    '{"timepoint":3,"temp2m":16,"weather":"cloudynight"},' +
+    '{"timepoint":6,"temp2m":15,"weather":"clearday"}]}';
+  const timepointPoints = WeatherLogic.parseSevenTimer(timepointJson);
+  equal('two 7timer points', 2, timepointPoints.length);
+  equal('7timer point 1 is init + 3h', utcAt(9), timepointPoints[0].epochSeconds);
+  equal('7timer point 2 is init + 6h', utcAt(12), timepointPoints[1].epochSeconds);
+  equal('7timer point 1 temperature', 16, timepointPoints[0].temperatureC);
+  equal('cloudynight maps to overcast', 3, timepointPoints[0].code);
+  equal('clearday maps to clear', 0, timepointPoints[1].code);
+
+  // 旧文档里的 `time` 字段（yyyyMMddHH）也认，并向下对齐到 3 小时网格。
+  const absolutePoints = WeatherLogic.parseSevenTimer('{"dataseries":[{"time":"2025111604","temp2m":9,"weather":"rain"}]}');
+  equal('absolute time field yields one point', 1, absolutePoints.length);
+  equal('absolute time is realigned to the grid', Date.UTC(2025, 10, 16, 3, 0, 0) / 1000, absolutePoints[0].epochSeconds);
+  equal('rain maps to moderate rain', 63, absolutePoints[0].code);
+
+  // 乱序 → 排序；缺 temp2m 的条目跳过。
+  const mixedPoints = WeatherLogic.parseSevenTimer('{"init":"2026111606","dataseries":[' +
+    '{"timepoint":6,"temp2m":15,"weather":"clearday"},{"weather":"rain"},' +
+    '{"timepoint":3,"temp2m":16,"weather":"cloudyday"}]}');
+  equal('broken items are skipped', 2, mixedPoints.length);
+  equal('7timer points are sorted', utcAt(9), mixedPoints[0].epochSeconds);
+  equal('7timer sort keeps the later point second', utcAt(12), mixedPoints[1].epochSeconds);
+
+  // 各种坏负载都返回空列表（不能崩）。
+  equal('not json yields nothing', 0, WeatherLogic.parseSevenTimer('not json').length);
+  equal('payload without dataseries yields nothing', 0, WeatherLogic.parseSevenTimer('{"product":"civil"}').length);
+  equal('empty dataseries yields nothing', 0, WeatherLogic.parseSevenTimer('{"dataseries":[]}').length);
+  equal('timepoint without init is dropped', 0,
+    WeatherLogic.parseSevenTimer('{"dataseries":[{"timepoint":3,"temp2m":1}]}').length);
+
+  // 时刻串解析：yyyyMMddHH（UTC）→ epoch；格式不对返回 -1。
+  equal('stamp 2026111606', Date.UTC(2026, 10, 16, 6, 0, 0) / 1000, WeatherLogic.sevenTimerStampEpoch('2026111606'));
+  equal('stamp with spaces', Date.UTC(2026, 10, 16, 6, 0, 0) / 1000, WeatherLogic.sevenTimerStampEpoch(' 2026111606 '));
+  equal('broken stamp', -1, WeatherLogic.sevenTimerStampEpoch('2026-11-16'));
+  equal('empty stamp', -1, WeatherLogic.sevenTimerStampEpoch(''));
+
+  // 天气词 → WMO 码：昼夜后缀不影响分类，表外的值按「多云」。
+  equal('clearday', 0, WeatherLogic.wmoCodeOfSevenTimer('clearday'));
+  equal('clearnight', 0, WeatherLogic.wmoCodeOfSevenTimer('clearnight'));
+  equal('pcloudyday', 2, WeatherLogic.wmoCodeOfSevenTimer('pcloudyday'));
+  equal('mcloudynight', 3, WeatherLogic.wmoCodeOfSevenTimer('mcloudynight'));
+  equal('cloudyday', 3, WeatherLogic.wmoCodeOfSevenTimer('cloudyday'));
+  equal('humidday', 45, WeatherLogic.wmoCodeOfSevenTimer('humidday'));
+  equal('fog', 45, WeatherLogic.wmoCodeOfSevenTimer('fog'));
+  equal('lightrainday', 80, WeatherLogic.wmoCodeOfSevenTimer('lightrainday'));
+  equal('ishowernight', 80, WeatherLogic.wmoCodeOfSevenTimer('ishowernight'));
+  equal('rain', 63, WeatherLogic.wmoCodeOfSevenTimer('rain'));
+  equal('heavyrain', 65, WeatherLogic.wmoCodeOfSevenTimer('heavyrain'));
+  equal('lightsnowday', 71, WeatherLogic.wmoCodeOfSevenTimer('lightsnowday'));
+  equal('snownight', 73, WeatherLogic.wmoCodeOfSevenTimer('snownight'));
+  equal('tsday', 95, WeatherLogic.wmoCodeOfSevenTimer('tsday'));
+  equal('unknown word falls back to pcloudy', 2, WeatherLogic.wmoCodeOfSevenTimer('sandstorm'));
+  equal('empty word falls back to pcloudy', 2, WeatherLogic.wmoCodeOfSevenTimer(''));
+  equal('uppercase word is normalised', 2, WeatherLogic.wmoCodeOfSevenTimer('PCLOUDYDAY'));
+  equal('mapped code is understood by the wmo classifier', WeatherCondition.OVERCAST,
+    WeatherLogic.conditionOf(WeatherLogic.wmoCodeOfSevenTimer('cloudynight')));
+  equal('mapped clear code is understood', WeatherCondition.CLEAR,
+    WeatherLogic.conditionOf(WeatherLogic.wmoCodeOfSevenTimer('clearday')));
+
+  // 7Timer 没有 current 块：实时读数取「不晚于当前时刻的最后一个点」。
+  const series: HourPoint[] = [
+    new HourPoint(utcAt(3), 7, 3), new HourPoint(utcAt(6), 12, 1), new HourPoint(utcAt(9), 15, 0)
+  ];
+  equal('snapshot takes the latest past point', 12, WeatherLogic.snapshotAt(series, utcAt(7))?.temperatureC as number);
+  equal('snapshot falls back to the first point when all are in the future', 7,
+    WeatherLogic.snapshotAt(series, utcAt(0))?.temperatureC as number);
+  check('snapshot without points is null', WeatherLogic.snapshotAt([], utcAt(0)) === null);
+
+  // 主源必须同时有 current 与 hourly：只有气温没有逐时也算失败（否则会拿到半残数据）。
+  check('primary without hourly is rejected',
+    WeatherLogic.parsePrimary('{"current":{"temperature_2m":9,"weather_code":2}}') === null);
+  check('broken primary is rejected', WeatherLogic.parsePrimary('not json') === null);
+  const fullPrimary = WeatherLogic.parsePrimary('{"current":{"temperature_2m":9,"weather_code":2},' +
+    '"hourly":{"time":["2026-11-10T00:00"],"temperature_2m":[8.2],"weather_code":[1]}}');
+  check('primary with current and hourly is accepted', fullPrimary !== null && fullPrimary.hourly.length === 1);
+  equal('primary snapshot temperature', 9, fullPrimary === null ? -1 : fullPrimary.snapshot.temperatureC);
+}
+
+// ---- 降级判定 / 旧数据保留 ----
+{
+  // 主源失败后：缓存未过期就什么都不动（不清空界面），过期或没有缓存才去问 7Timer!。
+  equal('fresh cache is kept', WeatherFallback.KEEP_CACHE, WeatherLogic.fallbackFor(true, 5 * 60 * 1000));
+  equal('cache at the 30 minute edge is kept', WeatherFallback.KEEP_CACHE,
+    WeatherLogic.fallbackFor(true, WeatherLogic.TTL_MILLIS));
+  equal('expired cache tries 7timer', WeatherFallback.TRY_SEVEN_TIMER, WeatherLogic.fallbackFor(true, 31 * 60 * 1000));
+  equal('no cache tries 7timer', WeatherFallback.TRY_SEVEN_TIMER, WeatherLogic.fallbackFor(false, 0));
+  equal('negative age tries 7timer', WeatherFallback.TRY_SEVEN_TIMER, WeatherLogic.fallbackFor(true, -1));
+
+  // 旧数据 24 小时内都能显示（超过才当作没有数据）。
+  check('zero age is displayable', WeatherLogic.isDisplayable(0));
+  check('23 hours old is displayable', WeatherLogic.isDisplayable(23 * 60 * 60 * 1000));
+  check('more than a day is not displayable', !WeatherLogic.isDisplayable(24 * 60 * 60 * 1000 + 1));
+  equal('display window is 24 hours', 24 * 60 * 60 * 1000, WeatherLogic.DISPLAY_MAX_AGE_MILLIS);
+
+  // 诊断里的「数据过期 N 分钟」。
+  equal('stale label under a minute', '数据过期 0 分钟', WeatherLogic.staleLabel(30 * 1000));
+  equal('stale label 45 minutes', '数据过期 45 分钟', WeatherLogic.staleLabel(45 * 60 * 1000));
+  equal('stale label 25 hours', '数据过期 1500 分钟', WeatherLogic.staleLabel(25 * 60 * 60 * 1000));
+  equal('stale label without cache', '', WeatherLogic.staleLabel(-1));
+
+  // 主源重试与超时：2 秒重试一次、连接/读取各 10 秒。
+  equal('primary retry delay is two seconds', 2000, WeatherLogic.PRIMARY_RETRY_DELAY_MILLIS);
+  equal('http timeout is ten seconds', 10000, WeatherLogic.HTTP_TIMEOUT_MILLIS);
+
+  // ---- 刷新触发：过期 或 低精度升级（任意一条满足即刷新）----
+  const MINUTE = 60 * 1000;
+  const NEVER_ATTEMPTED = Number.MAX_SAFE_INTEGER;
+  // 低精度判定的两个来源都要认：7Timer! 与步长 3。
+  check('7timer data is low precision', WeatherLogic.isLowPrecision('7timer', 3));
+  check('step 3 alone is low precision', WeatherLogic.isLowPrecision('open-meteo', 3));
+  check('open-meteo 1h is high precision', !WeatherLogic.isLowPrecision('open-meteo', 1));
+
+  // ① 低精度 + 未过期 → 仍然要刷新（为了升级回 1 小时源）
+  check('low precision refreshes even when fresh',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, NEVER_ATTEMPTED, '7timer', 3));
+  // ② 10 分钟内刚试过（无论成败）→ 不重复刷新
+  check('low precision is throttled within ten minutes',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
+  check('low precision throttles right at the boundary',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, WeatherLogic.LOW_PRECISION_RETRY_MILLIS, '7timer', 3));
+  // ③ 超过 10 分钟 → 再试一次
+  check('low precision retries after ten minutes',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, 11 * MINUTE, '7timer', 3));
+  // ④ 升级成功（1 小时源、新鲜）→ 不再触发
+  check('upgraded data does not refresh again',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 11 * MINUTE, 'open-meteo', 1));
+  // ⑤ 两条互不干扰：过期与低精度各自成立、各自生效
+  check('expired high precision data refreshes',
+    WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, 'open-meteo', 1));
+  check('expired low precision data refreshes',
+    WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, '7timer', 3));
+  check('fresh high precision data is left alone',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, NEVER_ATTEMPTED, 'open-meteo', 1));
+  // 失败后的 5 分钟节流只管「过期」这一条，不会把低精度升级一起卡住超过 10 分钟
+  check('failure throttle does not block the low precision upgrade for longer than ten minutes',
+    WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, '7timer', 3)
+      && !WeatherLogic.needsFetch(45 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
+  // 移动超过 5 km 一律刷新（换地点）
+  check('moving triggers a refresh', WeatherLogic.needsFetch(1 * MINUTE, 6, 0, 'open-meteo', 1));
+  // 升级节流的独立判定（界面「回到前台立刻升级」用的也是它）
+  check('precision upgrade waits ten minutes', !WeatherLogic.shouldUpgradePrecision('7timer', 3, 9 * MINUTE));
+  check('precision upgrade fires after ten minutes', WeatherLogic.shouldUpgradePrecision('7timer', 3, 10 * MINUTE + 1));
+  check('precision upgrade ignores high precision data', !WeatherLogic.shouldUpgradePrecision('open-meteo', 1, NEVER_ATTEMPTED));
+  equal('low precision retry window is ten minutes', 10 * 60 * 1000, WeatherLogic.LOW_PRECISION_RETRY_MILLIS);
+
+  // 数据源标识（缓存里存的就是这两个字符串）：认不出来一律当主源、步长 1。
+  equal('open-meteo id', 'open-meteo', WeatherSource.OPEN_METEO);
+  equal('7timer id', '7timer', WeatherSource.SEVEN_TIMER);
+  equal('7timer id round trip', WeatherSource.SEVEN_TIMER, WeatherSource.of('7timer'));
+  equal('unknown source falls back to open-meteo', WeatherSource.OPEN_METEO, WeatherSource.of('noaa'));
+  equal('empty source falls back to open-meteo', WeatherSource.OPEN_METEO, WeatherSource.of(''));
+  equal('open-meteo step is one hour', 1, WeatherSource.stepHoursOf('open-meteo'));
+  equal('7timer step is three hours', 3, WeatherSource.stepHoursOf('7timer'));
+  equal('unknown source step is one hour', 1, WeatherSource.stepHoursOf('noaa'));
+  equal('open-meteo display name', 'Open-Meteo', WeatherSource.displayName('open-meteo'));
+  equal('7timer display name', '7Timer!', WeatherSource.displayName('7timer'));
+  equal('open-meteo attribution keeps the licence', 'Open-Meteo（CC BY 4.0）', WeatherSource.attribution('open-meteo'));
+  equal('7timer attribution', '7Timer!', WeatherSource.attribution('7timer'));
+  equal('seven timer url', 'https://www.7timer.info/bin/api.pl?lon=121.4737&lat=31.2304&product=civil&output=json',
+    WeatherLogic.buildSevenTimerUrl(31.2304, 121.4737));
+}
+
+// ---- 主题三态（自动 / 亮色 / 暗色）----
+{
+  // 存储值 → 模式：非法值（旧版本没这个键、值被改坏）一律回「自动」。
+  equal('empty theme falls back to auto', 'AUTO', ThemeMode.fromName(''));
+  equal('unknown theme falls back to auto', 'AUTO', ThemeMode.fromName('SEPIA'));
+  equal('lowercase theme falls back to auto', 'AUTO', ThemeMode.fromName('light'));
+  equal('light round trip', 'LIGHT', ThemeMode.fromName('LIGHT'));
+  equal('dark round trip', 'DARK', ThemeMode.fromName('DARK'));
+  equal('auto round trip', 'AUTO', ThemeMode.fromName('AUTO'));
+  equal('three theme options', 3, ThemeMode.OPTIONS.length);
+  equal('theme option order', 'AUTO,LIGHT,DARK', ThemeMode.OPTIONS.join(','));
+  equal('default theme is auto', ThemeMode.AUTO, ThemeMode.fromName(ThemeMode.OPTIONS[0]));
+
+  // AUTO 跟太阳（白天亮、夜里暗）；LIGHT/DARK 忽略太阳。
+  check('auto is dark at night', ThemeMode.isDark('AUTO', false));
+  check('auto is light by day', !ThemeMode.isDark('AUTO', true));
+  check('light stays light at night', !ThemeMode.isDark('LIGHT', false));
+  check('light stays light by day', !ThemeMode.isDark('LIGHT', true));
+  check('dark stays dark at night', ThemeMode.isDark('DARK', false));
+  check('dark stays dark by day', ThemeMode.isDark('DARK', true));
+  check('invalid mode behaves like auto', ThemeMode.isDark('sepia', false) && !ThemeMode.isDark('sepia', true));
+  check('isLight is the inverse of isDark',
+    ThemeMode.isLight('DARK', true) === false && ThemeMode.isLight('LIGHT', false) === true);
+
+  // 设置页文案。
+  equal('auto label', '自动', ThemeMode.label('AUTO'));
+  equal('light label', '亮色', ThemeMode.label('LIGHT'));
+  equal('dark label', '暗色', ThemeMode.label('DARK'));
+  equal('invalid label falls back to auto', '自动', ThemeMode.label('SEPIA'));
+  check('every mode has a description', ThemeMode.OPTIONS.every((mode: string): boolean =>
+    ThemeMode.description(mode).length > 0));
 }
 
 // ---- 区划名 ----

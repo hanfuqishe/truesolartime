@@ -12,6 +12,7 @@ import com.realsuntime.solartime.data.LocalZone
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
+import com.realsuntime.solartime.data.ThemeMode
 import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
@@ -59,6 +60,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(settings.themeMode)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     /** 反查到的行政区划（如「上海市宝山区」）；没有时首页仍显示「当地真太阳时」。 */
     private val _districtName = MutableStateFlow(
@@ -205,6 +209,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setKeepScreenOn(enabled: Boolean) {
         settings.keepScreenOn = enabled
         _keepScreenOn.value = enabled
+    }
+
+    /**
+     * 切换配色模式（自动 / 亮色 / 暗色）。
+     *
+     * 桌面卡片也要立刻跟着换色：它的昼夜配色是每次构建时读同一个设置算的，
+     * 所以这里主动重绘一次，用户不用等下一分钟的刷新节拍。
+     * 放到后台线程里做 —— 重绘要画时间轴位图，别让点击那一下卡在 UI 线程上
+     * （与 WeatherRepository 取到新天气后重绘走同一条路径）。
+     */
+    fun setThemeMode(mode: ThemeMode) {
+        settings.themeMode = mode
+        _themeMode.value = mode
+        val app = getApplication<Application>()
+        Thread { WidgetUpdater.refreshAll(app) }.apply { isDaemon = true }.start()
     }
 
     fun setKeyTimeChimeEnabled(enabled: Boolean) {

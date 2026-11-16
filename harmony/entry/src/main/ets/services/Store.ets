@@ -8,6 +8,7 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { Place, PlaceSource } from '../core/Place';
+import { ThemeMode } from '../core/ThemeMode';
 
 const SETTINGS_STORE: string = 'solar_time_settings';
 const WEATHER_STORE: string = 'weather_cache';
@@ -25,6 +26,31 @@ export class CachedWeather {
   hourly: string = '';
   /** 上次**尝试**取数的时刻（毫秒）：取数失败后按 5 分钟节流重试。 */
   attemptMillis: number = 0;
+  /** 这份缓存的来源（open-meteo / 7timer）；空串 = 旧版本缓存，按主源算。 */
+  source: string = '';
+  /** 逐时步长（小时）：1 = 主源，3 = 备用源；0 = 旧版本缓存，按来源推。 */
+  stepHours: number = 0;
+}
+
+/**
+ * 最近一次取数的诊断记录（设置页「诊断」片区显示）。
+ *
+ * 与 Android 的 `DiagStore.recordWeather` 同一组键名（`weather_source` / `weather_step` /
+ * `weather_age_minutes`），排查时两端的日志与截图能直接对上。
+ */
+export class WeatherDiag {
+  /** 结果一句话，例如「主源成功」「主源失败，已降级到 7Timer!」。 */
+  result: string = '';
+  /** 本次结果对应的数据源（open-meteo / 7timer）。 */
+  source: string = '';
+  /** 逐时步长（小时）。 */
+  stepHours: number = 0;
+  /** 记录时的数据过期分钟数；-1 表示没有缓存。 */
+  ageMinutes: number = -1;
+  /** 最近一次失败的原因；成功后清空。 */
+  failure: string = '';
+  /** 记录时刻（毫秒）。 */
+  recordedMillis: number = 0;
 }
 
 export class CachedKeyTime {
@@ -196,6 +222,22 @@ export class AppStore {
     store.flush();
   }
 
+  /**
+   * 配色模式：`AUTO`（按日出日落，默认）/ `LIGHT`（强制亮色）/ `DARK`（强制暗色）。
+   *
+   * 非法值（旧版本没有这个键、值被人为改坏）一律回 `AUTO` —— 见 [ThemeMode.fromName]。
+   */
+  static themeMode(): string {
+    return ThemeMode.fromName(AppStore.stringValue(AppStore.settingsStore(), 'theme_mode', ThemeMode.AUTO));
+  }
+
+  static setThemeMode(mode: string): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    // 存之前先规范化：界面上永远只可能写入三个合法值。
+    store.putSync('theme_mode', ThemeMode.fromName(mode));
+    store.flush();
+  }
+
   /** 上次为「桌面卡片」主动取 GPS 的时刻（毫秒）：卡片侧最多 5 分钟取一次。 */
   static lastCardFixMillis(): number {
     return AppStore.numberValue(AppStore.settingsStore(), 'last_card_fix', 0);
@@ -269,6 +311,8 @@ export class AppStore {
     cached.attemptMillis = AppStore.numberValue(store, 'attempt', 0);
     cached.schema = AppStore.numberValue(store, 'schema', 0);
     cached.hourly = AppStore.stringValue(store, 'hourly', '');
+    cached.source = AppStore.stringValue(store, 'source', '');
+    cached.stepHours = AppStore.numberValue(store, 'step_hours', 0);
     return cached;
   }
 
@@ -279,13 +323,22 @@ export class AppStore {
     store.flush();
   }
 
-  static saveWeather(temperatureC: number, code: number, hourly: string, schema: number, latitude: number, longitude: number): void {
+  /**
+   * 写一份天气缓存。
+   *
+   * [source] / [stepHours] 必须跟数据一起存：界面只画 6 个槽位，但槽位之间的间隔
+   * 跟着数据源走（主源 1 小时、备用源 3 小时），只存读数不存步长，标签就会和读数错位。
+   */
+  static saveWeather(temperatureC: number, code: number, hourly: string, schema: number, latitude: number,
+      longitude: number, source: string, stepHours: number): void {
     const store: preferences.Preferences = AppStore.weatherStore();
     store.putSync('attempt', Date.now());
     store.putSync('temp', temperatureC);
     store.putSync('code', code);
     store.putSync('hourly', hourly);
     store.putSync('schema', schema);
+    store.putSync('source', source);
+    store.putSync('step_hours', stepHours);
     store.putSync('lat', latitude);
     store.putSync('lon', longitude);
     store.putSync('time', Date.now());
@@ -298,6 +351,32 @@ export class AppStore {
 
   static weatherLongitude(): number {
     return AppStore.numberValue(AppStore.weatherStore(), 'lon', Number.NaN);
+  }
+
+  // ---- 天气诊断（设置页「诊断」片区）----
+
+  static weatherDiag(): WeatherDiag {
+    const store: preferences.Preferences = AppStore.weatherStore();
+    const diag: WeatherDiag = new WeatherDiag();
+    diag.result = AppStore.stringValue(store, 'diag_result', '');
+    diag.source = AppStore.stringValue(store, 'diag_source', '');
+    diag.stepHours = AppStore.numberValue(store, 'diag_step', 0);
+    diag.ageMinutes = AppStore.numberValue(store, 'diag_age', -1);
+    diag.failure = AppStore.stringValue(store, 'diag_failure', '');
+    diag.recordedMillis = AppStore.numberValue(store, 'diag_time', 0);
+    return diag;
+  }
+
+  static saveWeatherDiag(result: string, source: string, stepHours: number, ageMinutes: number,
+      failure: string): void {
+    const store: preferences.Preferences = AppStore.weatherStore();
+    store.putSync('diag_result', result);
+    store.putSync('diag_source', source);
+    store.putSync('diag_step', stepHours);
+    store.putSync('diag_age', ageMinutes);
+    store.putSync('diag_failure', failure);
+    store.putSync('diag_time', Date.now());
+    store.flush();
   }
 
   // ---- 关键时间缓存 ----

@@ -42,6 +42,11 @@
     <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
     <string name="keep_screen_on_title">屏幕常亮</string>
     <string name="keep_screen_on_desc">应用打开期间不自动熄屏（会更耗电）</string>
+    <string name="theme_title">主题</string>
+    <string name="theme_desc">「自动」按日出日落切换：白天亮色、夜晚暗色；「亮色 / 暗色」强制，首页与桌面小组件一起跟随。</string>
+    <string name="theme_auto">自动</string>
+    <string name="theme_light">亮色</string>
+    <string name="theme_dark">暗色</string>
     <string name="chime_background_hint">报时没响？点此允许本应用后台运行</string>
     <string name="chime_exact_alarm_hint">报时可能晚几分钟，点此允许「闹钟和提醒」</string>
     <string name="section_about">关于计算</string>
@@ -146,6 +151,10 @@
     <string name="weather_hour">%1$d时</string>
     <string name="weather_now">现在</string>
     <string name="weather_attribution">天气数据 © Open-Meteo.com（CC BY 4.0）</string>
+    <string name="weather_attribution_7timer">天气数据 © 7Timer!</string>
+    <!-- 小组件底部小字用的短名（品牌名不翻译，只切源） -->
+    <string name="weather_source_openmeteo">Open-Meteo</string>
+    <string name="weather_source_7timer">7Timer!</string>
     <string name="section_diagnostics">诊断</string>
     <string name="diagnostics_desc">系统字体/密度设置与最近一次小组件构建的只读快照。桌面小组件显示不正常时，把它整段发给开发者。</string>
     <string name="diagnostics_open">查看诊断信息</string>

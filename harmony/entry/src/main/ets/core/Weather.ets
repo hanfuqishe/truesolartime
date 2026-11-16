@@ -1,8 +1,14 @@
 /**
- * 当前天气（气温 + WMO 天气码）的解析与分类，数据来自 Open-Meteo：免费、无需 Key、全球可用。
+ * 当前天气（气温 + WMO 天气码）与逐时预报的解析、分类与槽位排布。
  *
- * 数据来源需要在界面上标注：Open-Meteo（CC BY 4.0）。
- * 这里只有纯逻辑：请求与缓存放在 services/WeatherService.ets。
+ * 主源是 Open-Meteo：免费、无需 Key、全球可用，**逐时粒度 1 小时**（CC BY 4.0）。
+ * 主源失败时降级到备用源 7Timer!，它的 civil 产品是**逐时粒度 3 小时**（界面底部署名随之切换）。
+ *
+ * 「步长」是随数据一起缓存的一等公民（见 [WeatherSource.stepHoursOf]）：界面永远只画 6 个槽位，
+ * 但槽位之间的间隔跟着数据源走 —— 拿 1 小时的网格去配 3 小时的数据，标签就会和实际读数错位。
+ *
+ * 这里只有纯逻辑：请求与缓存放在 services/WeatherService.ets，
+ * 以便 core-check（Tools/verify-core.js）能脱离鸿蒙 SDK 直接跑数值自检。
  */
 
 export enum WeatherCondition {
@@ -17,6 +23,80 @@ export enum WeatherCondition {
   SNOW = 8,
   HEAVY_SNOW = 9,
   THUNDER = 10
+}
+
+/**
+ * 逐时数据的数据源；**步长跟着来源走**（主源 1 小时、备用源 3 小时）。
+ *
+ * 用字符串常量而不是枚举：这两个值会原样写进偏好（`weather_cache` 的 `source` 键），
+ * 与 Android 侧的 `Source.id` 完全一致，排查时两边日志能直接对上。
+ */
+export class WeatherSource {
+  /** 主源：Open-Meteo（CC BY 4.0）。 */
+  static readonly OPEN_METEO: string = 'open-meteo';
+  /** 备用源：7Timer!（civil 产品，3 小时粒度，不给 `current` 块）。 */
+  static readonly SEVEN_TIMER: string = '7timer';
+  static readonly OPEN_METEO_STEP_HOURS: number = 1;
+  static readonly SEVEN_TIMER_STEP_HOURS: number = 3;
+
+  /** 缓存里的来源字符串（可能来自旧版本或被人为改坏）→ 规范值，认不出来一律当主源。 */
+  static of(id: string): string {
+    return id === WeatherSource.SEVEN_TIMER ? WeatherSource.SEVEN_TIMER : WeatherSource.OPEN_METEO;
+  }
+
+  /** 该来源的逐时步长（小时）。 */
+  static stepHoursOf(id: string): number {
+    return WeatherSource.of(id) === WeatherSource.SEVEN_TIMER
+      ? WeatherSource.SEVEN_TIMER_STEP_HOURS
+      : WeatherSource.OPEN_METEO_STEP_HOURS;
+  }
+
+  /** 界面/诊断里的短名。 */
+  static displayName(id: string): string {
+    return WeatherSource.of(id) === WeatherSource.SEVEN_TIMER ? '7Timer!' : 'Open-Meteo';
+  }
+
+  /** 界面底部署名（跟着实际源切换：CC BY 4.0 只对 Open-Meteo 要求）。 */
+  static attribution(id: string): string {
+    return WeatherSource.of(id) === WeatherSource.SEVEN_TIMER
+      ? '7Timer!'
+      : 'Open-Meteo（CC BY 4.0）';
+  }
+}
+
+/** 主源失败之后的处理方案（纯判定，便于自检）。 */
+export enum WeatherFallback {
+  /** 缓存还没过期：什么都不做，界面继续用缓存（不清空）。 */
+  KEEP_CACHE = 0,
+  /** 缓存已过期，或根本没有缓存：去问备用源 7Timer!。 */
+  TRY_SEVEN_TIMER = 1
+}
+
+/** 界面上的一个逐时槽位：用哪个采样点，以及它是不是「现在」那一格。 */
+export class WeatherSlot {
+  epochSeconds: number;
+  isNow: boolean;
+
+  constructor(epochSeconds: number, isNow: boolean) {
+    this.epochSeconds = epochSeconds;
+    this.isNow = isNow;
+  }
+}
+
+/**
+ * 主源的一份完整结果：实时读数 + 逐时序列。
+ *
+ * 两者缺一都算失败（只有 `current` 没有 `hourly`，或 JSON 被截断）→ 降级到备用源，
+ * 否则界面会拿到一份「有气温、没有逐时」的半残数据。
+ */
+export class PrimaryWeather {
+  snapshot: WeatherSnapshot;
+  hourly: HourPoint[];
+
+  constructor(snapshot: WeatherSnapshot, hourly: HourPoint[]) {
+    this.snapshot = snapshot;
+    this.hourly = hourly;
+  }
 }
 
 export class WeatherSnapshot {
@@ -56,12 +136,43 @@ export class WeatherLogic {
   static readonly MOVE_THRESHOLD_KM: number = 5.0;
   /** 没有有效天气时天气位显示的占位符：半角减号（与 Android 的 `weather_unknown` 一致）。 */
   static readonly PLACEHOLDER: string = '-';
+  /**
+   * 逐时预报的槽位数：**恒为 6 个**，不随数据源变化。
+   *
+   * 变的是步长（1 小时源覆盖 6 小时、3 小时源覆盖 18 小时），不是格数 ——
+   * 界面（首页大卡片、桌面卡片）按 6 等分排版，格数一变版面就散了。
+   */
+  static readonly SLOT_COUNT: number = 6;
+  /** 显示用的时限（与小时预报一致）：取数失败时旧数据最长还能显示 24 小时。 */
+  static readonly DISPLAY_MAX_AGE_MILLIS: number = 24 * 60 * 60 * 1000;
+  /**
+   * 主源失败后**立刻**重试一次前的等待时长。
+   *
+   * 只重试一次：一次握手超时/一个坏节点不该让整张卡从 1 小时粒度掉到 3 小时粒度，
+   * 但也不该为了主源把降级拖太久（用户可能正盯着 `--`）。
+   */
+  static readonly PRIMARY_RETRY_DELAY_MILLIS: number = 2000;
+  /** 单次 HTTP 请求的超时（连接 / 读取各自 10 秒；移动网络冷启动时 5 秒偏紧）。 */
+  static readonly HTTP_TIMEOUT_MILLIS: number = 10000;
+  /**
+   * 低精度数据（备用源 3 小时）的升级重试节流：**最多每 10 分钟一次**。
+   *
+   * 3 小时数据即使还没过期也要尽快升级回 1 小时源（标签粒度差 3 倍），
+   * 但不能每次回到前台都打一次网络 —— 成功升级后这条自然不再触发。
+   */
+  static readonly LOW_PRECISION_RETRY_MILLIS: number = 10 * 60 * 1000;
 
   static buildUrl(latitude: number, longitude: number): string {
     return 'https://api.open-meteo.com/v1/forecast' +
       `?latitude=${latitude.toFixed(4)}&longitude=${longitude.toFixed(4)}` +
       '&current=temperature_2m,weather_code' +
       '&hourly=temperature_2m,weather_code&forecast_days=2&past_days=1&timezone=UTC';
+  }
+
+  /** 备用源 7Timer! 的取数地址（注意参数顺序是 lon 在前、lat 在后）。 */
+  static buildSevenTimerUrl(latitude: number, longitude: number): string {
+    return `https://www.7timer.info/bin/api.pl?lon=${longitude.toFixed(4)}` +
+      `&lat=${latitude.toFixed(4)}&product=civil&output=json`;
   }
 
   /** 解析当前天气；结构不对时返回 null。 */
@@ -138,6 +249,193 @@ export class WeatherLogic {
   }
 
   /**
+   * 解析 7Timer! 的 `dataseries`。
+   *
+   * 官方 `api.pl` **不给每个点的绝对时刻**，只给「模式起报时刻 `init`」（UTC，如 `"2026111606"`）
+   * 加「相对 init 的小时数 `timepoint`」（实测 2026-11 的返回是 3, 6, 9, …）；旧文档/部分镜像里
+   * 还出现过 `time` 字段（形如 `2025111603`）。两种都认，且都**向下对齐到 3 小时网格**
+   * （UTC 的 0/3/6/…/21 点，也就是 7Timer! 自己的采样网格；换成 +08:00 就是本地的
+   * 2/5/8/…/23 点，所以逐时行显示 `现在 / 23时 / 2时 / 5时 / 8时 / 11时`），
+   * 免得界面上出现 `22时`、`1时` 这种不在网格上的标签。
+   */
+  static parseSevenTimer(json: string): HourPoint[] {
+    const points: HourPoint[] = [];
+    let root: Record<string, Object>;
+    try {
+      root = JSON.parse(json) as Record<string, Object>;
+    } catch (error) {
+      return points;
+    }
+    const series: Object[] = root['dataseries'] as Object[];
+    if (!Array.isArray(series)) {
+      return points;
+    }
+    const initValue: Object | undefined = root['init'];
+    // 有 init 才能用 timepoint 推时刻；没有 init 且条目也没有 time 时，整条丢掉。
+    const initEpoch: number = initValue === undefined || initValue === null
+      ? -1
+      : WeatherLogic.sevenTimerStampEpoch(String(initValue));
+    for (const item of series) {
+      if (item === undefined || item === null) {
+        continue;
+      }
+      const fields: Record<string, Object> = item as Record<string, Object>;
+      const temperatureValue: Object | undefined = fields['temp2m'];
+      if (temperatureValue === undefined || temperatureValue === null) {
+        continue;
+      }
+      const temperature: number = Number(temperatureValue);
+      if (isNaN(temperature)) {
+        continue;
+      }
+      let epoch: number = -1;
+      const timeValue: Object | undefined = fields['time'];
+      if (timeValue !== undefined && timeValue !== null) {
+        epoch = WeatherLogic.sevenTimerStampEpoch(String(timeValue));
+      }
+      if (epoch < 0) {
+        const timepointValue: Object | undefined = fields['timepoint'];
+        if (initEpoch < 0 || timepointValue === undefined || timepointValue === null) {
+          continue;
+        }
+        const timepoint: number = Number(timepointValue);
+        if (isNaN(timepoint)) {
+          continue;
+        }
+        epoch = initEpoch + timepoint * 3600;
+      }
+      const weatherValue: Object | undefined = fields['weather'];
+      const code: number = WeatherLogic.wmoCodeOfSevenTimer(
+        weatherValue === undefined || weatherValue === null ? '' : String(weatherValue));
+      points.push(new HourPoint(
+        WeatherLogic.alignToStep(epoch, WeatherSource.SEVEN_TIMER_STEP_HOURS),
+        Math.round(temperature),
+        code
+      ));
+    }
+    // 采样点按时间排序：卡片按顺序往后取槽位，乱序会让「现在」跳格。
+    points.sort((left: HourPoint, right: HourPoint): number => left.epochSeconds - right.epochSeconds);
+    return points;
+  }
+
+  /** `2025111603` / `2026111606` 这类 UTC 时刻串（yyyyMMddHH）→ epoch 秒；解析不了返回 -1。 */
+  static sevenTimerStampEpoch(stamp: string): number {
+    const match: RegExpMatchArray | null = stamp.trim().match(/^(\d{4})(\d{2})(\d{2})(\d{2})$/);
+    if (match === null) {
+      return -1;
+    }
+    const millis: number = Date.UTC(
+      Number.parseInt(match[1]),
+      Number.parseInt(match[2]) - 1,
+      Number.parseInt(match[3]),
+      Number.parseInt(match[4])
+    );
+    return Math.floor(millis / 1000);
+  }
+
+  /**
+   * 7Timer! 的天气词 → WMO 天气码（与主源共用同一套文案与图标）。
+   *
+   * 7Timer 用 `day`/`night` 后缀区分昼夜（`clearday` / `cloudynight`），先剥掉后缀再查表；
+   * 表外的值按「多云」处理（宁可少报一个极端天气，也不要显示成晴）。
+   */
+  static wmoCodeOfSevenTimer(weather: string): number {
+    let key: string = weather.trim().toLowerCase();
+    if (key.endsWith('night')) {
+      key = key.substring(0, key.length - 5);
+    } else if (key.endsWith('day')) {
+      key = key.substring(0, key.length - 3);
+    }
+    switch (key) {
+      case 'clear':
+      case 'sunny':
+        return 0; // 晴
+      case 'pcloudy':
+        return 2; // 多云
+      case 'mcloudy':
+      case 'cloudy':
+      case 'overcast':
+        return 3; // 阴
+      case 'humid':
+      case 'fog':
+      case 'foggy':
+        return 45; // 雾
+      case 'lightrain':
+      case 'drizzle':
+      case 'oshower':
+      case 'ishower':
+      case 'shower':
+      case 'showers':
+        return 80; // 阵雨 / 小雨
+      case 'rain':
+        return 63; // 中雨
+      case 'heavyrain':
+        return 65; // 大雨
+      case 'lightsnow':
+        return 71; // 小雪
+      case 'snow':
+      case 'snowrain':
+      case 'rainsnow':
+      case 'sleet':
+        return 73; // 雪 / 雨夹雪
+      case 'ts':
+      case 'thunder':
+      case 'thunderstorm':
+        return 95; // 雷雨
+      default:
+        return 2; // 未知 → 多云
+    }
+  }
+
+  /**
+   * 主源的一份完整结果：实时读数 + 逐时序列。
+   *
+   * 两者缺一都算失败：只有 `current` 没有 `hourly`（或 JSON 被截断）时降级到备用源，
+   * 否则界面会拿到一份「有气温、没有逐时」的半残数据。
+   */
+  static parsePrimary(json: string): PrimaryWeather | null {
+    const snapshot: WeatherSnapshot | null = WeatherLogic.parse(json);
+    if (snapshot === null) {
+      return null;
+    }
+    const hourly: HourPoint[] = WeatherLogic.parseHourly(json);
+    if (hourly.length === 0) {
+      return null;
+    }
+    return new PrimaryWeather(snapshot, hourly);
+  }
+
+  /** 从逐时序列里取「现在」的读数（7Timer 没有 current 块）：不晚于当前时刻的最后一个点。 */
+  static snapshotAt(points: HourPoint[], nowEpochSeconds: number): WeatherSnapshot | null {
+    let chosen: HourPoint | null = null;
+    for (const point of points) {
+      if (point.epochSeconds <= nowEpochSeconds && (chosen === null || point.epochSeconds > chosen.epochSeconds)) {
+        chosen = point;
+      }
+    }
+    if (chosen === null) {
+      // 全都在未来：退回最早的那一点（宁可显示最近的预报，也不要空格）。
+      for (const point of points) {
+        if (chosen === null || point.epochSeconds < chosen.epochSeconds) {
+          chosen = point;
+        }
+      }
+    }
+    return chosen === null ? null : new WeatherSnapshot(chosen.temperatureC, chosen.code);
+  }
+
+  /** 把时刻向下对齐到 stepHours 小时的整点网格（UTC 网格：0/3/6/…/21 点）。 */
+  static alignToStep(epochSeconds: number, stepHours: number): number {
+    const step: number = Math.max(1, stepHours) * 3600;
+    return epochSeconds - floorMod(epochSeconds, step);
+  }
+
+  /** 某个 UTC 秒在给定偏移下的本地小时数（0–23，负数偏移也不会算错）。 */
+  static localHourOf(epochSeconds: number, zoneOffsetSeconds: number): number {
+    return Math.floor(floorMod(epochSeconds + zoneOffsetSeconds, 86400) / 3600);
+  }
+
+  /**
    * 卡片要显示的时刻：从当前所在的 stepHours 小时块开始，按步长取 count 个（本地时区对齐）。
    * 返回 UTC 秒，可直接与 HourPoint.epochSeconds 对应。
    */
@@ -150,6 +448,153 @@ export class WeatherLogic {
       result.push(blockStart + index * step - zoneOffsetSeconds);
     }
     return result;
+  }
+
+  /**
+   * 界面真正要画的那 6 格（首页大卡片与桌面卡片共用这一条规则，与 Android 的 `visibleSlots` 一致）。
+   *
+   * - **首格永远是「现在」**：当前时刻之前最近的那个采样点（全都在未来时取第一个点）。
+   *   它不是「当前整点」——3 小时源在 21:30 的「现在」是 20 点那一条读数。
+   * - 之后按**数据源自己的步长**往后取：1 小时源是 现在/22时/23时/0时/1时/2时，
+   *   3 小时源是 现在/23时/2时/5时/8时/11时（取决于采样网格）。标签一律用该点的实际本地小时数。
+   * - 没有数据时退回按步长对齐的理论网格，让格子照样排出来（内容显示占位符）。
+   *
+   * @param skip 跳过前面几格（桌面卡片的第二排逐时行接在第一排后面）。
+   */
+  static visibleSlots(
+    points: HourPoint[],
+    nowEpochSeconds: number,
+    zoneOffsetSeconds: number,
+    count: number,
+    stepHours: number,
+    skip: number = 0
+  ): WeatherSlot[] {
+    const step: number = Math.max(1, stepHours) * 3600;
+    const offset: number = Math.max(0, skip) * step;
+    // 锚点：不晚于当前时刻的**最后一个**采样点（不是「当前整点」，3 小时源常常对不上整点）。
+    let anchor: number = -1;
+    for (const point of points) {
+      if (point.epochSeconds <= nowEpochSeconds && point.epochSeconds > anchor) {
+        anchor = point.epochSeconds;
+      }
+    }
+    if (anchor < 0) {
+      for (const point of points) {
+        if (anchor < 0 || point.epochSeconds < anchor) {
+          anchor = point.epochSeconds;
+        }
+      }
+    }
+    const shifted: number = nowEpochSeconds + offset;
+    let start: number = 0;
+    if (anchor >= 0) {
+      start = anchor + offset;
+    } else if (stepHours <= 1) {
+      // 1 小时源按**本地整点**对齐（用户看到的就是整点）。
+      const local: number = shifted + zoneOffsetSeconds;
+      start = local - floorMod(local, 3600) - zoneOffsetSeconds;
+    } else {
+      // 3 小时源按 UTC 的 0/3/6/…/21 点对齐 —— 与 7Timer! 的采样网格一致，数据一到标签不会整体跳一格。
+      start = WeatherLogic.alignToStep(shifted, stepHours);
+    }
+    const slots: WeatherSlot[] = [];
+    for (let index = 0; index < count; index++) {
+      slots.push(new WeatherSlot(start + index * step, skip <= 0 && index === 0));
+    }
+    return slots;
+  }
+
+  /** 槽位 → 逐时行标签：第一格「现在」，其余用该点实际所在的本地小时数（如 `23时` / `23:00`）。 */
+  static slotLabels(slots: WeatherSlot[], zoneOffsetSeconds: number, language: string): string[] {
+    const labels: string[] = [];
+    for (const slot of slots) {
+      labels.push(slot.isNow
+        ? WeatherLogic.nowLabel(language)
+        : WeatherLogic.hourLabel(WeatherLogic.localHourOf(slot.epochSeconds, zoneOffsetSeconds), language));
+    }
+    return labels;
+  }
+
+  static nowLabel(language: string): string {
+    return language.startsWith('zh') ? '现在' : 'Now';
+  }
+
+  static hourLabel(hour: number, language: string): string {
+    return language.startsWith('zh') ? `${hour}时` : `${hour}:00`;
+  }
+
+  /**
+   * 主源失败之后怎么办（纯判定，便于自检）。
+   *
+   * - 没有缓存 → 去问备用源；
+   * - 缓存还没过期（30 分钟内）→ **什么都不做**，界面继续显示缓存，不清空；
+   * - 缓存过期 → 去问备用源（7Timer!）。
+   */
+  static fallbackFor(hasCache: boolean, cacheAgeMillis: number): WeatherFallback {
+    if (!hasCache) {
+      return WeatherFallback.TRY_SEVEN_TIMER;
+    }
+    if (cacheAgeMillis >= 0 && cacheAgeMillis <= WeatherLogic.TTL_MILLIS) {
+      return WeatherFallback.KEEP_CACHE;
+    }
+    return WeatherFallback.TRY_SEVEN_TIMER;
+  }
+
+  /** 这份缓存还值不值得显示（24 小时内都算「旧数据但可显示」）。 */
+  static isDisplayable(cacheAgeMillis: number): boolean {
+    return cacheAgeMillis >= 0 && cacheAgeMillis <= WeatherLogic.DISPLAY_MAX_AGE_MILLIS;
+  }
+
+  /**
+   * 这份缓存是不是「低精度」的：来自备用源 7Timer!、步长 3 小时。
+   *
+   * 低精度数据即使还没过期也要尽快升级回 Open-Meteo 的 1 小时网格 ——
+   * 同样是 6 格，1 小时源覆盖 6 小时、3 小时源覆盖 18 小时，粒度差 3 倍。
+   */
+  static isLowPrecision(source: string, stepHours: number): boolean {
+    return WeatherSource.of(source) === WeatherSource.SEVEN_TIMER
+      || stepHours > WeatherSource.OPEN_METEO_STEP_HOURS;
+  }
+
+  /** 低精度升级判定：低精度且距上次尝试已超过 10 分钟（含从没成功过的情况）。 */
+  static shouldUpgradePrecision(source: string, stepHours: number, sinceAttemptMillis: number): boolean {
+    if (!WeatherLogic.isLowPrecision(source, stepHours)) {
+      return false;
+    }
+    // 刚试过（无论成败）就先等着：10 分钟内不重复打网络。
+    return !(sinceAttemptMillis >= 0 && sinceAttemptMillis <= WeatherLogic.LOW_PRECISION_RETRY_MILLIS);
+  }
+
+  /**
+   * 该不该去取数：**任意一条满足即刷新**。
+   *
+   *   ① 位置移动超过 5 km（用户换了地点）；
+   *   ② 缓存过期（超过 30 分钟）且不在失败后的 5 分钟节流里（[shouldRefresh]）；
+   *   ③ 当前是低精度数据（7Timer! / 3 小时），即使没过期也尝试升级回 1 小时源，
+   *      但要满足 10 分钟节流（[shouldUpgradePrecision]）。
+   *
+   * 「应用回到前台 / 切换地点」时的立即触发不走这里：调用方直接 force，见
+   * services/WeatherService.ets 的 `refreshIfNeeded(place, force)`。
+   */
+  static needsFetch(
+    ageMillis: number,
+    movedKm: number,
+    sinceAttemptMillis: number,
+    source: string,
+    stepHours: number
+  ): boolean {
+    if (WeatherLogic.shouldRefresh(ageMillis, movedKm, sinceAttemptMillis)) {
+      return true;
+    }
+    return WeatherLogic.shouldUpgradePrecision(source, stepHours, sinceAttemptMillis);
+  }
+
+  /** 诊断用的「数据过期 N 分钟」；没有缓存（负值）返回空串。 */
+  static staleLabel(cacheAgeMillis: number): string {
+    if (cacheAgeMillis < 0) {
+      return '';
+    }
+    return `数据过期 ${Math.floor(cacheAgeMillis / 60000)} 分钟`;
   }
 
   static encodeHourly(points: HourPoint[]): string {

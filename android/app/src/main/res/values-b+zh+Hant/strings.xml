@@ -42,6 +42,11 @@
     <string name="chime_desc">進入關鍵時間時蜂鳴一聲（按真太陽時）</string>
     <string name="keep_screen_on_title">螢幕恆亮</string>
     <string name="keep_screen_on_desc">應用程式開啟期間不自動螢幕逾時（會更耗電）</string>
+    <string name="theme_title">主題</string>
+    <string name="theme_desc">「自動」依日出日落切換：白天亮色、夜晚暗色；「亮色 / 暗色」強制，首頁與桌面小工具一起跟隨。</string>
+    <string name="theme_auto">自動</string>
+    <string name="theme_light">亮色</string>
+    <string name="theme_dark">暗色</string>
     <string name="chime_background_hint">報時沒響？點此允許本應用後台執行</string>
     <string name="chime_exact_alarm_hint">報時可能晚幾分鐘，點此允許「鬧鐘和提醒」</string>
     <string name="section_about">關於計算</string>
@@ -146,6 +151,10 @@
     <string name="weather_hour">%1$d時</string>
     <string name="weather_now">現在</string>
     <string name="weather_attribution">天氣資料 © Open-Meteo.com（CC BY 4.0）</string>
+    <string name="weather_attribution_7timer">天氣資料 © 7Timer!</string>
+    <!-- 小工具底部小字用的短名（品牌名不翻譯，只切來源） -->
+    <string name="weather_source_openmeteo">Open-Meteo</string>
+    <string name="weather_source_7timer">7Timer!</string>
     <string name="section_diagnostics">診斷</string>
     <string name="diagnostics_desc">系統字型/密度設定與最近一次小工具建構的唯讀快照。桌面小工具顯示不正常時，把它整段傳給開發者。</string>
     <string name="diagnostics_open">查看診斷資訊</string>

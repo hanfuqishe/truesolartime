@@ -42,6 +42,11 @@
     <string name="chime_desc">Beep when a key time begins (true solar time)</string>
     <string name="chime_background_hint">Chimes not ringing? Allow this app to run in the background</string>
     <string name="keep_screen_on_title">Keep screen on</string>
+    <string name="theme_title">Theme</string>
+    <string name="theme_desc">Auto switches with sunrise and sunset; Light / Dark force the palette for the app and the home-screen widget.</string>
+    <string name="theme_auto">Auto</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
     <string name="keep_screen_on_desc">Don\'t let the screen sleep while the app is open (uses more battery)</string>
     <string name="chime_exact_alarm_hint">Chimes may be a few minutes late — tap to allow “Alarms &amp; reminders”</string>
     <string name="section_about">About the calculation</string>
@@ -146,6 +151,10 @@
     <string name="weather_hour">%1$d:00</string>
     <string name="weather_now">Now</string>
     <string name="weather_attribution">Weather data © Open-Meteo.com (CC BY 4.0)</string>
+    <string name="weather_attribution_7timer">Weather data © 7Timer!</string>
+    <!-- 小组件底部小字用的短名（品牌名不翻译，只切源） -->
+    <string name="weather_source_openmeteo">Open-Meteo</string>
+    <string name="weather_source_7timer">7Timer!</string>
     <string name="section_diagnostics">Diagnostics</string>
     <string name="diagnostics_desc">Read-only snapshot of system font/density settings and the last widget build. Send it to the developer when the home-screen widget looks wrong.</string>
     <string name="diagnostics_open">View diagnostics</string>

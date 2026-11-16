@@ -32,6 +32,8 @@ internal object DiagReport {
         add("===== ⑤ 最近一次刷新链路 =====")
         add(DiagStore.lastRefresh(context))
         add("")
+        addAll(weatherSection(context))
+        add("")
         add("===== 地点 =====")
         addAll(placeSection(context))
         add("")
@@ -72,6 +74,7 @@ internal object DiagReport {
             "ROM = ${Build.DISPLAY}",
             "ROM(incremental) = ${Build.VERSION.INCREMENTAL}",
             "语言/地区 = ${Locale.getDefault()}",
+            "主题模式 = ${AppSettings(context).themeMode.name.lowercase(Locale.ROOT)}（auto = 按日出日落）",
             "报告生成时间 = ${DiagStore.now()}",
         )
     }.getOrElse { listOf("===== ① 应用与系统 =====", "读取失败: ${DiagStore.describe(it)}") }
@@ -100,6 +103,35 @@ internal object DiagReport {
         )
     }.getOrElse { listOf("===== ③ 系统字体相关 =====", "读取失败: ${DiagStore.describe(it)}") }
 
+    // ---------------------------------------------------------------- ⑥ 天气数据源
+
+    /**
+     * 天气用哪个源、几小时一格、数据有多旧 —— 排查「天气不刷新 / 时间对不上」先看这三行。
+     *
+     * `weather_source` / `weather_step` / `weather_age_minutes` 三个键名与
+     * [DiagStore.recordWeather] 写入的完全一致，可以直接对 log 与用户截图。
+     */
+    private fun weatherSection(context: Context): List<String> = runCatching {
+        val place = AppSettings(context).place
+        val source = WeatherRepository.source(context)
+        val step = WeatherRepository.stepHours(context)
+        val age = WeatherRepository.ageMillis(context)
+        val stale = WeatherRepository.staleLabel(age)
+        val lowPrecision = WeatherRepository.isLowPrecision(source, step)
+        val points = WeatherRepository.hourly(context, place).points
+        buildList {
+            add("===== ⑥ 天气数据源 =====")
+            add("weather_source = ${source.id}")
+            add("weather_step = $step 小时")
+            add("weather_age_minutes = ${(age ?: 0L) / 60_000L}")
+            add("数据状态 = ${stale ?: WeatherRepository.ageNote(age)}")
+            add("低精度数据 = ${if (lowPrecision) "是（3 小时粒度，未过期也会尝试升级回主源，最多每 10 分钟一次）" else "否（主源 1 小时粒度）"}")
+            add("逐时点数 = ${points.size}")
+            add("最近一次取数：")
+            add(DiagStore.lastWeather(context))
+        }
+    }.getOrElse { listOf("===== ⑥ 天气数据源 =====", "读取失败: ${DiagStore.describe(it)}") }
+
     // ---------------------------------------------------------------- 地点
 
     private fun placeSection(context: Context): List<String> = runCatching {
@@ -115,6 +147,8 @@ internal object DiagReport {
             add("时区偏移 = ${TimeFormat.utcOffsetLabel(zoneOffset)}")
             add("区划缓存 = ${if (names != null) "有（${names.full}）" else "无"}")
             add("天气缓存 = ${if (weather != null) "有" else "无"}")
+            add("天气来源 = ${WeatherRepository.source(context).id}")
+            add("天气步长 = ${WeatherRepository.stepHours(context)} 小时")
         }
     }.getOrElse { listOf("读取失败: ${DiagStore.describe(it)}") }
 

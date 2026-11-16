@@ -134,6 +134,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val zoneOffsetSeconds by viewModel.zoneOffsetSeconds.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -159,6 +160,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val heroExtras = remember(place, now.epochSecond / 30, weatherRevision, zoneOffsetSeconds) {
         loadHeroExtras(context, place, now, zoneOffsetSeconds)
     }
+    // 天气来源（Open-Meteo / 7Timer!）只随缓存版本号变：底部署名跟着它切换，别每秒读一次偏好。
+    val weatherSource = remember(weatherRevision) { WeatherRepository.source(context) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -235,7 +238,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     }
 
     // 主题跟着太阳走：白天浅色，夜晚整体换深色（不再看系统的深色开关）。
-    TrueSolarTimeTheme(darkTheme = !snapshot.isDay) {
+    // 设置里选了「亮色/暗色」就忽略日出日落，强制用那一套；默认「自动」= 原来的行为。
+    val uiIsDay = !themeMode.isDark(sunIsUp = snapshot.isDay)
+    TrueSolarTimeTheme(darkTheme = !uiIsDay) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -284,6 +289,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                         coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                                         waitingForFix = waitingForFix,
                                         extras = heroExtras,
+                                        isDay = uiIsDay,
                                         modifier = Modifier.fillMaxHeight(),
                                     )
                                 }
@@ -308,6 +314,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                                 waitingForFix = waitingForFix,
                                 extras = heroExtras,
+                                isDay = uiIsDay,
                             )
                         }
                         Spacer(Modifier.height(14.dp))
@@ -331,8 +338,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
                     // 页脚与顶部标题不锁：它们不是「版式即内容」的卡片，
                     // 跟随系统字号更符合可读性预期（设置页同理）。
+                    // 天气来源随数据源切换（Open-Meteo CC BY 4.0 / 7Timer!），降级后不能还署主源的名。
                     Text(
-                        text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME),
+                        text = stringResource(R.string.version_label, BuildConfig.VERSION_NAME) +
+                            " · " + TimeText.weatherAttribution(context, weatherSource),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -351,6 +360,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 keyTimeChimeEnabled = keyTimeChimeEnabled,
                 keepScreenOn = keepScreenOn,
                 mapStyle = mapStyle,
+                themeMode = themeMode,
                 onDismiss = { showSettings = false },
                 onRequestGps = {
                     showSettings = false
@@ -362,6 +372,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onToggleKeyTimeChime = toggleKeyTimeChime,
                 onSelectMapStyle = viewModel::setMapStyle,
                 onToggleKeepScreenOn = viewModel::setKeepScreenOn,
+                onSelectTheme = viewModel::setThemeMode,
                     )
         }
     }
@@ -421,11 +432,12 @@ private fun HeroCard(
     coordinates: String,
     waitingForFix: Boolean,
     extras: HeroExtras,
+    /** 卡片该用白天的暖橙底还是夜里的深蓝底：由主题设置 + 太阳高度角共同决定（见 `ThemeMode`）。 */
+    isDay: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
-    val isDay = snapshot.isDay
     // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
     val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
     val accent = HeroPalette.accent(isDay)

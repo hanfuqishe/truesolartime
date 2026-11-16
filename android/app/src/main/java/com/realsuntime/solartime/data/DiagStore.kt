@@ -17,6 +17,7 @@ internal object DiagStore {
     private const val PREFS = "diagnostics"
     private const val KEY_BUILD = "last_widget_build"
     private const val KEY_REFRESH = "last_refresh"
+    private const val KEY_WEATHER = "last_weather"
 
     /** 单份快照的字符上限：异常 message 可能很长，兜一下。 */
     private const val MAX_CHARS = 6000
@@ -59,9 +60,21 @@ internal object DiagStore {
         write(context, KEY_REFRESH, lines)
     }
 
+    /**
+     * 最近一次天气取数：主源/备用源、步长、缓存年龄。
+     *
+     * 键名固定用 `weather_source` / `weather_step` / `weather_age_minutes`：
+     * 用户报「天气不对/不刷新」时，先看这三个值就知道当前是哪个源、几小时一格、数据有多旧。
+     */
+    fun recordWeather(context: Context, lines: List<Pair<String, String>>) {
+        write(context, KEY_WEATHER, lines)
+    }
+
     fun lastWidgetBuild(context: Context): String = read(context, KEY_BUILD)
 
     fun lastRefresh(context: Context): String = read(context, KEY_REFRESH)
+
+    fun lastWeather(context: Context): String = read(context, KEY_WEATHER)
 
     private fun write(context: Context, key: String, lines: List<Pair<String, String>>) {
         runCatching {
