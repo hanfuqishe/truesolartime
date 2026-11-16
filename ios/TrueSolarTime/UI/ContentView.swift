@@ -2,11 +2,13 @@ import SwiftUI
 
 struct ContentView: View {
 
-    /// 页面自身的调色板必须**直接按太阳高度角算**，不能读 `@Environment(\.palette)`：
+    /// 页面自身的调色板必须**直接按主题设置 + 太阳高度角算**，不能读 `@Environment(\.palette)`：
     /// 环境值是往下传的，`body` 里 `.environment(\.isDay, …)` 只影响子视图，
     /// 本视图自己读到的仍是外层默认值（白天），导致夜里只有卡片变暗、页面背景还是白的。
+    ///
+    /// 「自动」看太阳高度角（`SolarSnapshot.isDay`）；「亮色 / 暗色」强制忽略日出日落。
     private var palette: ThemePalette {
-        ThemePalette.of(isDay: model.snapshot.isDay)
+        ThemePalette.of(isDay: model.uiIsDay)
     }
 
     @StateObject private var model = AppModel()
@@ -26,8 +28,12 @@ struct ContentView: View {
                     Group {
                         HeroCard(
                             snapshot: model.snapshot,
+                            // 大卡片的渐变按**主题设置**决定（自动 = 日出日落，亮色 / 暗色 = 强制），
+                            // 与页面背景同一口径；卡片里太阳弧仍按真实高度角画。
+                            isDay: model.uiIsDay,
                             districtName: cityText,
                             weather: model.weather,
+                            isWeatherLoading: model.weatherLoading,
                             keyBands: model.keyTime?.bands ?? [],
                             // 关键时段的色段**不看定位**：它是「真太阳时 0–24 时」轴上的固定区间，
                             // 与经纬度无关。之前这里叠了 `waitingForFix` 判定，定位没回来（室内很常见）
@@ -35,7 +41,7 @@ struct ContentView: View {
                             bandColor: axisBandColor,
                             // 字色/圆点仍然等定位：真太阳时本身依赖经度，等真位置回来再染色才对。
                             inkColor: (inKeyTime && !model.waitingForFix)
-                                ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.snapshot.isDay)
+                                ? HeroPalette.ink(model.keyTime?.temperature, isDay: model.uiIsDay)
                                 : nil,
                             inKeyTime: inKeyTime,
                             coordinates: TimeFormat.coordinates(
@@ -54,15 +60,23 @@ struct ContentView: View {
 
                     // 版本号同时是「隐藏的诊断入口」：连续点 7 次（间隔 ≤2 秒）才在设置页
                     // 露出「诊断」区块。不显眼、不会误触，也不写偏好设置（重启回到隐藏）。
-                    Text(versionLabel)
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.onSurfaceVariant)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            model.registerVersionTap()
-                        }
+                    //
+                    // 第二行是**数据来源署名**：主源 Open-Meteo 是 CC BY 4.0，必须署名；
+                    // 降级到 7Timer! 之后不能再写 Open-Meteo，所以文案跟着实际源切换。
+                    VStack(spacing: 2) {
+                        Text(versionLabel)
+                        Text(model.weatherAttribution)
+                            .font(.system(size: 11))
+                            .multilineTextAlignment(.center)
+                    }
+                    .foregroundStyle(palette.onSurfaceVariant)
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        model.registerVersionTap()
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -75,12 +89,12 @@ struct ContentView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showSettings) {
                 SettingsView(model: model)
-                    .environment(\.isDay, model.snapshot.isDay)
+                    .environment(\.isDay, model.uiIsDay)
             }
             // 原来的「提示 / 好」弹窗已删除：这些消息都是纯告知，改成底部 Toast，
             // 1.8 秒自动消失、不拦点击（见 `Toast.swift`）。
         }
-        .environment(\.isDay, model.snapshot.isDay)
+        .environment(\.isDay, model.uiIsDay)
         .toast(message: $model.message)
         .task {
             model.requestLocationPermissionIfNeeded()
@@ -115,7 +129,7 @@ struct ContentView: View {
     /// 设置页「诊断 → 关键时间」会写清当前是「温度未标注」还是具体温度。
     private var axisBandColor: Color? {
         guard let schedule = model.keyTime else { return nil }
-        let isDay = model.snapshot.isDay
+        let isDay = model.uiIsDay
         return HeroPalette.band(schedule.temperature, isDay: isDay) ?? HeroPalette.accent(isDay: isDay)
     }
 

@@ -934,6 +934,545 @@ expect(
         && L10n.t("settings.diagnosticsUnlocked", language: .traditional) == "已開啟診斷"
         && L10n.t("settings.diagnosticsUnlocked", language: .english) == "Diagnostics enabled"
 )
+
+// MARK: - 逐时天气：步长跟数据源走（槽位固定 6 个）
+
+print("== 逐时步长：6 个槽位，首格永远是「现在」==")
+
+/// 东八区的偏移。测试里所有「本地小时」都由它换算，**不依赖跑自检的机器所在时区**：
+/// 接口给的是 UTC，界面用本地时区，换算这一步必须显式参与断言。
+let zone8 = 8 * 3600
+
+func utcEpoch(hour: Int, minute: Int = 0, day: Int = 16, month: Int = 11, year: Int = 2026) -> Int {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    var components = DateComponents()
+    components.year = year
+    components.month = month
+    components.day = day
+    components.hour = hour
+    components.minute = minute
+    guard let date = calendar.date(from: components) else {
+        fatalError("无法构造 UTC 时刻 \(year)-\(month)-\(day) \(hour):\(minute)")
+    }
+    return Int(date.timeIntervalSince1970)
+}
+
+/// UTC 秒 → 本地（默认 +08:00）小时。用纯整数运算，避免受系统时区影响。
+func localHour(_ epochSeconds: Int, offset: Int = 8 * 3600) -> Int {
+    WeatherParsing.floorMod(epochSeconds + offset, 86_400) / 3600
+}
+
+/// 该时刻在本地时区属于第几天（跨午夜断言用）。
+func localDayIndex(_ epochSeconds: Int, offset: Int = 8 * 3600) -> Int {
+    Int((Double(epochSeconds + offset) / 86_400.0).rounded(.down))
+}
+
+/// 6 个槽位的**实际标签文本**：首格「现在」，其余按该采样点的本地小时数写。
+func slotLabels(
+    _ slots: [WeatherSlot],
+    language: AppLanguage.Language,
+    offset: Int = 8 * 3600
+) -> [String] {
+    slots.map { slot in
+        if slot.isNow {
+            return L10n.t("weather.now", language: language)
+        }
+        return L10n.f("weather.hour", language: language, [localHour(slot.epochSeconds, offset: offset)])
+    }
+}
+
+func hourlyPoints(fromEpoch: Int, count: Int, stepHours: Int) -> [WeatherHour] {
+    (0..<count).map {
+        WeatherHour(epochSeconds: fromEpoch + $0 * stepHours * 3600, temperatureC: 10 + $0, code: 1)
+    }
+}
+
+// ① 主源（1 小时粒度）：本地 21:55 的 6 格覆盖 6 小时。
+let oneHourNow = utcEpoch(hour: 13, minute: 55) // 本地 21:55
+let oneHourPoints = hourlyPoints(fromEpoch: utcEpoch(hour: 12), count: 12, stepHours: 1) // 本地 20:00 起
+let oneHourSlots = WeatherParsing.visibleSlots(
+    points: oneHourPoints,
+    nowEpochSeconds: oneHourNow,
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSource.openMeteo.stepHours
+)
+expect("1 小时源仍是 6 个槽位", oneHourSlots.count == 6, "actual=\(oneHourSlots.count)")
+expect(
+    "1 小时源标签：现在 / 22时 / 23时 / 0时 / 1时 / 2时",
+    slotLabels(oneHourSlots, language: .simplified) == ["现在", "22时", "23时", "0时", "1时", "2时"],
+    "actual=\(slotLabels(oneHourSlots, language: .simplified))"
+)
+expect("1 小时源只有首格是「现在」", oneHourSlots.map(\.isNow) == [true, false, false, false, false, false])
+expect("1 小时源相邻格相差 1 小时", oneHourSlots[1].epochSeconds - oneHourSlots[0].epochSeconds == 3600)
+expect("1 小时源首格 = 当前时刻之前最近的采样点（本地 21:00）", localHour(oneHourSlots[0].epochSeconds) == 21)
+
+// ② 备用源（3 小时粒度）：同样 6 格，但覆盖 18 小时。
+let threeHourPoints = hourlyPoints(fromEpoch: utcEpoch(hour: 12), count: 8, stepHours: 3) // 本地 20:00 起
+let threeHourSlots = WeatherParsing.visibleSlots(
+    points: threeHourPoints,
+    nowEpochSeconds: oneHourNow,
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSource.sevenTimer.stepHours
+)
+expect("3 小时源仍是 6 个槽位", threeHourSlots.count == 6, "actual=\(threeHourSlots.count)")
+expect(
+    "3 小时源标签：现在 / 23时 / 2时 / 5时 / 8时 / 11时",
+    slotLabels(threeHourSlots, language: .simplified) == ["现在", "23时", "2时", "5时", "8时", "11时"],
+    "actual=\(slotLabels(threeHourSlots, language: .simplified))"
+)
+expect("3 小时源只有首格是「现在」", threeHourSlots.map(\.isNow) == [true, false, false, false, false, false])
+expect("3 小时源相邻格相差 3 小时", threeHourSlots[1].epochSeconds - threeHourSlots[0].epochSeconds == 10_800)
+expect(
+    "3 小时源第 3 格跨过本地午夜（次日 2 时）",
+    localHour(threeHourSlots[2].epochSeconds) == 2
+        && localDayIndex(threeHourSlots[2].epochSeconds) == localDayIndex(oneHourNow) + 1,
+    "hour=\(localHour(threeHourSlots[2].epochSeconds)) day=\(localDayIndex(threeHourSlots[2].epochSeconds))"
+)
+// 英文与繁體的实际文本也一并钉住（「23时 / 23時 / 23:00」）。
+expect(
+    "3 小时源英文标签",
+    slotLabels(threeHourSlots, language: .english) == ["Now", "23:00", "2:00", "5:00", "8:00", "11:00"],
+    "actual=\(slotLabels(threeHourSlots, language: .english))"
+)
+expect(
+    "3 小时源繁體标签",
+    slotLabels(threeHourSlots, language: .traditional) == ["現在", "23時", "2時", "5時", "8時", "11時"],
+    "actual=\(slotLabels(threeHourSlots, language: .traditional))"
+)
+// 槽位数固定：步长只改变格子之间的距离，不改变格子数。
+expect(
+    "步长只影响间距、不影响槽位数",
+    oneHourSlots.count == threeHourSlots.count
+        && (oneHourSlots[5].epochSeconds - oneHourSlots[0].epochSeconds) == 5 * 3600
+        && (threeHourSlots[5].epochSeconds - threeHourSlots[0].epochSeconds) == 15 * 3600
+)
+
+// 一个采样点都没有时也要排满 6 格（内容由界面填占位符），且按数据源的网格对齐。
+let emptyThreeHour = WeatherParsing.visibleSlots(
+    points: [],
+    nowEpochSeconds: oneHourNow,
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: 3
+)
+expect(
+    "无数据时 3 小时网格对齐到 UTC 0/3/6…（本地 20/23/2/5/8/11 时）",
+    slotLabels(emptyThreeHour, language: .simplified) == ["现在", "23时", "2时", "5时", "8时", "11时"],
+    "actual=\(slotLabels(emptyThreeHour, language: .simplified))"
+)
+let emptyOneHour = WeatherParsing.visibleSlots(
+    points: [],
+    nowEpochSeconds: oneHourNow,
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: 1
+)
+expect(
+    "无数据时 1 小时网格按本地整点对齐",
+    slotLabels(emptyOneHour, language: .simplified) == ["现在", "22时", "23时", "0时", "1时", "2时"],
+    "actual=\(slotLabels(emptyOneHour, language: .simplified))"
+)
+// 所有采样点都在未来：首格退回第一个点（宁可显示最近的预报，也不要空格）。
+let futureSlots = WeatherParsing.visibleSlots(
+    points: [
+        WeatherHour(epochSeconds: utcEpoch(hour: 3), temperatureC: 5, code: 1),
+        WeatherHour(epochSeconds: utcEpoch(hour: 6), temperatureC: 6, code: 1)
+    ],
+    nowEpochSeconds: utcEpoch(hour: 0),
+    zoneOffsetSeconds: 0,
+    count: 3,
+    stepHours: 3
+)
+expect(
+    "全在未来时首格取第一个点",
+    futureSlots[0].epochSeconds == utcEpoch(hour: 3) && futureSlots[2].epochSeconds == utcEpoch(hour: 9),
+    "actual=\(futureSlots.map(\.epochSeconds))"
+)
+
+print("== 3 小时数据对齐到本地 0/3/6/… 边界（UTC→本地换算）==")
+expect(
+    "UTC 04:00 向下对齐到 03:00",
+    WeatherParsing.alignToStep(utcEpoch(hour: 4), stepHours: 3) == utcEpoch(hour: 3)
+)
+expect(
+    "已经对齐的不动（03:00）",
+    WeatherParsing.alignToStep(utcEpoch(hour: 3), stepHours: 3) == utcEpoch(hour: 3)
+)
+expect(
+    "UTC 23:59 向下对齐到 21:00",
+    WeatherParsing.alignToStep(utcEpoch(hour: 23, minute: 59), stepHours: 3) == utcEpoch(hour: 21)
+)
+expect(
+    "1 小时粒度只对齐到整点",
+    WeatherParsing.alignToStep(utcEpoch(hour: 4, minute: 59), stepHours: 1) == utcEpoch(hour: 4)
+)
+expect(
+    "对齐后的 UTC 21:00 在 +08:00 是本地 5 时（跨午夜换算）",
+    localHour(WeatherParsing.alignToStep(utcEpoch(hour: 23, minute: 59), stepHours: 3)) == 5,
+    "actual=\(localHour(WeatherParsing.alignToStep(utcEpoch(hour: 23, minute: 59), stepHours: 3)))"
+)
+
+print("== 7Timer! 备用源解析（真实 payload 片段：init + timepoint）==")
+// 实测 2026-11 的返回：**没有 `time` 字段**，只有 `init`（UTC 起报时刻）+ `timepoint`（相对小时数）。
+let sevenTimerJSON = """
+{"product":"civil","init":"2026111606","dataseries":[
+  {"timepoint":3,"temp2m":16,"weather":"cloudynight"},
+  {"timepoint":6,"temp2m":15,"weather":"cloudynight"},
+  {"timepoint":9,"temp2m":14,"weather":"cloudynight"},
+  {"timepoint":12,"temp2m":14,"weather":"cloudynight"},
+  {"timepoint":15,"temp2m":13,"weather":"cloudynight"},
+  {"timepoint":18,"temp2m":13,"weather":"cloudyday"},
+  {"timepoint":21,"temp2m":15,"weather":"cloudyday"}
+]}
+"""
+let sevenTimerPoints = WeatherParsing.parseSevenTimer(sevenTimerJSON)
+expect("解析出 7 个采样点", sevenTimerPoints.count == 7, "actual=\(sevenTimerPoints.count)")
+expect(
+    "init 06:00Z + timepoint 3h = 09:00Z",
+    sevenTimerPoints.first?.epochSeconds == utcEpoch(hour: 9),
+    "actual=\(String(describing: sevenTimerPoints.first?.epochSeconds))"
+)
+expect(
+    "init 06:00Z + timepoint 6h = 12:00Z",
+    sevenTimerPoints.count > 1 && sevenTimerPoints[1].epochSeconds == utcEpoch(hour: 12)
+)
+expect(
+    "09:00Z 换成本地是 17 时、12:00Z 是 20 时",
+    localHour(sevenTimerPoints[0].epochSeconds) == 17 && localHour(sevenTimerPoints[1].epochSeconds) == 20,
+    "actual=\(localHour(sevenTimerPoints[0].epochSeconds))/\(localHour(sevenTimerPoints[1].epochSeconds))"
+)
+expect("温度取整", sevenTimerPoints[0].temperatureC == 16, "actual=\(sevenTimerPoints[0].temperatureC)")
+expect(
+    "cloudynight / cloudyday 都映射到「阴」（WMO 3）",
+    sevenTimerPoints.allSatisfy { $0.code == 3 },
+    "actual=\(sevenTimerPoints.map(\.code))"
+)
+
+// 真实 payload → 6 个槽位：现在 / 23时 / 2时 / 5时 / 8时 / 11时
+let sevenTimerNow = utcEpoch(hour: 13, minute: 26) // 本地 21:26
+let sevenTimerSlots = WeatherParsing.visibleSlots(
+    points: sevenTimerPoints,
+    nowEpochSeconds: sevenTimerNow,
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSource.sevenTimer.stepHours
+)
+expect(
+    "真实 7Timer 返回 → 6 格标签：现在 / 23时 / 2时 / 5时 / 8时 / 11时",
+    slotLabels(sevenTimerSlots, language: .simplified) == ["现在", "23时", "2时", "5时", "8时", "11时"],
+    "actual=\(slotLabels(sevenTimerSlots, language: .simplified))"
+)
+// 「现在」那一格取的是 UTC 12:00（本地 20 时）那条 15°，不是第一个点（09:00Z 的 16°）：
+// 两者差 3 小时，就是 3 小时源的代价。
+expect(
+    "实时读数取「不晚于此刻的最后一个点」（15°，不是 16°）",
+    WeatherParsing.snapshotAt(points: sevenTimerPoints, nowEpochSeconds: sevenTimerNow)?.temperatureC == 15,
+    "actual=\(String(describing: WeatherParsing.snapshotAt(points: sevenTimerPoints, nowEpochSeconds: sevenTimerNow)?.temperatureC))"
+)
+expect(
+    "全都在未来时实时读数退回第一个点",
+    WeatherParsing.snapshotAt(points: sevenTimerPoints, nowEpochSeconds: utcEpoch(hour: 0))?.temperatureC == 16
+)
+expect("空序列没有实时读数", WeatherParsing.snapshotAt(points: [], nowEpochSeconds: sevenTimerNow) == nil)
+
+// 旧文档里的 `time` 字段（yyyyMMddHH，UTC）也认，并向下对齐到 3 小时网格。
+let legacySevenTimerJSON = """
+{"dataseries":[{"time":"2025111604","temp2m":9,"weather":"rain"}]}
+"""
+let legacySevenTimerPoints = WeatherParsing.parseSevenTimer(legacySevenTimerJSON)
+expect(
+    "旧 time 字段：04:00Z 向下对齐到 03:00Z",
+    legacySevenTimerPoints.count == 1
+        && legacySevenTimerPoints[0].epochSeconds == utcEpoch(hour: 3, day: 16, month: 11, year: 2025),
+    "actual=\(String(describing: legacySevenTimerPoints.first?.epochSeconds))"
+)
+expect("rain → 中雨（WMO 63）", legacySevenTimerPoints.first?.code == 63)
+
+// 残项与坏 payload
+let messySevenTimerJSON = """
+{"init":"2026111606","dataseries":[
+  {"timepoint":6,"temp2m":15,"weather":"clearday"},
+  {"weather":"rain"},
+  {"timepoint":3,"temp2m":16,"weather":"cloudyday"}
+]}
+"""
+let messySevenTimerPoints = WeatherParsing.parseSevenTimer(messySevenTimerJSON)
+expect("缺 temp2m 的残项被跳过", messySevenTimerPoints.count == 2, "actual=\(messySevenTimerPoints.count)")
+expect(
+    "解析结果按时刻升序",
+    messySevenTimerPoints.first?.epochSeconds == utcEpoch(hour: 9)
+        && messySevenTimerPoints.last?.epochSeconds == utcEpoch(hour: 12)
+)
+expect("非法 JSON → 空", WeatherParsing.parseSevenTimer("not json").isEmpty)
+expect("没有 dataseries → 空", WeatherParsing.parseSevenTimer("{\"product\":\"civil\"}").isEmpty)
+expect("dataseries 为空 → 空", WeatherParsing.parseSevenTimer("{\"dataseries\":[]}").isEmpty)
+expect(
+    "既没有 init 也没有 time → 算不出时刻，整条丢掉",
+    WeatherParsing.parseSevenTimer("{\"dataseries\":[{\"timepoint\":3,\"temp2m\":1}]}").isEmpty
+)
+expect(
+    "时刻串必须是 10 位数字",
+    WeatherParsing.sevenTimerStampEpoch("2026111606") == utcEpoch(hour: 6)
+        && WeatherParsing.sevenTimerStampEpoch("2026-11-16") == nil
+        && WeatherParsing.sevenTimerStampEpoch("") == nil
+        && WeatherParsing.sevenTimerStampEpoch(nil) == nil
+)
+expect(
+    "备用源地址是 7Timer! 官方 https 端点（lon 在前、lat 在后）",
+    WeatherParsing.sevenTimerURL(latitude: 31.2304, longitude: 121.4737)?.absoluteString
+        == "https://www.7timer.info/bin/api.pl?lon=121.4737&lat=31.2304&product=civil&output=json",
+    "actual=\(WeatherParsing.sevenTimerURL(latitude: 31.2304, longitude: 121.4737)?.absoluteString ?? "nil")"
+)
+
+print("== 7Timer! 天气词 → WMO 天气码 ==")
+let sevenTimerWordCases: [(String, Int)] = [
+    ("clearday", 0), ("clearnight", 0), ("sunny", 0),
+    ("pcloudyday", 2), ("pcloudy", 2),
+    ("mcloudynight", 3), ("cloudyday", 3), ("overcast", 3),
+    ("humidday", 45), ("fog", 45), ("foggynight", 45),
+    ("lightrainday", 80), ("ishowernight", 80), ("oshower", 80), ("showers", 80), ("drizzle", 80),
+    ("rain", 63), ("heavyrain", 65),
+    ("lightsnowday", 71), ("snownight", 73), ("snowrain", 73), ("sleet", 73),
+    ("tsday", 95), ("thunder", 95), ("thunderstorm", 95),
+    ("sandstorm", 2), ("PCLOUDYDAY", 2), ("", 2)
+]
+for (word, expected) in sevenTimerWordCases {
+    expect(
+        "「\(word)」→ WMO \(expected)",
+        WeatherParsing.wmoCodeOfSevenTimer(word) == expected,
+        "actual=\(WeatherParsing.wmoCodeOfSevenTimer(word))"
+    )
+}
+expect("nil → 多云（WMO 2）", WeatherParsing.wmoCodeOfSevenTimer(nil) == 2)
+// 映射出来的码必须能被现有的 WMO 分类器认识（共用同一套文案与图标）。
+expect(
+    "映射结果能被现有分类器识别",
+    WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("clearday")) == .clear
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("pcloudy")) == .partlyCloudy
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("mcloudy")) == .overcast
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("fog")) == .fog
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("lightrain")) == .showers
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("rain")) == .rain
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("heavyrain")) == .heavyRain
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("lightsnow")) == .snow
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("ts")) == .thunder
+        && WeatherCondition.of(code: WeatherParsing.wmoCodeOfSevenTimer("sandstorm")) == .partlyCloudy
+)
+
+print("== 降级判定（主源失败之后怎么办）==")
+expect(
+    "没有缓存 → 去问备用源",
+    WeatherParsing.fallbackFor(hasCache: false, cacheAgeSeconds: 0) == .trySevenTimer
+)
+expect(
+    "缓存 5 分钟 → 保持现状不清空",
+    WeatherParsing.fallbackFor(hasCache: true, cacheAgeSeconds: 5 * 60) == .keepCache
+)
+expect(
+    "缓存刚好 30 分钟 → 仍保留",
+    WeatherParsing.fallbackFor(hasCache: true, cacheAgeSeconds: 30 * 60) == .keepCache
+)
+expect(
+    "缓存 31 分钟 → 去问备用源",
+    WeatherParsing.fallbackFor(hasCache: true, cacheAgeSeconds: 31 * 60) == .trySevenTimer
+)
+expect(
+    "时间戳异常（负数）→ 去问备用源",
+    WeatherParsing.fallbackFor(hasCache: true, cacheAgeSeconds: -1) == .trySevenTimer
+)
+
+print("== 旧数据保留（24 小时硬上限）+ 过期标注 ==")
+expect("0 秒的缓存可显示", WeatherParsing.isDisplayable(ageSeconds: 0))
+expect("23 小时的旧数据仍可显示", WeatherParsing.isDisplayable(ageSeconds: 23 * 3600))
+expect("刚好 24 小时仍可显示", WeatherParsing.isDisplayable(ageSeconds: 24 * 3600))
+expect("超过 24 小时当没有数据", !WeatherParsing.isDisplayable(ageSeconds: 24 * 3600 + 1))
+expect("负年龄（时钟回拨）不显示", !WeatherParsing.isDisplayable(ageSeconds: -1))
+expect(
+    "过期分钟数：30 秒 → 0 分钟",
+    WeatherParsing.staleMinutes(ageSeconds: 30) == 0,
+    "actual=\(String(describing: WeatherParsing.staleMinutes(ageSeconds: 30)))"
+)
+expect(
+    "过期分钟数：45 分钟 → 45",
+    WeatherParsing.staleMinutes(ageSeconds: 45 * 60) == 45
+)
+expect(
+    "过期分钟数：25 小时 → 1500",
+    WeatherParsing.staleMinutes(ageSeconds: 25 * 3600) == 1500
+)
+expect("没有缓存时没有过期说明", WeatherParsing.staleMinutes(ageSeconds: nil) == nil)
+expect("时间戳异常时没有过期说明", WeatherParsing.staleMinutes(ageSeconds: -1) == nil)
+expect(
+    "「数据过期 N 分钟」跟着当前语言",
+    WeatherParsing.staleLabel(ageSeconds: 45 * 60)
+        == L10n.f("weather.stale", language: L10n.language, [45]),
+    "actual=\(String(describing: WeatherParsing.staleLabel(ageSeconds: 45 * 60)))"
+)
+expect(
+    "过期文案实际文本（简 / 繁 / 英）",
+    L10n.f("weather.stale", language: .simplified, [45]) == "数据过期 45 分钟"
+        && L10n.f("weather.stale", language: .traditional, [45]) == "資料過期 45 分鐘"
+        && L10n.f("weather.stale", language: .english, [45]) == "Stale by 45 min"
+)
+expect("没有缓存时过期文案为 nil", WeatherParsing.staleLabel(ageSeconds: nil) == nil)
+
+print("== 天气源与步长（缓存里的一等公民）==")
+expect("open-meteo → 主源", WeatherSource.of(id: "open-meteo") == .openMeteo)
+expect("7timer → 备用源", WeatherSource.of(id: "7timer") == .sevenTimer)
+expect("旧缓存没有 source → 主源", WeatherSource.of(id: nil) == .openMeteo)
+expect("空串 → 主源", WeatherSource.of(id: "") == .openMeteo)
+expect("认不出来的值 → 主源", WeatherSource.of(id: "noaa") == .openMeteo)
+expect("大小写不敏感", WeatherSource.of(id: "7TIMER") == .sevenTimer)
+expect("主源步长 1 小时", WeatherSource.openMeteo.stepHours == 1 && !WeatherSource.openMeteo.isLowPrecision)
+expect("备用源步长 3 小时", WeatherSource.sevenTimer.stepHours == 3 && WeatherSource.sevenTimer.isLowPrecision)
+expect(
+    "快照默认吃来源的步长",
+    WeatherSnapshot(temperatureC: 9, code: 2, hourly: []).stepHours == 1
+        && WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer).stepHours == 3
+)
+expect(
+    "快照的步长下限是 1（脏值不会把槽位算成 0）",
+    WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 0).stepHours == 1
+)
+
+print("== 刷新触发条件（过期 / 低精度，两条互不干扰）==")
+expect(
+    "低精度且未过期 → 也要刷（尽快升级回 1 小时数据）",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: nil)
+)
+expect(
+    "低精度：10 分钟内刚试过 → 先不刷",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 5 * 60)
+)
+expect(
+    "低精度：刚试过 0 秒 → 不刷",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 0)
+)
+expect(
+    "低精度：刚好 10 分钟 → 可以再试",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 600)
+)
+expect(
+    "低精度：11 分钟前试过 → 再试",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 11 * 60)
+)
+expect(
+    "升级成功后（高精度 + 未过期）→ 不再触发",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: nil)
+)
+expect(
+    "高精度 + 很久没试过 → 不刷（不因为节流窗口过期就乱刷）",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: 60 * 60)
+)
+expect(
+    "过期时低精度节流不挡（两条互不干扰）",
+    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: true, lastLowPrecisionAttempt: 1)
+)
+expect(
+    "过期 + 高精度照样刷",
+    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: false, lastLowPrecisionAttempt: 60)
+)
+expect(
+    "时间戳异常（负数）不会被永久节流",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: -1)
+)
+expect("低精度节流窗口是 10 分钟", WeatherParsing.lowPrecisionRetrySeconds == 600)
+
+// 缓存必须属于当前地点：> 5 km 就当没有缓存（新地点显示占位符，绝不用旧城市的数据顶上）。
+expect(
+    "同一坐标的缓存属于该地点",
+    DistrictNaming.distanceKm(31.2304, 121.4737, 31.2304, 121.4737) <= DistrictNaming.moveThresholdKm
+)
+expect(
+    "上海缓存不属于北京（A 城市的天气不会显示在 B 城市下）",
+    DistrictNaming.distanceKm(31.2304, 121.4737, 39.9042, 116.4074) > DistrictNaming.moveThresholdKm
+)
+expect(
+    "两公里内的移动仍算同一地点",
+    DistrictNaming.distanceKm(31.2304, 121.4737, 31.2484, 121.4737) <= DistrictNaming.moveThresholdKm
+)
+
+print("== 主题三态 × 昼夜两种输入 ==")
+// 表格化：三态 × 昼夜，六种组合的预期都在这里。
+let themeTable: [(ThemeMode, Bool, Bool)] = [
+    (.auto, true, false), // 自动 + 白天 → 亮色
+    (.auto, false, true), // 自动 + 夜晚 → 暗色
+    (.light, true, false), // 亮色 + 白天 → 亮色
+    (.light, false, false), // 亮色 + 夜晚 → 强制亮色
+    (.dark, true, true), // 暗色 + 白天 → 强制暗色
+    (.dark, false, true), // 暗色 + 夜晚 → 暗色
+]
+for (mode, sunIsUp, expectedDark) in themeTable {
+    expect(
+        "\(mode.rawValue) × 太阳\(sunIsUp ? "升" : "落") → \(expectedDark ? "暗色" : "亮色")",
+        mode.isDark(sunIsUp: sunIsUp) == expectedDark,
+        "actual=\(mode.isDark(sunIsUp: sunIsUp))"
+    )
+}
+expect(
+    "配色用的 isDayPalette 是 isDark 的反面",
+    ThemeMode.allCases.allSatisfy { mode in
+        [true, false].allSatisfy { mode.isDayPalette(sunIsUp: $0) == !mode.isDark(sunIsUp: $0) }
+    }
+)
+expect("默认是自动", ThemeMode.fromStorage(nil) == .auto)
+expect("没存过（空串）→ 自动", ThemeMode.fromStorage("") == .auto)
+expect("认不出来的值 → 自动", ThemeMode.fromStorage("weird") == .auto)
+expect("存储往返：light", ThemeMode.fromStorage(ThemeMode.light.rawValue) == .light)
+expect("存储大小写不敏感", ThemeMode.fromStorage("Dark") == .dark)
+expect(
+    "存储值就是 auto / light / dark",
+    ThemeMode.auto.rawValue == "auto" && ThemeMode.light.rawValue == "light" && ThemeMode.dark.rawValue == "dark"
+)
+expect(
+    "设置页三选文案（简 / 繁 / 英）",
+    L10n.t("settings.themeAuto", language: .simplified) == "自动"
+        && L10n.t("settings.themeLight", language: .simplified) == "亮色"
+        && L10n.t("settings.themeDark", language: .simplified) == "暗色"
+        && L10n.t("settings.themeAuto", language: .traditional) == "自動"
+        && L10n.t("settings.themeLight", language: .traditional) == "亮色"
+        && L10n.t("settings.themeDark", language: .traditional) == "暗色"
+        && L10n.t("settings.themeAuto", language: .english) == "Auto"
+        && L10n.t("settings.themeLight", language: .english) == "Light"
+        && L10n.t("settings.themeDark", language: .english) == "Dark"
+)
+
+print("== 数据来源署名（随实际源切换）==")
+expect(
+    "主源署名：Open-Meteo CC BY 4.0",
+    L("weather.attribution").contains("Open-Meteo"),
+    "actual=\(L("weather.attribution"))"
+)
+expect(
+    "降级后署名换成 7Timer!（不能再写 Open-Meteo）",
+    L("weather.attribution7Timer").contains("7Timer!")
+        && !L("weather.attribution7Timer").contains("Open-Meteo"),
+    "actual=\(L("weather.attribution7Timer"))"
+)
+expect(
+    "署名三语齐全",
+    L10n.t("weather.attribution", language: .simplified) == "天气数据 © Open-Meteo.com（CC BY 4.0）"
+        && L10n.t("weather.attribution", language: .traditional) == "天氣資料 © Open-Meteo.com（CC BY 4.0）"
+        && L10n.t("weather.attribution", language: .english) == "Weather data © Open-Meteo.com (CC BY 4.0)"
+        && L10n.t("weather.attribution7Timer", language: .simplified) == "天气数据 © 7Timer!"
+        && L10n.t("weather.attribution7Timer", language: .traditional) == "天氣資料 © 7Timer!"
+        && L10n.t("weather.attribution7Timer", language: .english) == "Weather data © 7Timer!"
+)
+expect(
+    "品牌名三语同形",
+    L10n.t("weather.sourceOpenMeteo", language: .simplified) == "Open-Meteo"
+        && L10n.t("weather.source7Timer", language: .english) == "7Timer!"
+)
+expect(
+    "步长文案三语（%d）",
+    L10n.f("weather.stepHours", language: .simplified, [1]) == "1 小时一格"
+        && L10n.f("weather.stepHours", language: .traditional, [3]) == "3 小時一格"
+        && L10n.f("weather.stepHours", language: .english, [3]) == "3 h per step"
+)
+
 print("")
 if failures == 0 {
     print("全部 \(checks) 项检查通过")

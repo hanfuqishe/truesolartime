@@ -50,10 +50,18 @@
 "settings.sectionScreen" = "屏幕";
 "settings.keepScreenOn" = "屏幕常亮";
 "settings.keepScreenOnDesc" = "应用打开期间不自动熄屏（会更耗电）";
+"settings.themeTitle" = "主题";
+"settings.themeDesc" = "「自动」按日出日落切换：白天亮色、夜晚暗色；「亮色 / 暗色」强制，首页与大卡片配色一起跟随。";
+"settings.themeAuto" = "自动";
+"settings.themeLight" = "亮色";
+"settings.themeDark" = "暗色";
 "settings.sectionDiagnostics" = "诊断";
 "settings.diagWeather" = "天气";
 "settings.diagDistrict" = "区划名";
 "settings.diagKeyTime" = "关键时间";
+"settings.diagSource" = "天气源";
+"settings.diagAge" = "数据";
+"settings.diagLastFailure" = "最近失败";
 "settings.syncKeyTime" = "立即同步关键时间";
 "settings.diagnosticsUnlocked" = "已开启诊断";
 "settings.sectionAbout" = "关于计算";
@@ -89,6 +97,13 @@
 "weather.thunder" = "雷雨";
 "weather.now" = "现在";
 "weather.hour" = "%d时";
+"weather.sourceOpenMeteo" = "Open-Meteo";
+"weather.source7Timer" = "7Timer!";
+"weather.stepHours" = "%d 小时一格";
+"weather.attribution" = "天气数据 © Open-Meteo.com（CC BY 4.0）";
+"weather.attribution7Timer" = "天气数据 © 7Timer!";
+"weather.stale" = "数据过期 %d 分钟";
+"weather.updating" = "更新中…";
 
 /* 时辰 */
 "shichen.zi" = "子";
@@ -146,6 +161,10 @@
 "diag.requesting" = "正在请求…";
 "diag.requestingElapsed" = "正在请求…（已 %d 秒）";
 "diag.neverSucceeded" = "无数据：尚未请求成功";
+"diag.primarySuccess" = "主源成功";
+"diag.keepCache" = "主源失败，沿用未过期的缓存";
+"diag.fellBack" = "主源失败，已降级到 7Timer!";
+"diag.bothFailed" = "主源与备用源都失败，保留旧数据（%@）";
 
 /* 诊断：关键时间 */
 "keytime.st.never" = "尚未抓取";

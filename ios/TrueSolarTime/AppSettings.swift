@@ -15,6 +15,8 @@ struct AppSettings {
         static let mapStyle = "map_style"
         static let locationAsked = "location_permission_requested"
         static let keepScreenOn = "keep_screen_on"
+        /// 主题三态（自动 / 亮色 / 暗色），存 `ThemeMode.rawValue`。
+        static let themeMode = "theme_mode"
     }
 
     private let defaults = UserDefaults.standard
@@ -66,6 +68,14 @@ struct AppSettings {
     var keepScreenOn: Bool {
         get { defaults.bool(forKey: Key.keepScreenOn) }
         nonmutating set { defaults.set(newValue, forKey: Key.keepScreenOn) }
+    }
+
+    /// 主题：自动（按日出日落）/ 亮色 / 暗色。默认「自动」。
+    ///
+    /// 与「屏幕常亮」存在同一片区（设置页的「屏幕」分组），重启后保留。
+    var themeMode: ThemeMode {
+        get { ThemeMode.fromStorage(defaults.string(forKey: Key.themeMode)) }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.themeMode) }
     }
 
     /// 定位权限只自动申请一次，避免每次启动都弹窗。

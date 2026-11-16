@@ -73,19 +73,21 @@ struct WeatherCard: View {
         WeatherParsing.temperatureRange(weather.hourly, date: Date(), timeZone: .current)
     }
 
-    /// 从当前小时块开始取 5 个点。
+    /// 从当前小时块开始取 5 个点（步长跟数据源走：主源 1 小时、备用源 3 小时）。
     private func hourlySlots() -> [WeatherHour] {
         let points = weather?.hourly ?? []
         guard !points.isEmpty else { return [] }
-        let now = Int(Date().timeIntervalSince1970)
-        let offset = TimeZone.current.secondsFromGMT(for: Date())
-        let slots = WeatherParsing.slots(
-            nowEpochSeconds: now,
+        let now = Date()
+        let offset = TimeZone.current.secondsFromGMT(for: now)
+        let slots = WeatherParsing.visibleSlots(
+            points: points,
+            nowEpochSeconds: Int(now.timeIntervalSince1970),
             zoneOffsetSeconds: offset,
             count: hoursToShow,
-            stepHours: 1
+            stepHours: weather?.stepHours ?? 1
         )
-        return slots.compactMap { WeatherParsing.point(at: $0, in: points) }
+        let byEpoch = Dictionary(points.map { ($0.epochSeconds, $0) }, uniquingKeysWith: { first, _ in first })
+        return slots.compactMap { byEpoch[$0.epochSeconds] }
     }
 
     private func hourLabel(_ point: WeatherHour) -> String {

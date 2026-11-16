@@ -119,6 +119,28 @@ struct SettingsView: View {
                                     .foregroundStyle(palette.onSurfaceVariant)
                             }
                         }
+
+                        // 主题三态与「屏幕常亮」同一片区：自动（默认，按日出日落）/ 亮色 / 暗色。
+                        // 强制模式只是忽略日出日落，其余渲染逻辑完全一样；写进设置存储，重启保留。
+                        Divider()
+                            .padding(.vertical, 2)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L("settings.themeTitle"))
+                                .font(.system(size: 15))
+                            Text(L("settings.themeDesc"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(palette.onSurfaceVariant)
+
+                            LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                                ForEach(ThemeMode.allCases, id: \.self) { mode in
+                                    Button(mode.label) { model.setThemeMode(mode) }
+                                        .buttonStyle(.bordered)
+                                        .tint(mode == model.themeMode ? Color.orange : Color.gray)
+                                        .controlSize(.small)
+                                }
+                            }
+                        }
                     }
 
                     // 「诊断」默认整个隐藏（连标题、三行状态与「立即同步关键时间」按钮一起）：
@@ -131,6 +153,11 @@ struct SettingsView: View {
                         section(title: L("settings.sectionDiagnostics")) {
                             VStack(alignment: .leading, spacing: 6) {
                                 diagnosticLine(title: L("settings.diagWeather"), value: WeatherStore.shared.diagnosticsSummary())
+                                // 天气用哪个源、几小时一格、数据有多旧、最近一次为什么失败 ——
+                                // 排查「天气不刷新 / 时间对不上」先看这四行。
+                                diagnosticLine(title: L("settings.diagSource"), value: WeatherStore.shared.sourceSummary())
+                                diagnosticLine(title: L("settings.diagAge"), value: WeatherStore.shared.ageSummary())
+                                diagnosticLine(title: L("settings.diagLastFailure"), value: WeatherStore.shared.failureSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
                                 diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
                             }
@@ -219,7 +246,7 @@ struct SettingsView: View {
     private func diagnosticLine(title: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(title)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 70, alignment: .leading)
             Text(value)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

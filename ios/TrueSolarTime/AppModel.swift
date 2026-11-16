@@ -17,8 +17,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var keyTime: TakeTimeSchedule?
     @Published private(set) var districtName: DistrictNames?
     @Published private(set) var keepScreenOn: Bool = false
+    /// 主题三态（自动 / 亮色 / 暗色），默认自动。首页与大卡片的配色由它 + 太阳高度角共同决定。
+    @Published private(set) var themeMode: ThemeMode
     /// 天气取不到时给界面看的说明（成功时为空串）。
     @Published private(set) var weatherStatus: String = ""
+    /// 是否正有一次天气取数在飞（新地点还没有缓存时，卡片显示「更新中…」而不是旧城市的数据）。
+    @Published private(set) var weatherLoading: Bool = false
     /// 关键时间（抓取）的状态说明，设置页「诊断」用；随抓取结果变化。
     @Published private(set) var keyTimeStatus: String = ""
     /// 设置页「诊断」区块是否可见。
@@ -46,6 +50,7 @@ final class AppModel: ObservableObject {
         keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
         districtName = DistrictStore.shared.cachedNames(for: settings.place)
         keepScreenOn = settings.keepScreenOn
+        themeMode = settings.themeMode
         applyKeepScreenOn()
         startClock()
         refreshData()
@@ -54,6 +59,23 @@ final class AppModel: ObservableObject {
 
     var snapshot: SolarSnapshot {
         SolarTimeSnapshot.compute(date: now, latitude: place.latitude, longitude: place.longitude, countryCode: place.countryCode)
+    }
+
+    /// 配色用的「当前是不是白天」：自动模式按太阳高度角，亮色 / 暗色强制忽略日出日落。
+    ///
+    /// 页面背景、卡片、大卡片渐变都读它；`SunCard` 里的太阳弧仍按真实高度角画（事实，不是配色）。
+    var uiIsDay: Bool {
+        themeMode.isDayPalette(sunIsUp: snapshot.isDay)
+    }
+
+    /// 当前天气来自哪个源（底部署名跟着它切换）。
+    var weatherSource: WeatherSource {
+        weather?.source ?? WeatherStore.shared.source
+    }
+
+    /// 底部的数据来源署名（Open-Meteo CC BY 4.0 ↔ 7Timer!）。
+    var weatherAttribution: String {
+        weatherSource.attribution
     }
 
     // MARK: - 时钟
@@ -202,12 +224,14 @@ final class AppModel: ObservableObject {
             // （`cachedNames(for:)` 自带 5 km 校验，跨城时必然得到 nil。）
             districtName = DistrictStore.shared.cachedNames(for: newPlace)
         }
-        if moved {
-            weather = WeatherStore.shared.cached(for: newPlace)
-        }
+        // 天气缓存与地点绑定：**只显示属于当前地点的数据**（≤5 km 匹配）。
+        // 新地点没有缓存时这里拿到 nil，卡片就显示占位符，绝不拿上一个地点的数据顶替；
+        // 有缓存就立刻显示、随后由 `refreshData` 在后台按 30 分钟窗口刷新。
+        weather = WeatherStore.shared.cached(for: newPlace)
 
         if moved || userChosen || previous.source != newPlace.source {
-            refreshData(forceDistrict: userChosen)
+            // 切换地点可以立刻触发一次（包括「低精度升级」那条，不受 10 分钟窗口限制）。
+            refreshData(forceDistrict: userChosen, ignoreLowPrecisionThrottle: true)
             rescheduleReminders()
         }
     }
@@ -216,11 +240,29 @@ final class AppModel: ObservableObject {
 
     /// 天气、区划、关键时间各自带缓存，命中缓存时不会重复联网。
     ///
-    /// - Parameter forceDistrict: 用户刚选了地点，忽略区划缓存的 5 km / 30 天判定，强制反查一次。
-    func refreshData(forceWeather: Bool = false, forceDistrict: Bool = false) {
+    /// - Parameters:
+    ///   - forceDistrict: 用户刚选了地点，忽略区划缓存的 5 km / 30 天判定，强制反查一次。
+    ///   - ignoreLowPrecisionThrottle: 回到前台 / 切换地点时为 true：低精度数据的「升级刷新」
+    ///     不受 10 分钟节流限制（用户刚打开 App，值得立刻试着回到 1 小时数据）。
+    func refreshData(
+        forceWeather: Bool = false,
+        forceDistrict: Bool = false,
+        ignoreLowPrecisionThrottle: Bool = false
+    ) {
         let currentPlace = place
-        WeatherStore.shared.requestRefresh(place: currentPlace, force: forceWeather) { [weak self] snapshot in
-            self?.weather = snapshot
+        let started = WeatherStore.shared.requestRefresh(
+            place: currentPlace,
+            force: forceWeather,
+            ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.weatherLoading = false
+            // 请求在飞的时候可能已经换了城市：一律按**当前地点**重新读缓存。
+            // `cached(for:)` 自带 ≤5 km 校验，所以 A 城市的天气永远不会被写到 B 城市下。
+            self.weather = WeatherStore.shared.cached(for: self.place)
+        }
+        if started {
+            weatherLoading = true
         }
         DistrictStore.shared.requestRefresh(place: currentPlace, force: forceDistrict) { [weak self] names in
             guard let self else { return }
@@ -303,6 +345,12 @@ final class AppModel: ObservableObject {
         applyKeepScreenOn()
     }
 
+    /// 主题三态（自动 / 亮色 / 暗色）：写设置并立刻重绘（首页与大卡片的配色一起变）。
+    func setThemeMode(_ mode: ThemeMode) {
+        themeMode = mode
+        settings.themeMode = mode
+    }
+
     /// 把设置同步到系统的「自动熄屏」标志。
     private func applyKeepScreenOn() {
         UIApplication.shared.isIdleTimerDisabled = keepScreenOn
@@ -323,7 +371,8 @@ final class AppModel: ObservableObject {
         } else if location.hasPermission && place.source != .manual {
             startGpsTracking(announce: false)
         }
-        refreshData()
+        // 回到前台：低精度数据的「升级刷新」立刻试一次（不受 10 分钟节流限制）。
+        refreshData(ignoreLowPrecisionThrottle: true)
         rescheduleReminders()
     }
 }

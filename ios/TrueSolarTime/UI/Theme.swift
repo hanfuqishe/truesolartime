@@ -2,8 +2,11 @@ import SwiftUI
 
 /// 日间／夜间两套主题。
 ///
-/// **切换由太阳高度角决定**（`SolarSnapshot.isDay`），不看系统深色开关 —— 太阳落山那一刻就换主题，
-/// 与 Android 的 `TrueSolarTimeTheme(darkTheme = !snapshot.isDay)` 一致。
+/// **用哪一套由设置里的主题三态决定**（`ThemeMode`）：
+/// - 自动（默认）= 按太阳高度角（`SolarSnapshot.isDay`），不看系统深色开关 ——
+///   太阳落山那一刻就换主题，与 Android 的 `TrueSolarTimeTheme(darkTheme = !snapshot.isDay)` 一致；
+/// - 亮色 / 暗色 = 强制忽略日出日落，页面、卡片、大卡片渐变一起跟随。
+///
 /// 色值逐项对齐 Android `ui/theme/Theme.kt` 的 LightColors / DarkColors。
 struct ThemePalette {
 

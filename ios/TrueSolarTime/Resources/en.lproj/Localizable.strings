@@ -50,10 +50,18 @@
 "settings.sectionScreen" = "Screen";
 "settings.keepScreenOn" = "Keep screen on";
 "settings.keepScreenOnDesc" = "Stop the screen from sleeping while the app is open (uses more battery)";
+"settings.themeTitle" = "Theme";
+"settings.themeDesc" = "Auto switches with sunrise and sunset: light by day, dark at night. Light / Dark force the palette for the whole app.";
+"settings.themeAuto" = "Auto";
+"settings.themeLight" = "Light";
+"settings.themeDark" = "Dark";
 "settings.sectionDiagnostics" = "Diagnostics";
 "settings.diagWeather" = "Weather";
 "settings.diagDistrict" = "District";
 "settings.diagKeyTime" = "Key time";
+"settings.diagSource" = "Source";
+"settings.diagAge" = "Data";
+"settings.diagLastFailure" = "Last failure";
 "settings.syncKeyTime" = "Sync key time now";
 "settings.diagnosticsUnlocked" = "Diagnostics enabled";
 "settings.sectionAbout" = "How it is calculated";
@@ -89,6 +97,13 @@
 "weather.thunder" = "Thunderstorm";
 "weather.now" = "Now";
 "weather.hour" = "%d:00";
+"weather.sourceOpenMeteo" = "Open-Meteo";
+"weather.source7Timer" = "7Timer!";
+"weather.stepHours" = "%d h per step";
+"weather.attribution" = "Weather data © Open-Meteo.com (CC BY 4.0)";
+"weather.attribution7Timer" = "Weather data © 7Timer!";
+"weather.stale" = "Stale by %d min";
+"weather.updating" = "Updating…";
 
 /* Shichen */
 "shichen.zi" = "Zi";
@@ -146,6 +161,10 @@
 "diag.requesting" = "Requesting…";
 "diag.requestingElapsed" = "Requesting… (%d s)";
 "diag.neverSucceeded" = "No data: no successful request yet";
+"diag.primarySuccess" = "Primary source OK";
+"diag.keepCache" = "Primary failed; keeping the unexpired cache";
+"diag.fellBack" = "Primary failed; fell back to 7Timer!";
+"diag.bothFailed" = "Both sources failed; keeping old data (%@)";
 
 /* Diagnostics: key time */
 "keytime.st.never" = "Not fetched yet";

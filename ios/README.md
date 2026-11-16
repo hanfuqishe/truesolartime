@@ -13,7 +13,9 @@
 | 时间字号（秒半高 + 撑满栏宽） | ✅ | ✅ `HeroClockMetrics` 实测字宽反推 |
 | 地图视口 | 手机 4:3 / 平板 16:9 | 手机 4:3（无平板版） |
 | 区划名（跟随界面语言） | 高德 / OSM 反查 | `CLGeocoder`（系统自带、随系统语言），缓存策略相同（5 km / 30 天 / 语言变化重查） |
-| 天气（今日区间 + 未来 5 小时） | Open-Meteo，30 分钟缓存、失败保留旧数据 24 小时、5 分钟重试 | 同接口同策略（1.4.39 同步） |
+| 天气（今日区间 + 六格逐时） | Open-Meteo（1 小时）+ 7Timer!（3 小时）双源，30 分钟缓存、失败保留旧数据 24 小时、5 分钟重试 | 同源同策略；**步长跟随数据源，槽位固定 6 个** |
+| 天气降级链 | 主源失败 → 2 秒后重试一次 → 缓存未过期就保持 → 过期改问 7Timer! → 两者都失败保留旧数据（24 小时） | 相同（`WeatherStore` 与 `WeatherRepository` 一一对应） |
+| 主题（自动 / 亮色 / 暗色） | ✅ 默认自动（按日出日落） | ✅ 相同（`Core/ThemeMode.swift`），首页与大卡片配色一起跟随 |
 | 关键时间（服用時間 Take Time） | 抓页面 + 7 天缓存 + 时间轴着色 | 相同（`TakeTimeParsing` 与 Android 解析规则一一对应） |
 | 进入关键时间报时 | 500 ms 3200 Hz 蜂鸣 | 本地通知 + `chime500.wav`（同样 3200 Hz / 500 ms） |
 | 时辰交接提醒 | 准时 250 ms 蜂鸣 | 本地通知 + `chime250.wav`，准时触发 |
@@ -200,7 +202,7 @@ ios/
     ├── AppSettings.swift           UserDefaults 封装
     ├── LocationProvider.swift      CoreLocation 每分钟采样
     ├── Services/
-    │   ├── WeatherStore.swift      Open-Meteo 天气与 30 分钟缓存
+    │   ├── WeatherStore.swift      Open-Meteo / 7Timer! 双源、步长与 30 分钟缓存
     │   ├── KeyTimeStore.swift      关键时间抓取与 7 天缓存
     │   ├── DistrictStore.swift     CLGeocoder 区划反查与缓存
     │   └── KeyTimeReminder.swift   关键时间报时 + 时辰交接提醒（本地通知）
@@ -212,7 +214,8 @@ ios/
     │   ├── Shichen.swift           十二时辰
     │   ├── SolarSnapshot.swift     供 UI 消费的聚合快照
     │   ├── TimeFormat.swift        时间／时长格式化
-    │   ├── Weather.swift           天气模型、Open-Meteo 解析、小时槽位
+    │   ├── Weather.swift           天气模型、双源解析（Open-Meteo / 7Timer!）、步长与槽位
+    │   ├── ThemeMode.swift         主题三态（自动 / 亮色 / 暗色）
     │   ├── KeyTime.swift           关键时间模型、页面解析、区间判定
     │   ├── DistrictName.swift      区划名拼接、距离与缓存判定
     │   ├── Place.swift             位置模型与常用城市

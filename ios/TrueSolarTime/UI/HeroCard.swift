@@ -12,9 +12,14 @@ import UIKit
 struct HeroCard: View {
 
     let snapshot: SolarSnapshot
+    /// 配色用的「当前是不是白天」：由主题设置决定（自动 = 日出日落，亮色 / 暗色 = 强制）。
+    /// 只影响配色；卡片里的太阳弧、逐时图标的昼夜标记仍按真实时刻判断。
+    let isDay: Bool
     /// 卡片左上角那一行城市名：调用方已经按三段式算好（区划名 → 预设城市名 → 「-」），这里只管显示。
     let districtName: String
     let weather: WeatherSnapshot?
+    /// 正有一次取数在飞（新地点还没有缓存时显示「更新中…」而不是旧数据）。
+    let isWeatherLoading: Bool
     /// 关键时间色段（0–24 时轴上的着色）。
     let keyBands: [TakeBand]
     /// 时间轴色段的颜色：按网页要求的「冻/热」取绿/红；温度未标注时为 nil（不画色段）。
@@ -81,13 +86,13 @@ struct HeroCard: View {
             .frame(height: 11)
             .padding(.top, 12)
 
-            HourlyRow(weather: weather, isDay: snapshot.isDay)
+            HourlyRow(weather: weather, isDay: isDay)
                 .padding(.top, 12)
         }
         .padding(cardPadding)
         .background(
             RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
-                .fill(snapshot.isDay ? Theme.dayGradient : Theme.nightGradient)
+                .fill(isDay ? Theme.dayGradient : Theme.nightGradient)
         )
         // 兜底：万一某个子视图算大了，也不许露到圆角卡片外面。
         .clipShape(
@@ -261,7 +266,7 @@ struct HeroCard: View {
                 main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
                 seconds: String(format: "%02d", snapshot.trueSolarTime.second),
                 // 落在关键时段内用「冻/热」对应的绿/红，否则用常规强调色（白天淡金、夜里金）
-                color: inkColor ?? HeroPalette.accent(isDay: snapshot.isDay),
+                color: inkColor ?? HeroPalette.accent(isDay: isDay),
                 availableWidth: columnWidth
             )
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -312,9 +317,10 @@ struct HeroCard: View {
                 parts.append("\(range.low)~\(range.high)°")
             }
         } else {
-            // 没有天气数据就显示半角减号（与 Android 的 `weather_unknown` 一致）。
+            // 没有该地点的天气数据就显示半角减号（与 Android 的 `weather_unknown` 一致）；
+            // 正在取数时显示「更新中…」，让「新地点还没有数据」和「一直取不到」能区分开。
             // 失败原因不占卡片：设置页「诊断」里有完整说明。
-            parts.append("-")
+            parts.append(isWeatherLoading ? L("weather.updating") : "-")
         }
         return parts.joined(separator: " · ")
     }
@@ -484,13 +490,21 @@ struct HeroAxis: View {
     }
 }
 
-/// 六格逐时预报：现在 + 未来 5 个整点。
+/// 六格逐时预报：首格永远是「现在」，之后按**数据源自己的步长**往后取。
+///
+/// - 主源 Open-Meteo 是 1 小时粒度 → 6 格覆盖 6 小时（现在 / 22时 / 23时 / 0时 / 1时 / 2时）；
+/// - 备用源 7Timer! 是 3 小时粒度 → 6 格覆盖 18 小时（现在 / 23时 / 2时 / 5时 / 8时 / 11时）。
+///
+/// 槽位数量永远是 6，变的是格子之间的距离；标签一律用该采样点的实际本地小时数，
+/// 与 Android `HeroExtras.hourCells` / 鸿蒙逐时行同一套规则。
 struct HourlyRow: View {
 
     let weather: WeatherSnapshot?
+    /// 配色用的白天/夜间（主题设置决定）。逐时图标自己的昼夜仍按该格的真实小时判断。
     let isDay: Bool
 
-    private let slots = 6
+    /// 槽位数量：**永远 6 个**，不随数据源变化。
+    private let slotCount = 6
     /// 天气图标的固定槽高。
     ///
     /// 不同 SF Symbol（太阳/云/雨）的自带高度并不一致，不给固定高度时
@@ -498,77 +512,91 @@ struct HourlyRow: View {
     private let iconSlotHeight: CGFloat = 22
     private let labelSlotHeight: CGFloat = 13
 
+    /// 一格的全部内容（标签、图标、温度）。
+    private struct Cell: Identifiable {
+        let slot: WeatherSlot
+        let label: String
+        let condition: WeatherCondition?
+        /// 该格对应的真实时刻（判昼夜图标用）；没有采样点时为 nil。
+        let date: Date?
+        let temperatureC: Int?
+
+        var id: Int { slot.epochSeconds }
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            ForEach(points, id: \.epochSeconds) { point in
+            ForEach(cells) { cell in
                 VStack(spacing: 3) {
-                    Text(label(for: point))
+                    Text(cell.label)
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(.white.opacity(cell.condition == nil ? 0.6 : 0.75))
                         .lineLimit(1)
                         .frame(height: labelSlotHeight)
-                    Image(systemName: point.condition.symbol(isDay: isDayOfHour(point)))
-                        .font(.system(size: 20))
-                        .symbolRenderingMode(.multicolor)
-                        .frame(height: iconSlotHeight)
-                    Text("\(point.temperatureC)°")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .monospacedDigit()
-                        .frame(height: labelSlotHeight)
-                }
-                .frame(maxWidth: .infinity)
-            }
 
-            if points.isEmpty {
-                ForEach(0..<slots, id: \.self) { index in
-                    VStack(spacing: 3) {
-                        Text(index == 0 ? L("weather.now") : "-")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .frame(height: labelSlotHeight)
+                    if let condition = cell.condition {
+                        Image(systemName: condition.symbol(isDay: isDayOf(cell.date)))
+                            .font(.system(size: 20))
+                            .symbolRenderingMode(.multicolor)
+                            .frame(height: iconSlotHeight)
+                    } else {
                         // 无数据不用问号（看起来像出错），用一条横线占位；与 Android 的
                         // `ic_wx_unknown`（一条短横线）、鸿蒙的 `wx_unknown.svg` 一致。
                         Image(systemName: "minus")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.45))
                             .frame(height: iconSlotHeight)
-                        Text("-")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .frame(height: labelSlotHeight)
                     }
-                    .frame(maxWidth: .infinity)
+
+                    Text(cell.temperatureC.map { "\($0)°" } ?? "-")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(cell.temperatureC == nil ? 0.6 : 0.75))
+                        .monospacedDigit()
+                        .frame(height: labelSlotHeight)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }
 
-    private var points: [WeatherHour] {
-        let all = weather?.hourly ?? []
-        guard !all.isEmpty else { return [] }
-        let slots = WeatherParsing.slots(
-            nowEpochSeconds: Int(Date().timeIntervalSince1970),
-            zoneOffsetSeconds: TimeZone.current.secondsFromGMT(for: Date()),
-            count: 6,
-            stepHours: 1
-        )
-        return slots.compactMap { WeatherParsing.point(at: $0, in: all) }
-    }
-
-    private func label(for point: WeatherHour) -> String {
+    /// 当前要画的 6 格：首格是当前时刻之前最近的那个采样点，之后每格前进 `weather.stepHours` 小时。
+    private var cells: [Cell] {
         let now = Date()
-        let calendar = Calendar.current
-        if calendar.isDate(point.date, equalTo: now, toGranularity: .hour) {
-            return L("weather.now")
+        let points = weather?.hourly ?? []
+        let slots = WeatherParsing.visibleSlots(
+            points: points,
+            nowEpochSeconds: Int(now.timeIntervalSince1970),
+            zoneOffsetSeconds: TimeZone.current.secondsFromGMT(for: now),
+            count: slotCount,
+            stepHours: weather?.stepHours ?? 1
+        )
+        let byEpoch = Dictionary(points.map { ($0.epochSeconds, $0) }, uniquingKeysWith: { first, _ in first })
+
+        return slots.map { slot in
+            let point = byEpoch[slot.epochSeconds]
+            // 「现在」那一格的天气码优先用当前读数：3 小时源的采样点可能已经是几小时前，
+            // 但实时读数（`current`）就是此刻的天气。
+            let condition = slot.isNow ? (weather?.condition ?? point?.condition) : point?.condition
+            let label: String
+            if slot.isNow {
+                label = L("weather.now")
+            } else {
+                label = Lf("weather.hour", Calendar.current.component(.hour, from: slot.date))
+            }
+            return Cell(
+                slot: slot,
+                label: label,
+                condition: condition,
+                date: point?.date,
+                temperatureC: point?.temperatureC
+            )
         }
-        // 中文习惯写「15时」，英文写「15:00」—— 由本地化表决定，不再硬编码格式。
-        let hour = Calendar.current.component(.hour, from: point.date)
-        return Lf("weather.hour", hour)
     }
 
-    private func isDayOfHour(_ point: WeatherHour) -> Bool {
-        let hour = Calendar.current.component(.hour, from: point.date)
+    /// 某一格是否白天：按该刻的本地小时粗略判断（与 Android `weatherIconRes(isDay = hour in 6..17)` 一致）。
+    private func isDayOf(_ date: Date?) -> Bool {
+        guard let date else { return isDay }
+        let hour = Calendar.current.component(.hour, from: date)
         return (6..<18).contains(hour)
     }
 }
