@@ -7,14 +7,19 @@ import SwiftUI
 ///   太阳落山那一刻就换主题，与 Android 的 `TrueSolarTimeTheme(darkTheme = !snapshot.isDay)` 一致；
 /// - 亮色 / 暗色 = 强制忽略日出日落，页面、卡片、大卡片渐变一起跟随。
 ///
-/// 色值逐项对齐 Android `ui/theme/Theme.kt` 的 LightColors / DarkColors。
+/// 色值全部来自 **Core 的 `ThemeColors`**（那里是唯一的真源，自检会对亮/暗两套取值做断言），
+/// 这里只负责把 `0xRRGGBB` 转成 SwiftUI 的 `Color`。
+///
+/// 为什么要这样分层：以前颜色一半写在这里、一半交给系统外观（`.roundedBorder` 输入框、
+/// `.bordered` 按钮、`Divider()`、`.secondary` 文字），一旦「强制亮色 / 强制暗色」和系统外观
+/// 不一致就会串色 —— 暗色主题下白底输入框里的浅色字就是这么来的。
 struct ThemePalette {
 
     let isDay: Bool
 
     /// 页面背景
     let background: Color
-    /// 卡片背景
+    /// 卡片背景（也是输入框分组的底色）
     let surface: Color
     /// 主文字
     let onSurface: Color
@@ -22,28 +27,39 @@ struct ThemePalette {
     let onSurfaceVariant: Color
     /// 分隔线 / 弱描边
     let outlineVariant: Color
-    /// 强调色
+    /// 强调色（按钮底色、开关、光标）
     let primary: Color
+    /// 强调色底上的文字
+    let onPrimary: Color
+    /// 错误文字
+    let danger: Color
+    /// 输入框底色
+    let fieldBackground: Color
+    /// 输入框描边
+    let fieldBorder: Color
+    /// 输入框文字
+    let fieldText: Color
+    /// 输入框占位符
+    let fieldPlaceholder: Color
 
-    static let day = ThemePalette(
-        isDay: true,
-        background: Color(hex: 0xFFF8F1),
-        surface: Color(hex: 0xFFFBF6),
-        onSurface: Color(hex: 0x211A15),
-        onSurfaceVariant: Color(hex: 0x52443A),
-        outlineVariant: Color(hex: 0xD7C4B5),
-        primary: Color(hex: 0xB4550A)
-    )
+    init(_ colors: ThemeColors) {
+        isDay = colors.isDay
+        background = Color(hex: colors.background.hex)
+        surface = Color(hex: colors.surface.hex)
+        onSurface = Color(hex: colors.onSurface.hex)
+        onSurfaceVariant = Color(hex: colors.onSurfaceVariant.hex)
+        outlineVariant = Color(hex: colors.outlineVariant.hex)
+        primary = Color(hex: colors.primary.hex)
+        onPrimary = Color(hex: colors.onPrimary.hex)
+        danger = Color(hex: colors.danger.hex)
+        fieldBackground = Color(hex: colors.fieldBackground.hex)
+        fieldBorder = Color(hex: colors.fieldBorder.hex)
+        fieldText = Color(hex: colors.fieldText.hex)
+        fieldPlaceholder = Color(hex: colors.fieldPlaceholder.hex)
+    }
 
-    static let night = ThemePalette(
-        isDay: false,
-        background: Color(hex: 0x0B1220),
-        surface: Color(hex: 0x16203A),
-        onSurface: Color(hex: 0xE8EDF7),
-        onSurfaceVariant: Color(hex: 0x9AA7BF),
-        outlineVariant: Color(hex: 0x24304F),
-        primary: Color(hex: 0xF5D68A)
-    )
+    static let day = ThemePalette(ThemeColors.day)
+    static let night = ThemePalette(ThemeColors.night)
 
     static func of(isDay: Bool) -> ThemePalette {
         isDay ? .day : .night

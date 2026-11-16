@@ -15,7 +15,8 @@ struct SunCard: View {
                 Spacer()
                 Text(Lf("sun.altitude", snapshot.altitudeDegrees))
                     .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                    // 与 Android 一致用主题 primary（系统 `.orange` 在浅色卡片上只有 2.2:1，读不清）。
+                    .foregroundStyle(palette.primary)
             }
 
             SunArc(progress: daylightProgress, isDay: snapshot.isDay)
@@ -117,7 +118,9 @@ private struct SunArc: View {
             let sunY = u * u * start.y + 2 * u * t * control.y + t * t * end.y
             let center = CGPoint(x: sunX, y: sunY)
 
-            let color: Color = isDay ? Color(red: 1.0, green: 0.70, blue: 0.0) : .secondary
+            // 太阳在地平线之上用暖橙（事实，不随主题）；落山后的小圆点取主题次要文字色 ——
+            // 用系统 `.secondary` 会跟着系统外观走，强制主题下会变成「深灰点压深蓝底」这类看不清。
+            let color: Color = isDay ? Color(red: 1.0, green: 0.70, blue: 0.0) : palette.onSurfaceVariant
             if isDay {
                 context.fill(Path(ellipseIn: CGRect(x: center.x - 18, y: center.y - 18, width: 36, height: 36)),
                              with: .color(color.opacity(0.18)))

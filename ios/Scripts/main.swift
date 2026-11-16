@@ -397,6 +397,96 @@ expect("中文判定：纯中文 → true", DistrictNaming.isChineseGrouping(["�
 expect("中文判定：混拉丁字母 → false", !DistrictNaming.isChineseGrouping(["Manhattan", "纽约"]))
 expect("中文判定：全空 → false", !DistrictNaming.isChineseGrouping([nil, "", "[]"]))
 
+print("== 区划名分隔符：含汉字直连、不含汉字用「, 」（鸿蒙 NewYorkManhattan 同类问题）==")
+// 规则（三端统一）：含汉字 → 直接相接（北京市 + 东城区 → 北京市东城区）；
+// 不含汉字 → 用「, 」连接（New York + Manhattan → New York, Manhattan），并去重、最多三级。
+expect(
+    "英文：New York + Manhattan → New York, Manhattan（不粘成 New YorkManhattan）",
+    DistrictNaming.compose(parts: ["New York", "Manhattan"])?.full == "New York, Manhattan",
+    "actual=\(DistrictNaming.compose(parts: ["New York", "Manhattan"])?.full ?? "nil")"
+)
+expect(
+    "英文：反查字段顺序（区县 → 市）同样带逗号",
+    DistrictNaming.composeNames(
+        district: "Manhattan", city: "New York", region: nil, country: nil, prefersChinese: true
+    )?.full == "Manhattan, New York",
+    "actual=\(DistrictNaming.composeNames(district: "Manhattan", city: "New York", region: nil, country: nil, prefersChinese: true)?.full ?? "nil")"
+)
+expect(
+    "英文：任何情况下都不会粘成一个词",
+    DistrictNaming.compose(parts: ["New York", "Manhattan"])?.full.contains("YorkManhattan") == false
+        && DistrictNaming.composeNames(
+            district: "Manhattan", city: "New York", region: "New York", country: "United States", prefersChinese: true
+        )?.full.contains("YorkManhattan") == false
+)
+expect(
+    "中文：北京市 + 东城区 → 北京市东城区（直连）",
+    DistrictNaming.joinChinese(county: "东城区", city: "北京市", region: nil)?.full == "北京市东城区"
+        && DistrictNaming.composeNames(
+            district: "东城区", city: "北京市", region: nil, country: nil, prefersChinese: true
+        )?.full == "北京市东城区",
+    "actual=\(DistrictNaming.joinChinese(county: "东城区", city: "北京市", region: nil)?.full ?? "nil")"
+)
+expect(
+    "三段去重：Tokyo + Chiyoda + Tokyo → Tokyo, Chiyoda",
+    DistrictNaming.compose(parts: ["Tokyo", "Chiyoda", "Tokyo"])?.full == "Tokyo, Chiyoda",
+    "actual=\(DistrictNaming.compose(parts: ["Tokyo", "Chiyoda", "Tokyo"])?.full ?? "nil")"
+)
+expect(
+    "三段去重后短名取最细一级",
+    DistrictNaming.compose(parts: ["Tokyo", "Chiyoda", "Tokyo"])?.short == "Tokyo"
+)
+expect(
+    "三段去重（区县在前）：Chiyoda + Tokyo + Tokyo → Chiyoda, Tokyo",
+    DistrictNaming.composeNames(
+        district: "Chiyoda", city: "Tokyo", region: "Tokyo", country: nil, prefersChinese: true
+    )?.full == "Chiyoda, Tokyo",
+    "actual=\(DistrictNaming.composeNames(district: "Chiyoda", city: "Tokyo", region: "Tokyo", country: nil, prefersChinese: true)?.full ?? "nil")"
+)
+expect(
+    "中英混排：逗号分隔、不直连",
+    DistrictNaming.compose(parts: ["Manhattan", "纽约"])?.full == "Manhattan, 纽约"
+)
+
+print("== 区划名变长后的档位退化（不能只显示 New … 还判档 0）==")
+// 真实宽度量级（12pt 系统字）：UTC+8 ≈ 36、「真太阳时」≈ 48、亥时 ≈ 24、Zi hour ≈ 42、
+// 行宽 ≈ 314（iPhone 390 − 页边距 40 − 卡片内边距 36）。
+let rowWidthPhone: CGFloat = 314
+expect(
+    "New York, Manhattan（≈118pt）落到档 1（收掉「真太阳时」、城市居中）",
+    tierOf(36, 118, 48, 42, rowWidthPhone) == .noSolarLabel,
+    "tier=\(tierOf(36, 118, 48, 42, rowWidthPhone))"
+)
+expect(
+    "三级长名（Manhattan, New York, United States ≈215pt）落到档 2（再收掉 UTC）",
+    tierOf(36, 215, 48, 42, rowWidthPhone) == .cityAndShichen,
+    "tier=\(tierOf(36, 215, 48, 42, rowWidthPhone))"
+)
+expect(
+    "城市宽度超过半宽时永远不会判成档 0",
+    [118.0, 140.0, 160.0, 200.0, 215.0, 260.0].allSatisfy {
+        tierOf(36, CGFloat($0), 48, 42, rowWidthPhone) != .allFour
+    }
+)
+expect(
+    "短名字仍能留在档 0（四段都显示）",
+    tierOf(36, 100, 48, 42, rowWidthPhone) == .allFour,
+    "tier=\(tierOf(36, 100, 48, 42, rowWidthPhone))"
+)
+expect(
+    "极长名字落到档 3（尾部省略号）",
+    tierOf(20, 300, 48, 42, rowWidthPhone) == .cityTruncated,
+    "tier=\(tierOf(20, 300, 48, 42, rowWidthPhone))"
+)
+// 时辰去掉「初 / 正」后缀后，右半变窄：同一个行宽能容纳更宽的「真太阳时 + 时辰」组合，
+// 但绝不会因此把「城市超半宽」的情况抬回档 0（上面那条已覆盖）。
+expect(
+    "时辰变短只放宽右半，不放宽左半（左半判据与时辰无关）",
+    tierOf(36, 120, 48, 24, rowWidthPhone) == tierOf(36, 120, 48, 90, rowWidthPhone)
+        || tierOf(36, 120, 48, 24, rowWidthPhone).rawValue < tierOf(36, 120, 48, 90, rowWidthPhone).rawValue,
+    "短=\(tierOf(36, 120, 48, 24, rowWidthPhone)) 长=\(tierOf(36, 120, 48, 90, rowWidthPhone))"
+)
+
 print("== OSM Nominatim 兜底（境外区划名）==")
 let nominatimURL = NominatimReverse.url(latitude: 40.7128, longitude: -74.0060, language: "zh-CN")
 let nominatimURLText = nominatimURL?.absoluteString ?? ""
@@ -1438,6 +1528,114 @@ expect(
         && L10n.t("settings.themeAuto", language: .english) == "Auto"
         && L10n.t("settings.themeLight", language: .english) == "Light"
         && L10n.t("settings.themeDark", language: .english) == "Dark"
+)
+
+print("== 主题色 token：输入框 / 按钮 / 分隔线的亮暗两套取值（可读性回归）==")
+// 颜色 token 放在 Core（`ThemeColors`）就是为了让这里能守「暗色下输入框不能还是白底」
+// 「字和底色的对比度够不够」。之前的 bug 是设置页输入框用系统 `.roundedBorder`：
+// 强制暗色主题 + 系统浅色外观时，输入框仍是白底，浅色的正文压上去几乎看不见。
+let themeDayColors = ThemeColors.day
+let themeNightColors = ThemeColors.night
+expect("亮/暗是两套不同的 token", themeDayColors != themeNightColors)
+expect("isDay 标记正确", themeDayColors.isDay && !themeNightColors.isDay)
+expect("of(isDay:) 取到对应的一套", ThemeColors.of(isDay: true) == .day && ThemeColors.of(isDay: false) == .night)
+expect("token 数量固定（12 个语义色）", themeDayColors.tokens.count == 12, "actual=\(themeDayColors.tokens.count)")
+expect("token 名字不重复", Set(themeDayColors.tokens.map(\.name)).count == themeDayColors.tokens.count)
+
+// 逐个 token：两套都必须有值（不能是 0x000000 占位）且亮暗不同。
+for (name, dayColor) in themeDayColors.tokens {
+    guard let nightColor = themeNightColors.tokens.first(where: { $0.name == name })?.color else {
+        expect("暗色缺 token \(name)", false)
+        continue
+    }
+    expect(
+        "\(name)：亮 \(dayColor.hexText) / 暗 \(nightColor.hexText) 都有值且不同",
+        dayColor.hex != 0 && nightColor.hex != 0 && dayColor != nightColor,
+        "day=\(dayColor.hexText) night=\(nightColor.hexText)"
+    )
+}
+
+// 输入框三件套：亮色仍是浅底深字；暗色必须是深底浅字（这条正是本次修的那个 bug）。
+expect(
+    "亮色输入框：浅底（相对亮度 > 0.8）",
+    themeDayColors.fieldBackground.relativeLuminance > 0.8,
+    "actual=\(themeDayColors.fieldBackground.hexText) L=\(themeDayColors.fieldBackground.relativeLuminance)"
+)
+expect(
+    "暗色输入框：深底（相对亮度 < 0.2），不再是白底",
+    themeNightColors.fieldBackground.relativeLuminance < 0.2,
+    "actual=\(themeNightColors.fieldBackground.hexText) L=\(themeNightColors.fieldBackground.relativeLuminance)"
+)
+expect(
+    "亮色输入框文字对比度 ≥ 4.5",
+    themeDayColors.fieldText.contrast(with: themeDayColors.fieldBackground) >= 4.5,
+    String(format: "actual=%.2f", themeDayColors.fieldText.contrast(with: themeDayColors.fieldBackground))
+)
+expect(
+    "暗色输入框文字对比度 ≥ 4.5",
+    themeNightColors.fieldText.contrast(with: themeNightColors.fieldBackground) >= 4.5,
+    String(format: "actual=%.2f", themeNightColors.fieldText.contrast(with: themeNightColors.fieldBackground))
+)
+expect(
+    "亮色占位符对比度 ≥ 4.5",
+    themeDayColors.fieldPlaceholder.contrast(with: themeDayColors.fieldBackground) >= 4.5,
+    String(format: "actual=%.2f", themeDayColors.fieldPlaceholder.contrast(with: themeDayColors.fieldBackground))
+)
+expect(
+    "暗色占位符对比度 ≥ 4.5",
+    themeNightColors.fieldPlaceholder.contrast(with: themeNightColors.fieldBackground) >= 4.5,
+    String(format: "actual=%.2f", themeNightColors.fieldPlaceholder.contrast(with: themeNightColors.fieldBackground))
+)
+expect(
+    "输入框描边与底色可区分（两套都 ≥ 1.2）",
+    themeDayColors.fieldBorder.contrast(with: themeDayColors.fieldBackground) >= 1.2
+        && themeNightColors.fieldBorder.contrast(with: themeNightColors.fieldBackground) >= 1.2,
+    String(format: "day=%.2f night=%.2f",
+           themeDayColors.fieldBorder.contrast(with: themeDayColors.fieldBackground),
+           themeNightColors.fieldBorder.contrast(with: themeNightColors.fieldBackground))
+)
+expect(
+    "暗色输入框比暗色卡片亮一档（看得出是输入区）",
+    themeNightColors.fieldBackground.contrast(with: themeNightColors.surface) >= 1.1,
+    String(format: "actual=%.2f", themeNightColors.fieldBackground.contrast(with: themeNightColors.surface))
+)
+
+// 按钮与正文：主按钮文字压在 primary 上、正文压在卡片上，两套都要够对比度。
+expect(
+    "主按钮文字（onPrimary）对比度 ≥ 4.5",
+    themeDayColors.onPrimary.contrast(with: themeDayColors.primary) >= 4.5
+        && themeNightColors.onPrimary.contrast(with: themeNightColors.primary) >= 4.5,
+    String(format: "day=%.2f night=%.2f",
+           themeDayColors.onPrimary.contrast(with: themeDayColors.primary),
+           themeNightColors.onPrimary.contrast(with: themeNightColors.primary))
+)
+expect(
+    "正文对比度 ≥ 7（AAA 级）",
+    themeDayColors.onSurface.contrast(with: themeDayColors.surface) >= 7
+        && themeNightColors.onSurface.contrast(with: themeNightColors.surface) >= 7
+)
+expect(
+    "次要文字（诊断行 / 说明）对比度 ≥ 4.5",
+    themeDayColors.onSurfaceVariant.contrast(with: themeDayColors.surface) >= 4.5
+        && themeNightColors.onSurfaceVariant.contrast(with: themeNightColors.surface) >= 4.5
+)
+expect(
+    "错误文字（danger）对比度 ≥ 4.5",
+    themeDayColors.danger.contrast(with: themeDayColors.background) >= 4.5
+        && themeNightColors.danger.contrast(with: themeNightColors.background) >= 4.5,
+    String(format: "day=%.2f night=%.2f",
+           themeDayColors.danger.contrast(with: themeDayColors.background),
+           themeNightColors.danger.contrast(with: themeNightColors.background))
+)
+// hex 解析本身的两个坑：高位是 ARGB 时要掩掉、文本要能直接贴进报告。
+expect(
+    "hex 文本是 #RRGGBB",
+    ThemeColor(hex: 0xFFFFFF).hexText == "#FFFFFF" && ThemeColor(hex: 0x1E2A47).hexText == "#1E2A47"
+)
+expect("带 ARGB 高位的值会被掩掉", ThemeColor(hex: 0xFF1E2A47).hex == 0x1E2A47)
+expect(
+    "通道拆分用的是浮点除法（不是整数除）",
+    abs(ThemeColor(hex: 0xFFFFFF).red - 1.0) < 1e-9 && abs(ThemeColor(hex: 0x000000).blue - 0.0) < 1e-9
 )
 
 print("== 数据来源署名（随实际源切换）==")

@@ -138,8 +138,13 @@ struct HeroCard: View {
         labelRowSize.width > 0 ? labelRowSize.width : rowContentWidth
     }
 
+    /// 顶部右侧的时辰（`亥时` / `亥時` / `Zi hour`）。
+    ///
+    /// **不再带「初 / 正」后缀**：三端统一只显示时辰名（分隔符 ` · ` 连同后缀一起去掉，
+    /// 不留悬空的点或多余空格）。`Shichen.halfLabel` 与 `snapshot.shichenHalf` 的底层计算
+    /// 仍然保留（报时与自检还在用），只是不在这张卡片上显示。
     private var shichenText: String {
-        "\(snapshot.shichenName) · \(snapshot.shichenHalf)"
+        snapshot.shichenName
     }
 
     private func textWidth(_ text: String) -> CGFloat {

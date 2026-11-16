@@ -33,29 +33,26 @@ struct SettingsView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ThemedPrimaryButtonStyle())
                         .padding(.top, 4)
                     }
 
                     section(title: L("settings.sectionManual")) {
+                        // 输入框底色/描边/文字/光标/占位符全部取主题色，不跟系统外观 ——
+                        // 用系统 `.roundedBorder` 时，暗色主题下会是白底 + 浅色字（看不清）。
                         HStack(spacing: 12) {
-                            TextField(L("settings.latitude"), text: $latitudeText)
-                                .keyboardType(.numbersAndPunctuation)
-                                .textFieldStyle(.roundedBorder)
-                            TextField(L("settings.longitude"), text: $longitudeText)
-                                .keyboardType(.numbersAndPunctuation)
-                                .textFieldStyle(.roundedBorder)
+                            ThemedTextField(placeholder: L("settings.latitude"), text: $latitudeText)
+                            ThemedTextField(placeholder: L("settings.longitude"), text: $longitudeText)
                         }
 
                         if let errorText {
                             Text(errorText)
                                 .font(.system(size: 12))
-                                .foregroundStyle(.red)
+                                .foregroundStyle(palette.danger)
                         }
 
                         Button(L("settings.applyCoordinates")) { applyManual() }
-                            .buttonStyle(.borderedProminent)
-                            .frame(maxWidth: .infinity)
+                            .buttonStyle(ThemedPrimaryButtonStyle())
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
                             ForEach(Place.presets, id: \.presetKey) { preset in
@@ -63,8 +60,7 @@ struct SettingsView: View {
                                     model.usePreset(preset)
                                     dismiss()
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .buttonStyle(ThemedChipButtonStyle())
                             }
                         }
                         .padding(.top, 4)
@@ -78,9 +74,7 @@ struct SettingsView: View {
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
                             ForEach(MapStyle.allCases) { style in
                                 Button(style.label) { model.setMapStyle(style) }
-                                    .buttonStyle(.bordered)
-                                    .tint(style == model.mapStyle ? Color.orange : Color.gray)
-                                    .controlSize(.small)
+                                    .buttonStyle(ThemedChipButtonStyle(isSelected: style == model.mapStyle))
                             }
                         }
                     }
@@ -107,7 +101,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider()
+                    ThemedDivider()
 
                     section(title: L("settings.sectionScreen")) {
                         Toggle(isOn: keepScreenOnBinding) {
@@ -122,7 +116,7 @@ struct SettingsView: View {
 
                         // 主题三态与「屏幕常亮」同一片区：自动（默认，按日出日落）/ 亮色 / 暗色。
                         // 强制模式只是忽略日出日落，其余渲染逻辑完全一样；写进设置存储，重启保留。
-                        Divider()
+                        ThemedDivider()
                             .padding(.vertical, 2)
 
                         VStack(alignment: .leading, spacing: 6) {
@@ -135,9 +129,7 @@ struct SettingsView: View {
                             LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
                                 ForEach(ThemeMode.allCases, id: \.self) { mode in
                                     Button(mode.label) { model.setThemeMode(mode) }
-                                        .buttonStyle(.bordered)
-                                        .tint(mode == model.themeMode ? Color.orange : Color.gray)
-                                        .controlSize(.small)
+                                        .buttonStyle(ThemedChipButtonStyle(isSelected: mode == model.themeMode))
                                 }
                             }
                         }
@@ -148,7 +140,7 @@ struct SettingsView: View {
                     // 而且是本次 App 生命周期内的内存开关，重启回到隐藏。
                     // 诊断的代码全部保留，只是默认没有入口。
                     if model.showDiagnostics {
-                        Divider()
+                        ThemedDivider()
 
                         section(title: L("settings.sectionDiagnostics")) {
                             VStack(alignment: .leading, spacing: 6) {
@@ -169,14 +161,12 @@ struct SettingsView: View {
                                 model.refreshKeyTime()
                             } label: {
                                 Text(L("settings.syncKeyTime"))
-                                    .font(.system(size: 12))
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .buttonStyle(ThemedChipButtonStyle())
                         }
                     }
 
-                    Divider()
+                    ThemedDivider()
 
                     section(title: L("settings.sectionAbout")) {
                         Text(L("settings.aboutBody"))
@@ -203,6 +193,8 @@ struct SettingsView: View {
                 longitudeText = String(format: "%.4f", model.place.longitude)
             }
         }
+        // 开关、导航栏「完成」等系统控件也用主题强调色（否则强制主题下会露出系统默认蓝）。
+        .tint(palette.primary)
     }
 
     private var remindersBinding: Binding<Bool> {
@@ -302,7 +294,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.orange)
+                // 与 Android 的 `colorScheme.primary` 一致：系统的 `.orange` 在浅色底上只有 2.2:1。
+                .foregroundStyle(palette.primary)
             content()
         }
     }

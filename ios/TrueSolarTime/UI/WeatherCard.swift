@@ -4,6 +4,8 @@ import SwiftUI
 /// 数据来自 Open-Meteo（与 Android 版同一接口、同一缓存策略）。
 struct WeatherCard: View {
 
+    @Environment(\.palette) private var palette
+
     let weather: WeatherSnapshot?
     let isDay: Bool
     let waitingForGPS: Bool
@@ -15,12 +17,12 @@ struct WeatherCard: View {
             HStack {
                 Text(L("weather.title"))
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                 Spacer()
                 if let weather, let range = todayRange(weather) {
                     Text("\(range.low)° ~ \(range.high)°")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.onSurfaceVariant)
                 }
             }
 
@@ -35,20 +37,20 @@ struct WeatherCard: View {
                             .monospacedDigit()
                         Text(weather.condition.label)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.onSurfaceVariant)
                     }
                     Spacer()
                 }
                 .padding(.top, 2)
 
                 if !hourlySlots().isEmpty {
-                    Divider().padding(.vertical, 2)
+                    ThemedDivider().padding(.vertical, 2)
                     HStack(alignment: .top, spacing: 0) {
                         ForEach(hourlySlots(), id: \.epochSeconds) { point in
                             VStack(spacing: 4) {
                                 Text(hourLabel(point))
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.onSurfaceVariant)
                                 Image(systemName: point.condition.symbol(isDay: isDayNow(point)))
                                     .font(.system(size: 18))
                                     .symbolRenderingMode(.multicolor)
@@ -63,7 +65,7 @@ struct WeatherCard: View {
             } else {
                 Text(waitingForGPS ? L("weather.waitingFix") : L("weather.loading"))
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.onSurfaceVariant)
                     .padding(.vertical, 6)
             }
         }
@@ -105,6 +107,8 @@ struct WeatherCard: View {
 /// 统一的卡片外观，和其余卡片保持一致。
 struct CardContainer<Content: View>: View {
 
+    @Environment(\.palette) private var palette
+
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -115,7 +119,7 @@ struct CardContainer<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .fill(palette.surface)
         )
     }
 }
