@@ -5,6 +5,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
@@ -81,10 +82,11 @@ fun TrueSolarTimeTheme(
  * 太阳卡圆盘的配色（派生自色板 / 新增的 `SunColors`，见 [SunColors]）。
  *
  * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#E6CB9C`，白卡上对比度 ≈1.52，只做「路径示意」）；
- *   太阳点 = **亮金** [SunColors.DAY_SUN]（`#D9A520`，用户要的金色，是主角），外加一圈
- *   50% 的深金细描边 [SunColors.DAY_SUN_RING]（`#8A6508`，与弧的对比度 ≈3.39）把点从淡金弧里切出来；
- *   日出 / 日落刻度 = 同太阳金、70% 透明（比点淡一档）。
- * - **暗色主题**：全部保持原来的实色主色（深蓝底上那档金色正好，调淡反而糊），也不加描边。
+ *   太阳点 = **柔和边缘的金色点**，径向渐变 `#F5C842 → #D9A520`（4dp 实心核心）→ 全透明（8.4dp），
+ *   与逐时时间轴上「现在」的圆点同一套画法；不再画深金硬描边（见 [SunColors.SUN_DOT_RING_ALPHA]）；
+ *   日出 / 日落刻度 = 太阳金、70% 透明（比点淡一档）。
+ * - **暗色主题**：白天弧仍是实色主色（深蓝底上那档金色正好，调淡反而糊）；太阳点同样用径向渐变，
+ *   但色板换成夜金 [SunColors.NIGHT_SUN_CORE]（`#F5D68A`，与 `DarkColors.primary` 同色）。
  *
  * 亮色主题里「白天弧 vs 夜晚虚线」不再靠深浅区分（弧故意更淡），而是靠色相：
  * 暖金的 `r − b` 比中性灰大 0.17 左右（`SunColorsTest` 里有断言）。
@@ -95,20 +97,29 @@ fun TrueSolarTimeTheme(
 @Composable
 fun sunDayArcColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_ARC) else MaterialTheme.colorScheme.primary
 
-/** 太阳点的填充色：亮色主题是亮金 `#D9A520`；暗色主题仍是主色。 */
+/** 太阳点的中段色：亮色主题是亮金 `#D9A520`（渐变中段）；暗色主题是夜金 `#F5D68A`。 */
 @Composable
-fun sunDotColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_SUN) else MaterialTheme.colorScheme.primary
+fun sunDotColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_SUN_MID) else Color(SunColors.NIGHT_SUN_MID)
 
 /**
- * 太阳点外圈的细描边（亮色主题：深金 `#8A6508` @ 50%）。
+ * 太阳点的径向渐变：**中心亮金 → 中段金 → 外沿全透明**（色标见 [SunColors.sunDotStops]）。
  *
- * 亮金点与淡金弧只差 ≈1.43 的对比度，靠这圈深边把点「框」出来；暗色主题不画描边，返回 null。
+ * 画法与逐时时间轴上「现在」的圆点一致（`Brush.radialGradient` + 一个圆），区别只是多了一档中段：
+ * 核心 4dp 是实心的，4dp 之外才化开，柔光到 8.4dp（2.1 倍核心半径）完全散尽。
+ *
+ * 这里不传 `center` / `radius`：`Brush.radialGradient` 会按**实际绘制圆的大小**铺开，
+ * 所以 `drawCircle(brush = sunDotBrush(), radius = 8.4dp)` 里 0–1 的色标正好对应 0–8.4dp，
+ * [SunColors.SUN_DOT_CORE_STOP]（≈0.476）也就落回 4dp 的核心边缘。
+ *
+ * 不再有硬描边（上一版 `#8A6508` @ 0.5 已删除）：边缘交给渐变自己化开。
  */
 @Composable
-fun sunDotRingColor(): Color? = if (isLightSunPalette()) {
-    Color(SunColors.DAY_SUN_RING).copy(alpha = SunColors.DAY_SUN_RING_ALPHA)
-} else {
-    null
+fun sunDotBrush(): Brush {
+    val stops = SunColors.sunDotStops(night = !isLightSunPalette())
+    // Compose 的径向渐变只提供 `(位置, 颜色)` 变长参数这一种写法（没有单独的 colorStops 列表重载）。
+    return Brush.radialGradient(
+        *stops.map { it.position to Color(it.argb) }.toTypedArray(),
+    )
 }
 
 /** 日出 / 日落刻度点：亮色主题用太阳金 + 70% 透明（比太阳点淡一档），暗色主题仍是主色。 */

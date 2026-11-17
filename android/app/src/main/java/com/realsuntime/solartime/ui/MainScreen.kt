@@ -94,10 +94,10 @@ import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
+import com.realsuntime.solartime.ui.theme.SunColors
 import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.ui.theme.sunDayArcColor
-import com.realsuntime.solartime.ui.theme.sunDotColor
-import com.realsuntime.solartime.ui.theme.sunDotRingColor
+import com.realsuntime.solartime.ui.theme.sunDotBrush
 import com.realsuntime.solartime.ui.theme.sunTickColor
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
@@ -138,7 +138,12 @@ private val SUN_DIAL_HEIGHT = 194.dp
 private val SUN_DAYLIGHT_GAP = 4.dp
 /** 外侧时间标签与圆（含表圈）的水平间距。 */
 private val SUN_LABEL_GAP = 10.dp
-/** 上中天标签底边与圆顶之间的竖直间距（≥ 太阳点的柔光半径，正午的太阳点就在圆顶）。 */
+/**
+ * 上中天标签底边与圆顶之间的竖直间距。
+ *
+ * 正午的太阳点就在圆顶，柔光外沿 8.4dp 会探进标签下方 0.4dp —— 那一圈已经渐隐到 alpha ≈0.09，
+ * 几乎看不见，所以不必为了这 0.4dp 把标签整体往下推（会把圆盘挤扁）。
+ */
 private val SUN_NOON_LABEL_GAP = 8.dp
 /**
  * 短昼保护：日出／日落挤在圆顶附近时，两个标签至少下沉到圆顶下方这么远。
@@ -1164,10 +1169,11 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 地平线是一条水平线，其高度由日出时刻决定（见 `SunPathGeometry`）。
  *
  * 盘面画五样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
- * 1. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
+ * 1. 白天弧：实线 1.6dp、主色；夜晚弧：虚线 1.5dp / 4dp 间隔、低对比度；
  * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
  * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
- * 4. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点；
+ * 4. 当前太阳点：**柔和边缘的金色点** —— 径向渐变（核心 4dp 实心、柔光到 8.4dp 散尽），
+ *    与逐时时间轴上「现在」的圆点同一套画法；白天用亮金、夜间换夜金 `#F5D68A`，不再画硬描边；
  * 5. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
  *    （北半球顺时针、南半球逆时针，颜色 onSurfaceVariant，不与主色抢视觉）。
  *
@@ -1188,11 +1194,11 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
-    // 太阳点是亮金 + 一圈深金细描边（亮金与淡金弧只差 1.43，靠这圈边把点「框」出来），
+    // 太阳点是「柔和边缘的金色点」—— 径向渐变（中心亮金 → 中段金 → 外沿全透明），
+    // 与逐时时间轴上「现在」的圆点同一套画法，硬描边已删除（见 `SunColors.SUN_DOT_RING_ALPHA`）。
     // 刻度点用太阳金 70%。地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
-    val sunDotFill = sunDotColor()
-    val sunDotRing = sunDotRingColor()
+    val dotBrush = sunDotBrush()
     val sunTickColor = sunTickColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
@@ -1257,29 +1263,39 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 southernHemisphere = southernHemisphere,
             )
             val center = Offset(path.centerX, path.centerY)
-            val arcStroke = 2.5.dp.toPx()
+            // 轨迹线（亮 / 暗两个主题、地平线上下）都比上一版细：白天实线 1.6dp、夜晚虚线 1.5dp，
+            // 虚线间隔跟着从 6/6dp 缩到 4/4dp —— 线细了间隔不缩，看起来还是一段段粗棒。
+            // 极昼 / 极夜的整圆用同一组线宽（白天实线用 1.6dp，极夜虚圆用 1.5dp + 4/4dp）。
+            val dayArcStroke = SunColors.DAY_ARC_STROKE_DP.dp.toPx()
+            val nightArcStroke = SunColors.NIGHT_ARC_STROKE_DP.dp.toPx()
             val tickRadius = 2.5.dp.toPx()
-            val sunRadius = 4.5.dp.toPx()
-            val nightDash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 6.dp.toPx()))
+            // 太阳点的柔光外沿：核心 4dp × 2.1 ≈ 8.4dp（色标 0–1 对应这整段半径）。
+            val dotGlowRadius = SunColors.SUN_DOT_GLOW_RADIUS_DP.dp.toPx()
+            val nightDash = PathEffect.dashPathEffect(
+                floatArrayOf(
+                    SunColors.NIGHT_DASH_ON_DP.dp.toPx(),
+                    SunColors.NIGHT_DASH_OFF_DP.dp.toPx(),
+                ),
+            )
             val arcTopLeft = Offset(path.centerX - path.radius, path.centerY - path.radius)
             val arcSize = Size(path.radius * 2f, path.radius * 2f)
 
             val span = SunPathGeometry.dayArcSpan(sunriseHour, sunsetHour)
             if (span == null) {
-                // 整圆只有一种性质：极昼画实线亮弧，极夜画虚线暗弧。
+                // 整圆只有一种性质：极昼画实线亮弧，极夜画虚线暗弧（同样用细线）。
                 if (path.isWholeCircleDay) {
                     drawCircle(
                         color = dayArcColor,
                         radius = path.radius,
                         center = center,
-                        style = Stroke(arcStroke),
+                        style = Stroke(dayArcStroke),
                     )
                 } else {
                     drawCircle(
                         color = scheme.outline,
                         radius = path.radius,
                         center = center,
-                        style = Stroke(width = arcStroke, pathEffect = nightDash),
+                        style = Stroke(width = nightArcStroke, pathEffect = nightDash),
                     )
                 }
             } else {
@@ -1291,7 +1307,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                     useCenter = false,
                     topLeft = arcTopLeft,
                     size = arcSize,
-                    style = Stroke(width = arcStroke, cap = StrokeCap.Round),
+                    style = Stroke(width = dayArcStroke, cap = StrokeCap.Round),
                 )
                 // 夜晚弧：剩下那一圈，虚线、低对比度。
                 drawArc(
@@ -1301,7 +1317,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                     useCenter = false,
                     topLeft = arcTopLeft,
                     size = arcSize,
-                    style = Stroke(width = arcStroke, pathEffect = nightDash),
+                    style = Stroke(width = nightArcStroke, pathEffect = nightDash),
                 )
             }
 
@@ -1382,39 +1398,12 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 color = scheme.onSurfaceVariant,
             )
 
-            // 当前太阳点：白天是金点 + 柔光（比淡金弧实得多，是视线的落点），夜里空心暗色。
+            // 当前太阳点：**柔和边缘的金色点** —— 与逐时时间轴上「现在」的圆点同一套径向渐变画法
+            // （`Brush.radialGradient` + 一个圆）。核心 4dp 是实心的（亮金 #F5C842 → 中段金 #D9A520），
+            // 4dp 之外渐隐到全透明，柔光到 8.4dp（2.1 倍核心半径）散尽；不再画硬描边，边缘自己化开。
+            // 白天 / 夜间只是换色板（夜间换成 #F5D68A），画法与半径完全一致。
             val sun = Offset(path.sunX, path.sunY)
-            if (path.isSunUp) {
-                // 柔光只放到 1.5 倍：正午太阳点就在圆顶，光圈再大就会碰到上面的上中天标签。
-                drawCircle(
-                    color = sunDotFill.copy(alpha = 0.18f),
-                    radius = sunRadius * 1.5f,
-                    center = sun,
-                )
-                drawCircle(color = sunDotFill, radius = sunRadius, center = sun)
-                // 亮金点与淡金弧只差 1.43 的对比度：加一圈 1dp 的深金描边把点从弧里「切」出来。
-                sunDotRing?.let { ring ->
-                    drawCircle(
-                        color = ring,
-                        radius = sunRadius,
-                        center = sun,
-                        style = Stroke(width = 1.dp.toPx()),
-                    )
-                }
-            } else {
-                // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫的话会和虚线糊成一团。
-                drawCircle(
-                    color = scheme.surface,
-                    radius = sunRadius + 1.5.dp.toPx(),
-                    center = sun,
-                )
-                drawCircle(
-                    color = scheme.outline,
-                    radius = sunRadius,
-                    center = sun,
-                    style = Stroke(width = 1.5.dp.toPx()),
-                )
-            }
+            drawCircle(brush = dotBrush, radius = dotGlowRadius, center = sun)
         }
 
         // 标签层：等画布量到尺寸后再摆，坐标全部来自纯几何函数。

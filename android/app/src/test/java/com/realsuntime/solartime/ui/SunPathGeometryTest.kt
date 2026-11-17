@@ -738,7 +738,7 @@ class SunPathGeometryTest {
                 if (centerDelta > 180.0) centerDelta = 360.0 - centerDelta
                 assertEquals("$south $hour 弧应以太阳点为中心", 0.0, centerDelta, 0.1)
 
-                // 箭头尖离太阳点 > 6dp（太阳点在 R 上、柔光 6.75dp，弧在 0.72R）。
+                // 箭头尖离太阳点 > 6dp（太阳点在 R 上，柔光外沿 8.4dp，弧在 0.72R）。
                 val sunDistance = kotlin.math.hypot(
                     (arrow.tipX - path.sunX).toDouble(),
                     (arrow.tipY - path.sunY).toDouble(),

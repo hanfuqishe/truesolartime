@@ -7,7 +7,8 @@ import org.junit.Test
 /**
  * 太阳卡白天配色的断言（`SunColors` 是纯 Kotlin，测试不依赖 Compose）。
  *
- * 这版的要求：白天弧改成很淡的「路径示意」金，太阳点改成更实的金；
+ * 这版的要求：白天弧改成很淡的「路径示意」金，太阳点改成**柔和边缘的金色点**
+ * （径向渐变，中心 `#F5C842` → 中段 `#D9A520` → 全透明），上一版那圈深金硬描边已删除；
  * 弧与夜晚虚线**不再比「谁更深」**，而是靠色相（暖金 vs 中性灰）区分。
  */
 class SunColorsTest {
@@ -38,30 +39,76 @@ class SunColorsTest {
     }
 
     /**
-     * 太阳点是**亮金**（用户点名要的金色），与淡金弧的对比度只要求 ≥1.3；
-     * 真正把点从弧里「切」出来的是外面那圈深金描边（见下一条）。
+     * 太阳点的**中段色**（4dp 核心的外缘，也是原来的实心色）要比淡金弧明显：
+     * 与弧的对比度 ≥1.3；整点又比弧在白卡上更显眼。
      */
     @Test
     fun sunDotStandsOutFromThePaleArc() {
-        val sunVsArc = SunColors.contrastRatio(SunColors.DAY_SUN, SunColors.DAY_ARC)
+        val sunVsArc = SunColors.contrastRatio(SunColors.DAY_SUN_MID, SunColors.DAY_ARC)
         assertTrue("亮金点与弧的对比度太低：$sunVsArc", sunVsArc >= 1.3)
         val sunVsCard = SunColors.contrastRatio(SunColors.DAY_SUN, cardSurface)
         val arcVsCard = SunColors.contrastRatio(SunColors.DAY_ARC, cardSurface)
         assertTrue("太阳点应比弧更明显：$sunVsCard vs $arcVsCard", sunVsCard > arcVsCard)
     }
 
-    /** 亮金点靠 50% 的深金细描边与淡金弧分离：描边色与弧的对比度 ≥2.5。 */
+    /** 渐变中心必须比中段更亮：点才有「鼓起」的球感，而不是一块平的色块。 */
     @Test
-    fun sunDotRingSeparatesTheDotFromTheArc() {
-        val ringVsArc = SunColors.contrastRatio(SunColors.DAY_SUN_RING, SunColors.DAY_ARC)
-        assertTrue("描边与弧的对比度不够，点会糊进弧里：$ringVsArc", ringVsArc >= 2.5)
-        // 描边比填充深：这样「金点 + 深边」才有层次，而不是整点变暗。
+    fun sunDotCoreIsBrighterThanItsMidStop() {
+        val core = SunColors.relativeLuminance(SunColors.DAY_SUN_CORE)
+        val mid = SunColors.relativeLuminance(SunColors.DAY_SUN_MID)
+        assertTrue("中心色应该比中段更亮：核心 $core vs 中段 $mid", core > mid)
+    }
+
+    /** 上一版的深金硬描边已整圈删除：alpha 常量必须是 0（不再有一圈实色边）。 */
+    @Test
+    fun sunDotHasNoHardRing() {
         assertTrue(
-            "描边应该比填充更深",
-            SunColors.relativeLuminance(SunColors.DAY_SUN_RING) <
-                SunColors.relativeLuminance(SunColors.DAY_SUN),
+            "硬描边必须删除或 alpha < 0.15：${SunColors.SUN_DOT_RING_ALPHA}",
+            SunColors.SUN_DOT_RING_ALPHA < 0.15f,
         )
-        assertEquals(0.5f, SunColors.DAY_SUN_RING_ALPHA, 1e-6f)
+        assertEquals("描边应已删除（0 = 不绘制）", 0f, SunColors.SUN_DOT_RING_ALPHA, 1e-6f)
+    }
+
+    /**
+     * 太阳点渐变的三个色标：中心 `#F5C842`、中段 `#D9A520`、外沿是同一个金 + alpha 0。
+     *
+     * 外沿不换色相、只把 alpha 打到 0：这样柔光拖尾是「金在散开」，不会在边缘偏成灰色。
+     */
+    @Test
+    fun sunDotGradientFadesFromBrightGoldToTransparent() {
+        assertEquals(0xFFF5C842.toInt(), SunColors.DAY_SUN_CORE)
+        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN_MID)
+        assertEquals("外沿必须是 alpha 0", 0, SunColors.DAY_SUN_CLEAR ushr 24)
+        assertEquals(
+            "外沿色相应与中段一致（只是 alpha 0）",
+            SunColors.DAY_SUN_MID and 0x00FFFFFF,
+            SunColors.DAY_SUN_CLEAR and 0x00FFFFFF,
+        )
+
+        val dayStops = SunColors.sunDotStops(night = false)
+        assertEquals(3, dayStops.size)
+        assertEquals(0f, dayStops.first().position, 1e-6f)
+        assertEquals(SunColors.DAY_SUN_CORE, dayStops.first().argb)
+        assertEquals(SunColors.DAY_SUN_MID, dayStops[1].argb)
+        assertEquals(1f, dayStops.last().position, 1e-6f)
+        assertEquals(0, dayStops.last().argb ushr 24)
+    }
+
+    /** 夜间用同一套渐变，色值换成夜金 `#F5D68A`（与 `DarkColors.primary` 一致）。 */
+    @Test
+    fun nightGradientUsesTheNightGold() {
+        assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN_CORE)
+        assertEquals(SunColors.NIGHT_SUN_CORE, SunColors.NIGHT_SUN_MID)
+        assertEquals("夜间外沿也必须 alpha 0", 0, SunColors.NIGHT_SUN_CLEAR ushr 24)
+
+        val nightStops = SunColors.sunDotStops(night = true)
+        assertEquals(3, nightStops.size)
+        val nightRgb = SunColors.NIGHT_SUN_CORE and 0x00FFFFFF
+        nightStops.forEach {
+            assertEquals("夜间所有色标应同为夜金，只差 alpha", nightRgb, it.argb and 0x00FFFFFF)
+        }
+        assertEquals(SunColors.NIGHT_SUN_CORE, nightStops.first().argb)
+        assertEquals(0, nightStops.last().argb ushr 24)
     }
 
     /** 三个颜色的 RGB 距离：弧 / 点 / 虚线两两分得开（报告里也给出这组数）。 */
@@ -86,10 +133,14 @@ class SunColorsTest {
     fun paletteConstantsArePinned() {
         assertEquals(0xFFE6CB9C.toInt(), SunColors.DAY_ARC)
         assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
-        assertEquals(0xFF8A6508.toInt(), SunColors.DAY_SUN_RING)
+        assertEquals(0xFFF5C842.toInt(), SunColors.DAY_SUN_CORE)
+        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN_MID)
+        assertEquals(0x00D9A520, SunColors.DAY_SUN_CLEAR)
+        assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN_CORE)
+        assertEquals(0x00F5D68A, SunColors.NIGHT_SUN_CLEAR)
         assertEquals(0xFFFFFBF6.toInt(), SunColors.CARD_SURFACE_LIGHT)
         assertEquals(0xFF857468.toInt(), SunColors.NIGHT_DASH_LIGHT)
-        assertEquals(0.5f, SunColors.DAY_SUN_RING_ALPHA, 1e-6f)
+        assertEquals(0.0f, SunColors.SUN_DOT_RING_ALPHA, 1e-6f)
         assertEquals(0.7f, SunColors.DAY_TICK_ALPHA, 1e-6f)
         assertEquals(0.15, SunColors.MIN_WARMTH_GAP, 1e-9)
     }
