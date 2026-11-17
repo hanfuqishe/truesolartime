@@ -539,4 +539,112 @@ class SunPathGeometryTest {
         assertEquals(160f - sideInset, narrowSpan.endX, 0.5f)
         assertEquals(160f - 2 * sideInset, narrowSpan.length, 0.5f)
     }
+
+    // ---- 南北半球：太阳方向镜像 ----
+
+    private fun dialSouth(
+        sunriseHour: Double?,
+        sunsetHour: Double?,
+        trueSolarHour: Double = 12.0,
+        isPolarDay: Boolean = false,
+        isPolarNight: Boolean = false,
+    ): SunPath = SunPathGeometry.compute(
+        width = dialWidth,
+        height = dialHeight,
+        sunriseHour = sunriseHour,
+        sunsetHour = sunsetHour,
+        trueSolarHour = trueSolarHour,
+        isPolarDay = isPolarDay,
+        isPolarNight = isPolarNight,
+        southernHemisphere = true,
+    )
+
+    /** 北半球（上海 31.2°N）：06:00 在左、18:00 在右，太阳从左往右。 */
+    @Test
+    fun northernHemisphereRunsLeftToRight() {
+        fun at(hour: Double) = SunPathGeometry.compute(width, height, 6.0, 18.0, hour, false, false)
+        assertTrue("北半球 06:00 应在圆心左侧：${at(6.0).sunX} vs $centerX", at(6.0).sunX < centerX)
+        assertTrue("北半球 18:00 应在圆心右侧", at(18.0).sunX > centerX)
+        assertEquals("12:00 仍在圆顶", centerY - radius, at(12.0).sunY, 0.5f)
+        assertEquals("00:00 仍在圆底", centerY + radius, at(0.0).sunY, 0.5f)
+        // 11:00 → 13:00 向右走。
+        assertTrue("北半球上午到下午太阳向右移动", at(13.0).sunX > at(11.0).sunX)
+    }
+
+    /** 南半球（中山站 −69.4°S）：06:00 在**右**、18:00 在**左**，太阳从右往左（逆时针）。 */
+    @Test
+    fun southernHemisphereMirrorsTheSun() {
+        fun southAt(hour: Double) = dialSouth(6.0, 18.0, hour)
+        assertTrue("南半球 06:00 应在圆心右侧：${southAt(6.0).sunX} vs ${dialWidth / 2}", southAt(6.0).sunX > dialWidth / 2)
+        assertTrue("南半球 18:00 应在圆心左侧", southAt(18.0).sunX < dialWidth / 2)
+        assertEquals("12:00 仍在圆顶（南北一样）", dialHeight / 2 - SunPathGeometry.RADIUS_RATIO * dialHeight, southAt(12.0).sunY, 0.5f)
+        assertEquals("00:00 仍在圆底", dialHeight / 2 + SunPathGeometry.RADIUS_RATIO * dialHeight, southAt(0.0).sunY, 0.5f)
+        assertTrue("南半球上午到下午太阳向左移动", southAt(13.0).sunX < southAt(11.0).sunX)
+
+        // 同一时刻的 x 关于圆心与北半球镜像，y 完全相同。
+        for (hour in listOf(3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 23.5, 0.5)) {
+            val north = dial(6.0, 18.0, trueSolarHour = hour)
+            val south = dialSouth(6.0, 18.0, trueSolarHour = hour)
+            assertEquals("$hour 的 x 应左右镜像", 2 * north.centerX - north.sunX, south.sunX, 0.5f)
+            assertEquals("$hour 的 y 应不受半球影响", north.sunY, south.sunY, 0.5f)
+        }
+
+        // 极昼时整圆方向也跟着镜像：06:00 的太阳北半球在左、南半球在右。
+        val polarNorth = SunPathGeometry.compute(dialWidth, dialHeight, null, null, 6.0, true, false)
+        val polarSouth = dialSouth(null, null, trueSolarHour = 6.0, isPolarDay = true)
+        assertTrue("极昼北半球 06:00 在左", polarNorth.sunX < polarNorth.centerX)
+        assertTrue("极昼南半球 06:00 在右", polarSouth.sunX > polarSouth.centerX)
+        assertTrue("极昼两边都是整圆", polarNorth.isWholeCircleDay && polarSouth.isWholeCircleDay)
+    }
+
+    /** 南半球日出标签锚点在**右**、日落在**左**（北半球相反），上下位置不变。 */
+    @Test
+    fun southernHemisphereSwapsSunriseAndSunsetLabels() {
+        val north = dial(4.99, 19.01)
+        val northAnchors = anchors(north, 4.99, 19.01)
+        assertTrue("北半球日出标签在左", northAnchors.sunriseX < north.centerX)
+        assertTrue("北半球日落标签在右", northAnchors.sunsetX > north.centerX)
+
+        val south = dialSouth(4.99, 19.01)
+        assertTrue("路径要记住这是南半球", south.southernHemisphere)
+        val southAnchors = anchors(south, 4.99, 19.01)
+        assertTrue(
+            "南半球日出标签应在圆心右侧：${southAnchors.sunriseX} vs ${south.centerX}",
+            southAnchors.sunriseX > south.centerX,
+        )
+        assertTrue("南半球日落标签应在圆心左侧", southAnchors.sunsetX < south.centerX)
+        // 上下不变、左右镜像。
+        assertEquals(northAnchors.sunriseY, southAnchors.sunriseY, 0.5f)
+        assertEquals(northAnchors.sunsetY, southAnchors.sunsetY, 0.5f)
+        assertEquals(northAnchors.noonY, southAnchors.noonY, 0.5f)
+        assertEquals(2 * north.centerX - northAnchors.sunriseX, southAnchors.sunriseX, 0.5f)
+        assertEquals(2 * north.centerX - northAnchors.sunsetX, southAnchors.sunsetX, 0.5f)
+    }
+
+    /** 地平线只由昼长决定：同一昼长下南北半球的 horizonY 与地平线跨度完全相同。 */
+    @Test
+    fun horizonIsIndependentOfHemisphere() {
+        for ((sunrise, sunset) in listOf(6.0 to 18.0, 4.99 to 19.01, 11.5 to 12.5, 0.0 to 24.0)) {
+            val north = dial(sunrise, sunset)
+            val south = dialSouth(sunrise, sunset)
+            assertEquals(
+                "昼长 ($sunrise/$sunset) 的地平线不应随半球变化",
+                north.horizonY,
+                south.horizonY,
+                1e-4f,
+            )
+            assertEquals(north.bottomY, south.bottomY, 1e-4f)
+            assertEquals(north.topY, south.topY, 1e-4f)
+            val northSpan = SunPathGeometry.horizonSpan(dialWidth, sideInset)
+            val southSpan = SunPathGeometry.horizonSpan(dialWidth, sideInset)
+            assertEquals(northSpan.startX, southSpan.startX, 1e-4f)
+            assertEquals(northSpan.endX, southSpan.endX, 1e-4f)
+        }
+        // 极昼 / 极夜：地平线位置同样与半球无关。
+        for ((polarDay, polarNight) in listOf(true to false, false to true)) {
+            val north = SunPathGeometry.compute(dialWidth, dialHeight, null, null, 12.0, polarDay, polarNight)
+            val south = dialSouth(null, null, isPolarDay = polarDay, isPolarNight = polarNight)
+            assertEquals(north.horizonY, south.horizonY, 1e-4f)
+        }
+    }
 }

@@ -1117,11 +1117,12 @@ struct Index {
   }
 
   /**
-   * 圆盘上的文字标签层：日出（右对齐）、日落（左对齐）、上中天（居中）、极昼／极夜（圆心）。
+   * 圆盘上的文字标签层：日出、日落、上中天（居中）、极昼／极夜（圆心）。
    *
    * 锚点由 `SunPathGeometry.labelAnchors` 算出，用 `position` + `markAnchor` 定位：
-   * 日出锚点是文字右边缘+竖直中心、日落是左边缘+竖直中心、上中天是水平中心+底边、
-   * 极昼极夜是文字中心 —— 与 Android 的 `DialLabel` 摆位一致。
+   * 北半球日出在左（右对齐）、日落在右（左对齐）；南半球镜像后日出在右（左对齐）、
+   * 日落在左（右对齐）—— 对齐方式跟着换边，标签始终落在圆外。上中天是水平中心+底边、
+   * 极昼极夜是文字中心，南北半球不变。
    */
   @Builder
   sunDialLabelLayer() {
@@ -1134,7 +1135,7 @@ struct Index {
           .fontColor(this.palette.text)
           .maxLines(1)
           .position({ x: this.sunAnchors().sunriseX, y: this.sunAnchors().sunriseY })
-          .markAnchor({ x: '100%', y: '50%' })
+          .markAnchor({ x: this.isSouthernHemisphere() ? 0 : '100%', y: '50%' })
         Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
@@ -1142,7 +1143,7 @@ struct Index {
           .fontColor(this.palette.text)
           .maxLines(1)
           .position({ x: this.sunAnchors().sunsetX, y: this.sunAnchors().sunsetY })
-          .markAnchor({ x: 0, y: '50%' })
+          .markAnchor({ x: this.isSouthernHemisphere() ? '100%' : 0, y: '50%' })
       } else {
         Text(this.snapshot.polar === PolarState.MIDNIGHT_SUN ? '极昼' : '极夜')
           .fontSize(this.cs(11))
@@ -1268,6 +1269,11 @@ struct Index {
       : '--';
   }
 
+  /** 是否南半球：决定圆盘 x 轴是否镜像（日出在右、日落在左）。 */
+  private isSouthernHemisphere(): boolean {
+    return this.place.latitude < 0;
+  }
+
   /** 圆盘几何的入口：画布尺寸 + 日出/日落/当前真太阳时（小时数）。 */
   private sunDialPath(): SunPath {
     const width: number = this.sunDialW > 0 ? this.sunDialW : this.cs(294);
@@ -1275,7 +1281,9 @@ struct Index {
     return SunPathGeometry.compute(width, height, this.sunriseDialHour(), this.sunsetDialHour(),
       this.snapshot.trueSolarSeconds / SECONDS_PER_HOUR,
       this.snapshot.polar === PolarState.MIDNIGHT_SUN,
-      this.snapshot.polar === PolarState.POLAR_NIGHT);
+      this.snapshot.polar === PolarState.POLAR_NIGHT,
+      // 南半球观察者面朝北，东在右、西在左：圆盘 x 轴镜像（日出在右、日落在左）。
+      this.isSouthernHemisphere());
   }
 
   /** 三个时间标签 + 极昼极夜文案的锚点。 */
@@ -1301,7 +1309,8 @@ struct Index {
 
   /**
    * 画圆盘（Canvas 只画图形，文字标签在 `sunDialLabelLayer` 里用真正的 Text 叠上去）：
-   * 外圈淡描边、白天实线弧 / 夜晚虚线弧、地平线（弦 + 两侧 0.2R）、日出日落刻度、当前太阳点。
+   * 白天实线弧 / 夜晚虚线弧、地平线（画布左右各内缩 4vp）、日出日落刻度、当前太阳点。
+   * 圆盘边界只保留这两条弧，不再画圆外那圈细描边（「表圈」已按用户反馈去掉）。
    * 颜色全部取 `palette`（白天/夜间两套），坐标全部来自 `core/SunPath.ets`。
    */
   private drawSunDial(): void {
@@ -1314,23 +1323,17 @@ struct Index {
     const height: number = this.sunDialH;
     const accent: string = this.palette.accent;
     const outline: string = this.palette.subtle;
-    const rim: string = this.palette.divider;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
 
-    // 外圆淡描边：比弧线再外扩 3vp 当「表圈」，否则会被整圈的弧线盖掉。
-    ctx.beginPath();
-    ctx.arc(path.centerX, path.centerY, path.radius + 3, 0, full);
-    ctx.strokeStyle = rim;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([]);
-    ctx.stroke();
-
     // 白天弧 / 夜晚弧；极昼极夜没有「日出→日落」那一段，整圆一种性质。
-    const span: SunArcSpan | null = SunPathGeometry.dayArcSpan(this.sunriseDialHour(), this.sunsetDialHour());
+    // 南半球（southernHemisphere）扫角为负 → 用 anticlockwise 反向画，整圆也一样。
+    const southern: boolean = path.southernHemisphere;
+    const span: SunArcSpan | null = SunPathGeometry.dayArcSpan(this.sunriseDialHour(),
+      this.sunsetDialHour(), southern);
     if (span === null) {
       ctx.beginPath();
-      ctx.arc(path.centerX, path.centerY, path.radius, 0, full);
+      ctx.arc(path.centerX, path.centerY, path.radius, 0, full, southern);
       if (path.isWholeCircleDay()) {
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2.5;
@@ -1344,15 +1347,18 @@ struct Index {
     } else {
       const start: number = span.startDegrees * Math.PI / 180;
       const sweep: number = span.sweepDegrees * Math.PI / 180;
+      const anticlockwise: boolean = sweep < 0;
+      // 夜晚弧顺着同一个方向补完整圈：北半球到 start+2π，南半球到 start−2π。
+      const nightEnd: number = start + (anticlockwise ? sweep - full : sweep + full);
       ctx.beginPath();
-      ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep);
+      ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep, anticlockwise);
       ctx.strokeStyle = accent;
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.setLineDash([]);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, start + full);
+      ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, nightEnd, anticlockwise);
       ctx.strokeStyle = outline;
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'butt';
@@ -1380,7 +1386,7 @@ struct Index {
       for (const hour of [sunriseHour, sunsetHour]) {
         ctx.beginPath();
         ctx.fillStyle = accent;
-        ctx.arc(SunPathGeometry.hourX(path.centerX, path.radius, hour),
+        ctx.arc(SunPathGeometry.hourX(path.centerX, path.radius, hour, southern),
           SunPathGeometry.hourY(path.centerY, path.radius, hour), 2.5, 0, full);
         ctx.fill();
       }

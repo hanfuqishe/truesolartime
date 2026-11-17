@@ -12,11 +12,15 @@ import kotlin.math.sqrt
  *
  * 几何模型（与鸿蒙／iOS 两版同一套）：
  * - **圆 = 一天 24 小时**，圆心 [centerX] / [centerY]、半径 [radius]；
- *   角度 `θ(t) = (t − 12h) / 24h × 360°`，圆上一点 `(x, y) = (C.x + R·sin θ, C.y − R·cos θ)`，
- *   即 **12:00 在正上方、00:00 在正下方、06:00 在正左、18:00 在正右**；
+ *   角度 `θ(t) = (t − 12h) / 24h × 360°`，12:00 恒在正上方、00:00 恒在正下方；
+ * - **x 的方向分半球**（[southernHemisphere]）：
+ *   北半球 `x = C.x + R·sin θ`（06:00 在左、18:00 在右，太阳从左往右）；
+ *   南半球观察者面朝北，东在右、西在左，太阳从右往左走，所以 `x = C.x − R·sin θ`
+ *   （06:00 在右、18:00 在左）。y 两边完全一样，`sunX` / `hourX` 都按这条来；
  * - **地平线是一条水平弦**，y 由日出时刻决定：`y_h = C.y − R·cos(θ(日出))`。
  *   昼长 12h → 弦过圆心；昼长 > 12h → 下移（白天那块更大）；< 12h → 上移；
  *   极昼 → 沉到圆下方（整圆都在白天）；极夜 → 升到圆上方（整圆都在夜晚）；
+ *   它与半球无关（同一昼长南北半球的地平线高度相同）；
  * - [sunX] / [sunY] 是**当前时刻**按同一参数化算出的点，与地平线比大小即可判断
  *   「在地平线以上还是以下」（y 向下，所以 `sunY <= horizonY` 表示在地平线以上）；
  * - 圆弧与地平线的两个交点就是日出 / 日落位置（极昼极夜时无交点，整圆统一为白天 / 夜晚）；
@@ -36,6 +40,8 @@ data class SunPath(
     val sunY: Float,
     val isPolarDay: Boolean,
     val isPolarNight: Boolean,
+    /** 南半球：x 取 `C.x − R·sin θ`（镜像），见类注释。默认北半球，保持老调用方不变。 */
+    val southernHemisphere: Boolean = false,
 ) {
     /** 圆顶（12:00 所在）的 y。 */
     val topY: Float get() = centerY - radius
@@ -78,14 +84,19 @@ data class SunArcSpan(val startDegrees: Float, val sweepDegrees: Float)
 
 /**
  * 圆盘外侧三个时间标签（以及极昼／极夜那行文案）的锚点，**像素坐标**。对齐方式由 UI 负责：
- * - 日出标签：[sunriseX] 是文字**右边缘**、[sunriseY] 是竖直中心 → 整个标签写在左交点的**左边**；
- * - 日落标签：[sunsetX] 是文字**左边缘**、[sunsetY] 是竖直中心 → 写在右交点的**右边**；
+ * - 日出标签：[sunriseX] 是**挨着圆的那条边**（北半球=右边缘、南半球=左边缘）、
+ *   [sunriseY] 是竖直中心 → 整个标签写在日出交点的外侧；
+ * - 日落标签：[sunsetX] 同理是挨着圆的那条边（北半球=左边缘、南半球=右边缘）；
  * - 上中天标签：[noonX] 是水平中心、[noonY] 是文字**底边** → 写在圆顶正上方；
  * - 极昼／极夜文案：[polarX] / [polarY] 是文字中心 → 写在圆心（盘面正中）。
  *
- * 这么定位是因为短昼时两个交点可能只隔十几度（高纬度昼长 1 小时 ≈ 15° 圆心角）：
- * 日出标签在左交点左边、日落标签在右交点右边，中间还隔着约 `2R·sin(7.5°) ≈ 0.26R` 的弦宽，
- * 两个标签永远不会重叠，也不会压到圆弧上。
+ * 为什么是「挨着圆的那条边」而不是固定写「右边缘」：南半球日出在右、日落在左（见
+ * [SunPath.southernHemisphere]），标签要跟着换到交点的另一侧，对齐方向也随之翻转。
+ * UI 用「锚点在圆心的哪一侧」来判断该左对齐还是右对齐。
+ *
+ * 这么定位是因为短昼时两个交点可能只隔十几度（高纬度昼长 1 小时 ≈ 15° 圆心角）：两个标签
+ * 一个在左交点外侧、一个在右交点外侧，中间还隔着约 `2R·sin(7.5°) ≈ 0.26R` 的弦宽，
+ * 永远不会重叠，也不会压到圆弧上。
  */
 data class SunLabelAnchors(
     val sunriseX: Float,
@@ -138,9 +149,22 @@ object SunPathGeometry {
      */
     fun angleOfDayHour(hour: Double): Double = (hour - 12.0) / HOURS_PER_DAY * 2.0 * PI
 
-    /** 圆上 [hour] 处的 x：`C.x + R·sin θ`。 */
-    fun hourX(centerX: Float, radius: Float, hour: Double): Float =
-        centerX + radius * sin(angleOfDayHour(hour)).toFloat()
+    /**
+     * 圆上 [hour] 处的 x。
+     *
+     * 北半球（默认）：`C.x + R·sin θ` —— 06:00 在左、18:00 在右，太阳从左往右；
+     * 南半球（[southernHemisphere]）：`C.x − R·sin θ` —— 观察者面朝北，东在右、西在左，
+     * 06:00 在**右**、18:00 在**左**，太阳从右往左（逆时针）。y 两边一致。
+     */
+    fun hourX(
+        centerX: Float,
+        radius: Float,
+        hour: Double,
+        southernHemisphere: Boolean = false,
+    ): Float {
+        val offset = radius * sin(angleOfDayHour(hour)).toFloat()
+        return if (southernHemisphere) centerX - offset else centerX + offset
+    }
 
     /** 圆上 [hour] 处的 y：`C.y − R·cos θ`（y 向下，所以用减号）。 */
     fun hourY(centerY: Float, radius: Float, hour: Double): Float =
@@ -181,6 +205,9 @@ object SunPathGeometry {
      * [sunsetHour] 不参与地平线的计算（日出已经唯一确定了这条弦），它在这里只作为
      * 「只有日落没有日出」时的兜底：真太阳时里日出与日落关于 12:00 对称（日出 = 24 − 日落），
      * 缺一个也能把弦算出来。留给调用方一个入口传全，省得两处各算一套口径。
+     *
+     * [southernHemisphere] 为 true 时 x 取镜像（`C.x − R·sin θ`）：太阳点、日出日落位置
+     * 全部换边，但**地平线高度不变**（它只由昼长决定），12:00 / 00:00 仍在天顶 / 天底。
      */
     fun compute(
         width: Float,
@@ -190,6 +217,7 @@ object SunPathGeometry {
         trueSolarHour: Double,
         isPolarDay: Boolean,
         isPolarNight: Boolean,
+        southernHemisphere: Boolean = false,
     ): SunPath {
         val radius = RADIUS_RATIO * min(width, height)
         val centerX = width / 2f
@@ -212,10 +240,11 @@ object SunPathGeometry {
             centerY = centerY,
             radius = radius,
             horizonY = horizon,
-            sunX = hourX(centerX, radius, trueSolarHour),
+            sunX = hourX(centerX, radius, trueSolarHour, southernHemisphere),
             sunY = hourY(centerY, radius, trueSolarHour),
             isPolarDay = isPolarDay,
             isPolarNight = isPolarNight,
+            southernHemisphere = southernHemisphere,
         )
     }
 
@@ -249,9 +278,9 @@ object SunPathGeometry {
      * （不抬的话那条线会正好压过文字）。
      *
      * 极昼 / 极夜（[sunriseHour] / [sunsetHour] 为 null）时没有交点，日出／日落锚点退到圆的
-     * 最左 / 最右（06:00 与 18:00 的位置）；UI 在这两种情况下不画这两个标签，
-     * 只用 [SunLabelAnchors.polarX] / [SunLabelAnchors.polarY] 那一行文案。
-     * 保留坐标是为了让函数在任何输入下都有确定结果，也方便单测。
+     * 最左 / 最右（06:00 与 18:00 的位置，南北半球按 [SunPath.southernHemisphere] 镜像）；
+     * UI 在这两种情况下不画这两个标签，只用 [SunLabelAnchors.polarX] / [SunLabelAnchors.polarY]
+     * 那一行文案。保留坐标是为了让函数在任何输入下都有确定结果，也方便单测。
      */
     fun labelAnchors(
         path: SunPath,
@@ -276,8 +305,10 @@ object SunPathGeometry {
             return (cx + sign * (halfWidth + sideGap)) to y
         }
 
-        val (sunriseX, sunriseY) = side(sunriseHour, -1f)
-        val (sunsetX, sunsetY) = side(sunsetHour, 1f)
+        // 北半球：日出在左（-1）、日落在右（+1）；南半球镜像（日出在右、日落在左）。
+        val sunriseSign = if (path.southernHemisphere) 1f else -1f
+        val (sunriseX, sunriseY) = side(sunriseHour, sunriseSign)
+        val (sunsetX, sunsetY) = side(sunsetHour, -sunriseSign)
         return SunLabelAnchors(
             sunriseX = sunriseX,
             sunriseY = sunriseY,

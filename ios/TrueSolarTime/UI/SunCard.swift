@@ -81,7 +81,10 @@ struct SunCard: View {
             sunsetHour: sunsetTrueSolarHour,
             trueSolarHour: trueSolarHour,
             isPolarDay: snapshot.polar == .midnightSun,
-            isPolarNight: snapshot.polar == .polarNight
+            isPolarNight: snapshot.polar == .polarNight,
+            // 南半球观察者面朝北：东在右、西在左，太阳从右往左走（逆时针），
+            // 日出 / 日落标签也跟着换边。
+            southernHemisphere: snapshot.latitude < 0
         )
     }
 
@@ -234,7 +237,8 @@ struct SunCard: View {
 
 // MARK: - 圆盘（纯绘制）
 
-/// 只负责画：外圆淡描边 + 白天弧实线 + 夜晚弧虚线 + 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
+/// 只负责画：白天弧实线 + 夜晚弧虚线（圆盘边界只有这两段，没有额外的「表圈」）+
+/// 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
 /// 文字不在这里画（`SunCard` 用真 `Text` 叠在上面），所以这里不需要任何标签尺寸假设。
 ///
 /// 颜色一律取主题 token（`palette.primary` / `palette.onSurfaceVariant` / `palette.surface`），
@@ -273,10 +277,8 @@ private struct SunDialCanvas: View {
         let dayStyle = StrokeStyle(lineWidth: 2.5, lineCap: .round)
         let nightStyle = StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [5, 5])
 
-        // 外圆：淡描边（同一个次要色 token 的 35%，亮暗两套都看得见但不抢戏）。
-        context.stroke(circle, with: .color(palette.onSurfaceVariant.opacity(0.35)), lineWidth: 1)
-
         // 圆的分段：地平线以上 = 白天（实线、主色），以下 = 夜晚（虚线、低对比度）。
+        // 圆盘边界只由这两段弧构成 —— 不再额外描一圈「表圈」。
         if isPolarNight {
             context.stroke(circle, with: .color(nightColor), style: nightStyle)
         } else if isPolarDay {
@@ -379,24 +381,28 @@ private struct SunDialCanvas: View {
     ///
     /// 不用 `Path.addArc`：SwiftUI / CoreGraphics 对 `clockwise` 的约定正好相反，
     /// 而采样既没有歧义，又能让弧的两端精确落在日出 / 日落与地平线的交点上。
+    /// 采样点统一走 `SunPathGeometry.point`，南半球的 x 镜像才不会漏掉。
     private func arcPath(center: CGPoint, radius: CGFloat, from start: Double, to end: Double) -> Path {
-        var path = Path()
+        var arc = Path()
         let span = end - start
         // 每 1° 一段：200pt 的圆盘上弦高误差 < 0.02pt，肉眼无差别。
         let steps = max(Int((abs(span) / (Double.pi / 180.0)).rounded()), 2)
         for step in 0...steps {
             let theta = start + span * Double(step) / Double(steps)
-            let point = CGPoint(
-                x: center.x + radius * CGFloat(sin(theta)),
-                y: center.y - radius * CGFloat(cos(theta))
+            // 采样点统一走 `SunPathGeometry.point`，南半球的 x 镜像才不会漏掉。
+            let point = SunPathGeometry.point(
+                center: center,
+                radius: radius,
+                theta: theta,
+                southernHemisphere: self.path.isSouthernHemisphere
             )
             if step == 0 {
-                path.move(to: point)
+                arc.move(to: point)
             } else {
-                path.addLine(to: point)
+                arc.addLine(to: point)
             }
         }
-        return path
+        return arc
     }
 }
 

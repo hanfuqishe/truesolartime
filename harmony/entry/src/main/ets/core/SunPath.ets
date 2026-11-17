@@ -6,11 +6,12 @@
  * 便于 `Tools/core-check.ts` 直接断言。
  *
  * 几何模型：**圆 = 一天 24 小时**，圆心在画布中央、半径 = 0.38 × min(w, h)；
- * `θ(t) = (t − 12) / 24 × 360°`，圆上一点 `(x, y) = (C.x + R·sinθ, C.y − R·cosθ)`，
- * 即 12:00 在正上方、00:00 在正下方、06:00 在正左、18:00 在正右。
- * 地平线是由**日出时刻**决定的水平弦：`y_h = C.y − R·cos(θ(日出))`；
+ * `θ(t) = (t − 12) / 24 × 360°`，圆上一点 `(x, y) = (C.x + s·R·sinθ, C.y − R·cosθ)`。
+ * `s = +1` 是北半球视角（12:00 在上、00:00 在下、06:00 在左、18:00 在右）；
+ * `s = −1` 是南半球视角（面朝北，东在右、西在左，太阳从右往左走 → 06:00 在右、18:00 在左）。
+ * 地平线是由**日出时刻**决定的水平线：`y_h = C.y − R·cos(θ(日出))`，南北半球相同；
  * 昼长 12h 过圆心、> 12h 下移、< 12h 上移；极昼沉到圆下、极夜升到圆上；
- * 日出恰好 0:00 时与圆**相切于最下方**（弦退化成一点）。
+ * 日出恰好 0:00 时与圆**相切于最下方**。
  *
  * 时刻一律是**当地真太阳时**的小时数（0–24，可越界），换成标准时会与日出刻度对不上。
  */
@@ -25,9 +26,12 @@ export class SunPath {
   sunY: number;
   isPolarDay: boolean;
   isPolarNight: boolean;
+  /** 南半球视角：x 轴镜像（日出在右、日落在左），y 不变。 */
+  southernHemisphere: boolean;
 
   constructor(centerX: number, centerY: number, radius: number, horizonY: number,
-    sunX: number, sunY: number, isPolarDay: boolean, isPolarNight: boolean) {
+    sunX: number, sunY: number, isPolarDay: boolean, isPolarNight: boolean,
+    southernHemisphere: boolean = false) {
     this.centerX = centerX;
     this.centerY = centerY;
     this.radius = radius;
@@ -36,6 +40,7 @@ export class SunPath {
     this.sunY = sunY;
     this.isPolarDay = isPolarDay;
     this.isPolarNight = isPolarNight;
+    this.southernHemisphere = southernHemisphere;
   }
 
   /** 圆顶（12:00 所在）的 y。 */
@@ -155,9 +160,11 @@ export class SunPathGeometry {
     return (hour - 12.0) / SunPathGeometry.HOURS_PER_DAY * 2.0 * Math.PI;
   }
 
-  /** 圆上 [hour] 处的 x：`C.x + R·sin θ`。 */
-  static hourX(centerX: number, radius: number, hour: number): number {
-    return centerX + radius * Math.sin(SunPathGeometry.angleOfDayHour(hour));
+  /** 圆上 [hour] 处的 x：`C.x + s·R·sin θ`（s = −1 为南半球镜像）。 */
+  static hourX(centerX: number, radius: number, hour: number,
+    southernHemisphere: boolean = false): number {
+    const sign: number = southernHemisphere ? -1 : 1;
+    return centerX + sign * radius * Math.sin(SunPathGeometry.angleOfDayHour(hour));
   }
 
   /** 圆上 [hour] 处的 y：`C.y − R·cos θ`（y 向下，所以用减号）。 */
@@ -191,10 +198,12 @@ export class SunPathGeometry {
    *
    * [sunsetHour] 不参与地平线计算（日出已唯一确定弦），只在「只有日落没有日出」时兜底：
    * 真太阳时里日出与日落关于 12:00 对称（日出 = 24 − 日落）。
+   * [southernHemisphere] 为 true 时 x 轴镜像（南半球观察者面朝北，东在右、西在左）。
    */
   static compute(width: number, height: number, sunriseHour: number | null,
     sunsetHour: number | null, trueSolarHour: number,
-    isPolarDay: boolean, isPolarNight: boolean): SunPath {
+    isPolarDay: boolean, isPolarNight: boolean,
+    southernHemisphere: boolean = false): SunPath {
     const radius: number = SunPathGeometry.RADIUS_RATIO * Math.min(width, height);
     const centerX: number = width / 2.0;
     const centerY: number = height / 2.0;
@@ -209,18 +218,31 @@ export class SunPathGeometry {
       centerY,
       radius,
       horizon,
-      SunPathGeometry.hourX(centerX, radius, trueSolarHour),
+      SunPathGeometry.hourX(centerX, radius, trueSolarHour, southernHemisphere),
       SunPathGeometry.hourY(centerY, radius, trueSolarHour),
       isPolarDay,
-      isPolarNight
+      isPolarNight,
+      southernHemisphere
     );
   }
 
   /**
-   * 白天弧的起止角度；日出或日落缺一个（极昼 / 极夜）时返回 null，按整圆处理。
-   * 日落越过 24:00 时按下一圈补 2π，保证扫角为正。
+   * 圆心到 [hour] 的 canvas 角度（弧度，0 = +x、顺时针为正）。
+   *
+   * 北半球 `φ = θ − π/2`（06:00 在左、18:00 在右）；南半球 x 镜像后 `φ = −(θ + π/2)`
+   * （06:00 在右、18:00 在左），因此白天弧从右往左、扫角为负。
    */
-  static dayArcSpan(sunriseHour: number | null, sunsetHour: number | null): SunArcSpan | null {
+  static arcAngleOfDayHour(hour: number, southernHemisphere: boolean = false): number {
+    const theta: number = SunPathGeometry.angleOfDayHour(hour);
+    return southernHemisphere ? -(theta + Math.PI / 2.0) : theta - Math.PI / 2.0;
+  }
+
+  /**
+   * 白天弧的起止角度；日出或日落缺一个（极昼 / 极夜）时返回 null，按整圆处理。
+   * 日落越过 24:00 时按下一圈补 2π，保证扫角大小正确；南半球扫角取负（逆时针）。
+   */
+  static dayArcSpan(sunriseHour: number | null, sunsetHour: number | null,
+    southernHemisphere: boolean = false): SunArcSpan | null {
     if (sunriseHour === null || sunsetHour === null) {
       return null;
     }
@@ -232,10 +254,9 @@ export class SunPathGeometry {
     while (sweep > 2.0 * Math.PI) {
       sweep -= 2.0 * Math.PI;
     }
-    // θ 以正上方为 0°、canvas arc 以 +x 为 0°：φ = θ − π/2。
     return new SunArcSpan(
-      SunPathGeometry.toDegrees(start - Math.PI / 2.0),
-      SunPathGeometry.toDegrees(sweep)
+      SunPathGeometry.toDegrees(SunPathGeometry.arcAngleOfDayHour(sunriseHour, southernHemisphere)),
+      SunPathGeometry.toDegrees(southernHemisphere ? -sweep : sweep)
     );
   }
 
@@ -244,16 +265,22 @@ export class SunPathGeometry {
    *
    * [sideGap] 标签与圆外沿的水平间距；[noonGap] 上中天标签底边与圆顶的竖直间距；
    * [minLabelDrop] 短昼保护（日出/日落挤在圆顶时至少下沉这么远）；
-   * [sideLabelRise] 把日出/日落标签从交点往上抬，让延伸后的地平线从文字底下穿过。
+   * [sideLabelRise] 把日出/日落标签从交点往上抬，让地平线从文字底下穿过。
+   *
+   * 日出/日落锚点与太阳点同源推导：北半球日出在左、日落在右；南半球 x 镜像后日出在右、
+   * 日落在左（见 [SunPath.southernHemisphere]）。竖直方向（上中天在圆顶、极昼极夜在圆心）不变。
    */
   static labelAnchors(path: SunPath, sunriseHour: number | null, sunsetHour: number | null,
     sideGap: number, noonGap: number, minLabelDrop: number, sideLabelRise: number): SunLabelAnchors {
     const sunriseY: number = SunPathGeometry.sideAnchorY(path, sunriseHour, minLabelDrop, sideLabelRise);
     const sunsetY: number = SunPathGeometry.sideAnchorY(path, sunsetHour, minLabelDrop, sideLabelRise);
+    // 南半球：日出在右（+1）、日落在左（−1）；北半球反过来。
+    const sunriseSign: number = path.southernHemisphere ? 1 : -1;
+    const sunsetSign: number = -sunriseSign;
     return new SunLabelAnchors(
-      SunPathGeometry.sideAnchorX(path, sunriseHour, -1, sideGap, sunriseY),
+      SunPathGeometry.sideAnchorX(path, sunriseHour, sunriseSign, sideGap, sunriseY),
       sunriseY,
-      SunPathGeometry.sideAnchorX(path, sunsetHour, 1, sideGap, sunsetY),
+      SunPathGeometry.sideAnchorX(path, sunsetHour, sunsetSign, sideGap, sunsetY),
       sunsetY,
       path.centerX,
       path.centerY - path.radius - noonGap,

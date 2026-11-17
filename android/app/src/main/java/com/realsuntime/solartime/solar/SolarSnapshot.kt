@@ -44,6 +44,13 @@ data class SolarSnapshot(
     val daylightSeconds: Long?,
     val polar: SolarTimeMath.PolarState,
     val altitudeDegrees: Double,
+    /**
+     * 观测点纬度（度，北正南负）。
+     *
+     * 太阳卡的圆盘方向要靠它判断半球：南半球观察者面朝北，06:00 的太阳在**右**、18:00 在**左**，
+     * 太阳的移动方向与北半球镜像（见 `ui/SunPathGeometry.hourX`）。
+     */
+    val latitude: Double,
 ) {
     val isDay: Boolean get() = altitudeDegrees > -0.833
 }
@@ -118,6 +125,7 @@ object SolarTimeSnapshot {
             solarNoonLocal = toLocalTime(sunTimes.solarNoon),
             daylightSeconds = daylightSeconds,
             polar = sunTimes.polar,
+            latitude = latitude,
             altitudeDegrees = SolarTimeMath.solarAltitudeDegrees(instant, latitude, longitude),
         )
     }

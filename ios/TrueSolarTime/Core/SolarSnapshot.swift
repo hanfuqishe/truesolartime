@@ -59,6 +59,8 @@ struct SolarSnapshot {
     let daylightSeconds: Int?
     let polar: PolarState
     let altitudeDegrees: Double
+    /// 观测纬度（南纬为负）：圆盘要用它决定太阳是从左往右（北半球）还是从右往左（南半球）。
+    let latitude: Double
 
     var isDay: Bool { altitudeDegrees > -0.833 }
 
@@ -150,7 +152,8 @@ enum SolarTimeSnapshot {
             },
             daylightSeconds: daylightSeconds,
             polar: sunTimes.polar,
-            altitudeDegrees: SolarTimeMath.solarAltitudeDegrees(date, latitude: latitude, longitude: longitude)
+            altitudeDegrees: SolarTimeMath.solarAltitudeDegrees(date, latitude: latitude, longitude: longitude),
+            latitude: latitude
         )
     }
 

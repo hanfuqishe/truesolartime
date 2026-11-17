@@ -698,6 +698,172 @@ for report in labelReports {
     print("  · \(report)")
 }
 
+// MARK: 南半球：太阳从右往左（逆时针），日出在右、日落在左
+
+// 观察者面朝北：北半球东在左、南半球东在右。圆盘的点 x 因此镜像，y（12:00 顶 / 00:00 底）不变。
+let northernDialPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false,
+    southernHemisphere: false
+)
+let southernDialPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false,
+    southernHemisphere: true
+)
+expect(
+    "南半球标记随参数带出来",
+    !northernDialPath.isSouthernHemisphere && southernDialPath.isSouthernHemisphere
+)
+
+// 北半球（上海 31.2°N）：06:00 在左、18:00 在右。
+let northSixPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 6, southernHemisphere: false
+)
+let northEighteenPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 18, southernHemisphere: false
+)
+expect(
+    "北半球 31.2°N：06:00 的太阳点在圆心左侧",
+    northSixPoint.x < canvasCenter.x - 1,
+    String(format: "x=%.1f centerX=%.1f", northSixPoint.x, canvasCenter.x)
+)
+expect(
+    "北半球 31.2°N：18:00 的太阳点在圆心右侧",
+    northEighteenPoint.x > canvasCenter.x + 1
+)
+
+// 南半球（中山站 −69.4°S）：06:00 在右、18:00 在左（从右往左）。
+let southSixPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 6, southernHemisphere: true
+)
+let southEighteenPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 18, southernHemisphere: true
+)
+expect(
+    "南半球 −69.4°S：06:00 的太阳点在圆心右侧",
+    southSixPoint.x > canvasCenter.x + 1,
+    String(format: "x=%.1f centerX=%.1f", southSixPoint.x, canvasCenter.x)
+)
+expect(
+    "南半球 −69.4°S：18:00 的太阳点在圆心左侧",
+    southEighteenPoint.x < canvasCenter.x - 1
+)
+expectClose("南半球 06:00 仍与圆心同高", southSixPoint.y, canvasCenter.y, tolerance: 0.5, unit: " pt")
+expectClose("南半球 18:00 仍与圆心同高", southEighteenPoint.y, canvasCenter.y, tolerance: 0.5, unit: " pt")
+
+// 12:00 在圆顶、00:00 在圆底 —— 两个半球都一样。
+let southNoonPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 12, southernHemisphere: true
+)
+let southMidnightPoint = SunPathGeometry.point(
+    center: canvasCenter, radius: canvasRadius, hour: 0, southernHemisphere: true
+)
+expectClose("南半球 12:00 仍在圆顶（y = C.y − R）", southNoonPoint.y, canvasCenter.y - canvasRadius, tolerance: 0.5, unit: " pt")
+expectClose("南半球 12:00 的 x 仍在圆心（不镜像 y 轴上的点）", southNoonPoint.x, canvasCenter.x, tolerance: 0.5, unit: " pt")
+expectClose("南半球 00:00 仍在圆底（y = C.y + R）", southMidnightPoint.y, canvasCenter.y + canvasRadius, tolerance: 0.5, unit: " pt")
+expectClose("南半球 00:00 的 x 仍在圆心", southMidnightPoint.x, canvasCenter.x, tolerance: 0.5, unit: " pt")
+
+// 半球只影响 x 方向，不影响地平线（地平线只由昼长决定）。
+expectClose(
+    "同一昼长（12h）南北半球的地平线 y 相同",
+    southernDialPath.horizonY,
+    northernDialPath.horizonY,
+    tolerance: 1e-9,
+    unit: " pt"
+)
+expectClose(
+    "同一昼长南北半球的半径、圆心也相同",
+    southernDialPath.radius,
+    northernDialPath.radius,
+    tolerance: 1e-9,
+    unit: " pt"
+)
+
+// 标签跟着换边：南半球日出在右（左对齐）、日落在左（右对齐）。
+let northernLabels = SunPathGeometry.labels(path: northernDialPath, size: dialCanvas, dayLengthHours: 12)
+let southernLabels = SunPathGeometry.labels(path: southernDialPath, size: dialCanvas, dayLengthHours: 12)
+if let sunrise = northernLabels.sunrise, let sunset = northernLabels.sunset {
+    expect(
+        "北半球：日出标签在圆心左侧（右对齐）",
+        sunrise.point.x < canvasCenter.x && sunrise.alignment == .trailing,
+        labelText(sunrise)
+    )
+    expect(
+        "北半球：日落标签在圆心右侧（左对齐）",
+        sunset.point.x > canvasCenter.x && sunset.alignment == .leading,
+        labelText(sunset)
+    )
+} else {
+    expect("北半球应有日出 / 日落标签", false)
+}
+if let sunrise = southernLabels.sunrise, let sunset = southernLabels.sunset {
+    expect(
+        "南半球：日出标签在圆心右侧（左对齐）",
+        sunrise.point.x > canvasCenter.x && sunrise.alignment == .leading,
+        labelText(sunrise)
+    )
+    expect(
+        "南半球：日落标签在圆心左侧（右对齐）",
+        sunset.point.x < canvasCenter.x && sunset.alignment == .trailing,
+        labelText(sunset)
+    )
+    // 南半球的标签块同样不能压圆、不能出画布。
+    let sunriseRect = SunPathGeometry.rect(for: sunrise, size: SunPathGeometry.sideLabelBudget)
+    let sunsetRect = SunPathGeometry.rect(for: sunset, size: SunPathGeometry.sideLabelBudget)
+    expect(
+        "南半球：日出 / 日落标签块不压圆弧",
+        rectAvoidsCircle(sunriseRect, center: southernDialPath.center, radius: southernDialPath.radius)
+            && rectAvoidsCircle(sunsetRect, center: southernDialPath.center, radius: southernDialPath.radius),
+        "\(rectText(sunriseRect)) / \(rectText(sunsetRect))"
+    )
+    expect(
+        "南半球：日出 / 日落标签块在画布内",
+        rectInsideCanvas(sunriseRect, size: dialCanvas) && rectInsideCanvas(sunsetRect, size: dialCanvas)
+    )
+} else {
+    expect("南半球应有日出 / 日落标签", false)
+}
+
+// 调用方用 `place.latitude < 0` 判断半球，所以快照必须把纬度带回来。
+expect("北半球快照纬度为正（上海 31.23）", shanghaiSummer.latitude > 0, "\(shanghaiSummer.latitude)")
+let sydneySnapshot = SolarTimeSnapshot.compute(
+    date: date("2024-12-21T04:00:00Z"),
+    latitude: -33.8688,
+    longitude: 151.2093,
+    offsetSeconds: 11 * 3600
+)
+expect(
+    "南半球快照纬度为负（悉尼 −33.87）",
+    sydneySnapshot.latitude < 0 && abs(sydneySnapshot.latitude + 33.8688) < 1e-9,
+    "\(sydneySnapshot.latitude)"
+)
+
+print("南北半球太阳点（画布 313×194，半径 \(String(format: "%.2f", canvasRadius))，圆心 (156.5, 97)）：")
+print(String(format: "  · 北半球 上海 31.2°N：06:00 (%.1f, %.1f) / 12:00 (%.1f, %.1f) / 18:00 (%.1f, %.1f)",
+             northSixPoint.x, northSixPoint.y,
+             SunPathGeometry.point(center: canvasCenter, radius: canvasRadius, hour: 12).x,
+             SunPathGeometry.point(center: canvasCenter, radius: canvasRadius, hour: 12).y,
+             northEighteenPoint.x, northEighteenPoint.y))
+print(String(format: "  · 南半球 中山站 −69.4°S：06:00 (%.1f, %.1f) / 12:00 (%.1f, %.1f) / 18:00 (%.1f, %.1f)",
+             southSixPoint.x, southSixPoint.y,
+             southNoonPoint.x, southNoonPoint.y,
+             southEighteenPoint.x, southEighteenPoint.y))
+print(String(format: "  · 南半球标签：日出 (%.1f, %.1f) %@ / 日落 (%.1f, %.1f) %@",
+             southernLabels.sunrise?.point.x ?? -1, southernLabels.sunrise?.point.y ?? -1,
+             String(describing: southernLabels.sunrise?.alignment ?? .trailing),
+             southernLabels.sunset?.point.x ?? -1, southernLabels.sunset?.point.y ?? -1,
+             String(describing: southernLabels.sunset?.alignment ?? .leading)))
+
+
 // 圆盘的颜色也守一遍：全部取主题 token，白天弧用 primary，夜晚弧用 50% 的次要文字色。
 func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Double) -> ThemeColor {
     func mix(_ f: Double, _ b: Double) -> UInt32 {

@@ -29,13 +29,16 @@ struct SunPath {
     let isPolarDay: Bool
     /// 极夜：太阳整日不出，整圆都在地平线以下。
     let isPolarNight: Bool
+    /// 南半球：观察者面朝北，东在右、西在左，太阳从右往左走（逆时针）。
+    /// 为 true 时所有点的 x 以圆心镜像（日出在右、日落在左）。
+    let isSouthernHemisphere: Bool
 }
 
 /// 标签相对锚点的对齐方式：UI 用真正的 `Text` 排版，按这个把文字贴到锚点上。
 enum SunPathLabelAlignment: Equatable {
-    /// 右边界贴锚点、垂直居中：日出的时间写在**左交点左侧**。
+    /// 右边界贴锚点、垂直居中：北半球日出的时间写在**左交点左侧**。
     case trailing
-    /// 左边界贴锚点、垂直居中：日落的时间写在**右交点右侧**。
+    /// 左边界贴锚点、垂直居中：北半球日落的时间写在**右交点右侧**。
     case leading
     /// 底边贴锚点、水平居中：上中天写在**圆顶点上方**。
     case bottom
@@ -53,9 +56,11 @@ struct SunPathLabel: Equatable {
 
 /// 圆盘上的四个标签锚点（坐标原点在画布左上角）。
 struct SunPathLabels: Equatable {
-    /// 日出：锚点在左交点左侧，右对齐；极昼 / 极夜没有交点，为 nil。
+    /// 日出：锚在交点外侧（北半球左交点左侧、右对齐；南半球右交点右侧、左对齐）；
+    /// 极昼 / 极夜没有交点，为 nil。
     let sunrise: SunPathLabel?
-    /// 日落：锚点在右交点右侧，左对齐；极昼 / 极夜为 nil。
+    /// 日落：锚在交点外侧（北半球右交点右侧、左对齐；南半球左交点左侧、右对齐）；
+    /// 极昼 / 极夜为 nil。
     let sunset: SunPathLabel?
     /// 上中天：底边离圆顶 8pt、水平居中；**极夜没有**（太阳整日不出）。
     let noon: SunPathLabel?
@@ -112,12 +117,36 @@ enum SunPathGeometry {
         return halfDayOffset / 24.0 * 2.0 * Double.pi
     }
 
-    /// 圆盘上「某真太阳时」对应的点（同一参数化）。
-    static func point(center: CGPoint, radius: CGFloat, hour: Double) -> CGPoint {
-        let theta = angleOfDayHour(hour)
+    /// 圆盘上角度 θ（弧度）对应的像素点。
+    ///
+    /// **半球决定 x 的方向**：北半球 `x = C.x + R·sin θ`（06:00 在左、18:00 在右，太阳从左往右）；
+    /// 南半球观察者面朝北，东在右、西在左，所以 `x = C.x − R·sin θ`（太阳从右往左，逆时针）。
+    /// 两种情况下 y 都是 `C.y − R·cos θ`：12:00 在圆顶、00:00 在圆底，与半球无关。
+    static func point(
+        center: CGPoint,
+        radius: CGFloat,
+        theta: Double,
+        southernHemisphere: Bool = false
+    ) -> CGPoint {
+        let dx = radius * CGFloat(sin(theta))
         return CGPoint(
-            x: center.x + radius * CGFloat(sin(theta)),
+            x: southernHemisphere ? center.x - dx : center.x + dx,
             y: center.y - radius * CGFloat(cos(theta))
+        )
+    }
+
+    /// 圆盘上「某真太阳时」对应的点（同一参数化）。
+    static func point(
+        center: CGPoint,
+        radius: CGFloat,
+        hour: Double,
+        southernHemisphere: Bool = false
+    ) -> CGPoint {
+        point(
+            center: center,
+            radius: radius,
+            theta: angleOfDayHour(hour),
+            southernHemisphere: southernHemisphere
         )
     }
 
@@ -127,7 +156,9 @@ enum SunPathGeometry {
     ///
     /// - `sunriseHour` / `sunsetHour`：日出 / 日落的**真太阳时**小时数；极昼极夜时为 nil；
     /// - `trueSolarHour`：当前时刻的**真太阳时**小时数；
-    /// - `isPolarDay` / `isPolarNight`：极昼 / 极夜（来自 `PolarState`，圆的朝向由它决定）。
+    /// - `isPolarDay` / `isPolarNight`：极昼 / 极夜（来自 `PolarState`，圆的朝向由它决定）；
+    /// - `southernHemisphere`：南半球（`latitude < 0`）。为 true 时点的 x 以圆心镜像 ——
+    ///   太阳从右往左走（逆时针），日出在右、日落在左；**地平线位置不受影响**（只由昼长决定）。
     ///
     /// 地平线的口径：有日出时刻就用 `C.y − R·cos(θ(日出))`；只有日落时刻时用日落（两者对称，结果相同）；
     /// 两者都缺又不是极昼极夜（数据异常）时退回「12 小时白昼」，地平线过圆心。
@@ -139,7 +170,8 @@ enum SunPathGeometry {
         sunsetHour: Double?,
         trueSolarHour: Double,
         isPolarDay: Bool,
-        isPolarNight: Bool
+        isPolarNight: Bool,
+        southernHemisphere: Bool = false
     ) -> SunPath {
         let radius = radiusRatio * min(size.width, size.height)
         let center = CGPoint(x: size.width / 2.0, y: size.height / 2.0)
@@ -161,9 +193,15 @@ enum SunPathGeometry {
             center: center,
             radius: radius,
             horizonY: horizonY,
-            sunPoint: point(center: center, radius: radius, hour: trueSolarHour),
+            sunPoint: point(
+                center: center,
+                radius: radius,
+                hour: trueSolarHour,
+                southernHemisphere: southernHemisphere
+            ),
             isPolarDay: isPolarDay,
-            isPolarNight: isPolarNight
+            isPolarNight: isPolarNight,
+            isSouthernHemisphere: southernHemisphere
         )
     }
 
@@ -267,38 +305,48 @@ enum SunPathGeometry {
 
         let isShortDay = (dayLengthHours ?? 24.0) <= shortDayHours
         let isLongDay = (dayLengthHours ?? 24.0) >= 24.0 - shortDayHours
+        // 半球决定哪一端是日出：北半球日出在左交点（太阳从左往右），南半球在右交点（从右往左）。
+        let southern = path.isSouthernHemisphere
+        let sunriseSideX = southern ? xRight : xLeft
+        let sunsetSideX = southern ? xLeft : xRight
+        let sunriseOutward = southern ? labelOffsetX : -labelOffsetX
+        let sunsetOutward = southern ? -labelOffsetX : labelOffsetX
+
         let labelY: CGFloat
-        let leftAnchorX: CGFloat
-        let rightAnchorX: CGFloat
+        let sunriseAnchorX: CGFloat
+        let sunsetAnchorX: CGFloat
         if isShortDay {
-            // 圆顶下方一行：标签中心落在这一行，左右各离圆弧 10pt。
+            // 圆顶下方一行：标签中心落在这一行，左右各离圆弧 10pt（南半球左右对调）。
             labelY = center.y - path.radius + shortDayRowOffset
             let rowDy = Double(labelY - center.y)
             let halfWidth = abs(rowDy) <= radius
                 ? CGFloat((radius * radius - rowDy * rowDy).squareRoot())
                 : 0
-            leftAnchorX = center.x - halfWidth - labelOffsetX
-            rightAnchorX = center.x + halfWidth + labelOffsetX
+            let leftX = center.x - halfWidth - labelOffsetX
+            let rightX = center.x + halfWidth + labelOffsetX
+            sunriseAnchorX = southern ? rightX : leftX
+            sunsetAnchorX = southern ? leftX : rightX
         } else if isLongDay {
             // 昼长接近 24h：弦几乎退化成一个切点（日出 0:00 时就是切在圆底），
             // 「抬高 10pt」会顶进圆里，所以改放到地平线**远离圆心**的那一侧。
             labelY = path.horizonY + (path.horizonY >= center.y ? labelOffsetY : -labelOffsetY)
-            leftAnchorX = xLeft - labelOffsetX
-            rightAnchorX = xRight + labelOffsetX
+            sunriseAnchorX = sunriseSideX + sunriseOutward
+            sunsetAnchorX = sunsetSideX + sunsetOutward
         } else {
             labelY = path.horizonY - labelOffsetY
-            leftAnchorX = xLeft - labelOffsetX
-            rightAnchorX = xRight + labelOffsetX
+            sunriseAnchorX = sunriseSideX + sunriseOutward
+            sunsetAnchorX = sunsetSideX + sunsetOutward
         }
 
+        // 标签永远放在交点的**外侧**：北半球日出在左（右对齐）、南半球日出在右（左对齐）。
         return SunPathLabels(
             sunrise: SunPathLabel(
-                point: CGPoint(x: leftAnchorX, y: labelY),
-                alignment: .trailing
+                point: CGPoint(x: sunriseAnchorX, y: labelY),
+                alignment: southern ? .leading : .trailing
             ),
             sunset: SunPathLabel(
-                point: CGPoint(x: rightAnchorX, y: labelY),
-                alignment: .leading
+                point: CGPoint(x: sunsetAnchorX, y: labelY),
+                alignment: southern ? .trailing : .leading
             ),
             noon: noon,
             polar: nil

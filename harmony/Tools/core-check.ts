@@ -1042,6 +1042,24 @@ for (const item of equationCases) {
   near('angle at 06:00', -Math.PI / 2, SunPathGeometry.angleOfDayHour(6.0), 1e-9);
   near('angle at 00:00', Math.PI, Math.abs(SunPathGeometry.angleOfDayHour(0.0)), 1e-9);
 
+  // 6b. 南半球（−69.4°S 这类）：x 轴镜像 —— 06:00 在右、18:00 在左；12:00 仍在上、00:00 仍在下；
+  //     地平线只由日出决定，南北半球同昼长时完全相同。
+  const southSix: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 6.0, false, false, true);
+  check('southern 06:00 x right of center', southSix.sunX > centerX, `${southSix.sunX}`);
+  const southEighteen: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 18.0, false, false, true);
+  check('southern 18:00 x left of center', southEighteen.sunX < centerX, `${southEighteen.sunX}`);
+  const southNoon: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 12.0, false, false, true);
+  near('southern 12:00 still at top', centerY - radius, southNoon.sunY, 0.5);
+  const southMidnight: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 0.0, false, false, true);
+  near('southern 00:00 still at bottom', centerY + radius, southMidnight.sunY, 0.5);
+  check('southern flag propagated', southNoon.southernHemisphere && !equinox.southernHemisphere);
+  near('southern horizon equals northern', equinox.horizonY, southNoon.horizonY, 0.001);
+  // 白天弧：北半球从左（−180°）顺时针扫 180°，南半球从右（0°）逆时针扫 −180°。
+  const southArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(6.0, 18.0, true);
+  check('southern day arc exists', southArc !== null);
+  near('southern arc starts at 0', 0, southArc === null ? -999 : southArc.startDegrees, 1e-3);
+  near('southern arc sweeps -180', -180, southArc === null ? -999 : southArc.sweepDegrees, 1e-3);
+
   // 7. 圆心在画布中央、半径 = 0.38 × min(w, h)，与宽高比无关。
   const sizes: number[][] = [[400, 300], [300, 400], [1080, 1080], [100, 800], [720, 1280]];
   let geometryOk: boolean = true;
@@ -1116,6 +1134,23 @@ for (const item of equationCases) {
   near('polar label y at center', equinoxPath.centerY, equinoxAnchors.polarY, 0.5);
   check('equinox labels clear of horizon',
     equinoxAnchors.sunriseY + labelHeight / 2 <= equinoxPath.horizonY - 1);
+
+  // 10b. 南半球标签：日出换到右边、日落换到左边；上中天仍在圆顶。
+  const southPath: SunPath = SunPathGeometry.compute(dialWidth, dialHeight, 6.0, 18.0, 12.0,
+    false, false, true);
+  const southAnchors: SunLabelAnchors = anchors(southPath, 6.0, 18.0);
+  check('southern sunrise label on the right', southAnchors.sunriseX > southPath.centerX,
+    `${southAnchors.sunriseX}`);
+  check('southern sunset label on the left', southAnchors.sunsetX < southPath.centerX,
+    `${southAnchors.sunsetX}`);
+  const southSunrisePointX: number = SunPathGeometry.hourX(southPath.centerX, southPath.radius, 6.0, true);
+  const southSunsetPointX: number = SunPathGeometry.hourX(southPath.centerX, southPath.radius, 18.0, true);
+  check('southern sunrise label outside right intersection',
+    southAnchors.sunriseX > southSunrisePointX);
+  check('southern sunset label outside left intersection',
+    southAnchors.sunsetX < southSunsetPointX);
+  near('southern noon label still above top', southPath.centerY - southPath.radius - noonGap,
+    southAnchors.noonY, 0.5);
 
   // 11. 上海夏至：地平线下移，标签跟着下去（仍比地平线高 labelRise）。
   const summerPath: SunPath = dial(4.99, 19.01);

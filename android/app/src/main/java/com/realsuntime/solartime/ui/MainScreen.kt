@@ -1150,12 +1150,15 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 时间圆盘：**圆 = 一天 24 小时**，12:00 在正上方、00:00 在正下方，
  * 地平线是一条水平线，其高度由日出时刻决定（见 `SunPathGeometry`）。
  *
- * 盘面画五样东西：
- * 1. 外圆淡描边：画在弧线外侧 3dp 当「表圈」，所以两条弧线不会把它盖掉；
- * 2. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
- * 3. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
- * 4. 日出 / 日落刻度点：弦与圆的两个交点（极昼极夜不画）；
- * 5. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点。
+ * 盘面画四样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
+ * 1. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
+ * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
+ * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
+ * 4. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点。
+ *
+ * 南半球（`snapshot.latitude < 0`）时圆盘整体左右镜像：观察者面朝北，06:00 的太阳在右、
+ * 18:00 在左，太阳从右往左走；三处竖直基准（12:00 圆顶、00:00 圆底、地平线高度）不变，
+ * 日出 / 日落标签也跟着换到交点的另一侧（见 `SunPathGeometry.hourX` / `labelAnchors`）。
  *
  * 三个时间标签直接标在圆外：日出在左交点左侧（右对齐）、日落在右交点右侧（左对齐）、
  * 上中天在圆顶正上方（居中），三者都离圆 10dp，不会压到弧线。
@@ -1177,6 +1180,9 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val sunriseHour = if (normal) snapshot.sunriseTrueSolar.toHours() else null
     val sunsetHour = if (normal) snapshot.sunsetTrueSolar.toHours() else null
     val trueSolarHour = snapshot.trueSolarTime.toSecondOfDay() / SECONDS_PER_HOUR
+    // 南半球观察者面朝北：06:00 的太阳在右、18:00 在左，整条轨迹与北半球镜像。
+    // 只认观测点自己的纬度（snapshot.latitude），不掺时区 / 北京时间之类的东西。
+    val southernHemisphere = snapshot.latitude < 0
 
     val labelStyle = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium)
     val dataColor = MaterialTheme.colorScheme.onSurface
@@ -1226,25 +1232,15 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 trueSolarHour = trueSolarHour,
                 isPolarDay = polarDay,
                 isPolarNight = polarNight,
+                southernHemisphere = southernHemisphere,
             )
             val center = Offset(path.centerX, path.centerY)
-            val rimStroke = 1.dp.toPx()
-            val rimGap = 3.dp.toPx()
             val arcStroke = 2.5.dp.toPx()
             val tickRadius = 2.5.dp.toPx()
             val sunRadius = 4.5.dp.toPx()
             val nightDash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 6.dp.toPx()))
             val arcTopLeft = Offset(path.centerX - path.radius, path.centerY - path.radius)
             val arcSize = Size(path.radius * 2f, path.radius * 2f)
-
-            // 外圆淡描边：比弧线（画在半径 R 上）再外扩 3dp 当「表圈」，
-            // 否则会被覆盖整圈的白天弧 / 夜晚虚线盖掉、根本看不见。
-            drawCircle(
-                color = scheme.outlineVariant,
-                radius = path.radius + rimGap,
-                center = center,
-                style = Stroke(rimStroke),
-            )
 
             val span = SunPathGeometry.dayArcSpan(sunriseHour, sunsetHour)
             if (span == null) {
@@ -1290,12 +1286,13 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             // 地平线：固定长度的一条横线（画布左右各内缩 4dp），高度由日出时刻决定。
             // 普通日 / 短昼 / 极昼 / 极夜 / 0:00 相切全部画满这一条，同色同宽（outline, 1dp）——
             // 圆内那一段就是「弦」，但不再单独加强，否则短昼时看起来会断成两截。
+            // 它也是圆盘唯一的水平基准线：外面不再套「表圈」，白天弧 / 夜晚虚线就是圆盘的边界。
             val horizon = SunPathGeometry.horizonSpan(size.width, horizonInsetPx)
             drawLine(
                 color = scheme.outline,
                 start = Offset(horizon.startX, path.horizonY),
                 end = Offset(horizon.endX, path.horizonY),
-                strokeWidth = rimStroke,
+                strokeWidth = 1.dp.toPx(),
             )
 
             // 日出 / 日落刻度：正好落在地平线与圆的交点上（极昼极夜没有交点）。
@@ -1305,7 +1302,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                         color = scheme.primary,
                         radius = tickRadius,
                         center = Offset(
-                            SunPathGeometry.hourX(path.centerX, path.radius, hour),
+                            SunPathGeometry.hourX(path.centerX, path.radius, hour, southernHemisphere),
                             SunPathGeometry.hourY(path.centerY, path.radius, hour),
                         ),
                     )
@@ -1348,6 +1345,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 trueSolarHour = trueSolarHour,
                 isPolarDay = polarDay,
                 isPolarNight = polarNight,
+                southernHemisphere = southernHemisphere,
             )
             val anchors = SunPathGeometry.labelAnchors(
                 path = path,
@@ -1382,12 +1380,20 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 )
             }
             if (normal) {
+                // 锚点是「挨着圆的那条边」：锚点在圆心左侧 → 文字往左排（右对齐），
+                // 在右侧 → 往右排（左对齐）。南北半球靠这一条自动换边，不用再传标志。
+                val sunriseOnRight = anchors.sunriseX > path.centerX
+                val sunsetOnRight = anchors.sunsetX > path.centerX
                 DialLabel(
                     text = sunriseText,
                     style = labelStyle,
                     color = dataColor,
                     offset = placed(
-                        anchors.sunriseX - sunriseLabel.size.width,
+                        if (sunriseOnRight) {
+                            anchors.sunriseX
+                        } else {
+                            anchors.sunriseX - sunriseLabel.size.width
+                        },
                         anchors.sunriseY - sunriseLabel.size.height / 2f,
                         sunriseLabel.size.width,
                         sunriseLabel.size.height,
@@ -1398,7 +1404,11 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                     style = labelStyle,
                     color = dataColor,
                     offset = placed(
-                        anchors.sunsetX,
+                        if (sunsetOnRight) {
+                            anchors.sunsetX
+                        } else {
+                            anchors.sunsetX - sunsetLabel.size.width
+                        },
                         anchors.sunsetY - sunsetLabel.size.height / 2f,
                         sunsetLabel.size.width,
                         sunsetLabel.size.height,
