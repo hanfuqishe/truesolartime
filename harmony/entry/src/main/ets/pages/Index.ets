@@ -1001,8 +1001,7 @@ struct Index {
             .width(this.cs(11))
             .height(this.cs(11))
             .borderRadius(this.cs(5.5))
-            // 时间轴「现在」圆点：太阳点逐项照搬的就是这一套 ——
-            // 半径 5.5vp，色标 0 / 0.55 / 1，alpha 1 / 1 / 0（内圈 55% 完全实心，之后渐隐）。
+            // 时间轴「现在」圆点（原样，不要再改）：半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0。
             .radialGradient({
               center: ['50%', '50%'],
               radius: SunDialColors.DOT_RADIUS,
@@ -1450,20 +1449,24 @@ struct Index {
       }
     }
 
-    // 当前太阳点：**逐项照搬**首页时间轴「现在」圆点的画法 ——
-    // 单个径向渐变圆（渐变从圆心 0 开始）：半径 5.5vp，色标 0 / 0.55 / 1，alpha 1 / 1 / 0。
-    // 只有颜色不同（白天 #D9A520、夜间 #F5D68A）；地平线以下用同尺寸同画法、整体更淡的柔化点。
-    const dotBaseColor: string = path.isSunUp() ? this.palette.sunDot : this.palette.subtle;
-    const dotAlphaScale: number = path.isSunUp() ? 1 : SunDialColors.DOT_BELOW_HORIZON_SCALE;
-    const dotColors: string[] = SunDialColors.dotGradientColors(dotBaseColor, dotAlphaScale);
-    const dotGradient = ctx.createRadialGradient(
-      path.sunX, path.sunY, 0, path.sunX, path.sunY, SunDialColors.DOT_RADIUS);
-    dotGradient.addColorStop(SunDialColors.DOT_STOPS[0], dotColors[0]);
-    dotGradient.addColorStop(SunDialColors.DOT_STOPS[1], dotColors[1]);
-    dotGradient.addColorStop(SunDialColors.DOT_STOPS[2], dotColors[2]);
+    // 当前太阳点：纯色核心 + 独立光晕。
+    //   ① 光晕：从核心半径 2.5vp 到 5.5vp 的独立径向渐变（alpha 0.35 → 0），先画；
+    //   ② 核心：半径 2.5vp（≈ 时间轴半径 5.5 × 0.45）的纯色圆，alpha 1.0，不渐变。
+    // 地平线以下同尺寸同结构，只把颜色换成低对比色（palette.subtle）。
+    const dotColor: string = path.isSunUp() ? this.palette.sunDot : this.palette.subtle;
+    const glowColors: string[] = SunDialColors.sunGlowColors(dotColor);
+    const glowGradient = ctx.createRadialGradient(
+      path.sunX, path.sunY, SunDialColors.SUN_DOT_GLOW_START_RADIUS,
+      path.sunX, path.sunY, SunDialColors.SUN_DOT_GLOW_RADIUS);
+    glowGradient.addColorStop(0, glowColors[0]);
+    glowGradient.addColorStop(1, glowColors[1]);
     ctx.beginPath();
-    ctx.fillStyle = dotGradient;
-    ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_RADIUS, 0, full);
+    ctx.fillStyle = glowGradient;
+    ctx.arc(path.sunX, path.sunY, SunDialColors.SUN_DOT_GLOW_RADIUS, 0, full);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.fillStyle = SunDialColors.withAlpha(dotColor, SunDialColors.SUN_DOT_CORE_ALPHA);
+    ctx.arc(path.sunX, path.sunY, SunDialColors.SUN_DOT_CORE_RADIUS, 0, full);
     ctx.fill();
   }
 

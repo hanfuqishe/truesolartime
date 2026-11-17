@@ -1,15 +1,12 @@
 /**
- * 太阳卡圆盘的配色、线宽与太阳点（= 时间轴「现在」圆点）的参数，以及可测的对比度工具。
+ * 时间轴「现在」圆点保持原样（**以后不要再动**）：单个径向渐变圆、半径 [DOT_RADIUS]
+ * （5.5vp）、色标 [DOT_STOPS]（0 / 0.45 / 1）、alpha [DOT_ALPHAS]（1 / 0.45 / 0）。
  *
- * 这些常量放在 core 里是为了让 `Tools/core-check.ts` 能直接断言「弧够淡、线够细、
- * 太阳点与时间轴圆点逐项一致」——UI 侧只从 `common/Theme.ets` 的 palette / 本类取，
- * 全工程唯一来源，不在绘制代码里散落 hex 或魔法数字。
- *
- * **太阳点不再自创画法**：逐项照搬首页 0–24 时时间轴「现在」圆点——
- * 单个径向渐变圆、半径 [DOT_RADIUS]（5.5vp）、色标 [DOT_STOPS]（0 / 0.55 / 1）、
- * alpha [DOT_ALPHAS]（1 / 1 / 0，即内圈 55% 完全不透明、之后才渐隐），渐变**从圆心 0 开始**。
- * 只有颜色不同：白天 `#D9A520`、夜间 `#F5D68A`。
- * 地平线以下用同尺寸、同渐变结构的柔化点（透明度减半），不画硬边描边圈。
+ * 太阳点改成更简单的「纯色核心 + 独立光晕」：
+ *   ① 实心核心：半径 [SUN_DOT_CORE_RADIUS]（2.5vp ≈ 5.5 × 0.45）、纯色、alpha 1.0，不用渐变；
+ *   ② 外圈光晕：从 [SUN_DOT_GLOW_START_RADIUS]（= 核心半径）到 [SUN_DOT_GLOW_RADIUS]（5.5vp）
+ *      的独立径向渐变，alpha 0.35 → 0，画在核心之前。
+ * 颜色白天 `#D9A520`、夜间 `#F5D68A`；地平线以下同尺寸同两层，只换成低对比色。
  *
  * 白天弧 `#E8CFA0`（线宽 1.6vp，只作路径示意）；夜间弧/虚线保持原样（1.5vp、4/4vp）。
  */
@@ -35,22 +32,31 @@ export class SunDialColors {
   static readonly NIGHT_DASH_LENGTH: number = 4;
 
   /**
-   * 太阳点 / 时间轴圆点的渐变半径（vp）。
+   * 时间轴「现在」圆点的渐变半径（vp）；太阳点的光晕外沿也取这个值。
    *
-   * 时间轴那颗点就是 11×11vp 的盒子 + `radialGradient(radius: 5.5)`；太阳点照搬。
+   * 时间轴那颗点：11×11vp 盒子 + `radialGradient(radius: 5.5)`。**以后不要再动时间轴圆点**。
    */
   static readonly DOT_RADIUS: number = 5.5;
   /**
-   * 渐变色标位置（时间轴圆点与太阳点共用）：0 / 0.55 / 1。
+   * 时间轴圆点的渐变色标位置：0 / 0.45 / 1。
    *
-   * 0→0.55 完全不透明（实心内圈），0.55→1 渐隐到透明；这样「点」有足够的实心部分，
-   * 不会只剩薄薄一层光。
+   * 只有圆心完全不透明，到 45% 半径已降到 0.45，再向外渐隐 —— 这是时间轴点的原样，
+   * 太阳点不再共用这组色标，改成「纯色核心 + 独立光晕」。
    */
-  static readonly DOT_STOPS: number[] = [0, 0.55, 1];
-  /** 渐变色标 alpha（与时间轴圆点一致）：1 / 1 / 0 —— 内圈 55% 完全实心，之后渐隐。 */
-  static readonly DOT_ALPHAS: number[] = [1, 1, 0];
-  /** 地平线以下柔化点的 alpha 缩放（同尺寸同画法，只是更淡）。 */
-  static readonly DOT_BELOW_HORIZON_SCALE: number = 0.5;
+  static readonly DOT_STOPS: number[] = [0, 0.45, 1];
+  /** 时间轴圆点的渐变色标 alpha：1 / 0.45 / 0（原样，不再改动）。 */
+  static readonly DOT_ALPHAS: number[] = [1, 0.45, 0];
+
+  /** 太阳点实心核心半径（vp）：≈ 时间轴半径 × 0.45（5.5 × 0.45 = 2.475，取 2.5）。 */
+  static readonly SUN_DOT_CORE_RADIUS: number = 2.5;
+  /** 太阳点核心 alpha：纯色、完全不透明。 */
+  static readonly SUN_DOT_CORE_ALPHA: number = 1;
+  /** 太阳点光晕内沿半径（vp）：= 核心半径，光晕从核心边缘开始。 */
+  static readonly SUN_DOT_GLOW_START_RADIUS: number = 2.5;
+  /** 太阳点光晕外沿半径（vp）。 */
+  static readonly SUN_DOT_GLOW_RADIUS: number = 5.5;
+  /** 太阳点光晕起始 alpha：0.35 → 0（独立渐变，画在核心之前）。 */
+  static readonly SUN_DOT_GLOW_ALPHA: number = 0.35;
 
   /** 给 `#RRGGBB` 叠一层 alpha（`#AARRGGBB`）：渐变与 Canvas 都只吃字符串颜色。 */
   static withAlpha(hex: string, alpha: number): string {
@@ -63,38 +69,26 @@ export class SunDialColors {
   }
 
   /**
-   * 按时间轴圆点的 alpha 序列生成三档颜色（0 / 0.55 / 1）。
+   * 按时间轴圆点的 alpha 序列生成三档颜色（0 / 0.45 / 1）。
    *
-   * @param base 基础色（白天 `#D9A520` / 夜间 `#F5D68A`）
-   * @param alphaScale 整体透明度缩放：1 = 地平线以上；0.5 = 地平线以下的柔化点。
+   * 只给时间轴圆点用；太阳点已改成「纯色核心 + 独立光晕」，不再走这套色标。
+   *
+   * @param base 基础色（时间轴上是 `dotColor()` 的时段色）
    */
-  static dotGradientColors(base: string, alphaScale: number = 1): string[] {
+  static dotGradientColors(base: string): string[] {
     const colors: string[] = [];
     for (const alpha of SunDialColors.DOT_ALPHAS) {
-      colors.push(SunDialColors.withAlpha(base, alpha * alphaScale));
+      colors.push(SunDialColors.withAlpha(base, alpha));
     }
     return colors;
   }
 
-  /**
-   * 渐变在某个半径比例处的 alpha（线性插值），用来断言「内圈仍然实心」。
-   *
-   * @param radiusFraction 0 = 圆心，1 = 外沿
-   */
-  static alphaAt(radiusFraction: number): number {
-    const stops: number[] = SunDialColors.DOT_STOPS;
-    const alphas: number[] = SunDialColors.DOT_ALPHAS;
-    if (radiusFraction <= stops[0]) {
-      return alphas[0];
-    }
-    for (let index = 1; index < stops.length; index++) {
-      if (radiusFraction <= stops[index]) {
-        const span: number = stops[index] - stops[index - 1];
-        const t: number = span <= 0 ? 1 : (radiusFraction - stops[index - 1]) / span;
-        return alphas[index - 1] + (alphas[index] - alphas[index - 1]) * t;
-      }
-    }
-    return alphas[alphas.length - 1];
+  /** 太阳点独立光晕的两档颜色：起始 0.35 → 外沿 0。 */
+  static sunGlowColors(base: string): string[] {
+    return [
+      SunDialColors.withAlpha(base, SunDialColors.SUN_DOT_GLOW_ALPHA),
+      SunDialColors.withAlpha(base, 0)
+    ];
   }
 
   /** `#RRGGBB` / `#AARRGGBB` → `[r, g, b]`（0–255，忽略 alpha）。 */
