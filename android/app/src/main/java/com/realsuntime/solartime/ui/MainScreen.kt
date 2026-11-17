@@ -962,7 +962,13 @@ private fun HeroAxis(
     }
 }
 
-/** 六格逐时预报：时刻、天气图标、天气名称，与桌面卡片同一套取数规则。 */
+/**
+ * 六格逐时预报：时刻、天气图标、**气温**，与桌面卡片、iOS 版同一套取数规则。
+ *
+ * 图标下面那一行原来写的是天气文字（`多云` / `小雨`），现在换成该格的气温（`18°`）——
+ * 与 iOS 对齐，也省得长名字（英文 "Partly cloudy"）在 22dp 的格子里被省略号砍掉。
+ * 字号/配色/行距沿用原来那一格文字标签的样式（只换内容，不动版式），所以卡片高度不变。
+ */
 @Composable
 private fun HeroHourly(cells: List<HourCell>) {
     Row(modifier = Modifier.fillMaxWidth()) {
@@ -983,7 +989,7 @@ private fun HeroHourly(cells: List<HourCell>) {
                     modifier = Modifier.padding(top = 3.dp).size(22.dp),
                 )
                 Text(
-                    text = cell.condition,
+                    text = cell.temperature,
                     style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,

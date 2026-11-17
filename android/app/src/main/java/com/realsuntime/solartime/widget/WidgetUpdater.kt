@@ -33,6 +33,8 @@ import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.TakeTimeRepository
 import com.realsuntime.solartime.data.TakeTimeSchedule
 import com.realsuntime.solartime.data.WeatherRepository
+import com.realsuntime.solartime.ui.hourTemperatures
+import com.realsuntime.solartime.ui.temperatureLabel
 import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -701,7 +703,7 @@ object WidgetUpdater {
                 setTextViewText(R.id.widget_coordinates, context.getString(R.string.widget_waiting_gps))
             }
             bindSunRow(context, place, now, zone, showSunRow && location.hasFix, this)
-            // 逐时天气在「还没有定位」时也照样画出来（格子填 `--` 与问号图标）：
+            // 逐时行在「还没有定位」时也照样画出来（格子填 `-` 与问号图标）：
             // 早先这里整块隐藏，卡片就只剩两个时钟、下面空一大片，看着像坏了；
             // 留占位既保持版面形状，也说明「在等数据」。
             bindHourly(
@@ -1032,8 +1034,13 @@ object WidgetUpdater {
         return alarmTarget ?: openApp(context)
     }
 
-    /** 临时诊断：记录三个区域解析到的目标。 */
-    /** 底部小时预报：从「现在」那一格起按数据源步长（1 小时 / 3 小时）取，显示时刻、天气图标与天气名称；没有数据或高度不够时整行隐藏。 */
+    /**
+     * 底部小时预报：从「现在」那一格起按数据源步长（1 小时 / 3 小时）取，显示时刻、天气图标与**气温**；
+     * 没有数据或高度不够时整行隐藏。
+     *
+     * 图标下面那一行原来写的是天气文字，现在与首页大卡片、iOS 版一样换成该格气温（`18°`），
+     * 缺读数时写占位符 `-`；「现在」那一格用实时温度（日期行那个读数），不用可能陈旧的采样点温度。
+     */
     private fun bindHourly(
         context: Context,
         place: Place,
@@ -1059,9 +1066,22 @@ object WidgetUpdater {
             skip = skipSlots,
         )
         val points = hourly.points.associateBy { it.epochSeconds }
-        // 第一排的第一格标「现在」，用实时天气码，与日期行的读数保持一致。
-        val currentCode = WeatherRepository.cached(context, place)?.code
+        // 第一排的第一格标「现在」，用实时天气码与实时温度，与日期行的读数保持一致。
+        val cached = WeatherRepository.cached(context, place)
+        val currentCode = cached?.code
+        val currentTemperature = cached?.temperatureC
+        val temperatures = hourTemperatures(
+            points = hourly.points,
+            nowEpochSeconds = now.epochSecond,
+            zoneOffsetSeconds = zone.rules.getOffset(now).totalSeconds,
+            stepHours = hourly.stepHours,
+            currentTemperatureC = currentTemperature,
+            count = row.size,
+            skip = skipSlots,
+            hasFix = hasFix,
+        )
         val unknown = context.getString(R.string.weather_unknown)
+        val degrees: (Int) -> String = { context.getString(R.string.weather_temp, it) }
         slots.forEachIndexed { index, slot ->
             val point = points[slot.epochSeconds]
             val isNow = slot.isNow
@@ -1073,7 +1093,7 @@ object WidgetUpdater {
                 context.getString(R.string.weather_hour, hour)
             }
             // 还没有定位时一律画占位符：兜底城市（内置默认坐标）的天气挂在这里会让人
-            // 以为那就是当地的读数。
+            // 以为那就是当地的读数（气温同理，见 hourTemperatures 的 hasFix）。
             val code = if (!hasFix) {
                 null
             } else if (isNow) {
@@ -1088,8 +1108,8 @@ object WidgetUpdater {
                 condition?.let { conditionIcon(it, isDay = hour in 6..17) } ?: R.drawable.ic_wx_unknown,
             )
             views.setTextViewText(
-                row.condIds[index],
-                condition?.let { TimeText.conditionLabel(context, it) } ?: unknown,
+                row.tempIds[index],
+                temperatureLabel(temperatures[index], degrees, unknown),
             )
         }
     }
@@ -1401,7 +1421,7 @@ object WidgetUpdater {
      *
      * 用本进程密度算主时钟的 px，字号会大 13%；再叠加桌面回报的格子宽度也按另一套密度算
      * （见 [clockSafetyFactor]），主时钟就撑破栏宽 —— 表现就是「11:46」被裁成「11:4」、秒整段消失、
-     * 变高的时钟行再把逐时天气挤出格子（只露出半个「多云」）。
+     * 变高的时钟行再把逐时行挤出格子（只露出半个「18°」）。
      */
     /**
      * 诊断页用：把「测量与密度」这一块算出来（只读、全程兜异常）。
@@ -1629,7 +1649,7 @@ object WidgetUpdater {
         R.id.widget_hour_icon_5,
     )
 
-    private val HOUR_COND_IDS = intArrayOf(
+    private val HOUR_TEMP_IDS = intArrayOf(
         R.id.widget_hour_cond_0,
         R.id.widget_hour_cond_1,
         R.id.widget_hour_cond_2,
@@ -1656,7 +1676,7 @@ object WidgetUpdater {
         R.id.widget_hour2_icon_5,
     )
 
-    private val HOUR2_COND_IDS = intArrayOf(
+    private val HOUR2_TEMP_IDS = intArrayOf(
         R.id.widget_hour2_cond_0,
         R.id.widget_hour2_cond_1,
         R.id.widget_hour2_cond_2,
@@ -1665,18 +1685,18 @@ object WidgetUpdater {
         R.id.widget_hour2_cond_5,
     )
 
-    /** 一排逐时格子的三条 id（行容器 + 时刻 + 图标 + 天气名）。 */
+    /** 一排逐时格子的三条 id（行容器 + 时刻 + 图标 + 气温）。 */
     private class HourRow(
         val rowId: Int,
         val labelIds: IntArray,
         val iconIds: IntArray,
-        val condIds: IntArray,
+        val tempIds: IntArray,
     ) {
         val size: Int get() = labelIds.size
     }
 
-    private val FIRST_HOUR_ROW = HourRow(R.id.widget_hour_row, HOUR_LABEL_IDS, HOUR_ICON_IDS, HOUR_COND_IDS)
-    private val SECOND_HOUR_ROW = HourRow(R.id.widget_hour_row2, HOUR2_LABEL_IDS, HOUR2_ICON_IDS, HOUR2_COND_IDS)
+    private val FIRST_HOUR_ROW = HourRow(R.id.widget_hour_row, HOUR_LABEL_IDS, HOUR_ICON_IDS, HOUR_TEMP_IDS)
+    private val SECOND_HOUR_ROW = HourRow(R.id.widget_hour_row2, HOUR2_LABEL_IDS, HOUR2_ICON_IDS, HOUR2_TEMP_IDS)
 
     fun cancelTick(context: Context) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
