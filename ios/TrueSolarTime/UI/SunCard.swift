@@ -419,21 +419,22 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        // **逐项照搬时间轴「现在」圆点**（`NowDotStyle`，与 `HeroAxis` 同一组常量、同样两笔）：
-        //   ① 柔光圆：半径 = 核心 + 外扩 2pt（7.5pt），同色 alpha 0.28；
-        //   ② 实心圆：半径 5.5pt，同色 alpha 1。
-        // 用户最终裁定「不要自创画法，只换颜色」，所以既没有渐变、也没有高光/描边。
+        // **逐项照搬时间轴「现在」圆点**（与 `HeroAxis` 读同一个 `NowDotStyle`、同样的三层）：
+        //   ③ 外圈：核心 + 2pt（7.5pt），alpha 0.45
+        //   ② 中间层：核心 + 1pt（6.5pt），alpha 0.55
+        //   ① 核心：5.5pt，alpha 1.0（完全不透明）
+        // 从外往里画，后一层盖住前一层。用户裁定「不要自创画法，只换颜色」：没有渐变、没有高光、没有描边。
         // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
         let style = NowDotStyle.shared
-        let core = style.radius
-        let coreRect = CGRect(x: sun.x - core, y: sun.y - core, width: core * 2, height: core * 2)
 
         if SunPathGeometry.isSunAboveHorizon(path: path) {
-            context.fill(
-                Path(ellipseIn: coreRect.insetBy(dx: -style.glowInset, dy: -style.glowInset)),
-                with: .color(palette.sunDot.opacity(style.glowAlpha))
-            )
-            context.fill(Path(ellipseIn: coreRect), with: .color(palette.sunDot))
+            for layer in style.alphaRamp.reversed() {
+                let r = style.radius + layer.inset
+                context.fill(
+                    Path(ellipseIn: CGRect(x: sun.x - r, y: sun.y - r, width: r * 2, height: r * 2)),
+                    with: .color(palette.sunDot.opacity(layer.alpha))
+                )
+            }
         } else {
             // 地平线以下：同尺寸的空心圈（半径 = 核心半径，细描边 1pt），不画光、也不留粗硬边。
             let hollow = SunPathGeometry.sunHollowRadius
