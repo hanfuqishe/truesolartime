@@ -96,6 +96,8 @@ import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.ui.theme.sunDayArcColor
+import com.realsuntime.solartime.ui.theme.sunDotColor
+import com.realsuntime.solartime.ui.theme.sunTickColor
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
@@ -1184,9 +1186,12 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 @Composable
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    // 白天弧单独取一个浅色：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
-    // 地平线 / 太阳点 / 刻度 / 箭头仍用各自原来的 token，弧变浅后反而形成层次。
+    // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
+    // 太阳点用深金、刻度点用太阳金 70%，形成「弧很淡、点很实」的层次；
+    // 地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
+    val sunDotColor = sunDotColor()
+    val sunTickColor = sunTickColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
     val polarNight = polar == SolarTimeMath.PolarState.POLAR_NIGHT
@@ -1314,7 +1319,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             if (span != null && sunriseHour != null && sunsetHour != null) {
                 for (hour in listOf(sunriseHour, sunsetHour)) {
                     drawCircle(
-                        color = scheme.primary,
+                        color = sunTickColor,
                         radius = tickRadius,
                         center = Offset(
                             SunPathGeometry.hourX(path.centerX, path.radius, hour, southernHemisphere),
@@ -1375,16 +1380,16 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 color = scheme.onSurfaceVariant,
             )
 
-            // 当前太阳点：白天实心亮色 + 柔光，夜里空心暗色。
+            // 当前太阳点：白天是金点 + 柔光（比淡金弧实得多，是视线的落点），夜里空心暗色。
             val sun = Offset(path.sunX, path.sunY)
             if (path.isSunUp) {
                 // 柔光只放到 1.5 倍：正午太阳点就在圆顶，光圈再大就会碰到上面的上中天标签。
                 drawCircle(
-                    color = scheme.primary.copy(alpha = 0.18f),
+                    color = sunDotColor.copy(alpha = 0.18f),
                     radius = sunRadius * 1.5f,
                     center = sun,
                 )
-                drawCircle(color = scheme.primary, radius = sunRadius, center = sun)
+                drawCircle(color = sunDotColor, radius = sunRadius, center = sun)
             } else {
                 // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫的话会和虚线糊成一团。
                 drawCircle(

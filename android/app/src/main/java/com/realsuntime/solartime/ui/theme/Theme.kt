@@ -78,25 +78,34 @@ fun TrueSolarTimeTheme(
 }
 
 /**
- * 太阳卡圆盘「白天弧」的颜色（主题色板里的派生色，不新增硬编码 hex）。
+ * 太阳卡圆盘的配色（派生自色板 / 新增的 `SunColors`，见 [SunColors]）。
  *
- * - **亮色主题**：主色的 **62% 不透明度**。白底卡片上主色 `#B4550A` 这类橙棕实色太沉、
- *   太重，压住了整张卡片；调到 62% 后合成出来约 `#D19464`，仍是暖色、仍和夜晚的灰色虚线
- *   （`outline` + 虚线）一眼能分开。
- * - **暗色主题**：保持实色主色（深蓝底上现在这档金色正合适，调淡反而糊）。
+ * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#E6CB9C`，白卡上对比度 ≈1.52，只做「路径示意」）；
+ *   太阳点 = 深金 [SunColors.DAY_SUN]（`#B8860B`，与弧的对比度 ≈2.07，是主角）；
+ *   日出 / 日落刻度 = 同太阳金、70% 透明（比点淡一档）。
+ * - **暗色主题**：全部保持原来的实色主色（深蓝底上那档金色正好，调淡反而糊）。
  *
- * 只改白天弧：地平线（`outline`）、太阳点与日出日落刻度（`primary` 实色）、
- * 运动箭头（`onSurfaceVariant`）都保持原样 —— 弧变浅之后，实色太阳点正好形成层次。
+ * 亮色主题里「白天弧 vs 夜晚虚线」不再靠深浅区分（弧故意更淡），而是靠色相：
+ * 暖金的 `r − b` 比中性灰大 0.17 左右（`SunColorsTest` 里有断言）。
  *
- * 判断依据是当前 `surface` 的亮度（主题函数只换 colorScheme，没有额外的暗色标志），
- * 亮色主题的 `#FFFBF6` 与暗色主题的 `#16203A` 亮度差距极大，不会误判。
+ * 判断依据是当前 `surface` 的亮度（主题函数只换 colorScheme，没有额外的暗色标志）；
+ * `#FFFBF6` 与 `#16203A` 亮度差距极大，不会误判。
  */
 @Composable
-fun sunDayArcColor(): Color {
-    val scheme = MaterialTheme.colorScheme
-    return if (scheme.surface.luminance() > 0.5f) {
-        scheme.primary.copy(alpha = 0.62f)
-    } else {
-        scheme.primary
-    }
+fun sunDayArcColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_ARC) else MaterialTheme.colorScheme.primary
+
+/** 太阳点的颜色：亮色主题用深金（与淡金弧拉开层次），暗色主题仍是主色。 */
+@Composable
+fun sunDotColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_SUN) else MaterialTheme.colorScheme.primary
+
+/** 日出 / 日落刻度点：亮色主题用太阳金 + 70% 透明（比太阳点淡一档），暗色主题仍是主色。 */
+@Composable
+fun sunTickColor(): Color = if (isLightSunPalette()) {
+    Color(SunColors.DAY_SUN).copy(alpha = SunColors.DAY_TICK_ALPHA)
+} else {
+    MaterialTheme.colorScheme.primary
 }
+
+/** 当前是不是亮色主题：按卡片底色（surface）的亮度判断。 */
+@Composable
+private fun isLightSunPalette(): Boolean = MaterialTheme.colorScheme.surface.luminance() > 0.5f
