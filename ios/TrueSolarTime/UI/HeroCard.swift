@@ -18,6 +18,9 @@ struct HeroCard: View {
     /// 卡片左上角那一行城市名：调用方已经按三段式算好（区划名 → 预设城市名 → 「-」），这里只管显示。
     let districtName: String
     let weather: WeatherSnapshot?
+    /// 这份界面**署名**用的来源（`AppModel.weatherSource`）：逐时行的步长必须与署名同源，
+    /// 没有快照时（缓存过期 / 刚换城市）也照它的步长排格子。
+    let weatherSource: WeatherSource
     /// 正有一次取数在飞（新地点还没有缓存时显示「更新中…」而不是旧数据）。
     let isWeatherLoading: Bool
     /// 关键时间色段（0–24 时轴上的着色）。
@@ -86,7 +89,7 @@ struct HeroCard: View {
             .frame(height: 11)
             .padding(.top, 12)
 
-            HourlyRow(weather: weather, isDay: isDay)
+            HourlyRow(weather: weather, weatherSource: weatherSource, isDay: isDay)
                 .padding(.top, 12)
         }
         .padding(cardPadding)
@@ -505,6 +508,8 @@ struct HeroAxis: View {
 struct HourlyRow: View {
 
     let weather: WeatherSnapshot?
+    /// 署名用的来源（与页面底部署名同一份判定）：没有快照时按它的步长排格子。
+    let weatherSource: WeatherSource
     /// 配色用的白天/夜间（主题设置决定）。逐时图标自己的昼夜仍按该格的真实小时判断。
     let isDay: Bool
 
@@ -522,8 +527,9 @@ struct HourlyRow: View {
         let slot: WeatherSlot
         let label: String
         let condition: WeatherCondition?
-        /// 该格对应的真实时刻（判昼夜图标用）；没有采样点时为 nil。
-        let date: Date?
+        /// 该格图标该按白天还是夜间画。**不是**主题的「亮色 / 暗色」，而是该刻的真实昼夜：
+        /// 「现在」格用当前时刻（图标与温度都来自实时读数），其余格用采样点的真实时刻。
+        let isDay: Bool
         let temperatureC: Int?
 
         var id: Int { slot.epochSeconds }
@@ -540,7 +546,7 @@ struct HourlyRow: View {
                         .frame(height: labelSlotHeight)
 
                     if let condition = cell.condition {
-                        Image(systemName: condition.symbol(isDay: isDayOf(cell.date)))
+                        Image(systemName: condition.symbol(isDay: cell.isDay))
                             .font(.system(size: 20))
                             .symbolRenderingMode(.multicolor)
                             .frame(height: iconSlotHeight)
@@ -564,36 +570,39 @@ struct HourlyRow: View {
         }
     }
 
-    /// 当前要画的 6 格：首格是当前时刻之前最近的那个采样点，之后每格前进 `weather.stepHours` 小时。
+    /// 当前要画的 6 格：首格是当前时刻之前最近的那个采样点，之后每格前进 `stepHours` 小时。
+    ///
+    /// 步长**只从快照的来源（没有快照时从署名那一份来源）推**，不再写 `?? 1`：
+    /// 7Timer! 的署名配上 1 小时槽位，就是用户报的那个 bug。
+    /// 「现在」格的图标与温度都来自实时读数（`slotReadings` 里统一处理），
+    /// 3 小时源的采样点可能是几小时前的，不能拿它当「现在」。
     private var cells: [Cell] {
         let now = Date()
-        let points = weather?.hourly ?? []
-        let slots = WeatherParsing.visibleSlots(
-            points: points,
+        let readings = WeatherParsing.slotReadings(
+            points: weather?.hourly ?? [],
             nowEpochSeconds: Int(now.timeIntervalSince1970),
             zoneOffsetSeconds: TimeZone.current.secondsFromGMT(for: now),
             count: slotCount,
-            stepHours: weather?.stepHours ?? 1
+            stepHours: WeatherSnapshot.slotStepHours(weather, source: weatherSource),
+            currentTemperatureC: weather?.temperatureC,
+            currentCode: weather?.code
         )
-        let byEpoch = Dictionary(points.map { ($0.epochSeconds, $0) }, uniquingKeysWith: { first, _ in first })
+        let isDayNow = isDayOf(now)
 
-        return slots.map { slot in
-            let point = byEpoch[slot.epochSeconds]
-            // 「现在」那一格的天气码优先用当前读数：3 小时源的采样点可能已经是几小时前，
-            // 但实时读数（`current`）就是此刻的天气。
-            let condition = slot.isNow ? (weather?.condition ?? point?.condition) : point?.condition
+        return readings.map { reading in
             let label: String
-            if slot.isNow {
+            if reading.slot.isNow {
                 label = L("weather.now")
             } else {
-                label = Lf("weather.hour", Calendar.current.component(.hour, from: slot.date))
+                label = Lf("weather.hour", Calendar.current.component(.hour, from: reading.slot.date))
             }
             return Cell(
-                slot: slot,
+                slot: reading.slot,
                 label: label,
-                condition: condition,
-                date: point?.date,
-                temperatureC: point?.temperatureC
+                condition: reading.condition,
+                // 「现在」格的图标是实时天气，昼夜也必须是此刻的；其余格用采样点自己的时刻。
+                isDay: reading.slot.isNow ? isDayNow : isDayOf(reading.pointDate),
+                temperatureC: reading.temperatureC
             )
         }
     }

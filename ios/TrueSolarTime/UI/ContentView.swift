@@ -33,6 +33,9 @@ struct ContentView: View {
                             isDay: model.uiIsDay,
                             districtName: cityText,
                             weather: model.weather,
+                            // 逐时行的步长必须与底部署名同源：没有快照（缓存过期 / 刚换城市）时
+                            // 也按这份来源的步长排格子，不能退回 1 小时。
+                            weatherSource: model.weatherSource,
                             isWeatherLoading: model.weatherLoading,
                             keyBands: model.keyTime?.bands ?? [],
                             // 关键时段的色段**不看定位**：它是「真太阳时 0–24 时」轴上的固定区间，

@@ -71,12 +71,13 @@ final class WeatherStore {
         guard defaults.object(forKey: Key.temperature) != nil else { return nil }
         if let place, !belongsTo(place) { return nil }
         guard let age = ageSeconds(), WeatherParsing.isDisplayable(ageSeconds: age) else { return nil }
+        // 不传 stepHours：`WeatherSnapshot.init` 按来源归一化，缓存里旧的 `weather.step`
+        // （甚至旧版本留下的 0 / 1）不可能再把 7Timer! 的数据排成 1 小时一格。
         return WeatherSnapshot(
             temperatureC: defaults.integer(forKey: Key.temperature),
             code: defaults.integer(forKey: Key.code),
             hourly: decodeHourly(),
-            source: source,
-            stepHours: stepHours
+            source: source
         )
     }
 
@@ -90,10 +91,14 @@ final class WeatherStore {
         WeatherSource.of(id: defaults.string(forKey: Key.source))
     }
 
-    /// 缓存数据的步长（1 或 3 小时）；缺省跟随来源。
+    /// 缓存数据的步长（1 或 3 小时）——**永远由来源决定**。
+    ///
+    /// 不再读 `weather.step` 里存的值：那是一个可以被旧版本 / 半截写入搞脏的副本，
+    /// 一旦它与 `weather.source` 不一致，就会出现「署名 7Timer!、逐时行却按 1 小时排」。
+    /// `weather.step` 仍然会写（`needsRefresh` 用它的**存在性**判断「这份缓存知道自己的步长」），
+    /// 但读的时候只信来源。
     var stepHours: Int {
-        let stored = defaults.integer(forKey: Key.step)
-        return stored > 0 ? stored : source.stepHours
+        source.stepHours
     }
 
     /// 缓存有多旧（秒）；没有缓存时返回 nil。诊断里用它标注「数据过期 N 分钟」。
@@ -248,6 +253,8 @@ final class WeatherStore {
                 let points = WeatherParsing.parseSevenTimer(json)
                 let now = Int(Date().timeIntervalSince1970)
                 if let current = WeatherParsing.snapshotAt(points: points, nowEpochSeconds: now) {
+                    // 步长不在这里传：`WeatherSnapshot.init` 会按 `source` 归一化成 3 小时，
+                    // 「署名 7Timer! + 1 小时槽位」这套组合在类型层面就不成立。
                     let snapshot = WeatherSnapshot(
                         temperatureC: current.temperatureC,
                         code: current.code,

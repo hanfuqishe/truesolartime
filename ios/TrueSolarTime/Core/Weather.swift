@@ -132,6 +132,27 @@ struct WeatherSlot: Equatable {
     var date: Date { Date(timeIntervalSince1970: TimeInterval(epochSeconds)) }
 }
 
+/// 界面上某一格**最终要显示**的内容（标签文本由界面按语言拼，这里只管数据）。
+///
+/// 抽到 Core 里是为了让「『现在』那一格的图标与温度都来自实时读数」成为一条**可断言**的
+/// 数据规则，而不是散在 SwiftUI 视图里的三元表达式：3 小时源的采样点可能已经是几小时前，
+/// 只把图标换成实时、温度仍取采样点，就会出现「现在格：夜间图标 + 3 小时前的温度」，
+/// 同时又和日期行的实时温度互相矛盾。
+struct WeatherSlotReading: Equatable {
+    /// 这一格排在哪个时刻（有数据时就是那条采样点的真实时刻）。
+    let slot: WeatherSlot
+    /// 该格显示的天气；没有数据时 nil（界面显示占位符）。
+    let condition: WeatherCondition?
+    /// 该格显示的气温；没有数据时 nil。
+    let temperatureC: Int?
+    /// 该格对应的采样点真实时刻（判昼夜图标用）；没有采样点时为 nil。
+    let pointEpochSeconds: Int?
+
+    var pointDate: Date? {
+        pointEpochSeconds.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
+}
+
 /// 主源失败之后怎么办（纯判定，便于自检）。
 enum WeatherFallback: Equatable {
     /// 缓存还没过期：什么都不做，界面继续用缓存（**不清空**）。
@@ -152,6 +173,8 @@ struct WeatherSnapshot: Equatable {
     /// 这份数据是从哪个源取的。
     let source: WeatherSource
     /// 逐时步长（小时）：界面 6 个槽位之间的间隔。
+    ///
+    /// 它**恒等于 `source.stepHours`**（构造时归一化），不可能与署名不一致。
     let stepHours: Int
 
     init(
@@ -165,7 +188,24 @@ struct WeatherSnapshot: Equatable {
         self.code = code
         self.hourly = hourly
         self.source = source
-        self.stepHours = max(stepHours ?? source.stepHours, 1)
+        // **步长只由来源决定**，调用方传什么都不采纳。
+        //
+        // 之前是 `max(stepHours ?? source.stepHours, 1)`：只要有一条路径（缓存里旧的
+        // `weather.step`、外部调用点、旧版本写下的 0）把 1 传进来，就会出现
+        // 「署名 7Timer! + 逐时行按 1 小时排」这种自相矛盾的界面 —— 署名与步长必须同源，
+        // 所以这里把「归一化」做成唯一入口，缓存读回也走同一条路。
+        // 参数保留只为兼容既有调用点与自检里「传错值也要被纠正」的断言。
+        _ = stepHours
+        self.stepHours = source.stepHours
+    }
+
+    /// 界面画逐时行时**唯一允许**用的步长。
+    ///
+    /// 有快照就用快照的（已在 `init` 里按来源归一化）；没有快照时用**署名那一份来源**的步长
+    /// —— 以前界面写 `?? 1`，于是 7Timer! 的署名配上 1 小时的理论网格，
+    /// 正是用户报的「署名 7Timer!，逐时行却是 1 小时粒度」。
+    static func slotStepHours(_ snapshot: WeatherSnapshot?, source: WeatherSource) -> Int {
+        snapshot?.stepHours ?? source.stepHours
     }
 
     var condition: WeatherCondition { WeatherCondition.of(code: code) }
@@ -404,7 +444,8 @@ enum WeatherParsing {
     /// - **首格永远是「现在」**：当前时刻之前最近的那个采样点（全都在未来时取第一个点）。
     ///   它不是「当前整点」—— 3 小时源在 21:30 的「现在」是 20 点那一条读数。
     /// - 之后按**数据源自己的步长**往后取：1 小时源是 现在/22时/23时/0时…，
-    ///   3 小时源是 现在/23时/2时/5时/8时/11时（取决于采样网格）。标签一律用该点的实际本地小时数。
+    ///   3 小时源是 现在/23时/2时/5时/8时/11时（取决于采样网格）。标签一律用该点的实际本地小时数
+    ///   —— 所以每一格会尽量落到真实采样点上（见 `snapToPoint`），而不是停在理论网格上。
     /// - 没有数据时退回按步长对齐的理论网格，让格子照样排出来（内容显示占位符）。
     ///
     /// - Parameter skip: 跳过前面几格（桌面卡片的第二排逐时行接在第一排后面）。
@@ -439,9 +480,75 @@ enum WeatherParsing {
             }
         }
 
-        let start = anchor + offset
-        return (0..<count).map {
-            WeatherSlot(epochSeconds: start + $0 * step, isNow: skip == 0 && $0 == 0)
+        let start = snapToPoint(anchor + offset, points: points, step: step)
+        var slots: [WeatherSlot] = []
+        slots.reserveCapacity(count)
+        var previous = start
+        for index in 0..<count {
+            // 标签一律用槽位时刻的本地小时数，所以槽位时刻必须尽量落在**真实采样点**上：
+            // 半个步长以内有真实点就用真实点，否则保留名义网格时刻（缺口那格显示占位符）。
+            var epoch = index == 0 ? start : snapToPoint(previous + step, points: points, step: step)
+            if index > 0 && epoch <= previous {
+                epoch = previous + step
+            }
+            slots.append(
+                WeatherSlot(epochSeconds: epoch, isNow: skip == 0 && index == 0)
+            )
+            previous = epoch
+        }
+        return slots
+    }
+
+    /// 把名义网格时刻落到**真实采样点**上（距离小于半个步长才算命中），否则原样返回。
+    ///
+    /// 为什么需要它：标签用的是槽位时刻，若数据自己的网格与「来源步长」略有偏移
+    /// （旧文档的 `time` 字段、镜像站的残项），槽位就会停在一条不存在的读数上 ——
+    /// 界面上看起来是「这个点的标签对应另一个点的温度」。落点只允许在半步长内，
+    /// 这样既不会跳过缺口、也不会把 6 格压短成 5 格。
+    private static func snapToPoint(_ nominal: Int, points: [WeatherHour], step: Int) -> Int {
+        guard let nearest = point(at: nominal, in: points) else { return nominal }
+        return abs(nearest.epochSeconds - nominal) < step / 2 ? nearest.epochSeconds : nominal
+    }
+
+    /// 逐时行每一格显示什么（首页大卡片与遗留 `WeatherCard` 共用这一条规则）。
+    ///
+    /// - **「现在」那一格的图标与温度都取实时读数**（与日期行同一个数）。3 小时源的采样点
+    ///   可能是 3 小时前的，只换图标不换温度就会出现「夜间图标 + 下午的温度」。
+    /// - 其余格取该采样点的读数；该时刻没有采样点就是占位符（两项都为 nil）。
+    static func slotReadings(
+        points: [WeatherHour],
+        nowEpochSeconds: Int,
+        zoneOffsetSeconds: Int,
+        count: Int,
+        stepHours: Int,
+        currentTemperatureC: Int? = nil,
+        currentCode: Int? = nil,
+        skip: Int = 0
+    ) -> [WeatherSlotReading] {
+        let slots = visibleSlots(
+            points: points,
+            nowEpochSeconds: nowEpochSeconds,
+            zoneOffsetSeconds: zoneOffsetSeconds,
+            count: count,
+            stepHours: stepHours,
+            skip: skip
+        )
+        let byEpoch = Dictionary(
+            points.map { ($0.epochSeconds, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return slots.map { slot in
+            let point = byEpoch[slot.epochSeconds]
+            let code = slot.isNow ? (currentCode ?? point?.code) : point?.code
+            let temperature = slot.isNow
+                ? (currentTemperatureC ?? point?.temperatureC)
+                : point?.temperatureC
+            return WeatherSlotReading(
+                slot: slot,
+                condition: code.map { WeatherCondition.of(code: $0) },
+                temperatureC: temperature,
+                pointEpochSeconds: point?.epochSeconds
+            )
         }
     }
 

@@ -9,6 +9,8 @@ struct WeatherCard: View {
     let weather: WeatherSnapshot?
     let isDay: Bool
     let waitingForGPS: Bool
+    /// 署名用的来源：没有快照时逐时行按它的步长排（与底部署名同源，绝不退回 1 小时）。
+    var source: WeatherSource = .openMeteo
 
     private let hoursToShow = 5
 
@@ -43,18 +45,24 @@ struct WeatherCard: View {
                 }
                 .padding(.top, 2)
 
-                if !hourlySlots().isEmpty {
+                if !hourlyReadings.isEmpty {
                     ThemedDivider().padding(.vertical, 2)
                     HStack(alignment: .top, spacing: 0) {
-                        ForEach(hourlySlots(), id: \.epochSeconds) { point in
+                        ForEach(hourlyReadings, id: \.slot.epochSeconds) { reading in
                             VStack(spacing: 4) {
-                                Text(hourLabel(point))
+                                Text(hourLabel(reading))
                                     .font(.system(size: 11))
                                     .foregroundStyle(palette.onSurfaceVariant)
-                                Image(systemName: point.condition.symbol(isDay: isDayNow(point)))
-                                    .font(.system(size: 18))
-                                    .symbolRenderingMode(.multicolor)
-                                Text("\(point.temperatureC)°")
+                                if let condition = reading.condition {
+                                    Image(systemName: condition.symbol(isDay: isDayOf(reading)))
+                                        .font(.system(size: 18))
+                                        .symbolRenderingMode(.multicolor)
+                                } else {
+                                    Image(systemName: "minus")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(palette.onSurfaceVariant)
+                                }
+                                Text(reading.temperatureC.map { "\($0)°" } ?? "-")
                                     .font(.system(size: 12, weight: .medium))
                                     .monospacedDigit()
                             }
@@ -76,30 +84,42 @@ struct WeatherCard: View {
     }
 
     /// 从当前小时块开始取 5 个点（步长跟数据源走：主源 1 小时、备用源 3 小时）。
-    private func hourlySlots() -> [WeatherHour] {
+    ///
+    /// 与首页大卡片共用 `WeatherParsing.slotReadings`：「现在」那一格的图标与温度都取实时读数，
+    /// 步长由 `WeatherSnapshot.slotStepHours` 按来源归一化（不再写 `?? 1`）。
+    private var hourlyReadings: [WeatherSlotReading] {
         let points = weather?.hourly ?? []
         guard !points.isEmpty else { return [] }
         let now = Date()
-        let offset = TimeZone.current.secondsFromGMT(for: now)
-        let slots = WeatherParsing.visibleSlots(
+        return WeatherParsing.slotReadings(
             points: points,
             nowEpochSeconds: Int(now.timeIntervalSince1970),
-            zoneOffsetSeconds: offset,
+            zoneOffsetSeconds: TimeZone.current.secondsFromGMT(for: now),
             count: hoursToShow,
-            stepHours: weather?.stepHours ?? 1
+            stepHours: WeatherSnapshot.slotStepHours(weather, source: source),
+            currentTemperatureC: weather?.temperatureC,
+            currentCode: weather?.code
         )
-        let byEpoch = Dictionary(points.map { ($0.epochSeconds, $0) }, uniquingKeysWith: { first, _ in first })
-        return slots.compactMap { byEpoch[$0.epochSeconds] }
     }
 
-    private func hourLabel(_ point: WeatherHour) -> String {
-        Lf("weather.hour", Calendar.current.component(.hour, from: point.date))
+    private func hourLabel(_ reading: WeatherSlotReading) -> String {
+        if reading.slot.isNow { return L("weather.now") }
+        return Lf("weather.hour", Calendar.current.component(.hour, from: reading.slot.date))
+    }
+
+    /// 该格图标该按白天还是夜间画：「现在」格的图标是实时天气，昼夜也取当前时刻；
+    /// 其余格用采样点自己的真实时刻（与首页大卡片同一规则）。
+    private func isDayOf(_ reading: WeatherSlotReading) -> Bool {
+        if reading.slot.isNow {
+            return isDayNow(Date())
+        }
+        return isDayNow(reading.pointDate)
     }
 
     /// 各时段是否白天：用日出日落粗略判断（只在做图标明暗区分时用）。
-    private func isDayNow(_ point: WeatherHour) -> Bool {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: point.date)
+    private func isDayNow(_ date: Date?) -> Bool {
+        guard let date else { return isDay }
+        let hour = Calendar.current.component(.hour, from: date)
         return (6..<18).contains(hour)
     }
 }

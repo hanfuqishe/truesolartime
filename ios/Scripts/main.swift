@@ -2441,6 +2441,188 @@ expect(
 )
 expect("空序列没有实时读数", WeatherParsing.snapshotAt(points: [], nowEpochSeconds: sevenTimerNow) == nil)
 
+print("== 真实 7Timer! payload（64 点，init + timepoint，没有 time 字段）==")
+
+/// 结构完全按实测返回拼：`product=civil`、`init=yyyyMMddHH`（UTC）、`dataseries` 64 项、
+/// `timepoint` = 3,6,…,192（**相对 init 的小时数**）。这就是用户报 bug 的那份响应。
+func realSevenTimerPayload(_ initStamp: String = "2026111606", count: Int = 64) -> String {
+    var items: [String] = []
+    for index in 1...count {
+        let weather = index % 3 == 0 ? "cloudyday" : "cloudynight"
+        items.append("{\"timepoint\":\(index * 3),\"temp2m\":\(20 - index % 5),\"weather\":\"\(weather)\"}")
+    }
+    return "{\"product\":\"civil\",\"init\":\"\(initStamp)\",\"dataseries\":[\(items.joined(separator: ","))]}"
+}
+
+let payloadPoints = WeatherParsing.parseSevenTimer(realSevenTimerPayload())
+expect("64 点全部解析出来", payloadPoints.count == 64, "actual=\(payloadPoints.count)")
+// 前 6 点：09/12/15/18/21/次日 00 时（UTC）；本地 +8 是 17/20/23/2/5/8 时。
+let payloadFirstSixUTC = [utcEpoch(hour: 9), utcEpoch(hour: 12), utcEpoch(hour: 15),
+                          utcEpoch(hour: 18), utcEpoch(hour: 21), utcEpoch(hour: 0, day: 17)]
+expect(
+    "前 6 点的时间戳（UTC）= 09/12/15/18/21Z + 次日 00Z",
+    Array(payloadPoints.prefix(6).map(\.epochSeconds)) == payloadFirstSixUTC,
+    "actual=\(payloadPoints.prefix(6).map(\.epochSeconds))"
+)
+expect(
+    "前 6 点的本地时刻（+8）= 17/20/23/2/5/8 时",
+    payloadPoints.prefix(6).map({ localHour($0.epochSeconds) }) == [17, 20, 23, 2, 5, 8],
+    "actual=\(payloadPoints.prefix(6).map { localHour($0.epochSeconds) })"
+)
+let payloadDiffs = zip(payloadPoints.dropFirst(), payloadPoints).map { $0.epochSeconds - $1.epochSeconds }
+expect(
+    "全部 63 个相邻间隔都 = 10800 秒（3 小时，±1 秒）",
+    payloadDiffs.count == 63 && payloadDiffs.allSatisfy { abs($0 - 10_800) <= 1 },
+    "actual=\(Set(payloadDiffs))"
+)
+let payloadFirstSixDiffs = (0..<6).map { payloadPoints[$0 + 1].epochSeconds - payloadPoints[$0].epochSeconds }
+expect(
+    "前 6 个相邻间隔 = [10800, 10800, 10800, 10800, 10800, 10800]",
+    payloadFirstSixDiffs == Array(repeating: 10_800, count: 6),
+    "actual=\(payloadFirstSixDiffs)"
+)
+// 21:26（本地）的 6 格：现在（= UTC 12:00 / 本地 20 时的采样点）/ 23 / 2 / 5 / 8 / 11 时
+let payloadReadings = WeatherParsing.slotReadings(
+    points: payloadPoints,
+    nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSource.sevenTimer.stepHours,
+    currentTemperatureC: 16,
+    currentCode: 3
+)
+expect(
+    "真实 payload → 6 格标签：现在 / 23时 / 2时 / 5时 / 8时 / 11时",
+    slotLabels(payloadReadings.map(\.slot), language: .simplified)
+        == ["现在", "23时", "2时", "5时", "8时", "11时"],
+    "actual=\(slotLabels(payloadReadings.map(\.slot), language: .simplified))"
+)
+expect(
+    "6 格覆盖 18 小时（首末相差 15 小时）",
+    payloadReadings[5].slot.epochSeconds - payloadReadings[0].slot.epochSeconds == 15 * 3600,
+    "actual=\(payloadReadings[5].slot.epochSeconds - payloadReadings[0].slot.epochSeconds)"
+)
+expect(
+    "每一格都落在真实采样点上（标签不是理论网格推出来的）",
+    payloadReadings.allSatisfy { reading in
+        payloadPoints.contains { $0.epochSeconds == reading.slot.epochSeconds }
+    },
+    "actual=\(payloadReadings.map(\.slot.epochSeconds))"
+)
+expect(
+    "首格「现在」= UTC 12:00（本地 20 时）那条采样点",
+    payloadReadings[0].slot.epochSeconds == utcEpoch(hour: 12)
+        && localHour(payloadReadings[0].slot.epochSeconds) == 20,
+    "actual=\(payloadReadings[0].slot.epochSeconds)"
+)
+
+// 解析正确 ⇒ 只要步长取对了，6 格就必然是 3 小时间隔。把「署名 + 步长」这一对钉死。
+let sevenTimerSnapshot = WeatherSnapshot(temperatureC: 16, code: 3, hourly: payloadPoints, source: .sevenTimer)
+expect(
+    "7Timer! 快照：署名含 7Timer!，且步长 = 3（署名与步长同源）",
+    sevenTimerSnapshot.source == .sevenTimer
+        && sevenTimerSnapshot.stepHours == 3
+        && WeatherSource.sevenTimer.attribution.contains("7Timer!"),
+    "step=\(sevenTimerSnapshot.stepHours) attribution=\(WeatherSource.sevenTimer.attribution)"
+)
+expect(
+    "主源快照：署名是 Open-Meteo，且步长 = 1",
+    WeatherSource.openMeteo.attribution.contains("Open-Meteo")
+        && WeatherSource.openMeteo.attribution.contains("CC BY 4.0")
+        && WeatherSnapshot(temperatureC: 16, code: 3, hourly: payloadPoints).stepHours == 1
+)
+
+print("== 「现在」那一格：图标与温度都取实时读数 ==")
+
+// 3 小时源：快照的实时读数是 16° / 阴（code 3），采样点是 10° / 多云（code 1）。
+// 「现在」格如果取采样点，就会显示 10°/多云 —— 与日期行的 16° 和实时图标互相矛盾。
+let threeHourLivePoints = hourlyPoints(fromEpoch: utcEpoch(hour: 12), count: 8, stepHours: 3)
+let liveSnapshot = WeatherSnapshot(temperatureC: 16, code: 3, hourly: threeHourLivePoints, source: .sevenTimer)
+let liveReadings = WeatherParsing.slotReadings(
+    points: liveSnapshot.hourly,
+    nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: liveSnapshot.stepHours,
+    currentTemperatureC: liveSnapshot.temperatureC,
+    currentCode: liveSnapshot.code
+)
+expect(
+    "3 小时源：「现在」格温度取实时读数 16（不是采样点的 10）",
+    liveReadings[0].temperatureC == 16 && liveReadings[0].temperatureC == liveSnapshot.temperatureC,
+    "actual=\(String(describing: liveReadings[0].temperatureC))"
+)
+expect(
+    "3 小时源：「现在」格天气取实时读数 阴（不是采样点的 多云）",
+    liveReadings[0].condition == .overcast && liveReadings[0].condition == liveSnapshot.condition,
+    "actual=\(String(describing: liveReadings[0].condition))"
+)
+expect(
+    "3 小时源：第二格仍是采样点自己的读数（11°/多云）",
+    liveReadings[1].temperatureC == 11 && liveReadings[1].condition == .partlyCloudy,
+    "actual=\(String(describing: liveReadings[1].temperatureC))/\(String(describing: liveReadings[1].condition))"
+)
+expect(
+    "「现在」格仍记住采样点真实时刻（判昼夜图标用）",
+    liveReadings[0].pointEpochSeconds == utcEpoch(hour: 12) && liveReadings[0].pointDate != nil
+)
+
+// 主源 1 小时粒度：实时读数同样优先，且与日期行（`snapshot.temperatureC`）是同一个数。
+let oneHourLivePoints = hourlyPoints(fromEpoch: utcEpoch(hour: 12), count: 12, stepHours: 1)
+let liveOneHourReadings = WeatherParsing.slotReadings(
+    points: oneHourLivePoints,
+    nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSource.openMeteo.stepHours,
+    currentTemperatureC: 16,
+    currentCode: 3
+)
+expect(
+    "1 小时源：「现在」格温度也取实时读数（与日期行一致）",
+    liveOneHourReadings[0].temperatureC == 16,
+    "actual=\(String(describing: liveOneHourReadings[0].temperatureC))"
+)
+expect(
+    "1 小时源：「现在」格图标与温度同源（实时）",
+    liveOneHourReadings[0].condition == .overcast && liveOneHourReadings[0].temperatureC == 16
+)
+expect(
+    "没有实时读数时「现在」格才退回采样点",
+    WeatherParsing.slotReadings(
+        points: threeHourLivePoints,
+        nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+        zoneOffsetSeconds: zone8,
+        count: 2,
+        stepHours: 3
+    )[0].temperatureC == 10
+)
+
+// 数据网格与名义步长不一致（镜像站 / 旧的 time 字段）时，标签仍必须落在**真实采样点**上：
+// 4 小时一份的数据配 3 小时步长，格子应该吃掉 1 小时误差落到真实点上，而不是停在 16 时这种空网格上。
+let driftedPoints = (0..<6).map {
+    WeatherHour(epochSeconds: utcEpoch(hour: 9) + $0 * 4 * 3600, temperatureC: 5 + $0, code: 1)
+}
+let driftedSlots = WeatherParsing.visibleSlots(
+    points: driftedPoints,
+    nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+    zoneOffsetSeconds: zone8,
+    count: 3,
+    stepHours: 3
+)
+expect(
+    "网格漂移时槽位落到真实采样点（13/17/21 时，不是 13/16/19 时）",
+    driftedSlots.map(\.epochSeconds)
+        == [utcEpoch(hour: 13), utcEpoch(hour: 17), utcEpoch(hour: 21)],
+    "actual=\(driftedSlots.map(\.epochSeconds))"
+)
+expect(
+    "网格漂移时标签跟着真实采样点（现在 / 1时 / 5时）",
+    slotLabels(driftedSlots, language: .simplified) == ["现在", "1时", "5时"],
+    "actual=\(slotLabels(driftedSlots, language: .simplified))"
+)
+
+
 // 旧文档里的 `time` 字段（yyyyMMddHH，UTC）也认，并向下对齐到 3 小时网格。
 let legacySevenTimerJSON = """
 {"dataseries":[{"time":"2025111604","temp2m":9,"weather":"rain"}]}
@@ -2596,9 +2778,73 @@ expect(
     WeatherSnapshot(temperatureC: 9, code: 2, hourly: []).stepHours == 1
         && WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer).stepHours == 3
 )
+// 步长是**派生值**，不是可以被调用方改写的独立字段：传错必须被来源纠正。
+// 这一条钉住的正是「署名 7Timer!、逐时行却按 1 小时排」那一类 bug。
 expect(
-    "快照的步长下限是 1（脏值不会把槽位算成 0）",
-    WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 0).stepHours == 1
+    "7Timer! 快照被传 1 小时 → 归一化成 3",
+    WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 1).stepHours == 3,
+    "actual=\(WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 1).stepHours)"
+)
+expect(
+    "主源快照被传 3 小时 → 归一化成 1",
+    WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .openMeteo, stepHours: 3).stepHours == 1,
+    "actual=\(WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .openMeteo, stepHours: 3).stepHours)"
+)
+expect(
+    "脏值 0 也归一化（7Timer! → 3，不会退化成 1）",
+    WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 0).stepHours == 3,
+    "actual=\(WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: .sevenTimer, stepHours: 0).stepHours)"
+)
+expect(
+    "任意来源 × 任意传入值，步长恒等于 source.stepHours",
+    WeatherSource.allCases.allSatisfy { source in
+        [nil, -1, 0, 1, 2, 3, 24].allSatisfy { passed in
+            WeatherSnapshot(temperatureC: 9, code: 2, hourly: [], source: source, stepHours: passed).stepHours
+                == source.stepHours
+        }
+    }
+)
+
+print("== 逐时行步长与署名同源（没有快照时也不退回 1 小时）==")
+expect(
+    "没有快照 + 7Timer! 署名 → 3 小时",
+    WeatherSnapshot.slotStepHours(nil, source: .sevenTimer) == 3
+)
+expect(
+    "没有快照 + 主源署名 → 1 小时",
+    WeatherSnapshot.slotStepHours(nil, source: .openMeteo) == 1
+)
+expect(
+    "有快照时用快照自己的（已按来源归一化）",
+    WeatherSnapshot.slotStepHours(sevenTimerSnapshot, source: .openMeteo) == 3
+)
+// 无数据（缓存过期 / 刚换城市 / 首次启动）时，署名 7Timer! 就必须排出 3 小时的格子：
+// 旧代码这里是 `stepHours: weather?.stepHours ?? 1`，于是署名 7Timer! 配上了 1 小时的逐时行。
+let emptyGridWithSevenTimerAttribution = WeatherParsing.visibleSlots(
+    points: [],
+    nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+    zoneOffsetSeconds: zone8,
+    count: 6,
+    stepHours: WeatherSnapshot.slotStepHours(nil, source: .sevenTimer)
+)
+expect(
+    "署名 7Timer! 时无数据也按 3 小时排（现在/23时/2时/5时/8时/11时）",
+    slotLabels(emptyGridWithSevenTimerAttribution, language: .simplified)
+        == ["现在", "23时", "2时", "5时", "8时", "11时"],
+    "actual=\(slotLabels(emptyGridWithSevenTimerAttribution, language: .simplified))"
+)
+expect(
+    "那条 1 小时的网格确实会给出 6 格覆盖 5 小时的错标签（回归对照）",
+    slotLabels(
+        WeatherParsing.visibleSlots(
+            points: [],
+            nowEpochSeconds: utcEpoch(hour: 13, minute: 26),
+            zoneOffsetSeconds: zone8,
+            count: 6,
+            stepHours: 1
+        ),
+        language: .simplified
+    ) == ["现在", "22时", "23时", "0时", "1时", "2时"]
 )
 
 print("== 刷新触发条件（过期 / 低精度，两条互不干扰）==")
