@@ -412,11 +412,14 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        // 太阳点单独一档（`sunDot`）：白天金色，比淡金弧明显更实（与弧 2.15:1、与卡片 3.16:1）。
+        // 太阳点单独一档（`sunDot`）：白天**亮金**，柔和光晕同色 18%。
+        // 亮金与淡金弧只有 1.48:1，所以白天再加一圈**深金细描边**（0.5 不透明度 / 1pt，
+        // 与弧 3.51:1）—— 点既亮又不糊进弧里。夜间不描边（保持原样）。
         // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
         let dayColor = palette.sunDot
         let glow = SunPathGeometry.sunGlowRadius
         let dot = SunPathGeometry.sunRadius
+        let dotRect = CGRect(x: sun.x - dot, y: sun.y - dot, width: dot * 2, height: dot * 2)
 
         if SunPathGeometry.isSunAboveHorizon(path: path) {
             // 地平线以上：实心 + 柔光（1.5 × 半径，避免糊到上中天标签）。
@@ -429,20 +432,18 @@ private struct SunDialCanvas: View {
                 )),
                 with: .color(dayColor.opacity(0.18))
             )
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: sun.x - dot,
-                    y: sun.y - dot,
-                    width: dot * 2,
-                    height: dot * 2
-                )),
-                with: .color(dayColor)
-            )
+            context.fill(Path(ellipseIn: dotRect), with: .color(dayColor))
+            if palette.isDay {
+                context.stroke(
+                    Path(ellipseIn: dotRect),
+                    with: .color(palette.sunDotRing.opacity(0.5)),
+                    lineWidth: 1
+                )
+            }
         } else {
             // 地平线以下：暗色空心（先用卡片底色挖空，虚线和外圆才不会穿过那个空心点）。
-            let rect = CGRect(x: sun.x - dot, y: sun.y - dot, width: dot * 2, height: dot * 2)
-            context.fill(Path(ellipseIn: rect), with: .color(palette.surface))
-            context.stroke(Path(ellipseIn: rect), with: .color(palette.onSurfaceVariant), lineWidth: 1.5)
+            context.fill(Path(ellipseIn: dotRect), with: .color(palette.surface))
+            context.stroke(Path(ellipseIn: dotRect), with: .color(palette.onSurfaceVariant), lineWidth: 1.5)
         }
     }
 

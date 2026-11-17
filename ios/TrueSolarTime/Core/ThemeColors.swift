@@ -81,14 +81,22 @@ struct ThemeColors: Equatable {
     ///
     /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就真的看不见了。
     let sunArc: ThemeColor
-    /// 当前太阳点（实心圆 + 柔光）的颜色。
+    /// 当前太阳点（实心圆 + 柔光）的**填充色**。
     ///
-    /// 白天主题用**金色** `#B8860B`：与淡金弧同色系但明显更实 —— 与弧 2.15:1、与卡片 3.16:1，
-    /// 是整张圆盘上最「重」的一笔，视线自然落在「现在」。
-    /// 注意：`#D9A520` 这类亮金与淡金弧只有 1.48:1（比弧还糊），所以必须压深到 `#B8860B`。
+    /// 白天主题用**亮金** `#D9A520`：弧已经淡到只是路径示意，点要一眼是「现在」，所以取亮金
+    /// （与卡片 2.18:1、与淡金弧 1.48:1 —— 单看填充它与弧几乎一样亮）。
+    /// 正因为它压不住弧的底色，白天**必须配一圈细描边**（`sunDotRing`）才能辨认；
+    /// 之前那一版把填充压成深金 `#B8860B`（与弧 2.15:1）来换可辨识度，用户反馈「太深」，已弃用。
     ///
     /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：原来的太阳点就是这个色。
     let sunDot: ThemeColor
+    /// 太阳点外面那圈**细描边**（深金）。
+    ///
+    /// 白天 `#8A6508` + 0.5 不透明度 + 1pt：与淡金弧 **3.51:1**（描在弧上时实色约 `#B99A54`，
+    /// 仍有 1.77:1 的边），这样亮金填充既「亮」又不糊进弧里。
+    /// 夜间**不加描边**（`SunDialCanvas` 里只在白天描），所以这个 token 夜间取与填充相同的
+    /// `#F5D68A`，等价于「不画」。
+    let sunDotRing: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
 
@@ -116,9 +124,11 @@ struct ThemeColors: Equatable {
         // 白天弧：淡金色（只是路径示意）。卡片底 #FFFBF6 上 1.47:1，比主色（4.80:1）轻得多。
         // 不建议再浅到 #ECD6AC（1.38:1）—— 会低于「看得见」的下限 1.4。
         sunArc: ThemeColor(hex: 0xE8CFA0),
-        // 太阳点：金色（实心 + 柔光），与淡金弧 2.15:1、与卡片 3.16:1，是圆盘上最实的一笔。
-        // 不能取 #D9A520（与弧只有 1.48:1，比弧还糊）。
-        sunDot: ThemeColor(hex: 0xB8860B),
+        // 太阳点：**亮金**（实心 + 柔光）。与卡片 2.18:1、与淡金弧 1.48:1 —— 单看填充压不住弧，
+        // 所以白天额外描一圈深金（下面的 sunDotRing）。用户明确要「亮金，不要 DarkGoldenrod」。
+        sunDot: ThemeColor(hex: 0xD9A520),
+        // 太阳点的细描边：深金 + 0.5 不透明度 + 1pt（与弧 3.51:1，描在弧上仍有 1.77:1 的边）。
+        sunDotRing: ThemeColor(hex: 0x8A6508),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),
@@ -142,6 +152,8 @@ struct ThemeColors: Equatable {
         sunArc: ThemeColor(hex: 0xF5D68A),
         // 夜间主题的太阳点也**保持原样**（= primary #F5D68A）：深底上金色本来就是它。
         sunDot: ThemeColor(hex: 0xF5D68A),
+        // 夜间**不描边**（`SunDialCanvas` 只在白天描）；取值与填充相同，等价于「不画」。
+        sunDotRing: ThemeColor(hex: 0xF5D68A),
         // 暗色底上的错误色要够亮（纯红在 #0B1220 上只有 4.3:1）。
         danger: ThemeColor(hex: 0xFF8A80),
         // 比卡片底色（#16203A）略亮一档：深色界面里输入框靠「比卡片亮」来暗示可输入，
@@ -169,6 +181,7 @@ struct ThemeColors: Equatable {
             ("onPrimary", onPrimary),
             ("sunArc", sunArc),
             ("sunDot", sunDot),
+            ("sunDotRing", sunDotRing),
             ("danger", danger),
             ("fieldBackground", fieldBackground),
             ("fieldBorder", fieldBorder),

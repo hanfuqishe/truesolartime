@@ -1444,7 +1444,7 @@ struct Index {
       }
     }
 
-    // 当前太阳点：地平线以上是金色实心点 + 柔光，以下是空心暗色点。
+    // 当前太阳点：地平线以上是金色实心点（白天亮金 + 深金细描边）+ 柔光，以下是空心暗色点。
     if (path.isSunUp()) {
       ctx.beginPath();
       ctx.fillStyle = this.alphaColor(sunDot, 0.18);
@@ -1454,6 +1454,13 @@ struct Index {
       ctx.fillStyle = sunDot;
       ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
       ctx.fill();
+      // 点外再描一圈（1vp、0.5 不透明度）：白天把亮金点从淡金弧上「抠」出来；
+      // 夜间 palette.sunDotRing 是全透明色，画了也看不见（视觉与改版前一致）。
+      ctx.beginPath();
+      ctx.strokeStyle = this.alphaColor(this.palette.sunDotRing, 0.5);
+      ctx.lineWidth = 1;
+      ctx.arc(path.sunX, path.sunY, 5, 0, full);
+      ctx.stroke();
     } else {
       // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫会与虚线糊在一起。
       ctx.beginPath();

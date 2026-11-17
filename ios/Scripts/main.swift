@@ -1111,22 +1111,43 @@ expect(
     arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
     String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-// 太阳点：金色实心，必须比弧明显 —— 用户要求「弧很轻、点压得住」。
+// 太阳点：**亮金**填充 + 深金细描边。亮金与淡金弧只有 ~1.5，所以「可辨识」这件事交给描边。
+let dayDotRing = ThemeColors.day.sunDotRing
 expect(
-    "太阳点（金色）与白天弧对比度 ≥ 2.0",
-    dayDot.contrast(with: dayArc) >= 2.0,
+    "太阳点（亮金）与白天弧对比度 ≥ 1.3（放宽：亮金压不住淡金弧）",
+    dayDot.contrast(with: dayArc) >= 1.3,
     String(format: "dot %@ / arc %@ = %.2f", dayDot.hexText, dayArc.hexText, dayDot.contrast(with: dayArc))
 )
 expect(
-    "太阳点比弧实：与卡片的对比度明显高于弧（≥ 2 倍）",
-    dayDot.contrast(with: ThemeColors.day.surface) >= 2 * dayArcContrast,
+    "太阳点描边（深金）与白天弧对比度 ≥ 2.5（靠它保证可辨识）",
+    dayDotRing.contrast(with: dayArc) >= 2.5,
+    String(format: "ring %@ / arc %@ = %.2f",
+           dayDotRing.hexText, dayArc.hexText, dayDotRing.contrast(with: dayArc))
+)
+expect(
+    "描边比填充深（对比 ≥ 2），点才有「边」不会糊",
+    dayDotRing.contrast(with: dayDot) >= 2 && dayDotRing.relativeLuminance < dayDot.relativeLuminance,
+    String(format: "ring=%.2f dot=%.2f", dayDotRing.contrast(with: dayDot), dayDot.relativeLuminance)
+)
+expect(
+    "太阳点比弧实：与卡片的对比度高于弧",
+    dayDot.contrast(with: ThemeColors.day.surface) > dayArcContrast,
     String(format: "dot=%.2f arc=%.2f",
            dayDot.contrast(with: ThemeColors.day.surface), dayArcContrast)
 )
 expect(
-    "太阳点与弧是不同色（各自独立 token，也都不是主色）",
-    dayDot != dayArc && dayDot != ThemeColors.day.primary && dayArc != ThemeColors.day.primary,
-    "dot=\(dayDot.hexText) arc=\(dayArc.hexText)"
+    "太阳点与弧、描边与填充都是不同色（各自独立 token，也都不是主色）",
+    dayDot != dayArc
+        && dayDot != dayDotRing
+        && dayDot != ThemeColors.day.primary
+        && dayArc != ThemeColors.day.primary,
+    "dot=\(dayDot.hexText) ring=\(dayDotRing.hexText) arc=\(dayArc.hexText)"
+)
+expect(
+    "夜间不画可见描边：sunDotRing == sunDot == primary",
+    ThemeColors.night.sunDotRing == ThemeColors.night.sunDot
+        && ThemeColors.night.sunDotRing == ThemeColors.night.primary,
+    "ring=\(ThemeColors.night.sunDotRing.hexText)"
 )
 
 print("== 十二时辰 ==")
@@ -3175,7 +3196,7 @@ let themeNightColors = ThemeColors.night
 expect("亮/暗是两套不同的 token", themeDayColors != themeNightColors)
 expect("isDay 标记正确", themeDayColors.isDay && !themeNightColors.isDay)
 expect("of(isDay:) 取到对应的一套", ThemeColors.of(isDay: true) == .day && ThemeColors.of(isDay: false) == .night)
-expect("token 数量固定（14 个语义色）", themeDayColors.tokens.count == 14, "actual=\(themeDayColors.tokens.count)")
+expect("token 数量固定（15 个语义色）", themeDayColors.tokens.count == 15, "actual=\(themeDayColors.tokens.count)")
 expect("token 名字不重复", Set(themeDayColors.tokens.map(\.name)).count == themeDayColors.tokens.count)
 
 // 逐个 token：两套都必须有值（不能是 0x000000 占位）且亮暗不同。

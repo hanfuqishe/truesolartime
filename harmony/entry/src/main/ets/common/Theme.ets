@@ -34,13 +34,19 @@ export class AppPalette {
   /**
    * 太阳卡圆盘「当前太阳点」的颜色（取值见 [SunDialColors]）。
    *
-   * 白天是深金色 `#B8860B`（实心、比弧明显，与弧对比 ≈2.15）；夜间保持原来的金色 `#F5D68A`。
+   * 白天是亮金色 `#D9A520`（实心）；夜间保持原来的金色 `#F5D68A`。
    * 地平线 / 运动箭头 / 刻度点不用它（分别用 subtle / subtle / accent）。
    */
   sunDot: string;
+  /**
+   * 太阳点外加的一圈细描边（绘制时叠 0.5 不透明度、1vp）。
+   *
+   * 白天 `#8A6508`：把亮金点从淡金弧上「抠」出来；夜间全透明，视觉与改版前完全一致。
+   */
+  sunDotRing: string;
 
   constructor(page: string, card: string, chip: string, text: string, subtle: string, divider: string,
-    accent: string, onAccent: string, sunArc: string, sunDot: string) {
+    accent: string, onAccent: string, sunArc: string, sunDot: string, sunDotRing: string) {
     this.page = page;
     this.card = card;
     this.chip = chip;
@@ -51,19 +57,20 @@ export class AppPalette {
     this.onAccent = onAccent;
     this.sunArc = sunArc;
     this.sunDot = sunDot;
+    this.sunDotRing = sunDotRing;
   }
 }
 
 const DAY: AppPalette = new AppPalette(
   '#FFF8F1', '#FFFDFA', '#F2E3D3', '#211A15', '#6E5A49', '#E7D8C8', '#B4550A', '#FFFFFF',
-  // 白天弧：淡金色，路径示意；太阳点：深金色，实心、比弧明显。
-  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT
+  // 白天弧：淡金色，路径示意；太阳点：亮金色；点外再叠一圈深金细描边。
+  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_SUN_DOT_RING
 );
 
 const NIGHT: AppPalette = new AppPalette(
   '#0B1220', '#16203A', '#24304F', '#E8EDF7', '#9AA7BF', '#24304F', '#F5D68A', '#0B1220',
-  // 夜间：弧与太阳点都保持原来的金色（与改版前完全一致）。
-  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT
+  // 夜间：弧与太阳点都保持原来的金色，描边全透明（视觉与改版前完全一致）。
+  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT, SunDialColors.NIGHT_SUN_DOT_RING
 );
 
 export function paletteFor(isDay: boolean): AppPalette {

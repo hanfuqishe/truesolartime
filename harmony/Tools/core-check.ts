@@ -1419,12 +1419,17 @@ for (const item of equationCases) {
   check('day arc differs from the night dash in hue', warmthGap >= 0.15, `${warmthGap}`);
   const dotContrast: number = SunDialColors.contrastRatio(
     SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC);
-  check('sun dot stands out against the day arc', dotContrast >= 2.0, `${dotContrast}`);
+  check('sun dot separates from the day arc', dotContrast >= 1.3, `${dotContrast}`);
+  const ringContrast: number = SunDialColors.contrastRatio(
+    SunDialColors.DAY_SUN_DOT_RING, SunDialColors.DAY_ARC);
+  check('sun dot ring stands out against the day arc', ringContrast >= 2.5, `${ringContrast}`);
   check('sun dot is clearly apart from the arc in rgb',
     SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC) >= 100,
     `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC)}`);
   check('night arc and sun dot stay gold',
     SunDialColors.NIGHT_ARC === '#F5D68A' && SunDialColors.NIGHT_SUN_DOT === '#F5D68A');
+  check('night sun dot ring is transparent',
+    SunDialColors.NIGHT_SUN_DOT_RING === '#00F5D68A');
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

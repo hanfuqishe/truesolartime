@@ -7,22 +7,26 @@
  *
  * 白天（白卡 `#FFFDFA`）：
  *   - 白天弧 `#E8CFA0`：淡金色，只作路径示意（对比 ≈1.5，看得见但不抢眼）；
- *   - 太阳点 `#B8860B`：深金色，实心，与弧的对比 ≈2.15（用户建议的 `#D9A520` 实测只有 ≈1.48，
- *     达不到「点与弧 ≥2.0」的要求，所以取更深一档的金色，色相仍是金）；
+ *   - 太阳点 `#D9A520`：亮金色实心（与弧对比 ≈1.48，靠一圈深金细描边把它从弧上「抠」出来）；
+ *   - 太阳点描边 `#8A6508`：0.5 不透明度、1vp（与弧对比 ≈3.5）；
  *   - 刻度和地平线/箭头不在这里：它们沿用 accent / subtle。
- * 夜间：弧与太阳点都保持原来的金色 `#F5D68A`，夜晚虚线是中性灰 `#9AA7BF`。
+ * 夜间：弧与太阳点都保持原来的金色 `#F5D68A`（描边透明），夜晚虚线是中性灰 `#9AA7BF`。
  */
 export class SunDialColors {
   /** 白天卡片的底色（对比度计算的基准）。 */
   static readonly DAY_CARD: string = '#FFFDFA';
   /** 白天弧：淡金色，仅作路径示意。 */
   static readonly DAY_ARC: string = '#E8CFA0';
-  /** 白天太阳点：深金色，实心、比弧明显（与弧对比 ≥2.0）。 */
-  static readonly DAY_SUN_DOT: string = '#B8860B';
+  /** 白天太阳点：亮金色实心。 */
+  static readonly DAY_SUN_DOT: string = '#D9A520';
+  /** 白天太阳点描边：深金色，绘制时叠 0.5 不透明度、1vp。 */
+  static readonly DAY_SUN_DOT_RING: string = '#8A6508';
   /** 夜间弧：保持原来的金色。 */
   static readonly NIGHT_ARC: string = '#F5D68A';
   /** 夜间太阳点：保持原来的金色（与 accent 相同）。 */
   static readonly NIGHT_SUN_DOT: string = '#F5D68A';
+  /** 夜间太阳点描边：全透明（画了也看不见，夜间视觉与改版前一致）。 */
+  static readonly NIGHT_SUN_DOT_RING: string = '#00F5D68A';
   /** 夜间虚线（palette.subtle 的夜间值）：中性灰。 */
   static readonly NIGHT_DASH: string = '#9AA7BF';
 
