@@ -140,7 +140,7 @@ private val SUN_DAYLIGHT_GAP = 4.dp
 /** 外侧时间标签与圆（含表圈）的水平间距。 */
 private val SUN_LABEL_GAP = 10.dp
 /**
- * 上中天标签底边与圆顶之间的竖直间距（≥ 太阳点的柔光半径 5.5dp，正午的太阳点就在圆顶）。
+ * 上中天标签底边与圆顶之间的竖直间距（≥ 太阳点半径 5.5dp，正午的太阳点就在圆顶）。
  */
 private val SUN_NOON_LABEL_GAP = 8.dp
 /**
@@ -1172,8 +1172,8 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 1. 白天弧：实线 1.6dp、主色；夜晚弧：虚线 1.5dp / 4dp 间隔、低对比度；
  * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
  * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
- * 4. 当前太阳点：**与时间轴「现在」圆点同款**的柔光金点（半径 5.5dp、alpha 1→0.45→0 一个渐变圆），
- *    白天用亮金、夜间换夜金 `#F5D68A`；地平线上下同一尺寸，不再画硬描边；
+ * 4. 当前太阳点：与时间轴「现在」圆点同款的一个柔化渐变圆（半径 5.5dp、色标 0/0.5/1、
+ *    alpha 1/0.45/0），地平线以上金色、以下低对比 outline；没有核心 / 高光 / 描边；
  * 5. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
  *    （北半球顺时针、南半球逆时针，颜色 onSurfaceVariant，不与主色抢视觉）。
  *
@@ -1194,11 +1194,12 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
-    // 太阳点跟时间轴「现在」点是同一个模子：半径 5.5dp、alpha 1 → 0.45 → 0 的一个渐变圆，
-    // 颜色是亮金 → 中段金（夜间换成夜金），硬描边已删除（见 `SunColors.SUN_DOT_RING_ALPHA`）。
+    // 太阳点 = 时间轴「现在」圆点同款：一个渐变圆、半径 5.5dp、色标 0/0.5/1、alpha 1/0.45/0，
+    // 没有核心 / 高光 / 第二层光晕 / 描边。地平线以下同样用这个柔化圆，只把颜色换成低对比的 outline。
     // 刻度点用太阳金 70%。地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
     val dotBrush = sunDotBrush()
+    val belowHorizonBrush = Brush.radialGradient(*softDotStops(scheme.outline).toTypedArray())
     val sunTickColor = sunTickColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
@@ -1269,8 +1270,8 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             val dayArcStroke = SunColors.DAY_ARC_STROKE_DP.dp.toPx()
             val nightArcStroke = SunColors.NIGHT_ARC_STROKE_DP.dp.toPx()
             val tickRadius = 2.5.dp.toPx()
-            // 太阳点 = 时间轴「现在」点的同款柔光圆：半径 5.5dp，一个渐变圆（没有第二层光晕）。
-            val dotRadius = SunColors.SOFT_DOT_RADIUS_DP.dp.toPx()
+            // 太阳点半径 = 时间轴「现在」圆点半径（同一个常量，5.5dp）。
+            val dotRadius = SunColors.SUN_DOT_RADIUS_DP.dp.toPx()
             val nightDash = PathEffect.dashPathEffect(
                 floatArrayOf(
                     SunColors.NIGHT_DASH_ON_DP.dp.toPx(),
@@ -1398,11 +1399,15 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 color = scheme.onSurfaceVariant,
             )
 
-            // 当前太阳点：就是大卡片时间轴上「现在」的那个圆点 —— 同尺寸（半径 5.5dp）、同 alpha 曲线
-            // （0 → 满色，一半半径 45%，边缘 0），只有一个渐变圆、没有第二层光晕，也早已没有硬描边。
-            // 颜色：白天亮金 #F5C842 → 中段金 #D9A520；夜间夜金 #F5D68A。地平线上下都用这一种点。
+            // 当前太阳点：与时间轴「现在」圆点**同款** —— 一个径向渐变圆（半径 5.5dp、色标 0 / 0.5 / 1、
+            // alpha 1.0 / 0.45 / 0、从圆心开始），没有核心 / 高光 / 第二层光晕 / 描边。
+            // 地平线以上是金色，以下是低对比的 outline，形状与柔化完全一样（不留硬边空心圈）。
             val sun = Offset(path.sunX, path.sunY)
-            drawCircle(brush = dotBrush, radius = dotRadius, center = sun)
+            drawCircle(
+                brush = if (path.isSunUp) dotBrush else belowHorizonBrush,
+                radius = dotRadius,
+                center = sun,
+            )
         }
 
         // 标签层：等画布量到尺寸后再摆，坐标全部来自纯几何函数。
