@@ -70,45 +70,42 @@ class SunColorsTest {
     }
 
     /**
-     * 太阳点渐变的三个色标：中心 `#F5C842`、中段 `#D9A520`、外沿是同一个金 + alpha 0。
+     * 太阳点的三个色标：中心 `#F5C842`、中段 `#D9A520` @45%、外沿同一个金 @0。
      *
      * 外沿不换色相、只把 alpha 打到 0：这样柔光拖尾是「金在散开」，不会在边缘偏成灰色。
+     * alpha 曲线与时间轴「现在」点共用（1.0 / 0.45 / 0），见 `SunDialStyleTest`。
      */
     @Test
     fun sunDotGradientFadesFromBrightGoldToTransparent() {
         assertEquals(0xFFF5C842.toInt(), SunColors.DAY_SUN_CORE)
         assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN_MID)
-        assertEquals("外沿必须是 alpha 0", 0, SunColors.DAY_SUN_CLEAR ushr 24)
-        assertEquals(
-            "外沿色相应与中段一致（只是 alpha 0）",
-            SunColors.DAY_SUN_MID and 0x00FFFFFF,
-            SunColors.DAY_SUN_CLEAR and 0x00FFFFFF,
-        )
 
         val dayStops = SunColors.sunDotStops(night = false)
         assertEquals(3, dayStops.size)
         assertEquals(0f, dayStops.first().position, 1e-6f)
         assertEquals(SunColors.DAY_SUN_CORE, dayStops.first().argb)
+        assertEquals(1f, dayStops.first().alpha, 1e-6f)
         assertEquals(SunColors.DAY_SUN_MID, dayStops[1].argb)
+        assertEquals(SunColors.SOFT_DOT_MID_ALPHA, dayStops[1].alpha, 1e-6f)
         assertEquals(1f, dayStops.last().position, 1e-6f)
-        assertEquals(0, dayStops.last().argb ushr 24)
+        assertEquals("外沿色相必须仍是中段金", SunColors.DAY_SUN_MID, dayStops.last().argb)
+        assertEquals("外沿必须是 alpha 0", 0f, dayStops.last().alpha, 1e-6f)
     }
 
-    /** 夜间用同一套渐变，色值换成夜金 `#F5D68A`（与 `DarkColors.primary` 一致）。 */
+    /** 夜间用同一套色标位置与 alpha，色值换成夜金 `#F5D68A`（与 `DarkColors.primary` 一致）。 */
     @Test
     fun nightGradientUsesTheNightGold() {
         assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN_CORE)
         assertEquals(SunColors.NIGHT_SUN_CORE, SunColors.NIGHT_SUN_MID)
-        assertEquals("夜间外沿也必须 alpha 0", 0, SunColors.NIGHT_SUN_CLEAR ushr 24)
 
         val nightStops = SunColors.sunDotStops(night = true)
         assertEquals(3, nightStops.size)
-        val nightRgb = SunColors.NIGHT_SUN_CORE and 0x00FFFFFF
         nightStops.forEach {
-            assertEquals("夜间所有色标应同为夜金，只差 alpha", nightRgb, it.argb and 0x00FFFFFF)
+            assertEquals("夜间所有色标应同为夜金", SunColors.NIGHT_SUN_CORE, it.argb)
         }
-        assertEquals(SunColors.NIGHT_SUN_CORE, nightStops.first().argb)
-        assertEquals(0, nightStops.last().argb ushr 24)
+        assertEquals(1f, nightStops.first().alpha, 1e-6f)
+        assertEquals(SunColors.SOFT_DOT_MID_ALPHA, nightStops[1].alpha, 1e-6f)
+        assertEquals("夜间外沿也必须 alpha 0", 0f, nightStops.last().alpha, 1e-6f)
     }
 
     /** 三个颜色的 RGB 距离：弧 / 点 / 虚线两两分得开（报告里也给出这组数）。 */
@@ -135,9 +132,7 @@ class SunColorsTest {
         assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
         assertEquals(0xFFF5C842.toInt(), SunColors.DAY_SUN_CORE)
         assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN_MID)
-        assertEquals(0x00D9A520, SunColors.DAY_SUN_CLEAR)
         assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN_CORE)
-        assertEquals(0x00F5D68A, SunColors.NIGHT_SUN_CLEAR)
         assertEquals(0xFFFFFBF6.toInt(), SunColors.CARD_SURFACE_LIGHT)
         assertEquals(0xFF857468.toInt(), SunColors.NIGHT_DASH_LIGHT)
         assertEquals(0.0f, SunColors.SUN_DOT_RING_ALPHA, 1e-6f)

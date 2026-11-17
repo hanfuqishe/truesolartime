@@ -5,10 +5,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 太阳圆盘「线更细 + 太阳点变柔和」这轮的几何常量断言（纯 Kotlin，不依赖 Compose）。
+ * 太阳圆盘「线更细 + 太阳点与时间轴「现在」点同款」这轮的几何常量断言（纯 Kotlin，不依赖 Compose）。
  *
- * 常量都放在 [SunColors] 里：颜色与线宽是同一张「圆盘外观规格表」，绘制代码只取常量，
- * 改粗细 / 改柔光半径要连这里、注释和测试一起改。
+ * 常量都放在 [SunColors] 里：颜色、线宽、柔光点尺寸是同一张「圆盘外观规格表」，绘制代码只取常量；
+ * 时间轴 `HeroAxis` 与圆盘 `SunDial` 用的还是**同一组** [SunColors.SOFT_DOT_*]，两处点不会各走各的。
  */
 class SunDialStyleTest {
 
@@ -22,7 +22,7 @@ class SunDialStyleTest {
         assertTrue(SunColors.NIGHT_ARC_STROKE_DP < 2.0f)
     }
 
-    /** 虚线间隔跟着线宽缩小：6/6dp → 4/4dp，否则线细了、间隔还大，看着仍是一段段粗点。 */
+    /** 虚线间隔跟着线宽缩小：6/6dp → 4/4dp。 */
     @Test
     fun nightDashIntervalsShrinkWithTheLine() {
         assertEquals(4f, SunColors.NIGHT_DASH_ON_DP, 1e-6f)
@@ -33,39 +33,31 @@ class SunDialStyleTest {
         )
     }
 
-    /** 太阳点：核心实心 4dp，柔光外沿 2.1 倍（8.4dp），落在要求的 2.0~2.2 倍 / 8~9dp 区间。 */
-    @Test
-    fun sunDotCoreAndGlowRadiiMatchTheSpec() {
-        assertEquals(4f, SunColors.SUN_DOT_CORE_RADIUS_DP, 1e-6f)
-        assertEquals(2.1f, SunColors.SUN_DOT_GLOW_RATIO, 1e-6f)
-        assertTrue(
-            "柔光倍数应在 2.0~2.2 之间：${SunColors.SUN_DOT_GLOW_RATIO}",
-            SunColors.SUN_DOT_GLOW_RATIO in 2.0f..2.2f,
-        )
-        assertEquals(8.4f, SunColors.SUN_DOT_GLOW_RADIUS_DP, 1e-4f)
-        assertTrue(
-            "柔光外沿应在 8~9dp 之间：${SunColors.SUN_DOT_GLOW_RADIUS_DP}",
-            SunColors.SUN_DOT_GLOW_RADIUS_DP in 8f..9f,
-        )
-    }
-
     /**
-     * 色标位置把核心半径翻译成渐变里的 0–1：`核心色标 × 柔光半径 = 4dp`。
+     * 太阳点与时间轴「现在」点同尺寸：半径 5.5dp（时间轴画布 11dp 高，点正好占满整高）。
      *
-     * 0 到核心色标之间 alpha 恒为 1，所以 4dp 以内是实心的，4dp 之外才开始化开。
+     * 上一版太阳点是「4dp 核心 + 2.1 倍柔光（8.4dp）」，明显比时间轴的点大，用户要求缩到同款。
      */
     @Test
-    fun gradientStopMarksTheCoreEdge() {
-        assertEquals(1f / 2.1f, SunColors.SUN_DOT_CORE_STOP, 1e-6f)
-        assertEquals(
-            SunColors.SUN_DOT_CORE_RADIUS_DP,
-            SunColors.SUN_DOT_CORE_STOP * SunColors.SUN_DOT_GLOW_RADIUS_DP,
-            1e-4f,
+    fun softDotRadiusMatchesTheTimelineDot() {
+        assertEquals(5.5f, SunColors.SOFT_DOT_RADIUS_DP, 1e-6f)
+        // 视觉上的「核心边缘」= 一半半径 = 2.75dp；再往外就是 alpha < 0.45 的柔光。
+        assertEquals(2.75f, SunColors.SOFT_DOT_MID_RADIUS_DP, 1e-4f)
+        assertTrue(
+            "圆点直径应和时间轴画布一样高（11dp）：${SunColors.SOFT_DOT_RADIUS_DP * 2}dp",
+            SunColors.SOFT_DOT_RADIUS_DP * 2f in 10.9f..11.1f,
         )
-        assertTrue("核心色标必须在 0–1 之间：${SunColors.SUN_DOT_CORE_STOP}", SunColors.SUN_DOT_CORE_STOP in 0f..1f)
     }
 
-    /** 色标按位置递增、首 0 尾 1：否则 `Brush.radialGradient` 会抛异常或画反。 */
+    /** alpha 曲线与 HeroAxis 一致：0 → 1.0，一半半径 → 0.45，边缘 → 0。 */
+    @Test
+    fun softDotAlphaCurveMatchesHeroAxis() {
+        assertEquals(0.5f, SunColors.SOFT_DOT_MID_STOP, 1e-6f)
+        assertEquals(0.45f, SunColors.SOFT_DOT_MID_ALPHA, 1e-6f)
+        assertEquals(0f, SunColors.SOFT_DOT_EDGE_ALPHA, 1e-6f)
+    }
+
+    /** 色标按位置递增、首 0 尾 1，alpha 依次 1 / 0.45 / 0：否则 `Brush.radialGradient` 会画反或抛异常。 */
     @Test
     fun gradientStopsAreOrderedFromCenterToEdge() {
         for (night in listOf(false, true)) {
@@ -76,10 +68,9 @@ class SunDialStyleTest {
             stops.zipWithNext().forEach { (a, b) ->
                 assertTrue("色标位置必须严格递增：${a.position} -> ${b.position}", b.position > a.position)
             }
-            // 核心到中段完全不透明：4dp 以内必须是实心的。
-            assertEquals("核心 alpha 应为 1", 0xFF, stops[0].argb ushr 24)
-            assertEquals("中段 alpha 应为 1", 0xFF, stops[1].argb ushr 24)
-            assertEquals("外沿 alpha 应为 0", 0, stops[2].argb ushr 24)
+            assertEquals("中心 alpha 应为 1", 1f, stops[0].alpha, 1e-6f)
+            assertEquals("中段 alpha 应为 0.45", 0.45f, stops[1].alpha, 1e-6f)
+            assertEquals("外沿 alpha 应为 0", 0f, stops[2].alpha, 1e-6f)
         }
     }
 }

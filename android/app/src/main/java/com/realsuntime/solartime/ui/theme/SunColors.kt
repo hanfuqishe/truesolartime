@@ -13,9 +13,8 @@ package com.realsuntime.solartime.ui.theme
  * | 用途 | hex | 对白卡对比度 | 说明 |
  * |---|---|---|---|
  * | 白天弧 [DAY_ARC] | `#E6CB9C` | ≈1.52 | 淡金，只做「路径示意」；比最初的 `#D09464`（≈2.52）轻得多 |
- * | 白天太阳点核心 [DAY_SUN_CORE] | `#F5C842` | ≈1.54 | 径向渐变的**中心**：比中段更亮的一档金（白卡上对比度反而低，靠中段与柔光「撑」出球感） |
- * | 太阳点中段 [DAY_SUN_MID] | `#D9A520` | ≈2.18 | 4dp 核心实心的外缘；与弧的对比度 ≈1.43，靠中段把点「压」出来 |
- * | 太阳点外沿 [DAY_SUN_CLEAR] | `#D9A520` @ 0% | — | 同一个金色，alpha 0：柔光到 8.4dp 完全散掉 |
+ * | 白天太阳点核心 [DAY_SUN_CORE] | `#F5C842` | ≈1.54 | 径向渐变**中心**：只有中心一点是满色，往外立刻淡下去 |
+ * | 太阳点中段 [DAY_SUN_MID] | `#D9A520` | ≈2.18 | 一半半径处的 45% 金；与弧的对比度 ≈1.43，靠它把点「压」出来 |
  * | 夜晚太阳点（暗色主题） | `#F5D68A` | — | 与 `DarkColors.primary` 同一档夜金，核心 / 中段同色，只靠 alpha 渐隐 |
  * | 日出/日落刻度 [DAY_SUN] @ 70% | `#D9A520` | ≈1.7（合成） | 与太阳点中段同色系、更淡更小 |
  * | 夜晚虚线（`LightColors.outline`） | `#857468` | ≈4.34 | 中性灰，靠**色相**与暖金弧区分，不再靠「更深」 |
@@ -23,6 +22,10 @@ package com.realsuntime.solartime.ui.theme
  * 上一轮给太阳点加的那圈深金硬描边（`#8A6508` @ 0.5）已经**整圈删掉**：换成径向渐变后，
  * 硬边会在柔光外沿切出一道生硬的「铁圈」，反而把「柔和边缘的金色点」又变回「描边点」。
  * [SUN_DOT_RING_ALPHA] = 0 是钉住这件事的常量（0 = 不绘制），没有别的用途。
+ *
+ * 太阳点的**大小与柔化方式**不再自己定：与逐时时间轴上的「现在」圆点共用同一组常量
+ * （[SOFT_DOT_RADIUS_DP] / [SOFT_DOT_MID_STOP] / [SOFT_DOT_MID_ALPHA] / [SOFT_DOT_EDGE_ALPHA]），
+ * 两处点必须一模一样大 —— 见下面「柔光圆点」一节。
  *
  * 弧与虚线不再比「谁更深」：用户明确要求弧更淡，所以区分方式改成色相 ——
  * 金的 `r − b` 比灰大 0.17 左右（见 [warmthGap]）。夜间主题的配色不走这里，仍用主题主色。
@@ -44,20 +47,14 @@ internal object SunColors {
     /** 白天太阳点的**核心亮金**：径向渐变从它开始，比中段更亮一档，点才会有「鼓起来」的球感。 */
     const val DAY_SUN_CORE = 0xFFF5C842.toInt()
 
-    /** 渐变中段色：4dp 核心实心的外缘，正好是太阳点原来的实心色。 */
+    /** 渐变中段色：一半半径处那档 45% 的金，正好是太阳点原来的实心色。 */
     const val DAY_SUN_MID = DAY_SUN
-
-    /** 渐变外沿：中段金 + alpha 0，柔光到 2.1 倍核心半径时完全透明。 */
-    const val DAY_SUN_CLEAR = 0x00D9A520
 
     /** 夜间太阳点的核心 / 中段：`DarkColors.primary` 那档夜金 `#F5D68A`，与现有夜间风格一致。 */
     const val NIGHT_SUN_CORE = 0xFFF5D68A.toInt()
 
     /** 夜间渐变中段与核心同色（夜间只用 alpha 做柔化，不再额外造一个色）。 */
     const val NIGHT_SUN_MID = NIGHT_SUN_CORE
-
-    /** 夜间渐变外沿：夜金 + alpha 0。 */
-    const val NIGHT_SUN_CLEAR = 0x00F5D68A
 
     /**
      * 太阳点硬描边的透明度：**0 = 已删除**。
@@ -87,44 +84,51 @@ internal object SunColors {
     /** 夜晚虚线的空白段长度。 */
     const val NIGHT_DASH_OFF_DP = 4f
 
-    // ---- 太阳点柔光（参照逐时时间轴上「现在」圆点的 radialGradient 画法）----
+    // ---- 柔光圆点（逐时时间轴「现在」点 与 太阳点共用同一组参数）----
+    // 用户要求太阳点「和大卡片时间轴上那个『现在』圆点一样」：两处必须一模一样，所以数值只在这里定义一次，
+    // `MainScreen.HeroAxis` 与 `SunDial` 都从这里取。HeroAxis 的实测参数：画布 11dp 高，圆点半径 5.5dp
+    // （正好占满整高）、径向渐变三档等距色标（0 / 0.5 / 1）、alpha 1.0 / 0.45 / 0。
+    // 没有「实心核心 + 外圈柔光」两层，就**一个**渐变圆：中心满色，到一半半径已掉到 45%，到边缘全透明。
 
-    /** 太阳点核心实心半径：约 4dp（上一版实心点 4.5dp，这次顺手再小一点，让柔光当主角）。 */
-    const val SUN_DOT_CORE_RADIUS_DP = 4f
+    /** 「现在」圆点 / 太阳点的半径：5.5dp（时间轴画布 11dp 高，点正好占满整高）。 */
+    const val SOFT_DOT_RADIUS_DP = 5.5f
 
-    /** 柔光外沿 / 核心半径：2.1 倍（核心 4dp → 柔光到 8.4dp，落在要求的 2.0~2.2 倍区间）。 */
-    const val SUN_DOT_GLOW_RATIO = 2.1f
+    /** 三档色标的中间位置：与 HeroAxis 的等距色标一致（0 / 0.5 / 1）。 */
+    const val SOFT_DOT_MID_STOP = 0.5f
 
-    /** 柔光外沿半径（dp）。 */
-    val SUN_DOT_GLOW_RADIUS_DP: Float get() = SUN_DOT_CORE_RADIUS_DP * SUN_DOT_GLOW_RATIO
+    /** 中段 alpha：HeroAxis 的 0.45。 */
+    const val SOFT_DOT_MID_ALPHA = 0.45f
 
-    /** 核心色标在渐变里的位置：核心半径 / 柔光半径 ≈ 0.476（径向渐变的 0–1 是相对柔光半径）。 */
-    val SUN_DOT_CORE_STOP: Float get() = 1f / SUN_DOT_GLOW_RATIO
+    /** 外沿 alpha：完全透明。 */
+    const val SOFT_DOT_EDGE_ALPHA = 0f
+
+    /** 中段所在的半径（视觉上「核心」的边缘）：5.5 × 0.5 = 2.75dp，再往外就是柔光。 */
+    val SOFT_DOT_MID_RADIUS_DP: Float get() = SOFT_DOT_RADIUS_DP * SOFT_DOT_MID_STOP
 
     /**
-     * 径向渐变的一个色标：位置 [position] 是 0–1（相对柔光半径），[argb] 自带 alpha。
+     * 径向渐变的一个色标：[position] 是 0–1（相对圆点半径），[argb] 是满不透明的 RGB，[alpha] 单独给。
      *
-     * 只放 ARGB Int、不放 Compose 的 `Color`：这样色标也能在 JVM 单测里逐项断言。
+     * 只用纯 Kotlin 类型、不碰 Compose 的 `Color`：这样色标也能在 JVM 单测里逐项断言。
      */
-    data class SunDotStop(val position: Float, val argb: Int)
+    data class SunDotStop(val position: Float, val argb: Int, val alpha: Float)
 
     /**
-     * 太阳点的三个色标：核心亮金 → 中段金 → 外沿全透明。
+     * 太阳点的三个色标：中心亮金 → 中段金 @45% → 外沿同色 @0。
      *
-     * 白天 `#F5C842 → #D9A520 → #D9A520 @ 0`；夜间 `#F5D68A → #F5D68A → #F5D68A @ 0`。
-     * 中段之前 alpha 恒为 1，所以 4dp 以内是**实心**的，4dp 之外才开始化开。
+     * 位置与 alpha 曲线和时间轴「现在」点完全一致（[SOFT_DOT_MID_STOP] / [SOFT_DOT_MID_ALPHA] /
+     * [SOFT_DOT_EDGE_ALPHA]），只有颜色不同：时间轴是单色 dotColor，太阳点是「亮金中心 + 中段金」。
      */
     fun sunDotStops(night: Boolean): List<SunDotStop> = if (night) {
         listOf(
-            SunDotStop(0f, NIGHT_SUN_CORE),
-            SunDotStop(SUN_DOT_CORE_STOP, NIGHT_SUN_MID),
-            SunDotStop(1f, NIGHT_SUN_CLEAR),
+            SunDotStop(0f, NIGHT_SUN_CORE, 1f),
+            SunDotStop(SOFT_DOT_MID_STOP, NIGHT_SUN_MID, SOFT_DOT_MID_ALPHA),
+            SunDotStop(1f, NIGHT_SUN_MID, SOFT_DOT_EDGE_ALPHA),
         )
     } else {
         listOf(
-            SunDotStop(0f, DAY_SUN_CORE),
-            SunDotStop(SUN_DOT_CORE_STOP, DAY_SUN_MID),
-            SunDotStop(1f, DAY_SUN_CLEAR),
+            SunDotStop(0f, DAY_SUN_CORE, 1f),
+            SunDotStop(SOFT_DOT_MID_STOP, DAY_SUN_MID, SOFT_DOT_MID_ALPHA),
+            SunDotStop(1f, DAY_SUN_MID, SOFT_DOT_EDGE_ALPHA),
         )
     }
 
