@@ -81,16 +81,20 @@ struct ThemeColors: Equatable {
     ///
     /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就真的看不见了。
     let sunArc: ThemeColor
-    /// 当前太阳点的**中段 / 主体**色（径向渐变从核心色过渡到它）。
+    /// 太阳点的**实心核心**色（三层里的第 ① 层，纯色、不渐变）。
     ///
-    /// 白天主题用**亮金** `#D9A520`（与卡片 2.18:1、与淡金弧 1.48:1）。
-    /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）。
+    /// 白天 `#B8860B`：深一档的金，白卡上 **3.16:1**，边界清清楚楚（上一版是亮金 + 从圆心渐变，
+    /// 在白底上糊成一团光斑）。夜间 `#E0B84A`（深底上对卡片 8.55:1）。
     let sunDot: ThemeColor
-    /// 太阳点**径向渐变的中心**色（最亮的一档）。
+    /// 太阳点的**中心高光**色（第 ② 层：核心正中央 0.9pt 的小亮点，alpha 1.0）。
     ///
-    /// 白天 `#F5C842`（比主体再亮一档，中心有「亮点」感）；夜间同样用夜间金 `#F5D68A`。
-    /// 渐变的外沿是**透明**的（不再有硬描边那一圈）：中心 → 中段 → 透明，边缘是柔的。
-    let sunDotCore: ThemeColor
+    /// 白天 `#FFF2C8`（相对亮度 0.889）、夜间 `#FFF8E1`（0.938）—— 近白暖色，
+    /// 与核心 2.91 / 1.78 的对比让点「炫」起来，而不需要把整个点做亮。
+    let sunDotHighlight: ThemeColor
+    /// 太阳点的**外圈柔光**色（第 ③ 层：从核心半径到 5.5pt 的径向渐变，0.45 → 0）。
+    ///
+    /// 白天 `#D9A520`、夜间 `#F5D68A`。
+    let sunDotGlow: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
 
@@ -118,11 +122,10 @@ struct ThemeColors: Equatable {
         // 白天弧：淡金色（只是路径示意）。卡片底 #FFFBF6 上 1.47:1，比主色（4.80:1）轻得多。
         // 不建议再浅到 #ECD6AC（1.38:1）—— 会低于「看得见」的下限 1.4。
         sunArc: ThemeColor(hex: 0xE8CFA0),
-        // 太阳点：亮金（径向渐变的**中段**色）。与卡片 2.18:1、与淡金弧 1.48:1。
-        // 不再有硬描边：可辨识度交给「中心更亮 + 边缘柔和淡出」。
-        sunDot: ThemeColor(hex: 0xD9A520),
-        // 太阳点径向渐变的**中心**色：比中段再亮一档，中心有个亮点。
-        sunDotCore: ThemeColor(hex: 0xF5C842),
+        // 太阳点三层：核心（深金，白卡 3.16:1 边界清楚）+ 中心高光（近白暖色）+ 外圈柔光（金）。
+        sunDot: ThemeColor(hex: 0xB8860B),
+        sunDotHighlight: ThemeColor(hex: 0xFFF2C8),
+        sunDotGlow: ThemeColor(hex: 0xD9A520),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),
@@ -144,10 +147,10 @@ struct ThemeColors: Equatable {
         onPrimary: ThemeColor(hex: 0x1A1408),
         // 夜间主题的白天弧**保持原样**（= primary #F5D68A）：深底上再调浅就真的看不见了。
         sunArc: ThemeColor(hex: 0xF5D68A),
-        // 夜间主题的太阳点也**保持原样**（= primary #F5D68A）：深底上金色本来就是它。
-        sunDot: ThemeColor(hex: 0xF5D68A),
-        // 夜间径向渐变的中心色同样是夜间金（深底上再提亮就过曝了）。
-        sunDotCore: ThemeColor(hex: 0xF5D68A),
+        // 夜间太阳点三层：核心 #E0B84A（对深底 8.55:1）+ 高光 #FFF8E1 + 外圈 #F5D68A。
+        sunDot: ThemeColor(hex: 0xE0B84A),
+        sunDotHighlight: ThemeColor(hex: 0xFFF8E1),
+        sunDotGlow: ThemeColor(hex: 0xF5D68A),
         // 暗色底上的错误色要够亮（纯红在 #0B1220 上只有 4.3:1）。
         danger: ThemeColor(hex: 0xFF8A80),
         // 比卡片底色（#16203A）略亮一档：深色界面里输入框靠「比卡片亮」来暗示可输入，
@@ -175,26 +178,13 @@ struct ThemeColors: Equatable {
             ("onPrimary", onPrimary),
             ("sunArc", sunArc),
             ("sunDot", sunDot),
-            ("sunDotCore", sunDotCore),
+            ("sunDotHighlight", sunDotHighlight),
+            ("sunDotGlow", sunDotGlow),
             ("danger", danger),
             ("fieldBackground", fieldBackground),
             ("fieldBorder", fieldBorder),
             ("fieldText", fieldText),
             ("fieldPlaceholder", fieldPlaceholder)
-        ]
-    }
-
-    /// 太阳点的**径向渐变**档位：中心（核心色）→ 中段（主体色，实心到 `sunRadius`）→ 外沿**透明**。
-    ///
-    /// 中间那一档的 location 取 `sunRadius / sunGlowRadius`（4 / 8.8 ≈ 0.45）：
-    /// 实心部分正好到 4pt，之后柔和淡出到 8.8pt —— 跟逐时时间轴上「现在」圆点同一套思路
-    /// （实心 + 柔光），只是这里用渐变代替「实心圆 + 18% 柔光圆」两笔，边缘没有硬边。
-    /// Core 只给数据，UI（`SunDialCanvas`）把它转成 `Gradient`。
-    var sunDotGradient: [(color: ThemeColor, alpha: Double, location: Double)] {
-        [
-            (sunDotCore, 1, 0),
-            (sunDot, 1, Double(SunPathGeometry.sunRadius / SunPathGeometry.sunGlowRadius)),
-            (sunDot, 0, 1)
         ]
     }
 }

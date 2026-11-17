@@ -32,21 +32,20 @@ export class AppPalette {
    */
   sunArc: string;
   /**
-   * 太阳卡圆盘「当前太阳点」渐变的中段色 / 核心主色（取值见 [SunDialColors]）。
+   * 太阳点**实心核心**的颜色（取值见 [SunDialColors]）。
    *
-   * 白天是金色 `#D9A520`；夜间保持原来的金色 `#F5D68A`。
+   * 白天深金 `#B8860B`（对白卡 ≥3:1，读起来是「点」而不是光斑）；夜间 `#E0B84A`。
    * 地平线 / 运动箭头 / 刻度点不用它（分别用 subtle / subtle / accent）。
    */
-  sunDot: string;
-  /**
-   * 太阳点径向渐变的**中心**色（外沿是该色的全透明版本）。
-   *
-   * 白天亮金 `#F5C842`，夜间 `#F5D68A`；不再画硬描边。
-   */
-  sunDotCenter: string;
+  sunDotCore: string;
+  /** 太阳点**中心高光**色（半径 0.9vp、alpha 1.0）：白天 `#FFF2C8`，夜间 `#FFF8E1`。 */
+  sunDotHighlight: string;
+  /** 太阳点**外圈柔光**色：从核心半径到 5.5vp 的径向渐变（0.45 → 0）。白天 `#D9A520`，夜间 `#F5D68A`。 */
+  sunGlow: string;
 
   constructor(page: string, card: string, chip: string, text: string, subtle: string, divider: string,
-    accent: string, onAccent: string, sunArc: string, sunDot: string, sunDotCenter: string) {
+    accent: string, onAccent: string, sunArc: string, sunDotCore: string, sunDotHighlight: string,
+    sunGlow: string) {
     this.page = page;
     this.card = card;
     this.chip = chip;
@@ -56,21 +55,24 @@ export class AppPalette {
     this.accent = accent;
     this.onAccent = onAccent;
     this.sunArc = sunArc;
-    this.sunDot = sunDot;
-    this.sunDotCenter = sunDotCenter;
+    this.sunDotCore = sunDotCore;
+    this.sunDotHighlight = sunDotHighlight;
+    this.sunGlow = sunGlow;
   }
 }
 
 const DAY: AppPalette = new AppPalette(
   '#FFF8F1', '#FFFDFA', '#F2E3D3', '#211A15', '#6E5A49', '#E7D8C8', '#B4550A', '#FFFFFF',
-  // 白天弧：淡金色；太阳点：中心亮金 → 中段金 → 外沿透明的径向渐变（无硬描边）。
-  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_SUN_DOT_CENTER
+  // 白天：淡金弧 + 三层太阳点（深金核心 / 近白高光 / 金色外圈柔光）。
+  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_SUN_DOT_HIGHLIGHT,
+  SunDialColors.DAY_SUN_GLOW
 );
 
 const NIGHT: AppPalette = new AppPalette(
   '#0B1220', '#16203A', '#24304F', '#E8EDF7', '#9AA7BF', '#24304F', '#F5D68A', '#0B1220',
-  // 夜间：弧与太阳点都保持原来的金色，太阳点同样是径向渐变（中心/中段同色）。
-  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT, SunDialColors.NIGHT_SUN_DOT_CENTER
+  // 夜间：金色弧 + 三层太阳点（暖金核心 / 近白高光 / 金色外圈柔光）。
+  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT_CORE, SunDialColors.NIGHT_SUN_DOT_HIGHLIGHT,
+  SunDialColors.NIGHT_SUN_GLOW
 );
 
 export function paletteFor(isDay: boolean): AppPalette {

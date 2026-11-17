@@ -1418,11 +1418,11 @@ for (const item of equationCases) {
     SunDialColors.warmth(SunDialColors.NIGHT_DASH);
   check('day arc differs from the night dash in hue', warmthGap >= 0.15, `${warmthGap}`);
   const dotContrast: number = SunDialColors.contrastRatio(
-    SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC);
-  check('sun dot separates from the day arc', dotContrast >= 1.3, `${dotContrast}`);
-  check('sun dot is clearly apart from the arc in rgb',
-    SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC) >= 100,
-    `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC)}`);
+    SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC);
+  check('sun dot core separates from the day arc', dotContrast >= 1.3, `${dotContrast}`);
+  check('sun dot core is clearly apart from the arc in rgb',
+    SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC) >= 100,
+    `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC)}`);
 
   // 轨迹线宽：白天 1.6、夜晚 1.5（虚线 4/4）；极昼/极夜整圆沿用同一组宽度。
   equal('day arc is a thin 1.6vp line', 1.6, SunDialColors.DAY_ARC_WIDTH);
@@ -1431,19 +1431,34 @@ for (const item of equationCases) {
   check('arc lines are thinner than before', SunDialColors.DAY_ARC_WIDTH < 2.5
     && SunDialColors.NIGHT_ARC_WIDTH < 2.5 && SunDialColors.DAY_ARC_WIDTH > SunDialColors.NIGHT_ARC_WIDTH);
 
-  // 太阳点：径向渐变（中心亮金 → 中段金 → 外沿透明），核心 4vp、柔光 9vp，硬描边已去掉。
-  equal('sun dot gradient center is bright gold', '#F5C842', SunDialColors.DAY_SUN_DOT_CENTER);
-  equal('sun dot gradient mid is gold', '#D9A520', SunDialColors.DAY_SUN_DOT);
-  check('sun dot gradient fades out at the rim',
-    SunDialColors.contrastRatio(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC) > 1.3);
-  near('sun dot core radius', 4, SunDialColors.DOT_CORE_RADIUS, 0.001);
-  near('sun dot glow radius is 2.0~2.2x the core', 9, SunDialColors.DOT_GLOW_RADIUS, 0.001);
-  near('sun dot core stop sits at core/glow', 4 / 9, SunDialColors.DOT_CORE_STOP, 0.01);
+  // 太阳点三层：实心核心 2.4vp + 中心高光 0.9vp + 外圈柔光（2.4 → 5.5vp，0.45 → 0）。
+  near('sun dot core radius', 2.4, SunDialColors.DOT_CORE_RADIUS, 0.001);
+  near('sun dot highlight radius', 0.9, SunDialColors.DOT_HIGHLIGHT_RADIUS, 0.001);
+  near('sun dot glow radius', 5.5, SunDialColors.DOT_GLOW_RADIUS, 0.001);
+  near('sun dot glow starts at the core radius', SunDialColors.DOT_CORE_RADIUS,
+    SunDialColors.DOT_GLOW_START_RADIUS, 0.001);
+  equal('sun dot core color is deep gold', '#B8860B', SunDialColors.DAY_SUN_DOT_CORE);
+  equal('sun dot highlight is near-white warm gold', '#FFF2C8', SunDialColors.DAY_SUN_DOT_HIGHLIGHT);
+  equal('sun glow is gold', '#D9A520', SunDialColors.DAY_SUN_GLOW);
+  equal('sun glow starts at 0.45 alpha', 0.45, SunDialColors.DOT_GLOW_ALPHA);
+  const coreOnCard: number = SunDialColors.contrastRatio(
+    SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_CARD);
+  check('sun dot core reads as a point on the white card', coreOnCard >= 3.0, `${coreOnCard}`);
+  const highlightLuminance: number = SunDialColors.relativeLuminance(
+    SunDialColors.DAY_SUN_DOT_HIGHLIGHT);
+  check('sun dot highlight is bright enough', highlightLuminance >= 0.8, `${highlightLuminance}`);
+  check('hollow dot matches the core',
+    Math.abs(SunDialColors.DOT_HOLLOW_RADIUS - SunDialColors.DOT_CORE_RADIUS) < 0.001
+      && SunDialColors.DOT_HOLLOW_STROKE_WIDTH === 1);
+  check('sun dot is much smaller than before', SunDialColors.DOT_GLOW_RADIUS < 9
+    && SunDialColors.DOT_CORE_RADIUS < 4);
   check('sun dot hard ring is removed', SunDialColors.DOT_RING_ALPHA < 0.15,
     `${SunDialColors.DOT_RING_ALPHA}`);
-  check('night arc and sun dot stay gold',
-    SunDialColors.NIGHT_ARC === '#F5D68A' && SunDialColors.NIGHT_SUN_DOT === '#F5D68A'
-      && SunDialColors.NIGHT_SUN_DOT_CENTER === '#F5D68A');
+  check('night sun dot stays gold',
+    SunDialColors.NIGHT_SUN_DOT_CORE === '#E0B84A'
+      && SunDialColors.NIGHT_SUN_DOT_HIGHLIGHT === '#FFF8E1'
+      && SunDialColors.NIGHT_SUN_GLOW === '#F5D68A'
+      && SunDialColors.NIGHT_ARC === '#F5D68A');
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

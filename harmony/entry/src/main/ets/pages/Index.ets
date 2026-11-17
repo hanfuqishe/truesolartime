@@ -1335,8 +1335,6 @@ struct Index {
     // 白天弧专用色：白天是淡金色（仅作路径示意），夜间仍是金色实色。
     // 地平线 / 运动箭头 / 刻度点都不用它，保持原来的 subtle / accent。
     const arcColor: string = this.palette.sunArc;
-    // 当前太阳点：径向渐变的中段金（白天 #D9A520，夜间 #F5D68A）。
-    const sunDot: string = this.palette.sunDot;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
 
@@ -1446,28 +1444,38 @@ struct Index {
       }
     }
 
-    // 当前太阳点：柔和边缘的径向渐变（中心亮金 → 中段金 → 外沿透明），
-    // 核心约 4vp、柔光到 9vp；不再画硬描边（DOT_RING_ALPHA = 0）。
+    // 当前太阳点：三层「清晰点 + 中心高光 + 外圈炫光」（与时间轴那颗点的读法一致）。
+    //   ① 外圈柔光：从核心半径 2.4vp 到 5.5vp 的径向渐变（0.45 → 0），
+    //   ② 实心核心：半径 2.4vp 的深金圆（不渐变淡化，对白卡 ≥3:1），
+    //   ③ 中心高光：半径 0.9vp 的近白暖金（alpha 1.0），这一小点才是「炫」的关键。
     if (path.isSunUp()) {
-      const dotGradient = ctx.createRadialGradient(
-        path.sunX, path.sunY, 0, path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS);
-      dotGradient.addColorStop(0, this.palette.sunDotCenter);
-      dotGradient.addColorStop(SunDialColors.DOT_CORE_STOP, sunDot);
-      dotGradient.addColorStop(1, this.alphaColor(sunDot, 0));
+      const glowGradient = ctx.createRadialGradient(
+        path.sunX, path.sunY, SunDialColors.DOT_GLOW_START_RADIUS,
+        path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS);
+      glowGradient.addColorStop(0, this.alphaColor(this.palette.sunGlow, SunDialColors.DOT_GLOW_ALPHA));
+      glowGradient.addColorStop(1, this.alphaColor(this.palette.sunGlow, 0));
       ctx.beginPath();
-      ctx.fillStyle = dotGradient;
+      ctx.fillStyle = glowGradient;
       ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS, 0, full);
       ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = this.palette.sunDotCore;
+      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_CORE_RADIUS, 0, full);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = this.palette.sunDotHighlight;
+      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HIGHLIGHT_RADIUS, 0, full);
+      ctx.fill();
     } else {
-      // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫会与虚线糊在一起。
+      // 地平线以下不画光斑：垫一圈卡片底色（避免与虚线糊在一起）后，只留 1vp 的空心描边。
       ctx.beginPath();
       ctx.fillStyle = this.palette.card;
-      ctx.arc(path.sunX, path.sunY, 6, 0, full);
+      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HOLLOW_PAD_RADIUS, 0, full);
       ctx.fill();
       ctx.beginPath();
       ctx.strokeStyle = outline;
-      ctx.lineWidth = 1.5;
-      ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
+      ctx.lineWidth = SunDialColors.DOT_HOLLOW_STROKE_WIDTH;
+      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HOLLOW_RADIUS, 0, full);
       ctx.stroke();
     }
   }

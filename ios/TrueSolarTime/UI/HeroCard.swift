@@ -481,7 +481,9 @@ struct HeroAxis: View {
             }
 
             let clamped = min(max(position, 0), 1)
-            let radius: CGFloat = 5.5
+            // 圆点画法/尺寸与圆盘上的太阳点**共用** `NowDotStyle`：实心小圆 + 低 alpha 柔光圆。
+            let style = NowDotStyle.shared
+            let radius = style.radius
             let center = CGPoint(x: CGFloat(clamped) * size.width, y: midY)
             let dot = CGRect(
                 x: center.x - radius,
@@ -490,8 +492,8 @@ struct HeroAxis: View {
                 height: radius * 2
             )
             context.fill(
-                Path(ellipseIn: dot.insetBy(dx: -2, dy: -2)),
-                with: .color(dotColor.opacity(0.28))
+                Path(ellipseIn: dot.insetBy(dx: -style.glowInset, dy: -style.glowInset)),
+                with: .color(dotColor.opacity(style.glowAlpha))
             )
             context.fill(Path(ellipseIn: dot), with: .color(dotColor))
         }

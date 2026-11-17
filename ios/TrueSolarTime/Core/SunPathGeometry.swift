@@ -92,12 +92,12 @@ enum SunPathGeometry {
 
     // MARK: - 标签参数（UI 与自检共用同一组常量）
 
-    /// 太阳点**核心实心**部分的半径（径向渐变的「实心到哪」）。
-    static let sunRadius: CGFloat = 4
-    /// 太阳点柔光半径 = **2.2 ×** 核心半径（8.8pt）：再大就会糊到上中天标签。
-    static var sunGlowRadius: CGFloat { sunRadius * 2.2 }
-    /// 地平线以下那个**空心点**的半径：与径向渐变无关，保持原来的 5.5pt。
-    static let sunHollowRadius: CGFloat = 5.5
+    /// 太阳点**实心核心**半径：读 `SunDotStyle`（2.4pt，三层里的第 ① 层，纯色不渐变）。
+    static var sunRadius: CGFloat { SunDotStyle.shared.coreRadius }
+    /// 太阳点**外圈柔光**半径（5.5pt）：径向渐变从核心半径起步，到这里收成透明。
+    static var sunGlowRadius: CGFloat { SunDotStyle.shared.glowRadius }
+    /// 地平线以下那个**空心点**：半径 = 核心半径，描边 1pt（不画光斑）。
+    static var sunHollowRadius: CGFloat { SunDotStyle.shared.coreRadius }
     /// 日出 / 日落标签：锚点离交点 10pt、比交点抬高 10pt（让延伸的地平线从字下面过去）。
     static let labelOffsetX: CGFloat = 10
     static let labelOffsetY: CGFloat = 10
