@@ -245,8 +245,8 @@ struct SunCard: View {
 /// 颜色一律取主题 token（`palette.sunArc` / `palette.sunDot` / `palette.primary` /
 /// `palette.onSurfaceVariant` / `palette.surface`），两套主题各用自己的一档，**不碰系统色**
 /// （系统 `.orange` / `.secondary` 在强制主题下会串色）。
-/// 弧与点各单独一档：白天弧淡金细线（只作路径示意）、太阳点**照搬时间轴「现在」圆点**的画法
-/// （`NowDotStyle`：5.5pt 实心 + 外扩 2pt/0.28 柔光），只有颜色是金；地平线 / 箭头 / 刻度点仍是灰或主色。
+/// 弧与点各单独一档：白天弧淡金细线（只作路径示意）、太阳点是**纯色核心 + 独立光晕**
+/// （尺寸与时间轴「现在」圆点一致：核心 5.5pt、外沿 7.5pt）；地平线 / 箭头 / 刻度点仍是灰或主色。
 private struct SunDialCanvas: View {
 
     @Environment(\.palette) private var palette
@@ -419,22 +419,40 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        // **逐项照搬时间轴「现在」圆点**（与 `HeroAxis` 读同一个 `NowDotStyle`、同样的三层）：
-        //   ③ 外圈：核心 + 2pt（7.5pt），alpha 0.45
-        //   ② 中间层：核心 + 1pt（6.5pt），alpha 0.55
-        //   ① 核心：5.5pt，alpha 1.0（完全不透明）
-        // 从外往里画，后一层盖住前一层。用户裁定「不要自创画法，只换颜色」：没有渐变、没有高光、没有描边。
+        // **纯色核心 + 独立光晕**（尺寸与时间轴那个点一致，画法各自适合各自底色）：
+        //   ① 光晕（先画，在核心后面）：从**核心半径** 5.5pt 到 7.5pt 的径向渐变，alpha 0.35 → 0；
+        //   ② 核心（后画）：5.5pt 纯色实心，alpha 1.0 —— 不用渐变，边界干净。
+        // 时间轴的点是「实心 + 0.28 平铺柔光」两笔（`NowDotStyle`）；这里只共用**尺寸**
+        // （核心半径、整体外沿），光晕用渐变收边：亮金画在米白卡上，平铺柔光会散成光斑。
         // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
-        let style = NowDotStyle.shared
+        let halo = SunHaloStyle.shared
+        let core = SunPathGeometry.sunRadius
+        let coreRect = CGRect(x: sun.x - core, y: sun.y - core, width: core * 2, height: core * 2)
 
         if SunPathGeometry.isSunAboveHorizon(path: path) {
-            for layer in style.alphaRamp.reversed() {
-                let r = style.radius + layer.inset
-                context.fill(
-                    Path(ellipseIn: CGRect(x: sun.x - r, y: sun.y - r, width: r * 2, height: r * 2)),
-                    with: .color(palette.sunDot.opacity(layer.alpha))
+            let haloRect = CGRect(
+                x: sun.x - halo.endRadius,
+                y: sun.y - halo.endRadius,
+                width: halo.endRadius * 2,
+                height: halo.endRadius * 2
+            )
+            let stops = halo.stops.map { stop in
+                Gradient.Stop(
+                    color: palette.sunDot.opacity(stop.alpha),
+                    location: CGFloat(stop.location)
                 )
             }
+            context.fill(
+                Path(ellipseIn: haloRect),
+                with: .radialGradient(
+                    Gradient(stops: stops),
+                    center: sun,
+                    // 从**核心半径**起步（不是 0）：光晕只出现在核心外面，核心本身不被冲淡。
+                    startRadius: halo.startRadius,
+                    endRadius: halo.endRadius
+                )
+            )
+            context.fill(Path(ellipseIn: coreRect), with: .color(palette.sunDot))
         } else {
             // 地平线以下：同尺寸的空心圈（半径 = 核心半径，细描边 1pt），不画光、也不留粗硬边。
             let hollow = SunPathGeometry.sunHollowRadius

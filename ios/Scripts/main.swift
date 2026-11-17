@@ -1078,7 +1078,7 @@ expect(
     "actual=\(dayArc.hexText)"
 )
 expect(
-    "夜间主题：弧与太阳点都保持夜间金 #F5D68A（照搬时间轴的那一笔，只有颜色不同）",
+    "夜间主题：弧与太阳点都保持夜间金 #F5D68A",
     nightThemeArc == ThemeColors.night.primary
         && nightThemeArc.hexText == "#F5D68A"
         && ThemeColors.night.sunDot == ThemeColors.night.primary,
@@ -1111,67 +1111,68 @@ expect(
     arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
     String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-print("== 太阳点：逐项照搬时间轴「现在」圆点（只有颜色不同）==")
-// 用户判断对了：问题在**透明度**而不是颜色深浅。原来核心之外立刻掉到 0.28，边缘一大片都太淡。
-// 现在两边（时间轴 + 太阳点）都读同一个 `NowDotStyle` 的**三层**：1.0 / 0.55 / 0.45。
+print("== 时间轴圆点（两笔）与太阳点（纯色核心 + 独立光晕）==")
+// 用户裁定：时间轴回到最初的两笔（5.5 实心 + 外扩 2pt/0.28），中间层与三层 alphaRamp 删掉；
+// 太阳点共用以**尺寸**（核心 5.5、外沿 7.5），光晕改成 5.5→7.5 的径向渐变 0.35→0。
 let axisDot = NowDotStyle.shared
+let halo = SunHaloStyle.shared
 let sunCoreRadius = SunPathGeometry.sunRadius
 let sunGlowRadius = SunPathGeometry.sunGlowRadius
+// 结构断言：NowDotStyle 只有三个存储属性（radius / glowInset / glowAlpha），
+// 一旦再有人塞进「中间层」，下面这个 memberwise 构造就编译不过 —— 等于钉死「只有两笔」。
 expect(
-    "① 核心半径相同：太阳点 == 时间轴 == 5.5pt",
+    "时间轴：核心 5.5pt、柔光 7.5pt、alpha 0.28，且只有两笔（没有中间层）",
+    axisDot.radius == 5.5
+        && axisDot.glowInset == 2
+        && axisDot.glowRadius == 7.5
+        && axisDot.glowAlpha == 0.28
+        && axisDot == NowDotStyle(radius: 5.5, glowInset: 2, glowAlpha: 0.28),
+    "axis=\(axisDot.radius)/+\(axisDot.glowInset)/\(axisDot.glowAlpha)"
+)
+expect(
+    "太阳点核心半径 == 时间轴核心半径（都 5.5pt）",
     sunCoreRadius == axisDot.radius && sunCoreRadius == 5.5,
     "sun=\(sunCoreRadius) axis=\(axisDot.radius)"
 )
 expect(
-    "② 三层半径：核心 5.5 / 中间 6.5 / 外圈 7.5（外扩 0 / +1 / +2）",
-    axisDot.midInset == 1
-        && axisDot.midRadius == 6.5
-        && axisDot.glowInset == 2
-        && axisDot.glowRadius == 7.5
-        && sunGlowRadius == axisDot.glowRadius,
-    "mid=\(axisDot.midRadius) glow=\(axisDot.glowRadius)"
+    "太阳点整体外沿 == 时间轴柔光外沿（都 7.5pt）⇒ 视觉大小一致",
+    sunGlowRadius == axisDot.glowRadius && sunGlowRadius == 7.5,
+    "sunGlow=\(sunGlowRadius) axisGlow=\(axisDot.glowRadius)"
 )
 expect(
-    "③ 三层 alpha：1.0 / 0.55 / 0.45（柔光从 0.28 提到 0.45）",
-    axisDot.alphaRamp.count == 3
-        && axisDot.alphaRamp[0].alpha == 1
-        && axisDot.alphaRamp[1].alpha == 0.55
-        && axisDot.alphaRamp[2].alpha == 0.45
-        && axisDot.midAlpha == 0.55
-        && axisDot.glowAlpha == 0.45,
-    "ramp=\(axisDot.alphaRamp.map { ($0.inset, $0.alpha) })"
+    "太阳点光晕：从核心半径 5.5pt 到 7.5pt（起点不是 0）",
+    halo.startRadius == sunCoreRadius
+        && halo.startRadius == 5.5
+        && halo.endRadius == 7.5
+        && SunPathGeometry.sunHaloStartRadius == halo.startRadius,
+    "halo=\(halo.startRadius)…\(halo.endRadius)"
 )
 expect(
-    "④ 核心半径处完全不透明（第一层 alpha == 1.0、外扩 0）",
-    axisDot.alphaRamp.first?.inset == 0 && axisDot.alphaRamp.first?.alpha == 1,
-    "core=\(String(describing: axisDot.alphaRamp.first))"
+    "太阳点光晕 alpha：0.35 → 0（两档，location 0 / 1）",
+    halo.alpha == 0.35
+        && halo.stops.count == 2
+        && halo.stops[0].alpha == 0.35
+        && halo.stops[0].location == 0
+        && halo.stops[1].alpha == 0
+        && halo.stops[1].location == 1,
+    "stops=\(halo.stops.map { ($0.alpha, $0.location) })"
 )
 expect(
-    "⑤ alpha 从内到外单调递减（不会出现外浓内淡）",
-    zip(axisDot.alphaRamp, axisDot.alphaRamp.dropFirst()).allSatisfy { $0.alpha > $1.alpha }
-)
-expect(
-    "⑥ 只有颜色不同：白天 #D9A520、夜间 #F5D68A（三层同色）",
+    "颜色不变：白天 #D9A520、夜间 #F5D68A（核心与光晕同色）",
     ThemeColors.day.sunDot.hexText == "#D9A520"
         && ThemeColors.night.sunDot.hexText == "#F5D68A"
         && ThemeColors.night.sunDot == ThemeColors.night.primary,
     "day=\(ThemeColors.day.sunDot.hexText) night=\(ThemeColors.night.sunDot.hexText)"
 )
 expect(
-    "⑦ 太阳点与时间轴仍引用同一个 `NowDotStyle`（核心半径就是它，三层表也就只有一份）",
-    SunPathGeometry.sunRadius == NowDotStyle.shared.radius
-        && SunPathGeometry.sunGlowRadius == NowDotStyle.shared.glowRadius
-        && NowDotStyle.shared == axisDot
-)
-expect(
-    "⑧ 没有渐变 / 高光 / 描边残留（只有三层同心圆）",
+    "没有渐变/高光/描边 token 残留（太阳点只有「核心 + 光晕」两层）",
     !ThemeColors.day.tokens.contains { $0.name == "sunDotHighlight" }
         && !ThemeColors.day.tokens.contains { $0.name == "sunDotGlow" }
         && !ThemeColors.day.tokens.contains { $0.name == "sunDotRing" }
         && !ThemeColors.day.tokens.contains { $0.name == "sunDotCore" }
 )
 expect(
-    "地平线以下的点：同尺寸（半径 = 核心 5.5pt）、细描边 1pt，不留粗硬边",
+    "地平线以下的点：同尺寸（半径 = 核心）、细描边 1pt，不留粗硬边",
     SunPathGeometry.sunHollowRadius == sunCoreRadius
         && SunPathGeometry.sunHollowLineWidth == 1,
     "hollow=\(SunPathGeometry.sunHollowRadius) line=\(SunPathGeometry.sunHollowLineWidth)"

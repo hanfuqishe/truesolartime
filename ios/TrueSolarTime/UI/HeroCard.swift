@@ -481,22 +481,22 @@ struct HeroAxis: View {
             }
 
             let clamped = min(max(position, 0), 1)
-            // 圆点画法与圆盘上的太阳点**共用** `NowDotStyle`：三层同心圆（实心 → 0.55 → 0.45），
-            // 从外往里画，后一层盖住前一层。
+            // **两笔**：单层柔光圆（+2pt、alpha 0.28）+ 实心核心（5.5pt、完全不透明）。
+            // 中间层 / 三层 alphaRamp 已按用户要求删掉，回到时间轴最初的样子。
             let style = NowDotStyle.shared
+            let radius = style.radius
             let center = CGPoint(x: CGFloat(clamped) * size.width, y: midY)
-            for layer in style.alphaRamp.reversed() {
-                let r = style.radius + layer.inset
-                context.fill(
-                    Path(ellipseIn: CGRect(
-                        x: center.x - r,
-                        y: center.y - r,
-                        width: r * 2,
-                        height: r * 2
-                    )),
-                    with: .color(dotColor.opacity(layer.alpha))
-                )
-            }
+            let dot = CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            context.fill(
+                Path(ellipseIn: dot.insetBy(dx: -style.glowInset, dy: -style.glowInset)),
+                with: .color(dotColor.opacity(style.glowAlpha))
+            )
+            context.fill(Path(ellipseIn: dot), with: .color(dotColor))
         }
     }
 }

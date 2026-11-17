@@ -92,12 +92,12 @@ enum SunPathGeometry {
 
     // MARK: - 标签参数（UI 与自检共用同一组常量）
 
-    /// 太阳点**实心核心**半径：**照搬时间轴「现在」圆点**（`NowDotStyle.shared.radius`，5.5pt）。
-    ///
-    /// 用户最终裁定：不要自创画法，时间轴那个点怎么画，太阳点就怎么画，**只换颜色**。
+    /// 太阳点**实心核心**半径：与时间轴「现在」圆点的核心**一样大**（`NowDotStyle.shared.radius`，5.5pt）。
     static var sunRadius: CGFloat { NowDotStyle.shared.radius }
-    /// 太阳点**柔光**半径（= 核心 + 外扩 2pt = 7.5pt，与时间轴同一个 `NowDotStyle`）。
-    static var sunGlowRadius: CGFloat { NowDotStyle.shared.glowRadius }
+    /// 太阳点**光晕**外沿半径：与时间轴柔光圆同外沿（7.5pt）⇒ 两者整体直径一致。
+    static var sunGlowRadius: CGFloat { SunHaloStyle.shared.endRadius }
+    /// 太阳点光晕的起点半径 = 核心半径（光从核心边缘开始，不从圆心）。
+    static var sunHaloStartRadius: CGFloat { SunHaloStyle.shared.startRadius }
     /// 地平线以下那个点：半径 = 核心半径（同尺寸），描边细一点（`sunHollowLineWidth`）。
     static var sunHollowRadius: CGFloat { NowDotStyle.shared.radius }
     /// 地平线以下空心圈的描边宽度：1pt（不抢戏，也不留一道粗硬边）。
