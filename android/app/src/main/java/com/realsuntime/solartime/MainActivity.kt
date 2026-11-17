@@ -22,11 +22,26 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 进程进入前台：低精度数据从此按 60/120/300 秒的退避重试主源（后台是 10 分钟）。
+     * 只置一个标志，真正的刷新由 [onResume] 立刻触发一次。
+     */
+    override fun onStart() {
+        super.onStart()
+        WeatherRepository.setForeground(true)
+    }
+
+    /** 进程退到后台（或只剩小组件在跑）：低精度重试降到 10 分钟一次。 */
+    override fun onStop() {
+        WeatherRepository.setForeground(false)
+        super.onStop()
+    }
+
+    /**
      * 回到前台时补一次「低精度升级」尝试。
      *
-     * 当前若是备用源 7Timer! 的 3 小时粒度数据，即使还没到 30 分钟，也值得立刻问一次主源
-     * —— 用户刚从后台切回来，正是他最容易盯着卡片看的时候。
-     * 这条路径**不受「低精度最多每 10 分钟一次」的节流限制**（那条限制是给每分钟的自动刷新用的）；
+     * 当前若是备用源 7Timer! 的 3 小时粒度数据，即使还没到 30 分钟、也没到退避时间，也值得
+     * 立刻问一次主源 —— 用户刚从后台切回来，正是他最容易盯着卡片看的时候。
+     * 这条路径**不受前台退避阶梯（60/120/300 秒）与后台 10 分钟的限制**；
      * 但新鲜的主源数据仍不会白打一次网络（[WeatherRepository.requestRefresh] 内部还有过期判定）。
      */
     override fun onResume() {

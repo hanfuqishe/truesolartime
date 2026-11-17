@@ -347,7 +347,9 @@ object WidgetUpdater {
                 Log.w(TAG, "district refresh failed", it)
                 refreshDiag += "区划请求" to ("失败，" + DiagStore.describe(it))
             }
-        runCatching { WeatherRepository.requestRefresh(context, place) }
+        // 小组件这条链路显式按**后台**处理：低精度重试主源最少间隔 10 分钟，
+        // 不参与前台的 60/120/300 秒退避（前台心跳在 MainViewModel 里）。
+        runCatching { WeatherRepository.requestRefresh(context, place, background = true) }
             .onFailure {
                 Log.w(TAG, "weather refresh failed", it)
                 refreshDiag += "天气请求" to ("失败，" + DiagStore.describe(it))

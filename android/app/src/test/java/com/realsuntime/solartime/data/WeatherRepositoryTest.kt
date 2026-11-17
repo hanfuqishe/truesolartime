@@ -511,28 +511,29 @@ class WeatherRepositoryTest {
 
     // ---------------------------------------------------------------- 刷新触发：低精度（3 小时）升级
 
-    private val tenMinutes = 10L * 60 * 1000
+    /** 低精度数据的升级轮询间隔：60 秒（原来是 10 分钟）。 */
+    private val pollInterval = 60L * 1000
 
     /** 低精度数据**没到 30 分钟**也要刷新：目的就是尽快升级回主源的 1 小时粒度。 */
     @Test
     fun lowPrecisionDataTriggersRefreshBeforeItExpires() {
         val fresh = 2L * 60 * 1000
         // 主源（1 小时粒度）新鲜 → 不刷新
-        assertFalse(WeatherRepository.shouldRefresh(fresh, movedKm = 0.0, sinceAttemptMillis = tenMinutes))
+        assertFalse(WeatherRepository.shouldRefresh(fresh, movedKm = 0.0, sinceAttemptMillis = pollInterval))
         // 同一份新鲜数据，但来源是 7Timer!（3 小时粒度）→ 刷新
         assertTrue(
             WeatherRepository.shouldRefresh(
                 ageMillis = fresh,
                 movedKm = 0.0,
-                sinceAttemptMillis = tenMinutes,
+                sinceAttemptMillis = pollInterval,
                 lowPrecision = true,
             ),
         )
     }
 
-    /** 「低精度触发」最多每 10 分钟一次：刚试过就不要连着打主源。 */
+    /** 「低精度触发」按 **60 秒**节流：59 秒还不行，满 60 秒就再打一次主源。 */
     @Test
-    fun lowPrecisionRefreshIsThrottledToTenMinutes() {
+    fun lowPrecisionRefreshIsThrottledToSixtySeconds() {
         val fresh = 2L * 60 * 1000
         fun lowPrecision(sinceAttempt: Long) = WeatherRepository.shouldRefresh(
             ageMillis = fresh,
@@ -540,29 +541,33 @@ class WeatherRepositoryTest {
             sinceAttemptMillis = sinceAttempt,
             lowPrecision = true,
         )
-        // 刚刷新过（1 分钟 / 5 分钟 / 9 分 59 秒）→ 不刷新
-        assertFalse(lowPrecision(1L * 60 * 1000))
-        assertFalse(lowPrecision(5L * 60 * 1000))
-        assertFalse(lowPrecision(tenMinutes - 1_000))
-        // 满 10 分钟 → 允许再来一次（「最多每 10 分钟一次」= 间隔 ≥ 10 分钟即可）
-        assertTrue(lowPrecision(tenMinutes))
-        assertTrue(lowPrecision(tenMinutes + 1_000))
+        // 距上次尝试 1 秒 / 30 秒 / 59 秒 → 不刷新
+        assertFalse(lowPrecision(1L * 1000))
+        assertFalse(lowPrecision(30L * 1000))
+        assertFalse(lowPrecision(pollInterval - 1_000))
+        // 满 60 秒 → 允许再来一次
+        assertTrue(lowPrecision(pollInterval))
+        assertTrue(lowPrecision(pollInterval + 1_000))
         // 从没尝试过（KEY_ATTEMPT 为 0）→ 立刻升级
         assertTrue(lowPrecision(Long.MAX_VALUE))
     }
 
-    /** 一旦升级成功（来源变回 OPEN_METEO / 步长 1），就不再为「低精度」额外刷新，回到 30 分钟节奏。 */
+    /** 一旦升级成功（来源变回 OPEN_METEO / 步长 1），就不再按 60 秒轮询，回到 30 分钟过期逻辑。 */
     @Test
     fun upgradedDataNoLongerTriggersEarlyRefresh() {
         val fresh = 2L * 60 * 1000
+        // 刚切回主源 61 秒：低精度规则已失效，数据还没过期 → 不刷新
         assertFalse(
             WeatherRepository.shouldRefresh(
                 ageMillis = fresh,
                 movedKm = 0.0,
-                sinceAttemptMillis = tenMinutes + 1_000,
+                sinceAttemptMillis = pollInterval + 1_000,
                 lowPrecision = false,
             ),
         )
+        // 一直到 30 分钟过期才会再取
+        assertFalse(WeatherRepository.shouldRefresh(30L * 60 * 1000, movedKm = 0.0, lowPrecision = false))
+        assertTrue(WeatherRepository.shouldRefresh(31L * 60 * 1000, movedKm = 0.0, lowPrecision = false))
         assertFalse(WeatherRepository.isLowPrecision(WeatherRepository.Source.OPEN_METEO, stepHours = 1))
         assertTrue(WeatherRepository.isLowPrecision(WeatherRepository.Source.SEVEN_TIMER, stepHours = 3))
         // 来源字段是旧的/坏的、但步长写着 3，也按低精度算（宁可多试一次主源）
@@ -581,32 +586,32 @@ class WeatherRepositoryTest {
         assertFalse(
             WeatherRepository.shouldRefresh(expired, 0.0, sinceAttemptMillis = 2L * 60 * 1000),
         )
-        // 过期 + 低精度：10 分钟节流还没到，但「过期」这条已经在 5 分钟时就放行了 → 刷新
+        // 过期 + 低精度：60 秒轮询在 2 分钟时就已放行 → 刷新（以前 10 分钟节流会挡住）
         assertTrue(
-            WeatherRepository.shouldRefresh(
-                expired, 0.0, sinceAttemptMillis = 6L * 60 * 1000, lowPrecision = true,
-            ),
-        )
-        // 过期 + 低精度 + 刚试过 2 分钟：两条都被节流 → 不刷新
-        assertFalse(
             WeatherRepository.shouldRefresh(
                 expired, 0.0, sinceAttemptMillis = 2L * 60 * 1000, lowPrecision = true,
             ),
         )
-        // 过期 + 低精度 + 9 分钟：低精度仍被 10 分钟挡住，但过期规则（5 分钟）放行
+        // 过期 + 低精度 + 刚试过 30 秒：两条都被节流 → 不刷新
+        assertFalse(
+            WeatherRepository.shouldRefresh(
+                expired, 0.0, sinceAttemptMillis = 30_000, lowPrecision = true,
+            ),
+        )
+        // 过期 + 低精度 + 90 秒 → 60 秒轮询放行
         assertTrue(
             WeatherRepository.shouldRefresh(
-                expired, 0.0, sinceAttemptMillis = 9L * 60 * 1000, lowPrecision = true,
+                expired, 0.0, sinceAttemptMillis = 90_000, lowPrecision = true,
             ),
         )
         // 新鲜 + 主源 + 11 分钟：两条都不成立 → 不刷新（不会白打网络）
         assertFalse(WeatherRepository.shouldRefresh(fresh, 0.0, sinceAttemptMillis = 11L * 60 * 1000))
-        // 回到前台 / 换地点：允许立即升级一次，不受 10 分钟限制
+        // 回到前台 / 换地点：允许立即升级一次，不受 60 秒限制
         assertTrue(
             WeatherRepository.shouldRefresh(
                 fresh,
                 movedKm = 0.0,
-                sinceAttemptMillis = 1L * 60 * 1000,
+                sinceAttemptMillis = 1L * 1000,
                 lowPrecision = true,
                 ignoreLowPrecisionThrottle = true,
             ),
@@ -616,7 +621,7 @@ class WeatherRepositoryTest {
             WeatherRepository.shouldRefresh(
                 fresh,
                 movedKm = 0.0,
-                sinceAttemptMillis = 1L * 60 * 1000,
+                sinceAttemptMillis = 1L * 1000,
                 lowPrecision = false,
                 ignoreLowPrecisionThrottle = true,
             ),
@@ -625,6 +630,216 @@ class WeatherRepositoryTest {
         assertTrue(
             WeatherRepository.shouldRefresh(
                 fresh, movedKm = 5.1, sinceAttemptMillis = 1_000, lowPrecision = false,
+            ),
+        )
+    }
+
+    // ---------------------------------------------------------------- 取数时序：一次失败即降级
+
+    /** 主源失败**一次**就立刻试备用源：没有「2 秒后重试一次」，主源只被调用一次。 */
+    @Test
+    fun primaryFailureFallsBackImmediatelyWithoutRetry() {
+        val calls = mutableListOf<String>()
+        val result = WeatherRepository.fetchWeather(
+            fetchPrimary = {
+                calls += "primary"
+                null
+            },
+            keepCache = { false },
+            fetchFallback = {
+                calls += "fallback"
+                "7timer-payload"
+            },
+        )
+        assertEquals("主源只该试一次，然后立刻落到备用源", listOf("primary", "fallback"), calls)
+        assertEquals(
+            listOf(WeatherRepository.Source.OPEN_METEO, WeatherRepository.Source.SEVEN_TIMER),
+            result.attempts,
+        )
+        assertEquals(WeatherRepository.Source.SEVEN_TIMER, result.source)
+        assertEquals("7timer-payload", result.payload)
+        assertFalse(result.keptCache)
+    }
+
+    /** 缓存还新鲜时，主源失败不会去打备用源（界面继续用旧数据，省一次请求）。 */
+    @Test
+    fun freshCacheSkipsTheFallbackRequest() {
+        val calls = mutableListOf<String>()
+        val result = WeatherRepository.fetchWeather(
+            fetchPrimary = {
+                calls += "primary"
+                null
+            },
+            keepCache = { true },
+            fetchFallback = {
+                calls += "fallback"
+                "should-not-happen"
+            },
+        )
+        assertEquals(listOf("primary"), calls)
+        assertEquals(listOf(WeatherRepository.Source.OPEN_METEO), result.attempts)
+        assertNull(result.source)
+        assertTrue(result.keptCache)
+    }
+
+    /** 主源成功时绝不碰缓存判断与备用源。 */
+    @Test
+    fun primarySuccessNeverTouchesTheFallback() {
+        val calls = mutableListOf<String>()
+        val result = WeatherRepository.fetchWeather(
+            fetchPrimary = {
+                calls += "primary"
+                "primary-payload"
+            },
+            keepCache = { error("主源成功时不该问缓存") },
+            fetchFallback = { error("主源成功时不该降级") },
+        )
+        assertEquals(listOf("primary"), calls)
+        assertEquals(WeatherRepository.Source.OPEN_METEO, result.source)
+        assertEquals("primary-payload", result.payload)
+        assertEquals(listOf(WeatherRepository.Source.OPEN_METEO), result.attempts)
+    }
+
+    /** 主源单次请求的超时必须短到 5 秒：失败要快，才能「一次失败就降级」。 */
+    @Test
+    fun primaryTimeoutIsFiveSeconds() {
+        assertEquals(5_000, WeatherRepository.PRIMARY_TIMEOUT_MILLIS)
+    }
+
+    /** 诊断里的「下次重试」倒计时：三条规则与 shouldRefresh 同源。 */
+    @Test
+    fun nextRetryLabelDescribesTheCountdown() {
+        // 低精度 + 前台第 1 次失败（60 秒退避）：距上次尝试 42 秒 → 还有 18 秒
+        assertEquals(
+            "约 18 秒后（前台低精度退避 60 秒）",
+            WeatherRepository.nextRetryLabel(
+                ageMillis = 2L * 60 * 1000,
+                sinceAttemptMillis = 42_000,
+                lowPrecision = true,
+                lowPrecisionFailures = 1,
+                isForeground = true,
+            ),
+        )
+        // 低精度退避已到点
+        assertEquals(
+            "现在（已到点，前台低精度退避 60 秒）",
+            WeatherRepository.nextRetryLabel(
+                ageMillis = 2L * 60 * 1000,
+                sinceAttemptMillis = pollInterval,
+                lowPrecision = true,
+                lowPrecisionFailures = 1,
+                isForeground = true,
+            ),
+        )
+        // 后台：10 分钟节奏
+        assertEquals(
+            "约 5 分钟后（后台低精度 10 分钟）",
+            WeatherRepository.nextRetryLabel(
+                ageMillis = 2L * 60 * 1000,
+                sinceAttemptMillis = 5L * 60 * 1000,
+                lowPrecision = true,
+                lowPrecisionFailures = 1,
+                isForeground = false,
+            ),
+        )
+        // 主源新鲜：等数据自然到期
+        assertEquals(
+            "约 27 分钟后（主源数据到期才重取）",
+            WeatherRepository.nextRetryLabel(
+                ageMillis = 3L * 60 * 1000,
+                sinceAttemptMillis = 5L * 60 * 1000,
+                lowPrecision = false,
+            ),
+        )
+        // 已过期：按 5 分钟失败节流
+        assertEquals(
+            "约 1 分 30 秒后（失败后 5 分钟节流）",
+            WeatherRepository.nextRetryLabel(
+                ageMillis = 45L * 60 * 1000,
+                sinceAttemptMillis = 3L * 60 * 1000 + 30_000,
+                lowPrecision = false,
+            ),
+        )
+    }
+
+    /** 低精度重试的退避表：前台 60 / 120 / 300 秒（封顶），后台一律 10 分钟。 */
+    @Test
+    fun lowPrecisionRetryBacksOffAndSlowsDownInBackground() {
+        // 前台：1 → 60，2 → 120，3 → 300，之后封顶 300
+        assertEquals(60_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(1, true))
+        assertEquals(120_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(2, true))
+        assertEquals(300_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(3, true))
+        assertEquals(300_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(4, true))
+        assertEquals(300_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(99, true))
+        // 刚降级、还没失败过（0）按第 1 档算
+        assertEquals(60_000L, WeatherRepository.nextLowPrecisionRetryDelayMillis(0, true))
+        // 后台：任意次数都是 10 分钟
+        for (failures in 0..6) {
+            assertEquals(
+                "后台第 $failures 次",
+                600_000L,
+                WeatherRepository.nextLowPrecisionRetryDelayMillis(failures, false),
+            )
+        }
+        // 常量本身
+        assertEquals(60_000L, WeatherRepository.LOW_PRECISION_FIRST_RETRY_MILLIS)
+        assertEquals(120_000L, WeatherRepository.LOW_PRECISION_SECOND_RETRY_MILLIS)
+        assertEquals(300_000L, WeatherRepository.LOW_PRECISION_MAX_RETRY_MILLIS)
+        assertEquals(600_000L, WeatherRepository.LOW_PRECISION_BACKGROUND_RETRY_MILLIS)
+    }
+
+    /** 退避表要真的作用在 shouldRefresh 上：前台按阶梯、后台 10 分钟、回前台立即放行。 */
+    @Test
+    fun shouldRefreshHonoursTheBackoffTable() {
+        val fresh = 2L * 60 * 1000
+        fun refresh(
+            sinceAttempt: Long,
+            failures: Int,
+            foreground: Boolean = true,
+            immediate: Boolean = false,
+        ) = WeatherRepository.shouldRefresh(
+            ageMillis = fresh,
+            movedKm = 0.0,
+            sinceAttemptMillis = sinceAttempt,
+            lowPrecision = true,
+            ignoreLowPrecisionThrottle = immediate,
+            lowPrecisionFailures = failures,
+            isForeground = foreground,
+        )
+
+        // 第 1 次失败：59 秒不动，60 秒放行
+        assertFalse(refresh(59_000, failures = 1))
+        assertTrue(refresh(60_000, failures = 1))
+        // 第 2 次失败：60 秒还不够，120 秒才放行
+        assertFalse(refresh(60_000, failures = 2))
+        assertTrue(refresh(120_000, failures = 2))
+        // 第 3 次失败：要 300 秒
+        assertFalse(refresh(120_000, failures = 3))
+        assertTrue(refresh(300_000, failures = 3))
+        // 后台：5 分钟不够（10 分钟最小间隔），10 分钟才放行
+        assertFalse(refresh(5L * 60 * 1000, failures = 1, foreground = false))
+        assertTrue(refresh(10L * 60 * 1000, failures = 1, foreground = false))
+        // 回前台立即触发一次：不受剩余秒数限制
+        assertTrue(refresh(1_000, failures = 3, immediate = true))
+        assertTrue(refresh(1_000, failures = 3, foreground = false, immediate = true))
+        // 已切回主源（lowPrecision = false）：回到 30 分钟过期 / 5 分钟失败节流
+        assertFalse(
+            WeatherRepository.shouldRefresh(
+                ageMillis = fresh,
+                movedKm = 0.0,
+                sinceAttemptMillis = 61_000,
+                lowPrecision = false,
+                lowPrecisionFailures = 3,
+            ),
+        )
+        assertTrue(
+            WeatherRepository.shouldRefresh(
+                ageMillis = 31L * 60 * 1000,
+                movedKm = 0.0,
+                // 过期后由「5 分钟失败节流」决定：6 分钟已经放行。
+                sinceAttemptMillis = 6L * 60 * 1000,
+                lowPrecision = false,
+                lowPrecisionFailures = 3,
             ),
         )
     }

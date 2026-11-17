@@ -94,6 +94,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // 区县反查在后台跑完会写缓存；这里读的是内存里的 prefs，代价可忽略。
                 _districtName.value = DistrictResolver.cachedNameFor(application, _place.value)
                 _zoneOffsetSeconds.value = LocalZone.offsetSeconds(application, _place.value, _now.value)
+                // 天气心跳：只问「该刷新了吗」，真正的网络请求由 WeatherRepository 的节流决定
+                // （低精度前台 60/120/300 秒退避、后台 10 分钟、30 分钟过期、5 分钟失败节流）。
+                // 没有这条心跳，低精度的 60 秒轮询只能靠桌面小组件的每分钟刷新来带，没加小组件就永远不升级。
+                runCatching { WeatherRepository.requestRefresh(application, _place.value) }
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
         }

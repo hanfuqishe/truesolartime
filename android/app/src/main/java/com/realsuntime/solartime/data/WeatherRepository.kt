@@ -20,8 +20,9 @@ import kotlin.math.roundToInt
  * 当前天气（气温 + WMO 天气码）与逐时预报。
  *
  * 主源是 Open-Meteo：免费、无需 Key、全球可用，**逐时粒度 1 小时**。
- * 主源请求失败（网络错误/超时/非 2xx/JSON 解析失败，且 2 秒后重试一次仍失败）时，
- * 自动降级到备用源 7Timer!（**逐时粒度 3 小时**）。
+ * 主源请求失败（网络错误 / 超时 5 秒 / 非 2xx / JSON 解析失败）**一次就立刻降级**到备用源
+ * 7Timer!（**逐时粒度 3 小时**），中间不重试、不等待 —— 空白界面比 3 小时粒度更糟。
+ * 显示的是 7Timer! 数据时每 **60 秒**重试一次主源，成功即刻切回 1 小时粒度并刷新界面。
  *
  * 「步长」是随数据一起缓存的一等公民（[Hourly.stepHours]）：界面永远只画 6 个槽位，
  * 但槽位之间的间隔跟着数据源走 —— 拿 1 小时的网格去配 3 小时的数据，标签就会和实际读数错位。
@@ -75,6 +76,51 @@ object WeatherRepository {
         TRY_SEVEN_TIMER,
     }
 
+    /**
+     * 一次取数的结果（[fetchWeather] 的返回）。
+     *
+     * [attempts] 是**实际尝试过**的源列表，顺序就是发生顺序：正常是 `[OPEN_METEO]` 或
+     * `[OPEN_METEO, SEVEN_TIMER]`，主源成功时绝不会出现第二次 `OPEN_METEO`（没有重试）。
+     */
+    internal data class WeatherFetch<T>(
+        val source: Source?,
+        val payload: T?,
+        val attempts: List<Source>,
+        /** 主源失败后因为缓存还新鲜，没有去问备用源。 */
+        val keptCache: Boolean,
+    )
+
+    /**
+     * 取数顺序（纯逻辑，可注入，便于单测）：主源 → （失败就**立刻**）备用源。
+     *
+     * 1. 试主源**一次**；成功直接返回，不重试；
+     * 2. 失败后先问 [keepCache]：缓存还新鲜就到此为止（界面继续用旧数据，不去打备用源）；
+     * 3. 否则**立刻**试备用源，中间不 sleep、不回主源重试。
+     *
+     * 这样「一次失败就降级」是**结构上**保证的，而不是靠某处忘了删的 Thread.sleep 来兜。
+     */
+    internal fun <T> fetchWeather(
+        fetchPrimary: () -> T?,
+        keepCache: () -> Boolean,
+        fetchFallback: () -> T?,
+    ): WeatherFetch<T> {
+        val attempts = mutableListOf(Source.OPEN_METEO)
+        fetchPrimary()?.let { payload ->
+            return WeatherFetch(Source.OPEN_METEO, payload, attempts, keptCache = false)
+        }
+        if (keepCache()) {
+            return WeatherFetch(null, null, attempts, keptCache = true)
+        }
+        attempts += Source.SEVEN_TIMER
+        val fallback = fetchFallback()
+        return WeatherFetch(
+            source = if (fallback != null) Source.SEVEN_TIMER else null,
+            payload = fallback,
+            attempts = attempts,
+            keptCache = false,
+        )
+    }
+
     /** WMO 天气码归类，便于本地化文案。 */
     enum class Condition {
         CLEAR, PARTLY_CLOUDY, OVERCAST, FOG, DRIZZLE, RAIN, HEAVY_RAIN, SHOWERS, SNOW, HEAVY_SNOW, THUNDER
@@ -115,27 +161,42 @@ object WeatherRepository {
     private const val RETRY_AFTER_FAILURE_MILLIS = 5L * 60 * 1000
 
     /**
-     * 「低精度（3 小时粒度）」数据的升级重试间隔：**最多每 10 分钟一次**。
+     * 「低精度（3 小时粒度）」数据重试主源的**退避阶梯**（前台）：60 秒 → 120 秒 → 300 秒封顶。
      *
-     * 备用源 7Timer! 只有 3 小时一格，比主源粗；只要当前显示的是它，即使还没到 30 分钟
-     * 也值得再问一次主源，好尽早换回 1 小时粒度。但也不能每分钟都打——
-     * 主源挂掉时那会把请求量放大十倍，所以按这个间隔节流。
+     * 备用源 7Timer! 只有 3 小时一格，比主源粗；只要当前显示的是它，就尽快再问一次主源，
+     * 一旦成功立刻切回 1 小时粒度并刷新界面。连续失败时逐级拉长间隔：
+     * 既保证「主源刚恢复，一分钟内换回来」，又不会在主源长时间挂掉时每分钟打一次。
      */
-    private const val LOW_PRECISION_RETRY_MILLIS = 10L * 60 * 1000
+    internal const val LOW_PRECISION_FIRST_RETRY_MILLIS = 60_000L
+    internal const val LOW_PRECISION_SECOND_RETRY_MILLIS = 120_000L
+    internal const val LOW_PRECISION_MAX_RETRY_MILLIS = 300_000L
 
     /**
-     * 主源失败后**立刻**重试一次前的等待时长。
-     *
-     * 只重试一次：一次握手超时/一个坏节点不该让整张卡从 1 小时粒度掉到 3 小时粒度，
-     * 但也不该为了主源把降级拖太久（用户可能正盯着 `--`）。
+     * 后台（widget 刷新 / 进程不在前台）的最小重试间隔：**10 分钟**，不参与 60 秒轮询。
+     * 后台没人盯着看，没必要为 3 小时粒度的数据每分钟唤醒一次网络。
      */
-    private const val PRIMARY_RETRY_DELAY_MILLIS = 2_000L
+    internal const val LOW_PRECISION_BACKGROUND_RETRY_MILLIS = 600_000L
 
-    /** 单次 HTTP 请求的超时（连接 / 读取各自 5 秒）。 */
+    /**
+     * 主源单次请求的超时（连接 / 读取各自 5 秒）。
+     *
+     * 必须短：失败要快，才能**一次失败就立刻**降级到 7Timer!（不再有「等 2 秒重试一次」）。
+     * 备用源用 [HTTP_TIMEOUT_MILLIS]，两者目前都是 5 秒，但语义分开，将来可以单独调。
+     */
+    internal const val PRIMARY_TIMEOUT_MILLIS = 5_000
+
+    /** 备用源单次 HTTP 请求的超时（连接 / 读取各自 5 秒）。 */
     private const val HTTP_TIMEOUT_MILLIS = 5_000
 
     /** 上次尝试取数的时刻（无论成败），用于失败后的 5 分钟节流。 */
     private const val KEY_ATTEMPT = "attempt"
+
+    /** 低精度期间「连续多少次主源失败」，用于退避；主源成功一次就清零。 */
+    private const val KEY_LOW_PRECISION_FAILURES = "lp_failures"
+
+    /** 前台标志（由 `MainActivity.onStart/onStop` 维护）：后台按 10 分钟节奏重试。 */
+    @Volatile
+    private var foreground = false
 
     private const val MOVE_THRESHOLD_KM = 5.0
 
@@ -152,6 +213,19 @@ object WeatherRepository {
     private val revisionCount = AtomicInteger(0)
 
     internal fun revision(): Int = revisionCount.get()
+
+    /**
+     * 记录进程是否在前台：`MainActivity.onStart` 传 true、`onStop` 传 false。
+     *
+     * 只影响「低精度重试主源」的节奏：前台 60/120/300 秒，后台一律 10 分钟（见
+     * [nextLowPrecisionRetryDelayMillis]）。widget 刷新路径显式按后台处理，不看这个标志。
+     */
+    fun setForeground(value: Boolean) {
+        foreground = value
+    }
+
+    /** 当前进程是否在前台（诊断与节流用）。 */
+    fun isForeground(): Boolean = foreground
 
     fun cached(context: Context): Snapshot? {
         val prefs = prefs(context)
@@ -207,6 +281,39 @@ object WeatherRepository {
         return (System.currentTimeMillis() - prefs.getLong(KEY_TIME, 0L)).coerceAtLeast(0L)
     }
 
+    /**
+     * 上次尝试取数的时刻（epoch 毫秒）；从来没取过时返回 null。
+     *
+     * 每次刷新都从主源开始（见 [fetchWeather]），所以这个时刻就是**主源**的尝试时刻。
+     * 诊断页用它显示「上次主源尝试」与倒计时。
+     */
+    fun lastAttemptMillis(context: Context): Long? {
+        val at = prefs(context).getLong(KEY_ATTEMPT, 0L)
+        return if (at > 0L) at else null
+    }
+
+    /** 距上一次取数尝试过了多久（毫秒）；没尝试过时返回 null。 */
+    fun sinceAttemptMillis(context: Context): Long? =
+        lastAttemptMillis(context)?.let { (System.currentTimeMillis() - it).coerceAtLeast(0L) }
+
+    /** 低精度期间「连续几次主源失败」：决定退避档位（前台 60/120/300 秒）。 */
+    internal fun lowPrecisionFailures(context: Context): Int =
+        prefs(context).getInt(KEY_LOW_PRECISION_FAILURES, 0)
+
+    /** 主源又失败一次：退避升一档（上限由 [nextLowPrecisionRetryDelayMillis] 封顶）。 */
+    private fun notePrimaryFailure(context: Context) {
+        prefs(context).edit()
+            .putInt(KEY_LOW_PRECISION_FAILURES, lowPrecisionFailures(context) + 1)
+            .apply()
+    }
+
+    /** 主源成功：退避清零 —— 下次再降级时又从 60 秒起步。 */
+    private fun resetPrimaryFailures(context: Context) {
+        if (lowPrecisionFailures(context) != 0) {
+            prefs(context).edit().putInt(KEY_LOW_PRECISION_FAILURES, 0).apply()
+        }
+    }
+
     /** 缓存里的坐标是否属于当前地点（相距不超过 5 km）。 */
     private fun belongsTo(context: Context, place: Place): Boolean {
         val prefs = prefs(context)
@@ -221,16 +328,19 @@ object WeatherRepository {
      * 需要时在后台刷新，成功后重绘小组件。
      *
      * @param force 忽略一切判定直接取数（用户手工换了地点时用）。
-     * @param ignoreLowPrecisionThrottle 只放宽「低精度升级」的 10 分钟节流：回到前台时可以立刻试一次，
+     * @param ignoreLowPrecisionThrottle 只放宽「低精度重试」的退避：回到前台时可以立刻试一次，
      *   但新鲜的主源数据仍然不会白打一次网络。切换地点走 [force]，本来就不受限。
+     * @param background 这次调用来自后台（widget 刷新 / 进程不在前台）：低精度重试按 10 分钟，
+     *   不参与前台的 60 秒退避。
      */
     fun requestRefresh(
         context: Context,
         place: Place,
         force: Boolean = false,
         ignoreLowPrecisionThrottle: Boolean = false,
+        background: Boolean = false,
     ) {
-        if (!force && !needsRefresh(context, place, ignoreLowPrecisionThrottle)) return
+        if (!force && !needsRefresh(context, place, ignoreLowPrecisionThrottle, background)) return
         if (!inFlight.compareAndSet(false, true)) return
 
         val app = context.applicationContext
@@ -239,54 +349,59 @@ object WeatherRepository {
         prefs(app).edit().putLong(KEY_ATTEMPT, System.currentTimeMillis()).apply()
         Thread {
             try {
-                // ① 主源。失败后隔 2 秒再试**一次**：一次超时/一个坏节点不值得把粒度从 1 小时降到 3 小时。
-                var body = fetchPrimary(place)
-                if (body == null) {
-                    Thread.sleep(PRIMARY_RETRY_DELAY_MILLIS)
-                    body = fetchPrimary(place)
-                }
-                val primary = body?.let(::parsePrimary)
-                if (primary != null) {
-                    save(app, place, primary.first, primary.second, Source.OPEN_METEO)
-                    record(
-                        app, Source.OPEN_METEO, primary.second,
-                        if (upgradingFromLowPrecision) "主源成功，已从 3 小时粒度升级回 1 小时" else "主源成功",
-                    )
-                    WidgetUpdater.refreshAll(app)
-                    return@Thread
-                }
-
-                // ② 主源失败：缓存还没过期就什么都不动，界面继续用缓存（低精度数据也原样保留）。
+                // 主源 → 备用源的顺序由 fetchWeather 保证：主源**失败一次就立刻**试 7Timer!，
+                // 不重试、不 sleep；缓存还新鲜时连备用源都不打（界面继续用旧数据）。
                 val age = ageMillis(app)
-                if (age != null && belongsTo(app, place) &&
-                    fallbackFor(hasCache = true, cacheAgeMillis = age) == Fallback.KEEP_CACHE
-                ) {
-                    record(
-                        app, source(app), hourly(app).points,
-                        if (upgradingFromLowPrecision) {
-                            "低精度升级失败，保留 7Timer! 的 3 小时数据（${ageNote(age)}）"
+                val result = fetchWeather(
+                    fetchPrimary = { fetchPrimary(place)?.let(::parsePrimary) },
+                    keepCache = {
+                        age != null && belongsTo(app, place) &&
+                            fallbackFor(hasCache = true, cacheAgeMillis = age) == Fallback.KEEP_CACHE
+                    },
+                    fetchFallback = {
+                        val points = fetchSevenTimer(place)?.let(::parseSevenTimer).orEmpty()
+                        if (points.isEmpty()) {
+                            null
                         } else {
-                            "主源失败，沿用未过期的缓存"
-                        },
-                    )
-                    return@Thread
-                }
-
-                // ③ 缓存已过期（或根本没有）：问备用源 7Timer!，成功就整份换掉。
-                val points = fetchSevenTimer(place)?.let(::parseSevenTimer).orEmpty()
-                val snapshot = snapshotAt(points, System.currentTimeMillis() / 1000)
-                if (snapshot != null) {
-                    save(app, place, snapshot, points, Source.SEVEN_TIMER)
-                    record(app, Source.SEVEN_TIMER, points, "主源失败，已降级到 7Timer!")
-                    WidgetUpdater.refreshAll(app)
-                    return@Thread
-                }
-
-                // ④ 两个源都失败：旧数据继续显示（哪怕过期），诊断里标注过期时长。
-                record(
-                    app, source(app), hourly(app).points,
-                    "主源与备用源都失败，保留旧数据（${ageNote(age)}）",
+                            snapshotAt(points, System.currentTimeMillis() / 1000)?.let { it to points }
+                        }
+                    },
                 )
+
+                when (result.source) {
+                    Source.OPEN_METEO -> {
+                        val payload = result.payload ?: return@Thread
+                        // 主源成功：退避清零，下次再降级又从 60 秒起步。
+                        resetPrimaryFailures(app)
+                        save(app, place, payload.first, payload.second, Source.OPEN_METEO)
+                        record(
+                            app, Source.OPEN_METEO, payload.second,
+                            if (upgradingFromLowPrecision) "主源成功，已从 3 小时粒度升级回 1 小时" else "主源成功",
+                        )
+                        WidgetUpdater.refreshAll(app)
+                    }
+
+                    Source.SEVEN_TIMER -> {
+                        val payload = result.payload ?: return@Thread
+                        // 主源又失败一次：退避升一档（60 → 120 → 300 秒）。
+                        notePrimaryFailure(app)
+                        save(app, place, payload.first, payload.second, Source.SEVEN_TIMER)
+                        record(app, Source.SEVEN_TIMER, payload.second, "主源失败，已降级到 7Timer!")
+                        WidgetUpdater.refreshAll(app)
+                    }
+
+                    null -> {
+                        // 没取到新数据：要么缓存还新鲜（不去打备用源），要么两个源都失败。
+                        notePrimaryFailure(app)
+                        val note = when {
+                            result.keptCache && upgradingFromLowPrecision ->
+                                "低精度升级失败，保留 7Timer! 的 3 小时数据（${ageNote(age)}）"
+                            result.keptCache -> "主源失败，沿用未过期的缓存"
+                            else -> "主源与备用源都失败，保留旧数据（${ageNote(age)}）"
+                        }
+                        record(app, source(app), hourly(app).points, note)
+                    }
+                }
             } catch (ignored: Exception) {
                 // 网络异常时继续用旧值。
             } finally {
@@ -296,19 +411,45 @@ object WeatherRepository {
     }
 
     /**
+     * 低精度数据重试主源的**间隔**（纯函数，单测覆盖）：
+     *
+     * | 连续失败 | 前台 | 后台 |
+     * |---|---|---|
+     * | 1 | 60 秒 | 10 分钟 |
+     * | 2 | 120 秒 | 10 分钟 |
+     * | ≥3 | 300 秒（封顶） | 10 分钟 |
+     *
+     * 后台不参与 60 秒轮询：widget 刷新 / 进程不在前台时，没人盯着看，不值得每分钟唤醒一次网络。
+     * [consecutiveFailures] 传 0 或负数时按「第 1 次」算（刚降级、还没失败过）。
+     */
+    internal fun nextLowPrecisionRetryDelayMillis(
+        consecutiveFailures: Int,
+        isForeground: Boolean,
+    ): Long {
+        if (!isForeground) return LOW_PRECISION_BACKGROUND_RETRY_MILLIS
+        return when (consecutiveFailures.coerceAtLeast(1)) {
+            1 -> LOW_PRECISION_FIRST_RETRY_MILLIS
+            2 -> LOW_PRECISION_SECOND_RETRY_MILLIS
+            else -> LOW_PRECISION_MAX_RETRY_MILLIS
+        }
+    }
+
+    /**
      * 需不需要重新取数。**满足任意一条就刷新**：
      *
      * 1. 位置移动超过 5 km（换了城市，缓存里的天气不属于当前地点）；
      * 2. 当前数据是**低精度**的（[lowPrecision]，即备用源 3 小时粒度）—— 即使还没过期也要试，
-     *    目的是尽快升级回主源的 1 小时粒度；但最多每 [LOW_PRECISION_RETRY_MILLIS]（10 分钟）一次，
-     *    免得主源一直挂着时把请求量放大十倍；
+     *    目的是尽快升级回主源的 1 小时粒度；间隔按 [nextLowPrecisionRetryDelayMillis]：
+     *    前台 60 → 120 → 300 秒退避，后台 10 分钟；
      * 3. 天气数据已过期（[TTL_MILLIS]，30 分钟）—— 过期后按 [RETRY_AFTER_FAILURE_MILLIS]（5 分钟）
      *    节流，避免失败时每次回到前台都立刻打一次网络。
      *
      * [sinceAttemptMillis] 是距上一次**尝试**取数的时长（成功或失败都算）。
      *
-     * @param ignoreLowPrecisionThrottle 回到前台 / 换了地点时，允许**立即**升级一次，不受 10 分钟限制
+     * @param ignoreLowPrecisionThrottle 回到前台 / 换了地点时，允许**立即**升级一次，不受退避限制
      *   （此时仍不会为「新鲜的主源数据」白打一次网络，那条由过期规则决定）。
+     * @param lowPrecisionFailures 低精度期间连续失败了几次（决定退避档位）。
+     * @param isForeground 调用方所在的环境：widget 刷新 / 进程在后台时传 false。
      */
     internal fun shouldRefresh(
         ageMillis: Long,
@@ -316,11 +457,15 @@ object WeatherRepository {
         sinceAttemptMillis: Long = Long.MAX_VALUE,
         lowPrecision: Boolean = false,
         ignoreLowPrecisionThrottle: Boolean = false,
+        lowPrecisionFailures: Int = 0,
+        isForeground: Boolean = true,
     ): Boolean {
         if (movedKm > MOVE_THRESHOLD_KM) return true
-        // 低精度：间隔够久（或允许立即升级）就去问主源，不必等 30 分钟。
-        if (lowPrecision && (ignoreLowPrecisionThrottle || sinceAttemptMillis >= LOW_PRECISION_RETRY_MILLIS)) {
-            return true
+        // 低精度：只按退避阶梯走（前台 60/120/300 秒、后台 10 分钟）。
+        // 这里**不能**再落回「过期 5 分钟」那条：否则后台会在 5 分钟就打破 10 分钟的最小间隔。
+        if (lowPrecision) {
+            val delay = nextLowPrecisionRetryDelayMillis(lowPrecisionFailures, isForeground)
+            return ignoreLowPrecisionThrottle || sinceAttemptMillis >= delay
         }
         if (ageMillis in 0..TTL_MILLIS) return false
         // 已过期：上次尝试不足 5 分钟就再等等（失败重试的节流）。
@@ -365,6 +510,48 @@ object WeatherRepository {
             "缓存仍有效（${cacheAgeMillis / 60_000} 分钟）"
         } else {
             staleLabel(cacheAgeMillis).orEmpty()
+        }
+    }
+
+    /**
+     * 诊断用的「下次重试」倒计时（纯函数，便于单测）。
+     *
+     * 三条规则与 [shouldRefresh] 完全同源：
+     * - 低精度（7Timer! 的 3 小时数据）：按退避阶梯 —— 前台 60 → 120 → 300 秒，后台 10 分钟；
+     * - 主源数据还没过期：要等它过期（[TTL_MILLIS]，30 分钟）才会再取；
+     * - 已过期：按 [RETRY_AFTER_FAILURE_MILLIS]（5 分钟）失败节流。
+     */
+    internal fun nextRetryLabel(
+        ageMillis: Long,
+        sinceAttemptMillis: Long,
+        lowPrecision: Boolean,
+        lowPrecisionFailures: Int = 0,
+        isForeground: Boolean = true,
+    ): String {
+        val (waitMillis, reason) = when {
+            lowPrecision -> {
+                val delay = nextLowPrecisionRetryDelayMillis(lowPrecisionFailures, isForeground)
+                val where = if (isForeground) {
+                    "前台低精度退避 ${delay / 1000} 秒"
+                } else {
+                    "后台低精度 ${delay / 60_000} 分钟"
+                }
+                (delay - sinceAttemptMillis) to where
+            }
+            ageMillis in 0..TTL_MILLIS -> (TTL_MILLIS - ageMillis) to "主源数据到期才重取"
+            else -> (RETRY_AFTER_FAILURE_MILLIS - sinceAttemptMillis) to "失败后 5 分钟节流"
+        }
+        val wait = waitMillis.coerceAtLeast(0L)
+        return if (wait == 0L) "现在（已到点，$reason）" else "约 ${durationText(wait)}后（$reason）"
+    }
+
+    /** 毫秒时长 → 诊断文案：「42 秒」「3 分 20 秒」「12 分钟」。 */
+    private fun durationText(millis: Long): String {
+        val seconds = (millis / 1000).coerceAtLeast(0L)
+        return when {
+            seconds < 60 -> "$seconds 秒"
+            seconds % 60 == 0L -> "${seconds / 60} 分钟"
+            else -> "${seconds / 60} 分 ${seconds % 60} 秒"
         }
     }
 
@@ -584,7 +771,12 @@ object WeatherRepository {
         else -> Condition.OVERCAST
     }
 
-    private fun needsRefresh(context: Context, place: Place, ignoreLowPrecisionThrottle: Boolean = false): Boolean {
+    private fun needsRefresh(
+        context: Context,
+        place: Place,
+        ignoreLowPrecisionThrottle: Boolean = false,
+        background: Boolean = false,
+    ): Boolean {
         val prefs = prefs(context)
         // 没有实时值、或旧版本缓存里缺小时序列/来源/步长，都重新取一次。
         if (!prefs.contains(KEY_TEMP) || !prefs.contains(KEY_HOURLY)) return true
@@ -600,7 +792,8 @@ object WeatherRepository {
         val now = System.currentTimeMillis()
         val sinceAttempt = now - prefs.getLong(KEY_ATTEMPT, 0L)
         val age = now - prefs.getLong(KEY_TIME, 0L)
-        // 低精度（备用源 3 小时粒度）：没到 30 分钟也想升级回 1 小时，按 10 分钟节流。
+        // 低精度（备用源 3 小时粒度）：没到 30 分钟也想升级回 1 小时，
+        // 间隔按退避阶梯（前台 60/120/300 秒，后台 10 分钟）。
         val lowPrecision = isLowPrecision(
             source = Source.of(prefs.getString(KEY_SOURCE, null)),
             stepHours = prefs.getInt(KEY_STEP, Source.OPEN_METEO.stepHours),
@@ -611,10 +804,13 @@ object WeatherRepository {
             sinceAttemptMillis = sinceAttempt,
             lowPrecision = lowPrecision,
             ignoreLowPrecisionThrottle = ignoreLowPrecisionThrottle,
+            lowPrecisionFailures = prefs.getInt(KEY_LOW_PRECISION_FAILURES, 0),
+            // widget 刷新显式按后台处理：即使进程恰好在前面，也不拿它当「用户在看」。
+            isForeground = foreground && !background,
         )
     }
 
-    /** 主源：Open-Meteo（1 小时粒度）。 */
+    /** 主源：Open-Meteo（1 小时粒度）。超时用 [PRIMARY_TIMEOUT_MILLIS]（5 秒），失败要快。 */
     private fun fetchPrimary(place: Place): String? = httpGet(
         String.format(
             Locale.ROOT,
@@ -624,19 +820,21 @@ object WeatherRepository {
             place.latitude,
             place.longitude,
         ),
+        PRIMARY_TIMEOUT_MILLIS,
     )
 
     /** 备用源：7Timer!（civil 产品，3 小时粒度）。 */
     private fun fetchSevenTimer(place: Place): String? = httpGet(
         String.format(Locale.ROOT, SEVEN_TIMER_URL, place.longitude, place.latitude),
+        HTTP_TIMEOUT_MILLIS,
     )
 
     /** 取一段文本；网络错误 / 超时 / 非 2xx / 读流失败一律返回 null（都不抛给调用方）。 */
-    private fun httpGet(url: String): String? = runCatching {
+    private fun httpGet(url: String, timeoutMillis: Int): String? = runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = HTTP_TIMEOUT_MILLIS
-            readTimeout = HTTP_TIMEOUT_MILLIS
+            connectTimeout = timeoutMillis
+            readTimeout = timeoutMillis
         }
         try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return null

@@ -5,6 +5,8 @@ import android.os.Build
 import android.provider.Settings
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.WidgetUpdater
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 /**
@@ -106,10 +108,12 @@ internal object DiagReport {
     // ---------------------------------------------------------------- ⑥ 天气数据源
 
     /**
-     * 天气用哪个源、几小时一格、数据有多旧 —— 排查「天气不刷新 / 时间对不上」先看这三行。
+     * 天气用哪个源、几小时一格、数据有多旧、什么时候会再试 —— 排查「天气不刷新 / 时间对不上」先看这几行。
      *
      * `weather_source` / `weather_step` / `weather_age_minutes` 三个键名与
      * [DiagStore.recordWeather] 写入的完全一致，可以直接对 log 与用户截图。
+     * 「上次主源尝试 / 连续失败 / 下次重试」是取数时序的现场：低精度时前台按 60 → 120 → 300 秒
+     * 退避、后台 10 分钟，主源一成功立刻切回并清零退避（见 [WeatherRepository.nextRetryLabel]）。
      */
     private fun weatherSection(context: Context): List<String> = runCatching {
         val place = AppSettings(context).place
@@ -119,13 +123,43 @@ internal object DiagReport {
         val stale = WeatherRepository.staleLabel(age)
         val lowPrecision = WeatherRepository.isLowPrecision(source, step)
         val points = WeatherRepository.hourly(context, place).points
+        val lastAttempt = WeatherRepository.lastAttemptMillis(context)
+        val sinceAttempt = WeatherRepository.sinceAttemptMillis(context)
+        val failures = WeatherRepository.lowPrecisionFailures(context)
+        val foreground = WeatherRepository.isForeground()
         buildList {
             add("===== ⑥ 天气数据源 =====")
+            add("当前源 = ${source.id}（$step 小时粒度）")
             add("weather_source = ${source.id}")
             add("weather_step = $step 小时")
             add("weather_age_minutes = ${(age ?: 0L) / 60_000L}")
             add("数据状态 = ${stale ?: WeatherRepository.ageNote(age)}")
-            add("低精度数据 = ${if (lowPrecision) "是（3 小时粒度，未过期也会尝试升级回主源，最多每 10 分钟一次）" else "否（主源 1 小时粒度）"}")
+            add(
+                "上次主源尝试 = " + (
+                    lastAttempt?.let { at ->
+                        "${SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date(at))}（" +
+                            "${(sinceAttempt ?: 0L) / 1000L} 秒前）"
+                    } ?: "无记录"
+                    ),
+            )
+            add("连续失败 = $failures 次（前台退避 ${WeatherRepository.nextLowPrecisionRetryDelayMillis(failures, true) / 1000} 秒 / 后台 10 分钟）")
+            add(
+                "下次重试 = " + WeatherRepository.nextRetryLabel(
+                    ageMillis = age ?: 0L,
+                    sinceAttemptMillis = sinceAttempt ?: Long.MAX_VALUE,
+                    lowPrecision = lowPrecision,
+                    lowPrecisionFailures = failures,
+                    isForeground = foreground,
+                ),
+            )
+            add(
+                "低精度数据 = " +
+                    if (lowPrecision) {
+                        "是（3 小时粒度，前台按 60/120/300 秒退避重试主源，后台 10 分钟；成功即刻切回）"
+                    } else {
+                        "否（主源 1 小时粒度）"
+                    },
+            )
             add("逐时点数 = ${points.size}")
             add("最近一次取数：")
             add(DiagStore.lastWeather(context))
