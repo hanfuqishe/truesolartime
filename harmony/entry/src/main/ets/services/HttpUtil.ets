@@ -28,4 +28,28 @@ export class HttpUtil {
       request.destroy();
     }
   }
+
+  /** 取二进制（瓦片、探测图片）：非 2xx / 网络错误一律 null。 */
+  static async getBytes(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Uint8Array | null> {
+    const request: http.HttpRequest = http.createHttp();
+    try {
+      const response: http.HttpResponse = await request.request(url, {
+        method: http.RequestMethod.GET,
+        header: headers,
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER
+      });
+      if (response.responseCode !== http.ResponseCode.OK) {
+        return null;
+      }
+      return new Uint8Array(response.result as ArrayBuffer);
+    } catch (error) {
+      const failure: BusinessError = error as BusinessError;
+      console.warn(`GET ${url} failed: ${failure.code} ${failure.message}`);
+      return null;
+    } finally {
+      request.destroy();
+    }
+  }
 }

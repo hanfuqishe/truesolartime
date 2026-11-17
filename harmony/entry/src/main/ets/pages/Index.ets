@@ -3,6 +3,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
+import { MapTileService, MapLoadResult } from '../services/MapTileService';
 import { Place, PlaceSource } from '../core/Place';
 import { PlaceBadgeLogic } from '../core/PlaceBadge';
 import { Shichen } from '../core/Shichen';
@@ -192,6 +193,10 @@ struct Index {
   @State mapTiles: MapTile[] = [];
   @State mapAttribution: string = '';
   @State mapZoom: number = DEFAULT_ZOOM;
+  /** 实际应用的缩放（自动降级后可能小于请求值），以及「底图不可用」状态。 */
+  @State mapAppliedZoom: number = DEFAULT_ZOOM;
+  @State mapUnavailable: boolean = false;
+  @State mapDegraded: boolean = false;
   @State mapCenterLat: number = 0;
   @State mapCenterLon: number = 0;
   /** 设置页里选的底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
@@ -533,15 +538,21 @@ struct Index {
     this.refreshMap();
   }
 
-  /** 重算视口内的瓦片；中心、缩放、视口尺寸任一变化后调用。 */
+  /** 重算视口内的瓦片；中心、缩放、视口尺寸任一变化后调用（取数含空白检测与降级）。 */
   private refreshMap(): void {
     if (this.mapWpx <= 0 || this.mapHpx <= 0) {
       return;
     }
-    const layer: MapLayer = this.mapLayer();
-    this.mapAttribution = layer.attribution;
-    this.mapTiles = MapTilesLogic.visibleTiles(layer, this.mapCenterLat, this.mapCenterLon,
-      this.mapZoom, this.mapWpx, this.mapHpx);
+    MapTileService.load(this.place, this.mapStyleKey, this.countryCodeOfPlace(), this.mapCenterLat,
+      this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx).then((result: MapLoadResult) => {
+        this.mapTiles = result.tiles;
+        this.mapAttribution = result.attribution;
+        this.mapAppliedZoom = result.zoom;
+        this.mapUnavailable = result.unavailable;
+        this.mapDegraded = result.degraded;
+      }).catch((error: BusinessError) => {
+        console.warn(`map load failed: ${error.code} ${error.message}`);
+      });
   }
 
   private zoomMapBy(delta: number): void {
@@ -1211,6 +1222,14 @@ struct Index {
         // key 必须带上位置：只按 URL 的话，视口尺寸/中心变化后同一个瓦片的节点会被复用，
         // `.position()` 不会更新，旧瓦片留在旧偏移上 —— 表现为地图中间出现一条空白带。
       }, (tile: MapTile) => `${tile.url}|${Math.round(tile.leftPx)}|${Math.round(tile.topPx)}`)
+        // z3 全球底图也没有内容：明确写出来，不留一块纯空白。
+        if (this.mapUnavailable) {
+          Text('底图不可用')
+            .fontSize(12)
+            .fontFamily(this.cardFont(FontWeight.Normal))
+            .lineHeight(this.cardLineHeight(12))
+            .fontColor(this.palette.subtle)
+        }
         // 标点：始终落在视口正中，对应上面的坐标。
         Column()
           .width(16)
@@ -1253,7 +1272,7 @@ struct Index {
         )
       )
 
-      Text(`${this.mapAttribution} · ${this.mapZoom} 级 · 双指缩放`)
+      Text(`${this.mapAttribution} · ${this.mapAppliedZoom} 级${this.mapDegraded ? '（已降级）' : ''} · 双指缩放`)
         .fontSize(10)
         .fontFamily(this.cardFont(FontWeight.Normal))
         .lineHeight(this.cardLineHeight(10))

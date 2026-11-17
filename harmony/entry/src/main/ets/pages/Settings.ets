@@ -21,6 +21,7 @@ import { AppStore, WeatherDiag } from '../services/Store';
 import { AppInfo } from '../services/AppInfo';
 import { CardService, CARD_ENTRY_ENABLED } from '../services/CardService';
 import { DistrictService } from '../services/DistrictService';
+import { MapTileService } from '../services/MapTileService';
 import { KeepAwake } from '../services/KeepAwake';
 import { KeyTimeService } from '../services/KeyTimeService';
 import { LocationService, LocationAttempt } from '../services/LocationService';
@@ -51,6 +52,8 @@ struct Settings {
   @State weatherAttempt: string = '暂无';
   /** 下次自动取数的倒计时，例如「57 秒后（主源轮询）」。 */
   @State weatherRetry: string = '—';
+  /** 地图底图诊断：实际源 / 样式 / 首选 / 缩放与降级 / 瓦片状态 / OSM 失败 / 空白判定 / 下次探测。 */
+  @State mapDiagLines: string[] = [];
   /** 地图底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
   @State mapStyleKey: string = 'auto';
   @State locating: boolean = false;
@@ -144,6 +147,7 @@ struct Settings {
     this.weatherRetry = retrySeconds <= 0
       ? '即将重试'
       : `${retrySeconds} 秒后（${retryReason}）`;
+    this.mapDiagLines = MapTileService.diagnostics();
   }
 
   /** 毫秒时间戳 → 「HH:mm」（本地时区），诊断里显示取数时刻。 */
@@ -518,6 +522,8 @@ struct Settings {
                   .onClick(() => {
                     this.mapStyleKey = option.key;
                     AppStore.setMapStyle(option.key);
+                    // 换底图 = 重新开始：清掉上一次会话的回退/降级记忆。
+                    MapTileService.reset();
                   })
               }, (option: MapStyleOption) => option.key)
             }
@@ -693,6 +699,13 @@ struct Settings {
               .fontColor(this.palette.subtle)
               .margin({ top: 8 })
               .width('100%')
+            ForEach(this.mapDiagLines, (line: string) => {
+              Text(line)
+                .fontSize(11)
+                .fontColor(this.palette.text)
+                .margin({ top: 4 })
+                .width('100%')
+            }, (line: string, index: number) => `${index}-${line}`)
           }
           .cardStyle()
     .backgroundColor(this.palette.card)

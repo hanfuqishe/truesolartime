@@ -22,6 +22,7 @@ import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPath
 import { SunDialColors } from './core/SunDialColors';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
+import { MapFallback, MapFallbackState, MapTileLogic, MapTilePlan } from './core/MapFallback';
 
 let passed = 0;
 const failures: string[] = [];
@@ -1060,6 +1061,128 @@ for (const item of equationCases) {
   check('auto layer still follows place',
     MapTilesLogic.layerForStyle(MapStyle.AUTO, 31.2304, 121.4737).name === 'amap-vector'
     && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
+}
+
+// ---- 地图底图兜底：空白瓦片判定 + 回退/降级状态机 ----
+{
+  const solid = (color: number): number[] => new Array(1024).fill(color);
+  const shaded = (count: number, step: number): number[] => {
+    const colors: number[] = [];
+    for (let index = 0; index < 1024; index++) {
+      const value: number = 100 + (index % count) * step;
+      colors.push((value << 16) | (value << 8) | value);
+    }
+    return colors;
+  };
+
+  check('pure grey tile is blank', MapTileLogic.analyze(solid(0x808080)).isBlank);
+  const greyText: number[] = solid(0x808080);
+  for (let index = 0; index < 16; index++) {
+    greyText[index * 7] = 0xFFFFFF;
+  }
+  check('grey tile with watermark text is blank', MapTileLogic.analyze(greyText).isBlank);
+  check('multi colour tile is not blank', !MapTileLogic.analyze(shaded(16, 17)).isBlank);
+  const blue = MapTileLogic.analyze(solid(0x1E6EB5));
+  check('pure blue is ocean, not blank', blue.isOcean && !blue.isBlank);
+
+  // 颜色种类边界：7 种算空白，8 种、9 种不算（量化后仍是不同颜色，方差都在 400 以内）。
+  const palette = (count: number): number[] => {
+    const base: number[] = [0x707070, 0x807070, 0x708070, 0x707080, 0x808080,
+      0x708080, 0x807080, 0x808070, 0x907070];
+    const colors: number[] = [];
+    for (let index = 0; index < 1024; index++) {
+      colors.push(base[index % count]);
+    }
+    return colors;
+  };
+  check('seven colour kinds is blank', MapTileLogic.analyze(palette(7)).isBlank);
+  check('eight colour kinds is not blank', !MapTileLogic.analyze(palette(8)).isBlank);
+  check('nine colour kinds is not blank', !MapTileLogic.analyze(palette(9)).isBlank);
+
+  // 整屏：所有看过的瓦片都空白才算这一屏空白；空集合不算。
+  check('empty viewport is not blank', !MapTileLogic.viewportIsBlank([]));
+  check('all blank tiles make the viewport blank',
+    MapTileLogic.viewportIsBlank([MapTileLogic.analyze(solid(0x808080)),
+      MapTileLogic.analyze(solid(0xF0F0F0))]));
+  check('one content tile keeps the viewport alive',
+    !MapTileLogic.viewportIsBlank([MapTileLogic.analyze(solid(0x808080)),
+      MapTileLogic.analyze(shaded(16, 17))]));
+
+  // ---- 状态机 ----
+  const now: number = 1_700_000_000_000;
+  const london: number[] = [51.5074, -0.1278];
+  let state = new MapFallbackState();
+  for (let index = 0; index < 2; index++) {
+    state = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, state, now + index);
+  }
+  check('two osm failures do not fall back', !state.fellBack, `${state.osmFailures}`);
+  for (let index = 2; index < 3; index++) {
+    state = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, state, now + index);
+  }
+  check('third osm failure falls back to amap', state.fellBack && state.fallbackFailures === 3);
+  check('fallback schedules the osm probe five minutes later',
+    state.probeAtMillis === now + 2 + MapFallback.PROBE_INTERVAL_MILLIS);
+  const fallbackPlan = MapFallback.plan(MapStyle.AUTO, london[0], london[1], 'gb', state);
+  check('fallback plan uses amap', fallbackPlan.fellBack && fallbackPlan.effective === MapStyle.AMAP_VECTOR);
+  const partial = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12,
+    MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, new MapFallbackState(), now), now + 1);
+  const recovered = MapFallback.onTileLoaded(MapStyle.AUTO, london[0], london[1], 'gb', 12, partial, now + 100);
+  check('any osm success resets the failure counter', !recovered.fellBack && recovered.osmFailures === 0);
+
+  // 手动选择底图：不回退、不探测。
+  let manual = new MapFallbackState();
+  for (let index = 0; index < 5; index++) {
+    manual = MapFallback.onTileFailed(MapStyle.OSM, london[0], london[1], 'gb', 12, manual, now + index);
+  }
+  check('manual style never falls back', !manual.fellBack && manual.osmFailures === 0);
+
+  // 降级链：z12 → z11 → z10 → z3，z3 仍空白 → 底图不可用。
+  let degrade = new MapFallbackState();
+  for (let index = 0; index < 3; index++) {
+    degrade = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, degrade, now + index);
+  }
+  const afterFallback: MapTilePlan = MapFallback.plan(MapStyle.AUTO, london[0], london[1], 'gb', degrade);
+  const later: number = now + 10_000;
+  for (let index = 0; index < 3; index++) {
+    degrade = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, degrade, later + index);
+  }
+  check('z12 has no tiles after three failures',
+    MapFallback.zoomPlan(afterFallback, 12, degrade).zoom === 11);
+  for (let index = 0; index < 3; index++) {
+    degrade = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 11, degrade, later + 100 + index);
+  }
+  check('z11 degrades to z10', MapFallback.zoomPlan(afterFallback, 12, degrade).zoom === 10);
+  for (let index = 0; index < 3; index++) {
+    degrade = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 10, degrade, later + 200 + index);
+  }
+  check('z10 degrades to the z3 world map', MapFallback.zoomPlan(afterFallback, 12, degrade).zoom === 3
+    && MapFallback.zoomPlan(afterFallback, 12, degrade).degraded);
+  for (let index = 0; index < 3; index++) {
+    degrade = MapFallback.onTileBlank(MapStyle.AUTO, london[0], london[1], 'gb', 3, degrade,
+      later + 300 + index, 2);
+  }
+  check('a blank z3 shows the unavailable state', MapFallback.zoomPlan(afterFallback, 12, degrade).unavailable);
+
+  // 有内容的 z3 会清掉网络失败记忆，但空白记忆保留（避免 z12 ↔ z3 来回跳）。
+  const blanked = MapFallback.onTileBlank(MapStyle.AUTO, london[0], london[1], 'gb', 12, new MapFallbackState(),
+    now, 3);
+  check('blank tile is counted for diagnostics',
+    blanked.blankTileCount === 1 && blanked.lastBlankZoom === 12 && blanked.lastBlankColorKinds === 3);
+
+  // 5 分钟探测：到点才探；失败顺延 5 分钟，成功切回并清零。
+  check('probe is not due before five minutes',
+    !MapFallback.probeDue(state, state.probeAtMillis - 1));
+  check('probe is due at five minutes', MapFallback.probeDue(state, state.probeAtMillis));
+  const probeFailed = MapFallback.onProbeResult(state, false, state.probeAtMillis);
+  check('failed probe pushes the next probe five minutes out',
+    probeFailed.fellBack && probeFailed.probeAtMillis === state.probeAtMillis + MapFallback.PROBE_INTERVAL_MILLIS);
+  const probeOk = MapFallback.onProbeResult(state, true, state.probeAtMillis);
+  check('successful probe switches back to osm', !probeOk.fellBack && probeOk.osmFailures === 0);
+
+  // 采样：256×256 按步长 8 抽 32×32 个点（最近邻）。
+  const rgba: number[] = new Array(256 * 256 * 4).fill(0);
+  const samples = MapTileLogic.sampleNearest(rgba, 256, 256);
+  check('nearest sampling yields 32x32 colours', samples.length === 1024);
 }
 
 // ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----
