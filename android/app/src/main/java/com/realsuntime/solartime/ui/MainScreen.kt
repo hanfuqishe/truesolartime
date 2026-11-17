@@ -953,7 +953,7 @@ private fun HeroAxis(
             }
         }
         // 半径与 alpha 曲线是太阳点共用的那组常量（SunColors.SOFT_DOT_*）：两处点必须一模一样，
-        // 所以这里不再写 5.5dp / 0.45 / 0 这些魔数。
+        // 所以这里不再写 5.5dp / 0.55 / 0 这些魔数。
         val radius = SunColors.SOFT_DOT_RADIUS_DP.dp.toPx()
         val center = Offset(
             x = (size.width * (solarSecondsOfDay / SECONDS_PER_DAY).toFloat()).coerceIn(0f, size.width),
@@ -1172,8 +1172,8 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 1. 白天弧：实线 1.6dp、主色；夜晚弧：虚线 1.5dp / 4dp 间隔、低对比度；
  * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
  * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
- * 4. 当前太阳点：与时间轴「现在」圆点同款的一个柔化渐变圆（半径 5.5dp、色标 0/0.5/1、
- *    alpha 1/0.45/0），地平线以上金色、以下低对比 outline；没有核心 / 高光 / 描边；
+ * 4. 当前太阳点：与时间轴「现在」圆点同款的一个柔化渐变圆（半径 5.5dp、色标 0/0.55/1、
+ *    alpha 1/1/0，内圈 55% 实心），地平线以上金色、以下低对比 outline；没有核心 / 高光 / 描边；
  * 5. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
  *    （北半球顺时针、南半球逆时针，颜色 onSurfaceVariant，不与主色抢视觉）。
  *
@@ -1194,8 +1194,9 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
-    // 太阳点 = 时间轴「现在」圆点同款：一个渐变圆、半径 5.5dp、色标 0/0.5/1、alpha 1/0.45/0，
-    // 没有核心 / 高光 / 第二层光晕 / 描边。地平线以下同样用这个柔化圆，只把颜色换成低对比的 outline。
+    // 太阳点 = 时间轴「现在」圆点同款：一个渐变圆、半径 5.5dp、色标 0/0.55/1、alpha 1/1/0
+    // （内圈 55% 实心，之后线性渐隐）；没有核心 / 高光 / 第二层光晕 / 描边。
+    // 地平线以下同样用这个柔化圆，只把颜色换成低对比的 outline。
     // 刻度点用太阳金 70%。地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
     val dotBrush = sunDotBrush()
@@ -1399,8 +1400,8 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 color = scheme.onSurfaceVariant,
             )
 
-            // 当前太阳点：与时间轴「现在」圆点**同款** —— 一个径向渐变圆（半径 5.5dp、色标 0 / 0.5 / 1、
-            // alpha 1.0 / 0.45 / 0、从圆心开始），没有核心 / 高光 / 第二层光晕 / 描边。
+            // 当前太阳点：与时间轴「现在」圆点**同款** —— 一个径向渐变圆（半径 5.5dp、色标 0 / 0.55 / 1、
+            // alpha 1.0 / 1.0 / 0、从圆心开始，内圈 55% 实心），没有核心 / 高光 / 第二层光晕 / 描边。
             // 地平线以上是金色，以下是低对比的 outline，形状与柔化完全一样（不留硬边空心圈）。
             val sun = Offset(path.sunX, path.sunY)
             drawCircle(

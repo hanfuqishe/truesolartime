@@ -47,15 +47,15 @@ class SunDialStyleTest {
             SunColors.SUN_DOT_RADIUS_DP,
             1e-6f,
         )
-        // 时间轴点：一半半径 2.75dp 处 alpha 0.45。
-        assertEquals(2.75f, SunColors.SOFT_DOT_MID_RADIUS_DP, 1e-4f)
+        // 实心内圈的外沿：5.5 × 0.55 = 3.025dp。
+        assertEquals(3.025f, SunColors.SOFT_DOT_MID_RADIUS_DP, 1e-4f)
     }
 
-    /** 色标位置数组完全相同：0 / 0.5 / 1（不是从核心半径起，而是从圆心 0 起）。 */
+    /** 色标位置数组完全相同：0 / 0.55 / 1（不是从核心半径起，而是从圆心 0 起）。 */
     @Test
     fun sunDotStopPositionsMatchTheTimelineDot() {
         val shared = SunColors.softDotStopPositions()
-        assertEquals(listOf(0f, 0.5f, 1f), shared)
+        assertEquals(listOf(0f, 0.55f, 1f), shared)
         for (night in listOf(false, true)) {
             val stops = SunColors.sunDotStops(night)
             assertEquals("夜=$night 应有三档色标", 3, stops.size)
@@ -65,17 +65,42 @@ class SunDialStyleTest {
         }
     }
 
-    /** alpha 数组完全相同：1 / 0.45 / 0。 */
+    /** alpha 数组完全相同：1 / 1 / 0（内圈 55% 完全不透明，之后线性渐隐）。 */
     @Test
     fun sunDotStopAlphasMatchTheTimelineDot() {
         val shared = SunColors.softDotStopAlphas()
-        assertEquals(listOf(1f, 0.45f, 0f), shared)
+        assertEquals(listOf(1f, 1f, 0f), shared)
         for (night in listOf(false, true)) {
             val stops = SunColors.sunDotStops(night)
             assertEquals("夜=$night alpha 数组必须与时间轴相同", shared, stops.map { it.alpha })
             assertEquals(1f, stops.first().alpha, 1e-6f)
-            assertEquals(0.45f, stops[1].alpha, 1e-6f)
+            assertEquals(1f, stops[1].alpha, 1e-6f)
             assertEquals(0f, stops.last().alpha, 1e-6f)
+        }
+    }
+
+    /**
+     * **半径一半（0.5）处仍然完全不透明**：这是这轮改动的核心。
+     *
+     * 旧曲线 0 / 0.5 / 1 + 1 / 0.45 / 0，半径一半就已经 45%；新曲线在 0.55 之前都是 1.0，
+     * 所以圆点有一个实实在在的实心内圈，不会在米白卡片上散成一片。
+     */
+    @Test
+    fun dotIsStillFullyOpaqueAtHalfTheRadius() {
+        assertEquals("半径 0.5 处必须完全不透明", 1f, SunColors.softDotAlphaAt(0.5f), 1e-6f)
+        assertEquals("实心内圈外沿 0.55 处仍是满色", 1f, SunColors.softDotAlphaAt(0.55f), 1e-6f)
+        assertEquals(1f, SunColors.softDotAlphaAt(0f), 1e-6f)
+        // 0.55 → 1 线性渐隐：0.775（正中）应是 0.5，边缘 0。
+        assertEquals(0.5f, SunColors.softDotAlphaAt(0.775f), 1e-3f)
+        assertEquals(0f, SunColors.softDotAlphaAt(1f), 1e-6f)
+        // 整条曲线单调不增 —— 不许出现「先亮后暗再亮」的怪曲线。
+        var previous = SunColors.softDotAlphaAt(0f)
+        var position = 0f
+        while (position <= 1f) {
+            val alpha = SunColors.softDotAlphaAt(position)
+            assertTrue("alpha 曲线必须单调不增：@$position -> $alpha < $previous", alpha <= previous + 1e-6f)
+            previous = alpha
+            position += 0.01f
         }
     }
 

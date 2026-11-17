@@ -73,39 +73,59 @@ internal object SunColors {
     const val NIGHT_DASH_OFF_DP = 4f
 
     // ---- 柔光圆点（逐时时间轴「现在」点 与 太阳点共用同一套画法）----
-    // 用户最终裁定：别再自创画法，把时间轴「现在」圆点原样搬到太阳点上，只有颜色不同。
-    // 实测参数（`MainScreen.HeroAxis`）：画布 11dp 高，圆点半径 5.5dp（正好占满整高）、**一个**径向渐变圆、
-    // 三档等距色标 0 / 0.5 / 1（= 0 / 2.75 / 5.5dp）、alpha 1.0 / 0.45 / 0。
+    // 用户最终裁定：时间轴与太阳点同款、只换颜色；随后又确认问题不在颜色，而在 **alpha 曲线**。
+    // 画布 11dp 高，圆点半径 5.5dp（正好占满整高）、**一个**径向渐变圆、色标 0 / 0.55 / 1，
+    // alpha 1.0 / 1.0 / 0：内圈 55%（到 3.025dp）完全不透明，之后线性渐隐到 0。
     // 没有实心核心、没有第二层光晕、没有中心高光、没有描边；渐变从圆心 0 开始。
     // `SunDial` 用的就是这同一组位置 / alpha 常量与同一个半径（[SUN_DOT_RADIUS_DP] = [SOFT_DOT_RADIUS_DP]）。
 
     /** 时间轴「现在」圆点的半径：5.5dp（时间轴画布 11dp 高，点正好占满整高）。 */
     const val SOFT_DOT_RADIUS_DP = 5.5f
 
-    /** 三档色标的中间位置：0 / 0.5 / 1 等距。 */
-    const val SOFT_DOT_MID_STOP = 0.5f
+    /** 三档色标的中间位置：0 / 0.55 / 1（55% 以内都是实心）。 */
+    const val SOFT_DOT_MID_STOP = 0.55f
 
     /** 中心 alpha：满色（渐变从圆心开始）。 */
     const val SOFT_DOT_CENTER_ALPHA = 1f
 
-    /** 中段 alpha：HeroAxis 的 0.45。 */
-    const val SOFT_DOT_MID_ALPHA = 0.45f
+    /** 中段 alpha：**仍是满色** —— 这一档就是「实心内圈」的外沿，从这里才开始渐隐。 */
+    const val SOFT_DOT_MID_ALPHA = 1f
 
     /** 外沿 alpha：完全透明。 */
     const val SOFT_DOT_EDGE_ALPHA = 0f
 
-    /** 中段所在的半径：5.5 × 0.5 = 2.75dp。 */
+    /** 实心内圈的外沿半径：5.5 × 0.55 = 3.025dp（再往外才开始变透明）。 */
     val SOFT_DOT_MID_RADIUS_DP: Float get() = SOFT_DOT_RADIUS_DP * SOFT_DOT_MID_STOP
 
     /** 太阳点半径：**就是时间轴圆点的半径**，不允许单独调（用户要求两处完全一致）。 */
     const val SUN_DOT_RADIUS_DP = SOFT_DOT_RADIUS_DP
 
-    /** 三档色标的位置（时间轴与太阳点共用）：0 / 0.5 / 1。 */
+    /** 三档色标的位置（时间轴与太阳点共用）：0 / 0.55 / 1。 */
     fun softDotStopPositions(): List<Float> = listOf(0f, SOFT_DOT_MID_STOP, 1f)
 
-    /** 三档色标的 alpha（共用）：1 / 0.45 / 0。 */
+    /** 三档色标的 alpha（共用）：1 / 1 / 0。 */
     fun softDotStopAlphas(): List<Float> =
         listOf(SOFT_DOT_CENTER_ALPHA, SOFT_DOT_MID_ALPHA, SOFT_DOT_EDGE_ALPHA)
+
+    /**
+     * 圆点在 0–1 半径比例 [position] 处的 alpha（按色标做分段线性插值）。
+     *
+     * 单测用它钉住「半径一半（0.5）处仍然完全不透明」这件事 —— 光看色标数组只能看到 0.55 是实心，
+     * 而 0 → 0.55 之间也是满色，这个函数把整条曲线显式化。
+     */
+    fun softDotAlphaAt(position: Float): Float {
+        val positions = softDotStopPositions()
+        val alphas = softDotStopAlphas()
+        if (position <= positions.first()) return alphas.first()
+        for (index in 1 until positions.size) {
+            if (position <= positions[index]) {
+                val span = positions[index] - positions[index - 1]
+                val t = if (span <= 0f) 1f else (position - positions[index - 1]) / span
+                return alphas[index - 1] + (alphas[index] - alphas[index - 1]) * t
+            }
+        }
+        return alphas.last()
+    }
 
     /**
      * 径向渐变的一个色标：[position] 是 0–1（相对圆点半径），[argb] 是满不透明的 RGB，[alpha] 单独给。
@@ -117,8 +137,7 @@ internal object SunColors {
     /**
      * 太阳点的三个色标：位置 / alpha 与时间轴圆点**完全同一组数组**，整颗点用同一个金色。
      *
-     * 白天 `#D9A520`、夜间 `#F5D68A`；渐变从圆心 0 开始，到一半半径已经掉到 45%、边缘全透明 ——
-     * 这就是时间轴那种「柔化圆点」的柔和感，而不是硬边。
+     * 白天 `#D9A520`、夜间 `#F5D68A`；0 → 0.55 是满色实心内圈，0.55 → 1 才线性渐隐到全透明。
      */
     fun sunDotStops(night: Boolean): List<SunDotStop> {
         val color = if (night) NIGHT_SUN else DAY_SUN

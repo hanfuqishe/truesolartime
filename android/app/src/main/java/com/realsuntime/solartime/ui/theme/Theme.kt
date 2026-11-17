@@ -82,8 +82,8 @@ fun TrueSolarTimeTheme(
  * 太阳卡圆盘的配色（派生自色板 / 新增的 `SunColors`，见 [SunColors]）。
  *
  * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#E6CB9C`，白卡上对比度 ≈1.52，只做「路径示意」）；
- *   太阳点 = 时间轴「现在」圆点的**同款单层渐变**（半径 5.5dp、三档等距色标 0 / 0.5 / 1、
- *   alpha 1.0 / 0.45 / 0），只把颜色换成太阳金 [SunColors.DAY_SUN]（`#D9A520`）；
+ *   太阳点 = 时间轴「现在」圆点的**同款单层渐变**（半径 5.5dp、三档色标 0 / 0.55 / 1、
+ *   alpha 1.0 / 1.0 / 0，内圈 55% 实心），只把颜色换成太阳金 [SunColors.DAY_SUN]（`#D9A520`）；
  *   日出 / 日落刻度 = 同样的金、70% 透明（比点淡一档）。
  * - **暗色主题**：白天弧仍是实色主色（深蓝底上那档金色正好，调淡反而糊）；太阳点同样的形状，
  *   颜色换成夜金 [SunColors.NIGHT_SUN]（`#F5D68A`，与 `DarkColors.primary` 同色）。
@@ -102,10 +102,10 @@ fun sunDayArcColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_ARC) 
 fun sunDotColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_SUN) else Color(SunColors.NIGHT_SUN)
 
 /**
- * 柔光圆点的三档色标（**逐时时间轴「现在」圆点与太阳点共用**）：满色 → 45% → 全透明。
+ * 柔光圆点的三档色标（**逐时时间轴「现在」圆点与太阳点共用**）：满色 → 满色 → 全透明。
  *
  * 位置 / alpha 直接取 [SunColors.softDotStopPositions] / [SunColors.softDotStopAlphas]，
- * 两处点用的是同一组数组，不会各写一套。
+ * 两处点用的是同一组数组，不会各写一套；内圈 55% 是实心的，之后才线性渐隐。
  */
 fun softDotStops(color: Color): List<Pair<Float, Color>> {
     val positions = SunColors.softDotStopPositions()
@@ -115,13 +115,13 @@ fun softDotStops(color: Color): List<Pair<Float, Color>> {
 
 /**
  * 太阳点的径向渐变：与时间轴「现在」圆点**同一个画法** —— 一个渐变圆，从圆心 0 开始，
- * 0 / 0.5 / 1 三档色标对应的 alpha 是 1.0 / 0.45 / 0（色标见 [SunColors.sunDotStops]）。
+ * 0 / 0.55 / 1 三档色标对应的 alpha 是 1.0 / 1.0 / 0（色标见 [SunColors.sunDotStops]）。
  *
  * 这里不传 `center` / `radius`：`Brush.radialGradient` 会按**实际绘制圆的大小**铺开，
  * 所以 `drawCircle(brush = sunDotBrush(), radius = 5.5dp)` 里 0–1 的色标正好对应 0–5.5dp。
  *
  * 没有实心核心、没有第二层光晕、没有中心高光、没有描边 —— 这些都被用户否掉了；
- * 唯一的差别是颜色（金）。
+ * 唯一的差别是颜色（金）。实心内圈靠 alpha 曲线保证（0 → 0.55 都是 1.0），不靠额外图层。
  */
 @Composable
 fun sunDotBrush(): Brush = Brush.radialGradient(*softDotStops(sunDotColor()).toTypedArray())
