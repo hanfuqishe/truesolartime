@@ -358,10 +358,15 @@ jobs:
               | tee "$RUNNER_TEMP/upload.log"
             rc=${PIPESTATUS[0]}
             set -e
-            if [ "$rc" -eq 0 ]; then
+            if [ "$rc" -eq 0 ] && ! grep -qiE "validation failed|invalid pre-release train|no suitable application records" "$RUNNER_TEMP/upload.log"; then
               echo "UPLOADED=yes(altool)" >> "$GITHUB_ENV"
               echo "### 已上传：altool 返回 0" >> "$GITHUB_STEP_SUMMARY"
               exit 0
+            fi
+            # altool 有时返回 0 但日志里有 Validation failed（例如版本火车已关闭、
+            # CFBundleShortVersionString 不比已发布版本高），这种“假成功”必须当失败处理。
+            if grep -qiE "validation failed|invalid pre-release train|no suitable application records" "$RUNNER_TEMP/upload.log"; then
+              echo "::error::altool 报 Validation failed，构建没有真正进入 App Store Connect（详见日志尾部）"
             fi
             echo "::warning::altool 退出码 ${rc}，改走 xcodebuild destination=upload 兜底"
             if grep -qiE "redundant binary|already been used" "$RUNNER_TEMP/upload.log"; then
