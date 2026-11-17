@@ -71,14 +71,24 @@ struct ThemeColors: Equatable {
     let onPrimary: ThemeColor
     /// 圆盘「地平线以上」那段白天弧的颜色（**实线**）。
     ///
-    /// 白天主题**不能直接用 `primary`**：`#B4550A` 压在近白的卡片底（`surface`）上是 4.8:1，
-    /// 2.5pt 实线在白卡片上显得又沉又黑（用户报的「白天弧太深」）。这里取**主色 70% 叠在卡片底**
-    /// 得到的 `#CA8751`：与主色同色相（不引入第二种暖色），对比度降到 2.87:1，在白底上「轻」，
-    /// 但仍比夜晚虚线（`onSurfaceVariant` 50% ≈ `#A8A098` / 2.50:1）更深，昼夜层次不反。
+    /// 白天主题用**淡金色** `#E8CFA0`：弧只是「路径示意」，压在近白的卡片底（`surface`）上
+    /// 只有 **1.47:1**，几乎不发沉 —— 主色 `#B4550A` 是 4.80:1（用户连报两次「白天弧太重」），
+    /// 中间的 `#CA8751` 也有 2.87:1，都还是太实。
     ///
-    /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就看不见了。
-    /// 太阳点、地平线、箭头、日出日落刻度点仍用 `primary` —— 它们要比弧更实，才有层次。
+    /// 淡到 1.5:1 之后，与夜晚虚线（`onSurfaceVariant` 50% ≈ `#A8A098` / 2.50:1）**不再是深浅之分**，
+    /// 而是**色相之分**：弧是暖金（r−b = 0.28），虚线是中性灰（r−b = 0.06），加上实线 vs 虚线、
+    /// 2.5pt vs 1.6pt，两者一眼分得开（自检断言的就是这条色相不变式）。
+    ///
+    /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就真的看不见了。
     let sunArc: ThemeColor
+    /// 当前太阳点（实心圆 + 柔光）的颜色。
+    ///
+    /// 白天主题用**金色** `#B8860B`：与淡金弧同色系但明显更实 —— 与弧 2.15:1、与卡片 3.16:1，
+    /// 是整张圆盘上最「重」的一笔，视线自然落在「现在」。
+    /// 注意：`#D9A520` 这类亮金与淡金弧只有 1.48:1（比弧还糊），所以必须压深到 `#B8860B`。
+    ///
+    /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：原来的太阳点就是这个色。
+    let sunDot: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
 
@@ -103,9 +113,12 @@ struct ThemeColors: Equatable {
         outlineVariant: ThemeColor(hex: 0xD7C4B5),
         primary: ThemeColor(hex: 0xB4550A),
         onPrimary: ThemeColor(hex: 0xFFFFFF),
-        // 白天弧：主色 #B4550A 以 70% 叠在卡片底 #FFFBF6 上 = #CA8751（见 `sunArc` 的说明）。
-        // 60% 会得到 #D29768（2.44:1）—— 比夜晚虚线（2.50:1）还淡，昼夜层次会反，所以取 70%。
-        sunArc: ThemeColor(hex: 0xCA8751),
+        // 白天弧：淡金色（只是路径示意）。卡片底 #FFFBF6 上 1.47:1，比主色（4.80:1）轻得多。
+        // 不建议再浅到 #ECD6AC（1.38:1）—— 会低于「看得见」的下限 1.4。
+        sunArc: ThemeColor(hex: 0xE8CFA0),
+        // 太阳点：金色（实心 + 柔光），与淡金弧 2.15:1、与卡片 3.16:1，是圆盘上最实的一笔。
+        // 不能取 #D9A520（与弧只有 1.48:1，比弧还糊）。
+        sunDot: ThemeColor(hex: 0xB8860B),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),
@@ -127,6 +140,8 @@ struct ThemeColors: Equatable {
         onPrimary: ThemeColor(hex: 0x1A1408),
         // 夜间主题的白天弧**保持原样**（= primary #F5D68A）：深底上再调浅就真的看不见了。
         sunArc: ThemeColor(hex: 0xF5D68A),
+        // 夜间主题的太阳点也**保持原样**（= primary #F5D68A）：深底上金色本来就是它。
+        sunDot: ThemeColor(hex: 0xF5D68A),
         // 暗色底上的错误色要够亮（纯红在 #0B1220 上只有 4.3:1）。
         danger: ThemeColor(hex: 0xFF8A80),
         // 比卡片底色（#16203A）略亮一档：深色界面里输入框靠「比卡片亮」来暗示可输入，
@@ -153,6 +168,7 @@ struct ThemeColors: Equatable {
             ("primary", primary),
             ("onPrimary", onPrimary),
             ("sunArc", sunArc),
+            ("sunDot", sunDot),
             ("danger", danger),
             ("fieldBackground", fieldBackground),
             ("fieldBorder", fieldBorder),

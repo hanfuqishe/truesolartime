@@ -1052,21 +1052,22 @@ func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Dou
 }
 
 let dayArc = ThemeColors.day.sunArc
+let dayDot = ThemeColors.day.sunDot
 let nightThemeArc = ThemeColors.night.sunArc
 let dayArcContrast = dayArc.contrast(with: ThemeColors.day.surface)
 let nightArcContrast = nightThemeArc.contrast(with: ThemeColors.night.surface)
 let dayPrimaryContrast = ThemeColors.day.primary.contrast(with: ThemeColors.day.surface)
 expect(
-    "圆盘白天弧看得见：白天 ≥ 2.6、夜间 ≥ 3",
-    dayArcContrast >= 2.6 && nightArcContrast >= 3,
+    "圆盘白天弧「很轻」但仍看得见：白天 1.4…1.8、夜间 ≥ 3",
+    dayArcContrast >= 1.4 && dayArcContrast <= 1.8 && nightArcContrast >= 3,
     String(format: "day=%.2f (sunArc %@) night=%.2f (sunArc %@)",
            dayArcContrast, dayArc.hexText, nightArcContrast, nightThemeArc.hexText)
 )
-// 用户报的就是这一条：白天弧用主色 #B4550A 时是 4.80:1，在白卡片上太深。
+// 用户连着报两次「白天弧太深」：主色 4.80、上一版 #CA8751 是 2.87，现在 #E8CFA0 是 1.47。
 expect(
-    "白天主题的白天弧比主色浅（对比度至少低 1.5，且亮度更高）",
-    dayArcContrast <= dayPrimaryContrast - 1.5
-        && dayArc.relativeLuminance > ThemeColors.day.primary.relativeLuminance + 0.1,
+    "白天弧比主色浅得多（对比度至少低 2.5，且亮度更高）",
+    dayArcContrast <= dayPrimaryContrast - 2.5
+        && dayArc.relativeLuminance > ThemeColors.day.primary.relativeLuminance + 0.3,
     String(format: "arc=%.2f primary=%.2f arcL=%.3f primaryL=%.3f",
            dayArcContrast, dayPrimaryContrast,
            dayArc.relativeLuminance, ThemeColors.day.primary.relativeLuminance)
@@ -1077,9 +1078,11 @@ expect(
     "actual=\(dayArc.hexText)"
 )
 expect(
-    "夜间主题的白天弧保持原样（= 主色 #F5D68A，深底上不许再调浅）",
-    nightThemeArc == ThemeColors.night.primary && nightThemeArc.hexText == "#F5D68A",
-    "actual=\(nightThemeArc.hexText)"
+    "夜间主题的弧与点都保持原样（= 主色 #F5D68A，深底上不许再调浅）",
+    nightThemeArc == ThemeColors.night.primary
+        && nightThemeArc.hexText == "#F5D68A"
+        && ThemeColors.night.sunDot == ThemeColors.night.primary,
+    "sunArc=\(nightThemeArc.hexText) sunDot=\(ThemeColors.night.sunDot.hexText)"
 )
 let dayNightArc = dialBlend(ThemeColors.day.onSurfaceVariant, over: ThemeColors.day.surface, alpha: 0.5)
 let nightNightArc = dialBlend(ThemeColors.night.onSurfaceVariant, over: ThemeColors.night.surface, alpha: 0.5)
@@ -1090,30 +1093,40 @@ expect(
     dayNightArcContrast >= 1.6 && nightNightArcContrast >= 1.6,
     String(format: "day=%.2f night=%.2f", dayNightArcContrast, nightNightArcContrast)
 )
+// 弧淡到 1.47 之后，与夜晚虚线（2.50）不再是「深浅」之分，改用**色相 + 线型**区分：
+// 暖金（r−b 0.28）对中性灰（r−b 0.06）。这条断言替代了原来的「夜晚弧必须弱于白天弧」。
+let arcWarmth = dayArc.red - dayArc.blue
+let dashWarmth = dayNightArc.red - dayNightArc.blue
 expect(
-    "夜晚弧弱于白天弧（同一条圆上分得出昼夜）",
-    dayNightArcContrast < dayArcContrast && nightNightArcContrast < nightArcContrast,
-    String(format: "day: %.2f<%.2f night: %.2f<%.2f",
-           dayNightArcContrast, dayArcContrast, nightNightArcContrast, nightArcContrast)
+    "白天弧与夜晚虚线靠色相区分：暖度差 ≥ 0.15（暖金 vs 中性灰）",
+    abs(arcWarmth - dashWarmth) >= 0.15 && arcWarmth > dashWarmth,
+    String(format: "arc r−b=%.2f 虚线 r−b=%.2f 差=%.2f",
+           arcWarmth, dashWarmth, arcWarmth - dashWarmth)
 )
-// 调浅之后仍要和夜晚虚线明显区分：色差（RGB 距离）与亮度差都要够。
 let arcChannelGap = abs(dayArc.red - dayNightArc.red)
     + abs(dayArc.green - dayNightArc.green)
     + abs(dayArc.blue - dayNightArc.blue)
 expect(
-    "白天弧与夜晚虚线明显区分（RGB 距离 ≥ 0.4、对比度 ≥ 1.1、白天更暖）",
-    arcChannelGap >= 0.4
-        && dayArc.contrast(with: dayNightArc) >= 1.1
-        && (dayArc.red - dayArc.green) >= 0.2,
-    String(format: "gap=%.2f contrast=%.2f r-g=%.2f（夜晚虚线 %@）",
-           arcChannelGap, dayArc.contrast(with: dayNightArc),
-           dayArc.red - dayArc.green, dayNightArc.hexText)
+    "白天弧与夜晚虚线的 RGB 距离 ≥ 0.4（且弧可见 ≥ 1.4）",
+    arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
+    String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-// 太阳点保持主色（更实），与调浅后的弧形成层次。
+// 太阳点：金色实心，必须比弧明显 —— 用户要求「弧很轻、点压得住」。
 expect(
-    "太阳点（primary）与白天弧仍分得开：对比度 ≥ 1.4",
-    ThemeColors.day.primary.contrast(with: dayArc) >= 1.4,
-    String(format: "actual=%.2f", ThemeColors.day.primary.contrast(with: dayArc))
+    "太阳点（金色）与白天弧对比度 ≥ 2.0",
+    dayDot.contrast(with: dayArc) >= 2.0,
+    String(format: "dot %@ / arc %@ = %.2f", dayDot.hexText, dayArc.hexText, dayDot.contrast(with: dayArc))
+)
+expect(
+    "太阳点比弧实：与卡片的对比度明显高于弧（≥ 2 倍）",
+    dayDot.contrast(with: ThemeColors.day.surface) >= 2 * dayArcContrast,
+    String(format: "dot=%.2f arc=%.2f",
+           dayDot.contrast(with: ThemeColors.day.surface), dayArcContrast)
+)
+expect(
+    "太阳点与弧是不同色（各自独立 token，也都不是主色）",
+    dayDot != dayArc && dayDot != ThemeColors.day.primary && dayArc != ThemeColors.day.primary,
+    "dot=\(dayDot.hexText) arc=\(dayArc.hexText)"
 )
 
 print("== 十二时辰 ==")
@@ -3162,7 +3175,7 @@ let themeNightColors = ThemeColors.night
 expect("亮/暗是两套不同的 token", themeDayColors != themeNightColors)
 expect("isDay 标记正确", themeDayColors.isDay && !themeNightColors.isDay)
 expect("of(isDay:) 取到对应的一套", ThemeColors.of(isDay: true) == .day && ThemeColors.of(isDay: false) == .night)
-expect("token 数量固定（13 个语义色）", themeDayColors.tokens.count == 13, "actual=\(themeDayColors.tokens.count)")
+expect("token 数量固定（14 个语义色）", themeDayColors.tokens.count == 14, "actual=\(themeDayColors.tokens.count)")
 expect("token 名字不重复", Set(themeDayColors.tokens.map(\.name)).count == themeDayColors.tokens.count)
 
 // 逐个 token：两套都必须有值（不能是 0x000000 占位）且亮暗不同。

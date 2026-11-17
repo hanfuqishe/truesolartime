@@ -242,9 +242,11 @@ struct SunCard: View {
 /// 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
 /// 文字不在这里画（`SunCard` 用真 `Text` 叠在上面），所以这里不需要任何标签尺寸假设。
 ///
-/// 颜色一律取主题 token（`palette.sunArc` / `palette.primary` / `palette.onSurfaceVariant` /
-/// `palette.surface`），两套主题各用自己的一档，**不碰系统色**（系统 `.orange` / `.secondary`
-/// 在强制主题下会串色）。白天弧单独一档（`sunArc`）：白天主题比主色浅，白卡片上不显沉。
+/// 颜色一律取主题 token（`palette.sunArc` / `palette.sunDot` / `palette.primary` /
+/// `palette.onSurfaceVariant` / `palette.surface`），两套主题各用自己的一档，**不碰系统色**
+/// （系统 `.orange` / `.secondary` 在强制主题下会串色）。
+/// 弧与点各单独一档：白天弧淡金（只作路径示意）、太阳点金色（实心、最实的一笔）；
+/// 地平线 / 箭头 / 刻度点仍是灰或主色，不跟着变。
 private struct SunDialCanvas: View {
 
     @Environment(\.palette) private var palette
@@ -410,12 +412,14 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        let dayColor = palette.primary
+        // 太阳点单独一档（`sunDot`）：白天金色，比淡金弧明显更实（与弧 2.15:1、与卡片 3.16:1）。
+        // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
+        let dayColor = palette.sunDot
         let glow = SunPathGeometry.sunGlowRadius
         let dot = SunPathGeometry.sunRadius
 
         if SunPathGeometry.isSunAboveHorizon(path: path) {
-            // 地平线以上：亮色实心 + 柔光（1.5 × 半径，避免糊到上中天标签）。
+            // 地平线以上：实心 + 柔光（1.5 × 半径，避免糊到上中天标签）。
             context.fill(
                 Path(ellipseIn: CGRect(
                     x: sun.x - glow,

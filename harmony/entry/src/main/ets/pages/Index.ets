@@ -1331,9 +1331,11 @@ struct Index {
     const height: number = this.sunDialH;
     const accent: string = this.palette.accent;
     const outline: string = this.palette.subtle;
-    // 白天弧专用色：白天是 accent 的 65% 不透明度（浅色卡片上更轻），夜间仍是金色实色。
-    // 地平线 / 太阳点 / 箭头 / 刻度点都不用它，保持原来的 accent / subtle。
+    // 白天弧专用色：白天是淡金色（仅作路径示意），夜间仍是金色实色。
+    // 地平线 / 运动箭头 / 刻度点都不用它，保持原来的 subtle / accent。
     const arcColor: string = this.palette.sunArc;
+    // 当前太阳点：白天深金色（实心、比弧明显），夜间保持原来的金色。
+    const sunDot: string = this.palette.sunDot;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
 
@@ -1442,14 +1444,14 @@ struct Index {
       }
     }
 
-    // 当前太阳点：地平线以上是亮色实心点 + 柔光，以下是空心暗色点。
+    // 当前太阳点：地平线以上是金色实心点 + 柔光，以下是空心暗色点。
     if (path.isSunUp()) {
       ctx.beginPath();
-      ctx.fillStyle = this.alphaColor(accent, 0.18);
+      ctx.fillStyle = this.alphaColor(sunDot, 0.18);
       ctx.arc(path.sunX, path.sunY, 6.75, 0, full);
       ctx.fill();
       ctx.beginPath();
-      ctx.fillStyle = accent;
+      ctx.fillStyle = sunDot;
       ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
       ctx.fill();
     } else {

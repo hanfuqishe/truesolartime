@@ -6,6 +6,8 @@
  * 两套主题的强调色分别是橙与金。
  */
 
+import { SunDialColors } from '../core/SunDialColors';
+
 export class AppPalette {
   /** 页面底色。 */
   page: string;
@@ -24,15 +26,21 @@ export class AppPalette {
   /** 强调色上的文字。 */
   onAccent: string;
   /**
-   * 太阳卡圆盘「白天弧」的颜色。
+   * 太阳卡圆盘「白天弧」的颜色（取值见 [SunDialColors]）。
    *
-   * 白天用 accent 的 65% 不透明度（`#A6B4550A`）：在白卡片上更轻，又仍与夜晚虚线明显区分；
-   * 夜间保持原来的金色实色（`#F5D68A`），与地平线/太阳点/刻度/箭头区分开 —— 那几样都不用它。
+   * 白天是淡金色 `#E8CFA0`（只作路径示意，白卡上对比 ≈1.5）；夜间保持原来的金色 `#F5D68A`。
    */
   sunArc: string;
+  /**
+   * 太阳卡圆盘「当前太阳点」的颜色（取值见 [SunDialColors]）。
+   *
+   * 白天是深金色 `#B8860B`（实心、比弧明显，与弧对比 ≈2.15）；夜间保持原来的金色 `#F5D68A`。
+   * 地平线 / 运动箭头 / 刻度点不用它（分别用 subtle / subtle / accent）。
+   */
+  sunDot: string;
 
   constructor(page: string, card: string, chip: string, text: string, subtle: string, divider: string,
-    accent: string, onAccent: string, sunArc: string) {
+    accent: string, onAccent: string, sunArc: string, sunDot: string) {
     this.page = page;
     this.card = card;
     this.chip = chip;
@@ -42,19 +50,20 @@ export class AppPalette {
     this.accent = accent;
     this.onAccent = onAccent;
     this.sunArc = sunArc;
+    this.sunDot = sunDot;
   }
 }
 
 const DAY: AppPalette = new AppPalette(
   '#FFF8F1', '#FFFDFA', '#F2E3D3', '#211A15', '#6E5A49', '#E7D8C8', '#B4550A', '#FFFFFF',
-  // 白天弧：强调色橙棕的 65% 不透明度，浅色卡片上不再发沉。
-  '#A6B4550A'
+  // 白天弧：淡金色，路径示意；太阳点：深金色，实心、比弧明显。
+  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT
 );
 
 const NIGHT: AppPalette = new AppPalette(
   '#0B1220', '#16203A', '#24304F', '#E8EDF7', '#9AA7BF', '#24304F', '#F5D68A', '#0B1220',
-  // 夜间弧：保持原来的金色实色（与改版前完全一致）。
-  '#F5D68A'
+  // 夜间：弧与太阳点都保持原来的金色（与改版前完全一致）。
+  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT
 );
 
 export function paletteFor(isDay: boolean): AppPalette {

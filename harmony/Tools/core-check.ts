@@ -19,6 +19,7 @@ import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
 import { CivicTimeLogic } from './core/CivicTime';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
+import { SunDialColors } from './core/SunDialColors';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
@@ -1406,6 +1407,24 @@ for (const item of equationCases) {
   const narrowSpan: HorizonSpan = SunPathGeometry.horizonSpan(160, horizonInset);
   near('narrow horizon starts at inset', horizonInset, narrowSpan.startX, 0.5);
   near('narrow horizon ends at width - inset', 160 - horizonInset, narrowSpan.endX, 0.5);
+}
+
+// ---- 太阳卡配色：白天弧要轻、太阳点要实、与夜晚虚线靠色相区分 ----
+{
+  const arcContrast: number = SunDialColors.contrastRatio(
+    SunDialColors.DAY_ARC, SunDialColors.DAY_CARD);
+  check('day arc is still visible on the white card', arcContrast >= 1.4, `${arcContrast}`);
+  const warmthGap: number = SunDialColors.warmth(SunDialColors.DAY_ARC) -
+    SunDialColors.warmth(SunDialColors.NIGHT_DASH);
+  check('day arc differs from the night dash in hue', warmthGap >= 0.15, `${warmthGap}`);
+  const dotContrast: number = SunDialColors.contrastRatio(
+    SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC);
+  check('sun dot stands out against the day arc', dotContrast >= 2.0, `${dotContrast}`);
+  check('sun dot is clearly apart from the arc in rgb',
+    SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC) >= 100,
+    `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC)}`);
+  check('night arc and sun dot stay gold',
+    SunDialColors.NIGHT_ARC === '#F5D68A' && SunDialColors.NIGHT_SUN_DOT === '#F5D68A');
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

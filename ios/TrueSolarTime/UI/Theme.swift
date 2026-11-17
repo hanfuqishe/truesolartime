@@ -31,8 +31,10 @@ struct ThemePalette {
     let primary: Color
     /// 强调色底上的文字
     let onPrimary: Color
-    /// 圆盘白天弧（地平线以上的实线）：白天主题比主色浅一档，白卡片上不显沉
+    /// 圆盘白天弧（地平线以上的实线）：白天淡金色，只作路径示意
     let sunArc: Color
+    /// 圆盘当前的太阳点（实心 + 柔光）：白天金色，比弧实
+    let sunDot: Color
     /// 错误文字
     let danger: Color
     /// 输入框底色
@@ -54,6 +56,7 @@ struct ThemePalette {
         primary = Color(hex: colors.primary.hex)
         onPrimary = Color(hex: colors.onPrimary.hex)
         sunArc = Color(hex: colors.sunArc.hex)
+        sunDot = Color(hex: colors.sunDot.hex)
         danger = Color(hex: colors.danger.hex)
         fieldBackground = Color(hex: colors.fieldBackground.hex)
         fieldBorder = Color(hex: colors.fieldBorder.hex)
