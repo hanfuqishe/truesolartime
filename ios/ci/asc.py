@@ -277,6 +277,54 @@ def _distribution_certs(token: str) -> list[dict]:
     return list_all("/v1/certificates", token, {"filter[certificateType]": "DISTRIBUTION"})
 
 
+def _env_pem(name: str) -> str | None:
+    """从环境变量读 PEM：既接受 base64 编码，也接受直接粘贴的 PEM 原文。"""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return None
+    if "BEGIN" in raw:
+        return raw
+    try:
+        return base64.b64decode(raw).decode("utf-8")
+    except Exception:
+        return None
+
+
+def _reuse_stored_cert(token: str):
+    """复用仓库 secrets 里长期保存的分发证书（CERT_PEM_BASE64 / KEY_PEM_BASE64）。
+
+    返回 (created, cert, cert_pem, key_pem)；没有可复用的返回 None。
+    复用成功后不再新建证书、不再吊销任何证书 —— 避免每次出包都给账号所有者
+    发一封「xxx has revoked your certificate」的邮件。
+    """
+    from cryptography import x509 as _x509
+
+    cert_pem = _env_pem("CERT_PEM_BASE64")
+    key_pem = _env_pem("KEY_PEM_BASE64")
+    if not cert_pem or not key_pem:
+        return None
+    try:
+        cert = _x509.load_pem_x509_certificate(cert_pem.encode("ascii"))
+    except Exception as exc:  # 格式坏了就当作没有
+        print(f"      secrets 里的证书无法解析（{exc}），改为新建")
+        return None
+    serial = cert.serial_number
+    for c in _distribution_certs(token):
+        content = (c.get("attributes") or {}).get("certificateContent")
+        if not content:
+            continue
+        try:
+            remote = _x509.load_der_x509_certificate(base64.b64decode(content))
+        except Exception:
+            continue
+        if remote.serial_number == serial:
+            print(f"[2/4] 复用 secrets 里的分发证书 id={c['id']}")
+            print(f"      到期={remote.not_valid_after_utc.date()} —— 不新建、不吊销")
+            return c, cert, cert_pem, key_pem
+    print("      secrets 里的证书在开发者后台已不存在（可能被吊销），本次将新建一张")
+    return None
+
+
 def cmd_signing(args, token: str) -> int:
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
@@ -295,41 +343,50 @@ def cmd_signing(args, token: str) -> int:
     bid_id = bids[0]["id"]
     print(f"[1/4] Bundle ID 就绪：{args.bundle_id}（id={bid_id}）")
 
-    # 2) 私钥 + CSR
-    key_pem, csr_pem, key = _gen_key_and_csr(args.bundle_id)
-    print("[2/4] 已生成 RSA 2048 私钥与 CSR")
+    # 2) 优先复用仓库里长期保存的那张证书（secrets：CERT_PEM_BASE64 / KEY_PEM_BASE64）。
+    #
+    #    为什么要复用：个人账号的分发证书最多 2 张，如果每次出包都新建，
+    #    很快就会撞配额，而脚本只能靠“吊销最早到期的那张”继续——那会给账号
+    #    所有者发一封「null null has revoked your certificate」的邮件，看起来像出事。
+    #    改成复用后，正常情况下**不再新建、不再吊销**。
+    reused = _reuse_stored_cert(token)
+    if reused is not None:
+        created, cert, cert_pem, key_pem = reused
+        cert_b64 = (created.get("attributes") or {}).get("certificateContent") or ""
+    else:
+        # 3) 没有可复用的证书才申请。配额满时吊销最早到期的一张（最后一次兜底），
+        #    并把新证书的 PEM 打印出来，方便存成 secret 下次复用。
+        key_pem, csr_pem, key = _gen_key_and_csr(args.bundle_id)
+        print("[2/4] 已生成 RSA 2048 私钥与 CSR")
 
-    # 3) 申请分发证书。个人账号的分发证书有配额，Apple 会回
-    #    "You already have a current Distribution certificate ..."，
-    #    这时吊销最早到期的那张（都是本仓库 CI 之前建的，没有本地私钥也用不了）再重试。
-    created = None
-    last_error: Exception | None = None
-    for attempt in range(1, 6):
-        try:
-            created = _create_cert(token, csr_pem)
-            print(f"[3/4] 第 {attempt} 次申请成功：certificate id={created['id']}")
-            break
-        except AscError as exc:
-            last_error = exc
-            if not has_phrase(exc, "already have", "maximum", "limit", "reached"):
-                raise
-            existing = _distribution_certs(token)
-            if not existing:
-                raise
-            # 最早到期的先吊销（Apple 的到期时间与创建时间同序）
-            existing.sort(key=lambda c: (c.get("attributes") or {}).get("expirationDate") or "")
-            victim = existing[0]
-            print(f"[3/4] 配额已满，吊销旧分发证书 id={victim['id']} "
-                  f"expires={(victim.get('attributes') or {}).get('expirationDate')}")
-            api("DELETE", f"/v1/certificates/{victim['id']}", token, tolerate=(404,))
-    if created is None:
-        raise AscError(f"申请 Distribution 证书失败（已重试 5 次）：{last_error}")
+        created = None
+        last_error: Exception | None = None
+        for attempt in range(1, 6):
+            try:
+                created = _create_cert(token, csr_pem)
+                print(f"[3/4] 第 {attempt} 次申请成功：certificate id={created['id']}")
+                break
+            except AscError as exc:
+                last_error = exc
+                if not has_phrase(exc, "already have", "maximum", "limit", "reached"):
+                    raise
+                existing = _distribution_certs(token)
+                if not existing:
+                    raise
+                # 最早到期的先吊销（Apple 的到期时间与创建时间同序）
+                existing.sort(key=lambda c: (c.get("attributes") or {}).get("expirationDate") or "")
+                victim = existing[0]
+                print(f"[3/4] 配额已满，吊销旧分发证书 id={victim['id']} "
+                      f"expires={(victim.get('attributes') or {}).get('expirationDate')}")
+                api("DELETE", f"/v1/certificates/{victim['id']}", token, tolerate=(404,))
+        if created is None:
+            raise AscError(f"申请 Distribution 证书失败（已重试 5 次）：{last_error}")
 
-    cert_b64 = (created.get("attributes") or {}).get("certificateContent")
-    if not cert_b64:
-        raise AscError(f"证书响应里没有 certificateContent：{json.dumps(created)[:800]}")
-    cert = x509.load_der_x509_certificate(base64.b64decode(cert_b64))
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
+        cert_b64 = (created.get("attributes") or {}).get("certificateContent")
+        if not cert_b64:
+            raise AscError(f"证书响应里没有 certificateContent：{json.dumps(created)[:800]}")
+        cert = x509.load_der_x509_certificate(base64.b64decode(cert_b64))
+        cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode("ascii")
 
     os.makedirs(args.out_dir, exist_ok=True)
     key_path = os.path.join(args.out_dir, "dist.key.pem")
@@ -341,6 +398,16 @@ def cmd_signing(args, token: str) -> int:
     os.chmod(key_path, 0o600)
     print(f"      证书 subject={cert.subject.rfc4514_string()}")
     print(f"      证书到期={cert.not_valid_after_utc.date()} -> {cert_path}")
+
+    if reused is None:
+        # 新建的证书：把 PEM 打印出来，方便存成 secret 下次复用（只打印一次）
+        print("=" * 70)
+        print("把下面两段分别存成仓库 secrets，以后出包就不会再新建/吊销证书：")
+        print("  CERT_PEM_BASE64")
+        print(base64.b64encode(cert_pem.encode("ascii")).decode("ascii"))
+        print("  KEY_PEM_BASE64")
+        print(base64.b64encode(key_pem.encode("ascii")).decode("ascii"))
+        print("=" * 70)
 
     # 4) 描述文件：先清掉本仓库历史上建的同名前缀 profile，再新建
     prefix = args.profile_prefix

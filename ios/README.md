@@ -60,7 +60,28 @@
 
 > 免费签名的附带限制：同时在装的 App 最多 3 个、Bundle ID 每周上限 10 个；如果以后加了 WidgetKit 小组件扩展，扩展和主 App 会一起被重签，同样 7 天到期。
 
-#### 路线 C 的具体步骤（TestFlight，已配好 workflow）
+##### 分发证书：配一次 secret，之后不再新建/吊销
+
+个人账号最多 2 张 Apple Distribution 证书。脚本最早的写法是“每次出包新建一张，撞配额就吊销最早到期的那张”，
+结果是每两次出包账号所有者就会收到一封 `null null has revoked your certificate` 的邮件（看着像出事）。
+
+现在改成**优先复用**：
+
+1. `ios/ci/asc.py signing` 先读环境变量 `CERT_PEM_BASE64` / `KEY_PEM_BASE64`（base64 后的 PEM，也接受直接粘贴 PEM），
+2. 用证书序列号去 `/v1/certificates` 里找同一个，找到就**直接复用**，不新建、不吊销；
+3. 两个 secret 都没配（或存的那张已被吊销）才回退到新建，并在日志里打印两段 base64，
+   复制存成仓库 secrets 即可让下次开始复用。
+
+```
+仓库 Settings → Secrets and variables → Actions → New repository secret
+  CERT_PEM_BASE64   ← 证书 PEM 的 base64（asc.py 日志里会打印）
+  KEY_PEM_BASE64    ← 对应私钥 PEM 的 base64
+```
+
+注意：私钥只在新建那一次存在于运行日志里，且日志对公开仓库可见 —— 取到后建议**立即删除那次运行**,
+或者一开始就把仓库 Actions 日志设为仅私有可见；更稳的做法是先在本地用 `openssl` 生成一张证书记下来。
+
+## 路线 C 的具体步骤（TestFlight，已配好 workflow）
 
 GitHub → **Actions** → 左侧「**iOS TestFlight**」→ **Run workflow**，约 4 分钟出包并上传；随后 App Store Connect → TestFlight 里等 Apple 处理（几分钟）。
 

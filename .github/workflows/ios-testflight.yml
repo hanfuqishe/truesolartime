@@ -153,6 +153,10 @@ jobs:
 
       - name: 申请 Distribution 证书 + App Store 描述文件
         if: ${{ !inputs.verify_only }}
+        env:
+          # 长期复用的分发证书（配过一次就不再新建/吊销）
+          CERT_PEM_BASE64: ${{ secrets.CERT_PEM_BASE64 }}
+          KEY_PEM_BASE64: ${{ secrets.KEY_PEM_BASE64 }}
         run: |
           set -euo pipefail
           "$PY" ios/ci/asc.py signing --out-dir "$RUNNER_TEMP/signing" \
