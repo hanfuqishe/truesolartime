@@ -81,20 +81,12 @@ struct ThemeColors: Equatable {
     ///
     /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就真的看不见了。
     let sunArc: ThemeColor
-    /// 太阳点的**实心核心**色（三层里的第 ① 层，纯色、不渐变）。
+    /// 太阳点的颜色（核心实心与柔光**同色**，跟时间轴那个「现在」圆点一样：只有一层颜色）。
     ///
-    /// 白天 `#B8860B`：深一档的金，白卡上 **3.16:1**，边界清清楚楚（上一版是亮金 + 从圆心渐变，
-    /// 在白底上糊成一团光斑）。夜间 `#E0B84A`（深底上对卡片 8.55:1）。
+    /// 白天 `#D9A520`（与卡片 2.18:1、与淡金弧 1.48:1）；夜间 `#F5D68A`（等于 `primary`）。
+    /// 画法与尺寸**完全照搬时间轴**（`NowDotStyle`：核心 5.5pt + 外扩 2pt / 0.28 柔光），
+    /// 用户最终裁定「不要自创画法，只换颜色」——所以这里**不再**有高光色 / 外圈色。
     let sunDot: ThemeColor
-    /// 太阳点的**中心高光**色（第 ② 层：核心正中央 0.9pt 的小亮点，alpha 1.0）。
-    ///
-    /// 白天 `#FFF2C8`（相对亮度 0.889）、夜间 `#FFF8E1`（0.938）—— 近白暖色，
-    /// 与核心 2.91 / 1.78 的对比让点「炫」起来，而不需要把整个点做亮。
-    let sunDotHighlight: ThemeColor
-    /// 太阳点的**外圈柔光**色（第 ③ 层：从核心半径到 5.5pt 的径向渐变，0.45 → 0）。
-    ///
-    /// 白天 `#D9A520`、夜间 `#F5D68A`。
-    let sunDotGlow: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
 
@@ -122,10 +114,8 @@ struct ThemeColors: Equatable {
         // 白天弧：淡金色（只是路径示意）。卡片底 #FFFBF6 上 1.47:1，比主色（4.80:1）轻得多。
         // 不建议再浅到 #ECD6AC（1.38:1）—— 会低于「看得见」的下限 1.4。
         sunArc: ThemeColor(hex: 0xE8CFA0),
-        // 太阳点三层：核心（深金，白卡 3.16:1 边界清楚）+ 中心高光（近白暖色）+ 外圈柔光（金）。
-        sunDot: ThemeColor(hex: 0xB8860B),
-        sunDotHighlight: ThemeColor(hex: 0xFFF2C8),
-        sunDotGlow: ThemeColor(hex: 0xD9A520),
+        // 太阳点：金 #D9A520（核心与柔光同色，画法/尺寸照搬时间轴，只换颜色）。
+        sunDot: ThemeColor(hex: 0xD9A520),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),
@@ -147,10 +137,8 @@ struct ThemeColors: Equatable {
         onPrimary: ThemeColor(hex: 0x1A1408),
         // 夜间主题的白天弧**保持原样**（= primary #F5D68A）：深底上再调浅就真的看不见了。
         sunArc: ThemeColor(hex: 0xF5D68A),
-        // 夜间太阳点三层：核心 #E0B84A（对深底 8.55:1）+ 高光 #FFF8E1 + 外圈 #F5D68A。
-        sunDot: ThemeColor(hex: 0xE0B84A),
-        sunDotHighlight: ThemeColor(hex: 0xFFF8E1),
-        sunDotGlow: ThemeColor(hex: 0xF5D68A),
+        // 夜间太阳点：夜间金 #F5D68A（= primary，和时间轴的点同色规则）。
+        sunDot: ThemeColor(hex: 0xF5D68A),
         // 暗色底上的错误色要够亮（纯红在 #0B1220 上只有 4.3:1）。
         danger: ThemeColor(hex: 0xFF8A80),
         // 比卡片底色（#16203A）略亮一档：深色界面里输入框靠「比卡片亮」来暗示可输入，
@@ -178,8 +166,6 @@ struct ThemeColors: Equatable {
             ("onPrimary", onPrimary),
             ("sunArc", sunArc),
             ("sunDot", sunDot),
-            ("sunDotHighlight", sunDotHighlight),
-            ("sunDotGlow", sunDotGlow),
             ("danger", danger),
             ("fieldBackground", fieldBackground),
             ("fieldBorder", fieldBorder),

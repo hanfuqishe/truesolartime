@@ -92,12 +92,16 @@ enum SunPathGeometry {
 
     // MARK: - 标签参数（UI 与自检共用同一组常量）
 
-    /// 太阳点**实心核心**半径：读 `SunDotStyle`（2.4pt，三层里的第 ① 层，纯色不渐变）。
-    static var sunRadius: CGFloat { SunDotStyle.shared.coreRadius }
-    /// 太阳点**外圈柔光**半径（5.5pt）：径向渐变从核心半径起步，到这里收成透明。
-    static var sunGlowRadius: CGFloat { SunDotStyle.shared.glowRadius }
-    /// 地平线以下那个**空心点**：半径 = 核心半径，描边 1pt（不画光斑）。
-    static var sunHollowRadius: CGFloat { SunDotStyle.shared.coreRadius }
+    /// 太阳点**实心核心**半径：**照搬时间轴「现在」圆点**（`NowDotStyle.shared.radius`，5.5pt）。
+    ///
+    /// 用户最终裁定：不要自创画法，时间轴那个点怎么画，太阳点就怎么画，**只换颜色**。
+    static var sunRadius: CGFloat { NowDotStyle.shared.radius }
+    /// 太阳点**柔光**半径（= 核心 + 外扩 2pt = 7.5pt，与时间轴同一个 `NowDotStyle`）。
+    static var sunGlowRadius: CGFloat { NowDotStyle.shared.glowRadius }
+    /// 地平线以下那个点：半径 = 核心半径（同尺寸），描边细一点（`sunHollowLineWidth`）。
+    static var sunHollowRadius: CGFloat { NowDotStyle.shared.radius }
+    /// 地平线以下空心圈的描边宽度：1pt（不抢戏，也不留一道粗硬边）。
+    static let sunHollowLineWidth: CGFloat = 1
     /// 日出 / 日落标签：锚点离交点 10pt、比交点抬高 10pt（让延伸的地平线从字下面过去）。
     static let labelOffsetX: CGFloat = 10
     static let labelOffsetY: CGFloat = 10

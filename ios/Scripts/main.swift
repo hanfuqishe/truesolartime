@@ -1078,12 +1078,11 @@ expect(
     "actual=\(dayArc.hexText)"
 )
 expect(
-    "夜间主题：弧与柔光保持主色 #F5D68A，核心换成更实的 #E0B84A（深底上要立得住）",
+    "夜间主题：弧与太阳点都保持夜间金 #F5D68A（照搬时间轴的那一笔，只有颜色不同）",
     nightThemeArc == ThemeColors.night.primary
         && nightThemeArc.hexText == "#F5D68A"
-        && ThemeColors.night.sunDotGlow == ThemeColors.night.primary
-        && ThemeColors.night.sunDot.hexText == "#E0B84A",
-    "sunArc=\(nightThemeArc.hexText) sunDot=\(ThemeColors.night.sunDot.hexText) glow=\(ThemeColors.night.sunDotGlow.hexText)"
+        && ThemeColors.night.sunDot == ThemeColors.night.primary,
+    "sunArc=\(nightThemeArc.hexText) sunDot=\(ThemeColors.night.sunDot.hexText)"
 )
 let dayNightArc = dialBlend(ThemeColors.day.onSurfaceVariant, over: ThemeColors.day.surface, alpha: 0.5)
 let nightNightArc = dialBlend(ThemeColors.night.onSurfaceVariant, over: ThemeColors.night.surface, alpha: 0.5)
@@ -1112,98 +1111,60 @@ expect(
     arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
     String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-print("== 太阳点：三层（实心核心 + 中心高光 + 外圈柔光）==")
-// 用户反馈「太阳点像一团光斑」：时间轴的点在橙色卡上，中心 alpha=1 与底色对比强 → 读成「点 + 光」；
-// 太阳点在米白卡上从圆心就渐变 → 糊成光斑。改成三层：核心纯色、中央一个近白高光、外面才发光。
-let sunDotStyle = SunDotStyle.shared
-expect(
-    "三层半径：核心 2.4 / 高光 0.9 / 外圈 5.5pt",
-    sunDotStyle.coreRadius == 2.4
-        && sunDotStyle.highlightRadius == 0.9
-        && sunDotStyle.glowRadius == 5.5,
-    "core=\(sunDotStyle.coreRadius) highlight=\(sunDotStyle.highlightRadius) glow=\(sunDotStyle.glowRadius)"
-)
-expect(
-    "外圈渐变**从核心半径起步**（不是从圆心 0）",
-    sunDotStyle.glowStartRadius == sunDotStyle.coreRadius
-        && sunDotStyle.glowStartRadius == 2.4,
-    "start=\(sunDotStyle.glowStartRadius)"
-)
-expect(
-    "外圈渐变两档：起点 alpha 0.45 → 外沿 0",
-    sunDotStyle.glowGradientStops.count == 2
-        && sunDotStyle.glowGradientStops[0].alpha == 0.45
-        && sunDotStyle.glowGradientStops[0].location == 0
-        && sunDotStyle.glowGradientStops[1].alpha == 0
-        && sunDotStyle.glowGradientStops[1].location == 1,
-    "stops=\(sunDotStyle.glowGradientStops.map { ($0.alpha, $0.location) })"
-)
-expect(
-    "地平线以下的空心圈：半径 = 核心半径、描边 1pt（不画光斑）",
-    SunPathGeometry.sunHollowRadius == sunDotStyle.coreRadius
-        && sunDotStyle.hollowLineWidth == 1,
-    "hollow=\(SunPathGeometry.sunHollowRadius) line=\(sunDotStyle.hollowLineWidth)"
-)
-// 核心要「边界清楚」：对白卡 ≥ 3:1，且**不渐变淡化**（纯色 token，没有任何 alpha）。
-let dayCore = ThemeColors.day.sunDot
-expect(
-    "核心（深金 #B8860B）对白卡对比 ≥ 3.0（边界清楚）",
-    dayCore.hexText == "#B8860B" && dayCore.contrast(with: ThemeColors.day.surface) >= 3.0,
-    String(format: "core=%@ ct=%.2f", dayCore.hexText, dayCore.contrast(with: ThemeColors.day.surface))
-)
-expect(
-    "中心高光：白天 #FFF2C8 / 夜间 #FFF8E1，且相对亮度 ≥ 0.8（「炫」的关键）",
-    ThemeColors.day.sunDotHighlight.hexText == "#FFF2C8"
-        && ThemeColors.night.sunDotHighlight.hexText == "#FFF8E1"
-        && ThemeColors.day.sunDotHighlight.relativeLuminance >= 0.8
-        && ThemeColors.night.sunDotHighlight.relativeLuminance >= 0.8,
-    String(format: "day=%@ L=%.3f night=%@ L=%.3f",
-           ThemeColors.day.sunDotHighlight.hexText, ThemeColors.day.sunDotHighlight.relativeLuminance,
-           ThemeColors.night.sunDotHighlight.hexText, ThemeColors.night.sunDotHighlight.relativeLuminance)
-)
-expect(
-    "高光比核心亮得多（对比 ≥ 2.5），所以点里有个亮点",
-    ThemeColors.day.sunDotHighlight.contrast(with: dayCore) >= 2.5,
-    String(format: "actual=%.2f", ThemeColors.day.sunDotHighlight.contrast(with: dayCore))
-)
-expect(
-    "外圈柔光色：白天 #D9A520 / 夜间 #F5D68A",
-    ThemeColors.day.sunDotGlow.hexText == "#D9A520"
-        && ThemeColors.night.sunDotGlow.hexText == "#F5D68A",
-    "day=\(ThemeColors.day.sunDotGlow.hexText) night=\(ThemeColors.night.sunDotGlow.hexText)"
-)
-expect(
-    "夜间三层：核心 #E0B84A / 高光 #FFF8E1 / 外圈 #F5D68A，核心对深底 ≥ 3",
-    ThemeColors.night.sunDot.hexText == "#E0B84A"
-        && ThemeColors.night.sunDot.contrast(with: ThemeColors.night.surface) >= 3.0,
-    String(format: "core=%@ ct=%.2f",
-           ThemeColors.night.sunDot.hexText,
-           ThemeColors.night.sunDot.contrast(with: ThemeColors.night.surface))
-)
-expect(
-    "圆盘太阳点读的就是这套常量（SunPathGeometry 只是转述）",
-    SunPathGeometry.sunRadius == sunDotStyle.coreRadius
-        && SunPathGeometry.sunGlowRadius == sunDotStyle.glowRadius,
-    "sun=\(SunPathGeometry.sunRadius)/\(SunPathGeometry.sunGlowRadius)"
-)
-// 时间轴那个点**不动**（它的值仍是 `NowDotStyle` 的 5.5 / +2 / 0.28）：这次只重画圆盘上的太阳点。
+print("== 太阳点：逐项照搬时间轴「现在」圆点（只有颜色不同）==")
+// 用户最终裁定：不要自创画法。时间轴那个点是「5.5pt 实心 + 外扩 2pt / 0.28 柔光」两笔，
+// 太阳点就照抄这两笔，只把颜色换成金。三层结构（2.4 核心 / 0.9 高光 / 从 2.4 起的渐变）已删除。
 let axisDot = NowDotStyle.shared
+let sunCoreRadius = SunPathGeometry.sunRadius
+let sunGlowRadius = SunPathGeometry.sunGlowRadius
 expect(
-    "时间轴圆点保持原样（5.5pt 核心 + 外扩 2pt/0.28，只是不再被太阳点共用）",
-    axisDot.radius == 5.5 && axisDot.glowInset == 2 && axisDot.glowAlpha == 0.28,
-    "axis=\(axisDot.radius)/+\(axisDot.glowInset)/\(axisDot.glowAlpha)"
+    "① 核心半径相同：太阳点 == 时间轴 == 5.5pt",
+    sunCoreRadius == axisDot.radius && sunCoreRadius == 5.5,
+    "sun=\(sunCoreRadius) axis=\(axisDot.radius)"
 )
 expect(
-    "太阳点比时间轴的点小一圈（核心 2.4 < 5.5，用户要的小点）",
-    sunDotStyle.coreRadius < axisDot.radius,
-    "sun=\(sunDotStyle.coreRadius) axis=\(axisDot.radius)"
+    "② 柔光外扩相同：+2pt（半径 7.5pt）",
+    axisDot.glowInset == 2
+        && sunGlowRadius == axisDot.glowRadius
+        && sunGlowRadius == 7.5,
+    "sunGlow=\(sunGlowRadius) axisGlow=\(axisDot.glowRadius) inset=\(axisDot.glowInset)"
 )
 expect(
-    "token 表：太阳点三层各一档，且不再有 sunDotCore / sunDotRing",
-    ThemeColors.day.tokens.contains { $0.name == "sunDotHighlight" }
-        && ThemeColors.day.tokens.contains { $0.name == "sunDotGlow" }
+    "③ 柔光 alpha 相同：0.28",
+    axisDot.glowAlpha == 0.28,
+    "actual=\(axisDot.glowAlpha)"
+)
+expect(
+    "④ 两笔（实心 + 柔光）、没有渐变 / 高光 / 描边残留",
+    SunPathGeometry.sunRadius == NowDotStyle.shared.radius
+        && !ThemeColors.day.tokens.contains { $0.name == "sunDotHighlight" }
+        && !ThemeColors.day.tokens.contains { $0.name == "sunDotGlow" }
         && !ThemeColors.day.tokens.contains { $0.name == "sunDotRing" }
         && !ThemeColors.day.tokens.contains { $0.name == "sunDotCore" }
+)
+expect(
+    "⑤ 只有颜色不同：白天 #D9A520、夜间 #F5D68A（核心与柔光同色）",
+    ThemeColors.day.sunDot.hexText == "#D9A520"
+        && ThemeColors.night.sunDot.hexText == "#F5D68A"
+        && ThemeColors.night.sunDot == ThemeColors.night.primary,
+    "day=\(ThemeColors.day.sunDot.hexText) night=\(ThemeColors.night.sunDot.hexText)"
+)
+expect(
+    "地平线以下的点：同尺寸（半径 = 核心 5.5pt）、细描边 1pt，不留粗硬边",
+    SunPathGeometry.sunHollowRadius == sunCoreRadius
+        && SunPathGeometry.sunHollowLineWidth == 1,
+    "hollow=\(SunPathGeometry.sunHollowRadius) line=\(SunPathGeometry.sunHollowLineWidth)"
+)
+expect(
+    "太阳点对卡片比淡金弧实：对比度高于弧",
+    ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface) > dayArcContrast,
+    String(format: "dot=%.2f arc=%.2f",
+           ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface), dayArcContrast)
+)
+expect(
+    "太阳点仍比淡金弧显眼：对弧对比 ≥ 1.3",
+    ThemeColors.day.sunDot.contrast(with: dayArc) >= 1.3,
+    String(format: "actual=%.2f", ThemeColors.day.sunDot.contrast(with: dayArc))
 )
 expect(
     "轨迹线线宽：白天 1.6pt、夜晚 1.5pt、虚线 4/4pt",
@@ -1211,25 +1172,6 @@ expect(
         && SunPathGeometry.nightArcLineWidth == 1.5
         && SunPathGeometry.nightArcDash == [4, 4],
     "day=\(SunPathGeometry.dayArcLineWidth) night=\(SunPathGeometry.nightArcLineWidth) dash=\(SunPathGeometry.nightArcDash)"
-)
-expect(
-    "核心（深金）比白天弧实得多：对弧对比 ≥ 2.0",
-    dayCore.contrast(with: dayArc) >= 2.0,
-    String(format: "core %@ / arc %@ = %.2f", dayCore.hexText, dayArc.hexText, dayCore.contrast(with: dayArc))
-)
-expect(
-    "核心比弧实：与卡片的对比度高于弧",
-    dayCore.contrast(with: ThemeColors.day.surface) > dayArcContrast,
-    String(format: "core=%.2f arc=%.2f",
-           dayCore.contrast(with: ThemeColors.day.surface), dayArcContrast)
-)
-expect(
-    "核心、外圈、弧、主色互不相同",
-    dayCore != ThemeColors.day.sunDotGlow
-        && dayCore != dayArc
-        && dayCore != ThemeColors.day.primary
-        && dayArc != ThemeColors.day.primary,
-    "core=\(dayCore.hexText) glow=\(ThemeColors.day.sunDotGlow.hexText) arc=\(dayArc.hexText)"
 )
 
 print("== 十二时辰 ==")
@@ -3278,7 +3220,7 @@ let themeNightColors = ThemeColors.night
 expect("亮/暗是两套不同的 token", themeDayColors != themeNightColors)
 expect("isDay 标记正确", themeDayColors.isDay && !themeNightColors.isDay)
 expect("of(isDay:) 取到对应的一套", ThemeColors.of(isDay: true) == .day && ThemeColors.of(isDay: false) == .night)
-expect("token 数量固定（16 个语义色）", themeDayColors.tokens.count == 16, "actual=\(themeDayColors.tokens.count)")
+expect("token 数量固定（14 个语义色）", themeDayColors.tokens.count == 14, "actual=\(themeDayColors.tokens.count)")
 expect("token 名字不重复", Set(themeDayColors.tokens.map(\.name)).count == themeDayColors.tokens.count)
 
 // 逐个 token：两套都必须有值（不能是 0x000000 占位）且亮暗不同。
