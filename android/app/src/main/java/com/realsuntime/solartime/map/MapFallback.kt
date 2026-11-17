@@ -21,6 +21,12 @@ import java.util.Locale
  * * **手动** 选底图时不回退、不探测：用户明确要求什么就显示什么，失败保持原样；
  * * 高德某级别没有瓦片时，按 [MAX_DEGRADE_STEPS] 逐级下探，最后落到最低级别的全球底图；
  *   连最低级别都拿不到（真没网）才在界面上写「底图不可用」，绝不留一块纯空白。
+ * * **空白瓦片算失败**：高德对境外常回 200 的空白瓦片（灰底 + 水印，没有地理内容），
+ *   osmdroid 把它当成功。这种瓦片由 [TileBlank] 认出来，之后走 [onTileBlank] ——
+ *   与真实失败**同一条**状态迁移（同一级别连续 [FAILURE_THRESHOLD] 次 → 判该级别没瓦片 → 降级），
+ *   只是另记一份 [MapFallbackState.blankTileCount] 给诊断页看；只有高德源才检测。
+ *   空白学来的「这级别没内容」是结构性的（见 [MapFallbackState.blankZooms]），
+ *   不会因为最低级别的全球底图出图就被清掉 —— 否则会来回跳。
  *
  * 这里全是纯函数（旧状态进、新状态出），Android / 网络 / 线程都在 [MapFallbackTracker] 里，
  * 单测可以完全脱离设备跑。
@@ -125,7 +131,14 @@ object MapFallback {
         if (zoom <= MIN_ZOOM) {
             // 最低级别的全球底图都出图了 = 网络回来了：把「某级别没瓦片」的记忆一起清掉，
             // 让降级链回到默认级别重试（万一真缺瓦片，会被重新学一遍）。
-            next = next.copy(unavailableZooms = next.unavailableZooms - plan.effective)
+            //
+            // **但空白瓦片学来的记忆要留着**：它记的是「这个源在这个地区根本没有内容」，
+            // 是结构性的，不是网络问题。忘掉它就会在
+            // 「z12 空白 → 降到 z3 有全球图 → 弹回 z12 又是空白」之间来回跳（而且第二次
+            // z12 的空白瓦片已在缓存里、不会再有成功回调，跳回去就再也降不下来了）。
+            val sticky = next.blankZooms[plan.effective].orEmpty()
+            val kept = next.unavailableZooms[plan.effective].orEmpty().intersect(sticky)
+            next = next.copy(unavailableZooms = next.unavailableZooms + (plan.effective to kept))
         }
         if (plan.effective == MapStyle.OSM) {
             next = next.recovered(nowMillis)
@@ -149,6 +162,51 @@ object MapFallback {
         if (style != MapStyle.AUTO) return state
         // 刚切过源：这些失败多半属于切换前就发出去的请求，丢了不算。
         if (state.isSettling(nowMillis)) return state
+        return registerFailure(style, latitude, longitude, zoom, state, nowMillis, blank = false)
+    }
+
+    /**
+     * 一块瓦片是「200 的空白瓦片」（见 [TileBlank]）：按失败处理。
+     *
+     * 与 [onTileFailed] 走**完全同一条**失败迁移（OSM 分支累计回退、高德分支累计到
+     * [FAILURE_THRESHOLD] 就判该级别没瓦片），只在状态里额外记一笔
+     * [MapFallbackState.blankTileCount]，诊断页据此显示「空白瓦片判定」。
+     *
+     * 两个与真实失败不同的地方，都是有意的：
+     * * **不吞「切换残响」**：残响窗口是为了丢掉切换前还在飞的**旧源**请求的失败；
+     *   而空白瓦片是刚画上来的**当前源**的瓦片（切换时会 `clearTileCache()`），
+     *   而且它一旦进了缓存就不会再重新请求，等 5 秒只会让用户多盯一会儿灰屏。
+     * * **手动选择照样只记数不降级**：用户明确选了高德，就按他选的显示（既有约定）。
+     */
+    fun onTileBlank(
+        style: MapStyle,
+        latitude: Double,
+        longitude: Double,
+        zoom: Int,
+        state: MapFallbackState,
+        nowMillis: Long,
+        colorKinds: Int,
+    ): MapFallbackState {
+        val counted = state.copy(
+            blankTileCount = state.blankTileCount + 1,
+            lastBlankZoom = zoom,
+            lastBlankColorKinds = colorKinds,
+        )
+        // 手动选择底图：只留诊断痕迹，不改源、不降级。
+        if (style != MapStyle.AUTO) return counted
+        return registerFailure(style, latitude, longitude, zoom, counted, nowMillis, blank = true)
+    }
+
+    /** 真实失败与空白瓦片共用的迁移：先看是不是在 OSM，再决定「回退」还是「这一级没瓦片」。 */
+    private fun registerFailure(
+        style: MapStyle,
+        latitude: Double,
+        longitude: Double,
+        zoom: Int,
+        state: MapFallbackState,
+        nowMillis: Long,
+        blank: Boolean,
+    ): MapFallbackState {
         val plan = plan(style, latitude, longitude, state)
         if (plan.effective != MapStyle.OSM) {
             val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
@@ -157,6 +215,8 @@ object MapFallback {
                 next = next
                     .markZoom(plan.effective, zoom, available = false)
                     .copy(lastFailedZoom = null, zoomFailures = 0)
+                // 空白瓦片学来的「这级别没内容」要额外记一份：它不会被「最低级别出图」清掉。
+                if (blank) next = next.markBlankZoom(plan.effective, zoom)
             }
             return next
         }
@@ -189,10 +249,25 @@ data class MapFallbackState(
     val probeAtMillis: Long? = null,
     /** 会话内学到的「某底图在某级别没有瓦片」，降级链据此下探。 */
     val unavailableZooms: Map<MapStyle, Set<Int>> = emptyMap(),
+    /**
+     * 其中**因为空白瓦片**才判「没内容」的级别（[unavailableZooms] 的子集）。
+     *
+     * 单独记一份是因为两类「没瓦片」的寿命不一样：真实失败多半是网络抖动，最低级别一出图
+     * 就该忘掉重试；而空白瓦片是「这个源在这个地区根本没有数据」，忘掉就会在
+     * z12 空白 ↔ z3 全球图之间来回跳（见 [MapFallback.onTileLoaded]）。
+     * 只有当该级别真的画出一块有内容的瓦片（或切源、重置）时才清掉。
+     */
+    val blankZooms: Map<MapStyle, Set<Int>> = emptyMap(),
     /** 当前源最近一次失败发生在哪个级别（配合 [zoomFailures] 判断「这级别真的没瓦片」）。 */
     val lastFailedZoom: Int? = null,
     /** 同一级别连续失败次数：成功一次就清零，够阈值才判该级别没瓦片。 */
     val zoomFailures: Int = 0,
+    /** 会话内判定为「空白瓦片」的累计次数（只有高德源才检测，见 [MapFallback.onTileBlank]）。 */
+    val blankTileCount: Int = 0,
+    /** 最近一次判定空白发生在哪个级别；null = 还没触发过。 */
+    val lastBlankZoom: Int? = null,
+    /** 最近一次空白瓦片的量化颜色种类数（诊断文案「颜色种类 3」）。 */
+    val lastBlankColorKinds: Int? = null,
     /** 最近一次切源（回退 / 恢复）的时刻，用来丢弃切换瞬间还在飞的旧请求的失败。 */
     val switchedAtMillis: Long? = null,
 ) {
@@ -215,6 +290,7 @@ data class MapFallbackState(
         fallbackFailures = 0,
         probeAtMillis = null,
         unavailableZooms = emptyMap(),
+        blankZooms = emptyMap(),
         lastFailedZoom = null,
         zoomFailures = 0,
         switchedAtMillis = nowMillis,
@@ -223,8 +299,21 @@ data class MapFallbackState(
     internal fun markZoom(style: MapStyle, zoom: Int, available: Boolean): MapFallbackState {
         val current = unavailableZooms[style].orEmpty()
         val next = if (available) current - zoom else current + zoom
-        if (next == current) return this
-        return copy(unavailableZooms = unavailableZooms + (style to next))
+        // 该级别真的出图了，就连「空白瓦片」的记忆一起消掉。
+        val sticky = blankZooms[style].orEmpty()
+        val nextSticky = if (available) sticky - zoom else sticky
+        if (next == current && nextSticky == sticky) return this
+        return copy(
+            unavailableZooms = unavailableZooms + (style to next),
+            blankZooms = blankZooms + (style to nextSticky),
+        )
+    }
+
+    /** 记下「这个级别是因为空白瓦片才判没内容的」（[unavailableZooms] 的子集）。 */
+    internal fun markBlankZoom(style: MapStyle, zoom: Int): MapFallbackState {
+        val current = blankZooms[style].orEmpty()
+        if (zoom in current) return this
+        return copy(blankZooms = blankZooms + (style to current + zoom))
     }
 }
 
@@ -298,6 +387,12 @@ class MapFallbackTracker(
     fun onTileFailed(style: MapStyle, latitude: Double, longitude: Double, zoom: Int) {
         val now = clock()
         update { MapFallback.onTileFailed(style, latitude, longitude, zoom, it, now) }
+    }
+
+    /** 一块瓦片被判定为空白（[TileBlank]）：按失败处理，并记一笔诊断计数。 */
+    fun onTileBlank(style: MapStyle, latitude: Double, longitude: Double, zoom: Int, colorKinds: Int) {
+        val now = clock()
+        update { MapFallback.onTileBlank(style, latitude, longitude, zoom, it, now, colorKinds) }
     }
 
     /** 切到「自动」或重新选地点时清空记忆。 */
@@ -398,7 +493,7 @@ internal object OsmTileProbe {
  * 诊断页的底图摘要：每行一个 `键 = 值`，纯函数（不碰 Android），便于单测。
  *
  * 报障「境外出差地图空白」时，一眼要能看出：现在是高德还是 OSM、是不是回退来的、
- * 缩放有没有降过、OSM 失败几次、什么时候会再探一次。
+ * 缩放有没有降过、OSM 失败几次、空白瓦片判过几次（长什么样）、什么时候会再探一次。
  */
 internal object MapFallbackDiagnostics {
 
@@ -408,9 +503,23 @@ internal object MapFallbackDiagnostics {
         "首选底图 = ${styleName(plan.preferred)}",
         "地图缩放 = ${zoom.zoom}" + if (zoom.degraded) "（已降级：请求 ${zoom.requested}）" else "",
         "瓦片状态 = " + if (zoom.unavailable) "最低级别也没有瓦片（界面显示「底图不可用」）" else "正常",
+        "空白瓦片判定 = ${blankLine(state)}",
         "OSM 失败次数 = ${if (plan.requested == MapStyle.AUTO) state.osmFailures else 0}",
         "下次探测 OSM = ${probeLine(plan, state, nowMillis)}",
     )
+
+    /**
+     * 「空白瓦片判定」这一行：既要说触发过几次，也要说最近一次长什么样 ——
+     * 只报次数的话，用户发来截图我们还得再猜「是不是阈值太敏感」。
+     */
+    private fun blankLine(state: MapFallbackState): String {
+        val zoom = state.lastBlankZoom
+        val kinds = state.lastBlankColorKinds
+        if (state.blankTileCount <= 0 || zoom == null || kinds == null) {
+            return "未触发（只检测高德瓦片）"
+        }
+        return "已触发 ${state.blankTileCount} 次（最近：z$zoom 颜色种类 $kinds）"
+    }
 
     private fun sourceLine(plan: MapTilePlan): String = when {
         // 手动选择：说清楚「不回退」，免得看日志的人以为兜底没生效。

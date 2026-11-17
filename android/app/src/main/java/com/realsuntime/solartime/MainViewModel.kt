@@ -17,6 +17,8 @@ import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapFallbackSession
 import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
+import com.realsuntime.solartime.map.TileEvent
+import com.realsuntime.solartime.map.TileResult
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.TimeText
@@ -240,17 +242,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 地图瓦片加载结果（自动模式才有意义，手动选择时状态机内部直接忽略）。
      *
-     * 失败/回退全程静默：不弹 toast，只写进 [mapFallbackState] 供诊断页展示。
+     * 三种结果：正常出图、真实失败、以及**高德返回的 200 空白瓦片**（[TileResult.BLANK]）。
+     * 空白瓦片按失败处理，走与真实失败同一条降级路径（见 [MapFallback.onTileBlank]）；
+     * 失败/回退/降级全程静默：不弹 toast，只写进 [mapFallbackState] 供诊断页展示。
      */
-    fun onMapTileEvent(success: Boolean, zoom: Int) {
+    fun onMapTileEvent(event: TileEvent) {
         val place = _place.value
         val style = _mapStyle.value
         // 瓦片事件里的级别就是地图当下的真实级别：顺便记进诊断，省一次监听。
-        mapFallback.onZoomApplied(zoom)
-        if (success) {
-            mapFallback.onTileLoaded(style, place.latitude, place.longitude, zoom)
-        } else {
-            mapFallback.onTileFailed(style, place.latitude, place.longitude, zoom)
+        mapFallback.onZoomApplied(event.zoom)
+        when (event.result) {
+            TileResult.LOADED ->
+                mapFallback.onTileLoaded(style, place.latitude, place.longitude, event.zoom)
+
+            TileResult.FAILED ->
+                mapFallback.onTileFailed(style, place.latitude, place.longitude, event.zoom)
+
+            TileResult.BLANK ->
+                mapFallback.onTileBlank(style, place.latitude, place.longitude, event.zoom, event.colorKinds)
         }
     }
 

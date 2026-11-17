@@ -52,6 +52,22 @@ class MapFallbackTest {
         onTileLoaded(style, point.first, point.second, zoom)
     }
 
+    /**
+     * 空白瓦片事件（高德回 200 但没内容，见 [TileBlank]）。
+     *
+     * **故意不推进时钟**：空白瓦片不吃「切源残响」窗口 —— 它一定是当前源刚画上来的瓦片
+     * （切源时会清 tileCache），等 5 秒只会让用户多盯一会儿灰屏（见 [MapFallback.onTileBlank]）。
+     */
+    private fun MapFallbackTracker.blankTiles(
+        times: Int,
+        zoom: Int = MapFallback.DEFAULT_ZOOM,
+        point: Pair<Double, Double> = paris,
+        style: MapStyle = MapStyle.AUTO,
+        colorKinds: Int = 3,
+    ) = repeat(times) {
+        onTileBlank(style, point.first, point.second, zoom, colorKinds)
+    }
+
     private fun MapFallbackTracker.planAt(style: MapStyle, point: Pair<Double, Double>): MapTilePlan =
         plan(style, point.first, point.second)
 
@@ -340,6 +356,120 @@ class MapFallbackTest {
         assertTrue(offline.unavailable)
     }
 
+    // ------------------------------------------------------------ 空白瓦片：按失败处理
+
+    @Test
+    fun blankAmapTilesDegradeExactlyLikeRealFailures() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold) // OSM 失败 → 回退高德
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertTrue(plan.fellBack)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+
+        // 高德 z12 连来三块空白：与三次真实失败一样，判「这一级没瓦片」→ 降到 z11
+        tracker.blankTiles(threshold)
+        val degraded = tracker.zoomPlan(plan, 12)
+        assertEquals(11, degraded.zoom)
+        assertTrue(degraded.degraded)
+        assertFalse(degraded.unavailable)
+
+        // 同一个失败路径也用掉了「同一级别连续失败」计数：够阈值就清零重新数
+        assertEquals(0, tracker.snapshot().zoomFailures)
+        // 另记一份诊断计数：触发几次、最近一次的级别与颜色种类
+        assertEquals(threshold, tracker.snapshot().blankTileCount)
+        assertEquals(12, tracker.snapshot().lastBlankZoom)
+        assertEquals(3, tracker.snapshot().lastBlankColorKinds)
+    }
+
+    @Test
+    fun blankTilesWalkTheWholeDegradeChainDownToTheGlobalMap() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+
+        tracker.blankTiles(threshold, zoom = 12)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
+
+        tracker.blankTiles(threshold, zoom = 11)
+        assertEquals(10, tracker.zoomPlan(plan, 12).zoom)
+
+        tracker.blankTiles(threshold, zoom = 10)
+        val global = tracker.zoomPlan(plan, 12)
+        assertEquals(MapFallback.MIN_ZOOM, global.zoom)
+        assertTrue(global.degraded)
+        assertFalse("z3 还没试过，先不算「不可用」", global.unavailable)
+    }
+
+    @Test
+    fun blankGlobalTileKeepsBaseMapUnavailableInsteadOfLooping() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        listOf(12, 11, 10).forEach { tracker.blankTiles(threshold, zoom = it) }
+
+        // 降到 z3 全球图还是空白：保持现状（界面写「底图不可用」），不再无限往下探
+        tracker.blankTiles(threshold, zoom = MapFallback.MIN_ZOOM)
+        val bottom = tracker.zoomPlan(plan, 12)
+        assertEquals(MapFallback.MIN_ZOOM, bottom.zoom)
+        assertTrue(bottom.unavailable)
+    }
+
+    @Test
+    fun blankLearnedZoomStaysDegradedWhenTheGlobalTileHasContent() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        listOf(12, 11, 10).forEach { tracker.blankTiles(threshold, zoom = it) }
+        assertEquals(MapFallback.MIN_ZOOM, tracker.zoomPlan(plan, 12).zoom)
+
+        // z3 的全球底图**有内容**（真机实测：高德 z3 是全球海陆图）：不能因此把
+        // 「z12/z11/z10 是空白」忘掉再弹回去，否则地图会在「z3 有图」和「z12 一片灰」之间来回跳，
+        // 而且第二次 z12 的空白瓦片已在缓存里、不会再有成功回调 —— 跳回去就再也降不下来。
+        tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
+        val stable = tracker.zoomPlan(plan, 12)
+        assertEquals(MapFallback.MIN_ZOOM, stable.zoom)
+        assertTrue(stable.degraded)
+        assertFalse(stable.unavailable)
+
+        // 但真在 z12 画出一块有内容的瓦片时（高德恢复了 / 换到有数据的地区），记忆必须清掉
+        tracker.loadTiles(zoom = 12)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+    }
+
+    @Test
+    fun blankTilesInManualModeOnlyCountAndNeverDegrade() {
+        val tracker = newTracker()
+        tracker.blankTiles(10, zoom = 15, style = MapStyle.AMAP_VECTOR)
+
+        val plan = tracker.planAt(MapStyle.AMAP_VECTOR, paris)
+        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+        val zoom = tracker.zoomPlan(plan, 15)
+        assertEquals(15, zoom.zoom)
+        assertFalse(zoom.degraded)
+        assertFalse(zoom.unavailable)
+        // 手动模式不参与失败统计，但诊断上仍要看得出「见过空白瓦片」
+        assertEquals(0, tracker.snapshot().zoomFailures)
+        assertEquals(0, tracker.snapshot().osmFailures)
+        assertEquals(10, tracker.snapshot().blankTileCount)
+        assertEquals(15, tracker.snapshot().lastBlankZoom)
+    }
+
+    @Test
+    fun aRealTileBetweenBlanksResetsTheBlankStreak() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+
+        tracker.blankTiles(threshold - 1)
+        tracker.loadTiles(1) // 中间画出一块正常瓦片
+        tracker.blankTiles(threshold - 1)
+
+        // 没凑够「同一级别连续 3 次」，不该降级
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+        assertEquals(threshold - 1, tracker.snapshot().zoomFailures)
+        assertEquals((threshold - 1) * 2, tracker.snapshot().blankTileCount)
+    }
+
     // ------------------------------------------------------------ 诊断文案
 
     @Test
@@ -367,5 +497,26 @@ class MapFallbackTest {
 
         assertEquals("地图底图 = 高德矢量（手动选择，不回退）", lines.first())
         assertTrue(lines.contains("下次探测 OSM = 不探测（手动选择底图）"))
+    }
+
+    @Test
+    fun diagnosticsShowHowManyBlankTilesAndTheLatestOne() {
+        val tracker = newTracker(probe = { false })
+        tracker.failTiles(threshold)
+        tracker.blankTiles(threshold, colorKinds = 3)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        val lines = MapFallbackDiagnostics.lines(plan, tracker.zoomPlan(plan, 12), tracker.snapshot(), now)
+
+        assertTrue(lines.contains("空白瓦片判定 = 已触发 3 次（最近：z12 颜色种类 3）"))
+        assertTrue("降级后的级别要如实写出来", lines.contains("地图缩放 = 11（已降级：请求 12）"))
+    }
+
+    @Test
+    fun diagnosticsSayNoBlankTileBeforeAnyDetection() {
+        val tracker = newTracker()
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        val lines = MapFallbackDiagnostics.lines(plan, tracker.zoomPlan(plan, 12), tracker.snapshot(), now)
+
+        assertTrue(lines.contains("空白瓦片判定 = 未触发（只检测高德瓦片）"))
     }
 }

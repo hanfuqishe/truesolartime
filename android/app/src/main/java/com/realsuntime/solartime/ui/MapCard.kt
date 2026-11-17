@@ -1,6 +1,8 @@
 package com.realsuntime.solartime.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
@@ -44,10 +46,15 @@ import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.map.MapTilePlan
 import com.realsuntime.solartime.map.MapTileSources
+import com.realsuntime.solartime.map.TileBlank
+import com.realsuntime.solartime.map.TileContent
+import com.realsuntime.solartime.map.TileEvent
+import com.realsuntime.solartime.map.TileResult
 import com.realsuntime.solartime.solar.TimeFormat
 import kotlinx.coroutines.delay
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -56,12 +63,25 @@ import kotlin.math.roundToInt
 /** 连最低级别的全球底图都没有瓦片时，隔多久重画一次等网络恢复（不弹任何提示）。 */
 private const val TILE_RETRY_MILLIS = 15_000L
 
+/** 空白检测的「已分析瓦片」备忘录上限：长时间平移后清一次，别让它无限涨。 */
+private const val MAX_TRACKED_TILES = 512
+
+/** 地图中心周围检查几圈瓦片（1 = 3×3，含中心）。 */
+private const val BLANK_SCAN_RADIUS = 1
+
+/** 高德源定时重扫中心瓦片的间隔（覆盖「瓦片已在缓存、没有成功回调」的情况）。 */
+private const val BLANK_RESCAN_MILLIS = 2_000L
+
 /**
  * 地图卡片。
  *
  * 底图不再是「直接拿设置里的样式去取瓦片」，而是一律经过 [MapFallback.plan]：
  * 自动模式下 OSM 连续失败会回退到高德，缩放级别也可能为了绕开「没瓦片的级别」降级，
  * 「底图不可用」则只在连最低级别的全球底图都拿不到时才出现。
+ *
+ * 高德对境外回 200 的空白瓦片（灰底 + 水印、没有地理内容）也是靠这张卡片认出来的：
+ * [TileBlankWatcher] 在瓦片回调里从 tileCache 取 bitmap 采样，判空白就上报
+ * [TileResult.BLANK]，由状态机当失败处理（见 [MapFallback.onTileBlank]）。
  *
  * 字号缩放由调用方锁死（`MainScreen` 里用 `LockedCardDensity` 包住，fontScale 恒为 1）；
  * 这里的字重也一律显式写出，避免被系统「粗体字」的字重调整带偏。
@@ -71,7 +91,7 @@ fun MapCard(
     place: Place,
     mapStyle: MapStyle,
     fallback: MapFallbackState,
-    onTileEvent: (Boolean, Int) -> Unit,
+    onTileEvent: (TileEvent) -> Unit,
     onZoomApplied: (Int) -> Unit,
     modifier: Modifier = Modifier,
     mapAspectRatio: Float = 4f / 3f,
@@ -87,6 +107,12 @@ fun MapCard(
     val style = plan.effective
     // 瓦片回调挂在很久以前创建的 MapView 上，必须拿「最新一版」回调，不能记住 factory 那一刻的。
     val latestTileEvent = rememberUpdatedState(onTileEvent)
+    // 空白检测也要看「最新一版」的源：factory 里记住的 style 在回退之后就是旧的了。
+    val latestStyle = rememberUpdatedState(style)
+    // 定时重扫要看「最新一版」的回退状态，别因为记住旧值把已经降级的级别又刷一遍。
+    val latestFallback = rememberUpdatedState(fallback)
+    // 空白检测器整个卡片生命周期只有一个：已分析瓦片的记忆要跨重组保留。
+    val blankWatcher = remember { TileBlankWatcher { latestStyle.value } }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -118,9 +144,14 @@ fun MapCard(
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { context ->
-                        createMapView(context, place, style, zoomPlan.zoom) { success, zoom ->
-                            latestTileEvent.value(success, zoom)
-                        }.also { mapView = it }
+                        createMapView(
+                            context = context,
+                            place = place,
+                            style = style,
+                            zoom = zoomPlan.zoom,
+                            watcher = blankWatcher,
+                            onTileEvent = { event -> latestTileEvent.value(event) },
+                        ).also { mapView = it }
                     },
                     update = { view -> syncMap(view, place, style) },
                 )
@@ -160,6 +191,28 @@ fun MapCard(
         while (true) {
             delay(TILE_RETRY_MILLIS)
             view.invalidate()
+        }
+    }
+
+    // 高德源：定时重扫中心瓦片。
+    //
+    // 空白瓦片一旦进了磁盘缓存，重启 App / 平移回看过的区域时**不会再有成功回调**，
+    // 只靠回调就永远发现不了（用户看到的就是「重启后又变回一片灰」）。
+    // 每 BLANK_RESCAN_MILLIS 看一眼，最多报 FAILURE_THRESHOLD 块空白 —— 正好够降一级。
+    LaunchedEffect(style, mapView) {
+        val view = mapView ?: return@LaunchedEffect
+        if (!style.isGcj02) return@LaunchedEffect
+        while (true) {
+            delay(BLANK_RESCAN_MILLIS)
+            val zoom = view.zoomLevelDouble.roundToInt()
+            // 这一级已经被判「没内容」了就别再刷计数了，等降级链把它换掉。
+            if (latestFallback.value.zoomUnavailable(style, zoom)) continue
+            val scan = blankWatcher.scan(view, zoom, maxBlank = MapFallback.FAILURE_THRESHOLD)
+            when {
+                scan.blanks.isNotEmpty() -> scan.blanks.forEach { latestTileEvent.value(it) }
+                scan.inspected > 0 -> latestTileEvent.value(TileEvent(zoom, TileResult.LOADED))
+                else -> Unit
+            }
         }
     }
 
@@ -206,7 +259,8 @@ private fun createMapView(
     place: Place,
     style: MapStyle,
     zoom: Int,
-    onTileEvent: (Boolean, Int) -> Unit,
+    watcher: TileBlankWatcher,
+    onTileEvent: (TileEvent) -> Unit,
 ): MapView {
     MapConfig.init(context)
     val (latitude, longitude) = markerPointOf(place, style)
@@ -237,7 +291,7 @@ private fun createMapView(
             }
             false
         }
-        observeTileLoad(onTileEvent)
+        observeTileLoad(watcher, onTileEvent)
         onResume()
     }
 }
@@ -247,22 +301,182 @@ private fun createMapView(
  *
  * osmdroid 把 HTTP 非 2xx、连接超时、解码失败统一收敛成 [MapTileProviderBase.MAPTILE_FAIL_ID]，
  * 所以这里收到的失败就是「这一块瓦片真的没拿到」，不用自己再解析网络异常。
+ * 成功这一侧则不一定真拿到了内容（高德境外会给空白瓦片），交给 [TileBlankWatcher] 看一眼像素。
  * 只上报、不弹提示：底图网络问题不该用 toast 打扰用户。
  */
-private fun MapView.observeTileLoad(onEvent: (Boolean, Int) -> Unit) {
+private fun MapView.observeTileLoad(
+    watcher: TileBlankWatcher,
+    onEvent: (TileEvent) -> Unit,
+) {
     val handler = object : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
-            val success = when (msg.what) {
-                MapTileProviderBase.MAPTILE_SUCCESS_ID -> true
-                MapTileProviderBase.MAPTILE_FAIL_ID -> false
+            val zoom = zoomLevelDouble.roundToInt()
+            when (msg.what) {
+                MapTileProviderBase.MAPTILE_SUCCESS_ID -> {
+                    val scan = watcher.scan(this@observeTileLoad, zoom, maxBlank = 1)
+                    when {
+                        // 空白瓦片：状态机当失败处理，继续降级。
+                        scan.blanks.isNotEmpty() -> onEvent(scan.blanks.first())
+                        // 真的看过瓦片且有内容：正常成功（清失败计数、标记该级别可用）。
+                        scan.inspected > 0 -> onEvent(TileEvent(zoom, TileResult.LOADED))
+                        // 没有新瓦片可看（视口里十几块瓦片的成功通知远多于 9 块分析目标）：
+                        // **什么都不报** —— 报成 LOADED 会把空白的连续计数清零，永远凑不够阈值
+                        // （真机实测过：8 次空白判定却一次也没降级）。
+                        else -> Unit
+                    }
+                }
+
+                MapTileProviderBase.MAPTILE_FAIL_ID -> onEvent(TileEvent(zoom, TileResult.FAILED))
                 else -> return
             }
-            onEvent(success, zoomLevelDouble.roundToInt())
         }
     }
     // MapView 自己也是往这个集合里塞 Handler 的（见其构造里的 getTileRequestCompleteHandlers().add），
     // 所以这里追加即可，不会顶掉地图自身的重绘回调。
     tileProvider.tileRequestCompleteHandlers.add(handler)
+}
+
+/**
+ * 高德「空白瓦片」检测器。
+ *
+ * 为什么不是从回调里直接拿 bitmap：osmdroid 的完成通知是
+ * `MapTileProviderBase.sendMessage()` → `sendEmptyMessage()`，**只有一个 what**，
+ * 既没有瓦片坐标也没有图像。好在 `mapTileRequestCompleted()` 是「先把瓦片塞进 tileCache、
+ * 再发通知」，所以通知到手时刚画上去的 bitmap 一定在 `tileProvider.tileCache` 里。
+ *
+ * 定位办法：按地图中心算出瓦片坐标，检查它周围 3×3 共 9 块（视口一般就这么多块）。
+ * 每块只分析一次（按 级别 + 瓦片坐标 记忆），平移 / 降级换级别时才重新开始。
+ *
+ * 除了「瓦片成功」通知，[MapCard] 还会每 [BLANK_RESCAN_MILLIS] 调一次 [scan]：
+ * 空白瓦片一旦进了磁盘缓存，重启 App 或平移回看过的区域时**不会再有任何成功回调**，
+ * 只靠回调就永远发现不了（用户看到的就是「重启后又变回一片灰」）。
+ *
+ * 只在高德源上做：OSM 的瓦片不必多花这份开销，也避免把 OSM 的特殊瓦片误判成空白。
+ */
+private class TileBlankWatcher(private val latestStyle: () -> MapStyle) {
+
+    /** 已经分析过的瓦片（同一 source + zoom 内有效）。 */
+    private val analyzed = HashSet<Long>()
+
+    private var watchedStyle: MapStyle? = null
+    private var watchedZoom = -1
+
+    /** 当前这一屏上一次的结论：全都空白（true）/ 有内容（false）。没看过是 null。 */
+    private var viewportBlank: Boolean? = null
+
+    /** 最近一块空白瓦片的量化颜色种类（诊断文案用）。 */
+    private var lastBlankKinds = 0
+
+    /**
+     * 扫一遍中心 3×3 里还没分析过的瓦片，看这一屏是不是「一片空白」。
+     *
+     * **判据是「这一屏全都空白」，不是「有没有一块空白」**：低级别（z3 全球图）上，
+     * 撒哈拉、西伯利亚、南极冰盖这种真·纯色瓦片和「没数据」的空白瓦片在像素上根本没法区分
+     * （实测高德 z3 的沙漠瓦片就是一块 #F7F3EA 纯色，和境外空白瓦片一模一样）。
+     * 但真在出图的视口里一定混着海岸线、国界、地名 —— 只要混进一块有内容的，就不算空白。
+     *
+     * 每块瓦片只分析一次，所以「上一次的结论」要记住：这一屏的瓦片全分析完了、后面没有
+     * 新瓦片可看时，仍然按上次的结论继续报空白（否则状态机停在「同一级别连续 2 次」上，
+     * 永远凑不够 [MapFallback.FAILURE_THRESHOLD]，真机上就是这么卡在 z10 的）。
+     *
+     * @param maxBlank 一次最多报几块空白（够触发一级降级即可，不必把计数刷爆）。
+     */
+    fun scan(view: MapView, zoom: Int, maxBlank: Int): TileScan {
+        val style = latestStyle()
+        if (!style.isGcj02) return TileScan.NOTHING
+        // 切源是 Compose 的 update 里做的：plan 已经变成高德、MapView 还挂着他源的这一小段窗口，
+        // 缓存里可能还是别的源的瓦片，直接跳过，等下一块。
+        if (view.tileProvider.tileSource.name() != MapTileSources.tileSourceOf(style).name()) {
+            return TileScan.NOTHING
+        }
+        if (zoom < 0 || zoom > MAX_TILE_ZOOM) return TileScan.NOTHING
+        if (style != watchedStyle || zoom != watchedZoom) {
+            analyzed.clear()
+            viewportBlank = null
+            lastBlankKinds = 0
+            watchedStyle = style
+            watchedZoom = zoom
+        }
+        if (analyzed.size > MAX_TRACKED_TILES) {
+            analyzed.clear()
+            viewportBlank = null
+        }
+
+        val tileSystem = MapView.getTileSystem()
+        val center = view.mapCenter
+        val centerX = tileSystem.getTileXFromLongitude(center.longitude, zoom)
+        val centerY = tileSystem.getTileYFromLatitude(center.latitude, zoom)
+        val last = (1 shl zoom) - 1
+        val contents = ArrayList<TileContent>(9)
+        for (dx in -BLANK_SCAN_RADIUS..BLANK_SCAN_RADIUS) {
+            for (dy in -BLANK_SCAN_RADIUS..BLANK_SCAN_RADIUS) {
+                val x = centerX + dx
+                val y = centerY + dy
+                if (x < 0 || y < 0 || x > last || y > last) continue
+                val index = MapTileIndex.getTileIndex(zoom, x, y)
+                if (index in analyzed) continue
+                val drawable = view.tileProvider.tileCache.getMapTile(index) ?: continue
+                val bitmap = (drawable as? BitmapDrawable)?.bitmap ?: continue
+                val content = sample(bitmap) ?: continue
+                analyzed.add(index)
+                contents.add(content)
+            }
+        }
+        if (contents.isNotEmpty()) {
+            viewportBlank = TileBlank.viewportIsBlank(contents)
+            val blank = contents.lastOrNull { it.isBlank }
+            if (blank != null) lastBlankKinds = blank.colorKinds
+            if (viewportBlank == true) {
+                // 这一屏全是空白：一块空白瓦片记一次失败，最多记 maxBlank 次。
+                return TileScan(
+                    inspected = contents.size,
+                    blanks = List(minOf(contents.size, maxBlank)) {
+                        TileEvent(zoom, TileResult.BLANK, lastBlankKinds)
+                    },
+                )
+            }
+            return TileScan(inspected = contents.size, blanks = emptyList())
+        }
+        // 这一轮没有新瓦片可看：按上一次的结论继续报（保证「同一级别连续 3 次」能凑够）。
+        return if (viewportBlank == true) {
+            TileScan(inspected = 0, blanks = listOf(TileEvent(zoom, TileResult.BLANK, lastBlankKinds)))
+        } else {
+            TileScan.NOTHING
+        }
+    }
+    /**
+     * 把瓦片缩到 [TileBlank.SAMPLE_SIDE]² 再取像素（相当于 256 像素的瓦片每 8 像素取一点）。
+     *
+     * `filter = false`（最近邻）是有意的：一旦做插值平均，方差就被抹平了，
+     * 正常瓦片会被算得跟纯色差不多，反而更容易误判成空白。
+     */
+    private fun sample(bitmap: Bitmap): TileContent? = runCatching {
+        val side = TileBlank.SAMPLE_SIDE
+        val scaled = Bitmap.createScaledBitmap(bitmap, side, side, false)
+        try {
+            val pixels = IntArray(side * side)
+            scaled.getPixels(pixels, 0, side, 0, 0, side, side)
+            TileBlank.analyzeColors(pixels)
+        } finally {
+            if (scaled !== bitmap) scaled.recycle()
+        }
+    }.getOrNull()
+
+    private companion object {
+        /** osmdroid 的 MapTileIndex 打包上限（long 里放得下的最大级别）。 */
+        const val MAX_TILE_ZOOM = 22
+    }
+}
+
+/**
+ * 一次扫描的结果：看过几块瓦片（[inspected]）、其中有几块是空白（[blanks]）。
+ *
+ * `inspected == 0` 说明这一轮没有任何新瓦片可看 —— 调用方**不要**把它当成「成功」。
+ */
+private data class TileScan(val inspected: Int, val blanks: List<TileEvent>) {
+    companion object {
+        val NOTHING = TileScan(0, emptyList())
+    }
 }
 
 private fun syncMap(view: MapView, place: Place, style: MapStyle) {
