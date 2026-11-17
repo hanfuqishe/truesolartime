@@ -2,16 +2,18 @@ import Foundation
 
 /// 天气取数：主源 Open-Meteo（**1 小时**粒度）+ 备用源 7Timer!（**3 小时**粒度）。
 ///
-/// 与 Android `WeatherRepository` / 鸿蒙同一套策略：
-/// 1. 主源失败（网络 / 超时 / 非 2xx / JSON 解析失败）→ **2 秒后重试一次**（只重试一次）；
-/// 2. 仍失败且缓存 ≤30 分钟 → **保持现状不清空**，界面继续用缓存；
-/// 3. 缓存过期（或根本没有缓存）→ 请求备用源 7Timer!，成功就整份换成 3 小时粒度；
+/// 三端统一的新策略（**主源失败不拖，降级后尽快切回**）：
+/// 1. 主源失败（网络 / 超时 / 非 2xx / JSON 解析失败）→ **不再等 2 秒重试**，**立刻**请求备用源
+///    （单次请求超时也从 15 秒缩到 5 秒，界面不用干等）；
+/// 2. 缓存 ≤30 分钟 → **保持现状不清空**，界面继续用缓存，不问备用源；
+/// 3. 缓存过期（或根本没有缓存）→ 请求 7Timer!，成功就整份换成 3 小时粒度；
 /// 4. 两个源都失败 → **保留旧数据继续显示**（24 小时硬上限），诊断里标注「数据过期 N 分钟」。
 ///
-/// 刷新触发（满足任意一条，判定见 `WeatherParsing.shouldRefresh`）：
-/// - 数据已过期（30 分钟 TTL）；
-/// - **当前是低精度数据**（7Timer! / 3 小时步长）—— 即使没过期也试一次，尽快升回 1 小时数据；
-///   这一条最多每 10 分钟一次（时间戳落盘），但回到前台 / 切换地点可以立刻触发一次。
+/// 刷新触发（判定见 `WeatherParsing.shouldRefresh` / `needsRefresh`）：
+/// - **当前是低精度数据**（7Timer! / 3 小时）→ 退避式重试主源：**前台 60 → 120 → 300 秒**（封顶 5 分钟，
+///   连续失败才退避，成功切回立刻清零）、**后台 10 分钟**；不看 30 分钟过期与否。
+///   回到前台 / 切换地点可以立刻触发一次（跳过窗口）；
+/// - **主源数据** → 30 分钟过期才刷，过期后失败再按 5 分钟节流。切回主源后绝不按 60 秒轮询。
 ///
 /// 缓存与地点绑定：存下来的坐标与当前地点相距超过 5 km 时，这份缓存**不属于**当前地点，
 /// 一律当作没有数据（界面显示占位符），绝不能让 A 城市的气温出现在 B 城市下。
@@ -31,8 +33,10 @@ final class WeatherStore {
         static let source = "weather.source"
         /// 逐时步长（小时）。与来源一起存，旧版本缓存没有这个键时要重取一次。
         static let step = "weather.step"
-        /// 上一次「低精度触发刷新」的时刻：把 10 分钟节流也落盘，重启后不会立刻再打一次。
+        /// 上一次「低精度触发刷新」的时刻：把退避窗口也落盘，重启后不会立刻再打一次。
         static let lowPrecisionAttempt = "weather.low_precision_attempt"
+        /// 「重试主源」的**连续**失败次数：决定前台退避档位（60 → 120 → 300 秒），成功一次就清零。
+        static let lowPrecisionFailures = "weather.low_precision_failures"
     }
 
     private let defaults = UserDefaults.standard
@@ -40,17 +44,29 @@ final class WeatherStore {
     private let ttlSeconds: TimeInterval = TimeInterval(WeatherParsing.cacheTTLSeconds)
     /// 小时预报与旧数据的兜底时限（对齐 1.4.39 的 24 小时硬上限）。
     private let displayMaxAgeSeconds: TimeInterval = TimeInterval(WeatherParsing.displayMaxAgeSeconds)
-    /// 取数失败后的重试间隔（对齐 1.4.39 的 5 分钟）。
-    private let retryAfterFailureSeconds: TimeInterval = 5 * 60
-    /// 主源失败后**立刻**重试一次前的等待：一次握手超时 / 一个坏节点不该让整张卡从
-    /// 1 小时粒度掉到 3 小时粒度，但也不该为了主源把降级拖太久（用户可能正盯着 `--`）。
-    private let primaryRetryDelaySeconds: TimeInterval = 2
-    /// 单次请求超时。
-    private let requestTimeoutSeconds: TimeInterval = 15
+    /// 主源数据过期之后，取数一直失败时的重试间隔（5 分钟）。
+    private let failureRetrySeconds: TimeInterval = TimeInterval(WeatherParsing.primaryFailureRetrySeconds)
 
     private var inFlight = false
     /// 本次请求开始时刻，用于「已 N 秒」与卡死看门狗。
     private var attemptStartedAt: Date?
+    /// App 是否在前台（由 `AppModel` 按 `scenePhase` 同步）。
+    ///
+    /// 前台：降级后按 60 → 120 → 300 秒的退避轮询主源；后台：最少隔 10 分钟才试一次
+    /// （iOS 会挂起 App，计时器本来也不跑，这里把判定口径一起对齐）。
+    private var isForeground = true
+
+    /// 天气请求用的会话：单次请求超时 **5 秒**（`WeatherParsing.requestTimeoutSeconds`）。
+    ///
+    /// 主源失败要立刻降级，所以不能挂在 15 秒的超时上；也不显式设置 `waitsForConnectivity`
+    /// —— `ephemeral` 配置的默认值就是 `false`，离线时几乎立刻失败，界面马上走
+    /// 「保留旧数据」这条路，而不是卡在「正在请求…」。
+    private lazy var session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = TimeInterval(WeatherParsing.requestTimeoutSeconds)
+        configuration.timeoutIntervalForResource = TimeInterval(WeatherParsing.requestTimeoutSeconds * 2)
+        return URLSession(configuration: configuration)
+    }()
 
     /// 最近一次失败原因（成功时为 nil）。
     private(set) var lastErrorDescription: String?
@@ -123,9 +139,9 @@ final class WeatherStore {
     ///
     /// - Parameters:
     ///   - force: 忽略所有判定，立刻取（用户手工换了地点时用）。
-    ///   - ignoreLowPrecisionThrottle: 本轮不受「低精度刷新每 10 分钟一次」的限制。
-    ///     回到前台 / 切换地点时用 true —— 用户刚打开 App，值得立刻试着升级回 1 小时数据。
-    /// - Returns: 是否真的发起了这次取数（被 30 分钟窗口 / 10 分钟节流 / in-flight 挡住时为 false）。
+    ///   - ignoreLowPrecisionThrottle: 本轮跳过退避窗口（60 → 120 → 300 秒 / 后台 10 分钟）。
+    ///     回到前台 / 切换地点时用 true —— 用户刚打开 App，值得立刻试一次切回 1 小时数据。
+    /// - Returns: 是否真的发起了这次取数（被 30 分钟窗口 / 退避窗口 / in-flight 挡住时为 false）。
     @discardableResult
     func requestRefresh(
         place: Place,
@@ -148,15 +164,15 @@ final class WeatherStore {
         inFlight = true
         attemptStartedAt = Date()
         markAttempt()
-        // 当前拿的是低精度数据：记下这次「低精度触发」的时刻，10 分钟内不再重复试。
-        if source.isLowPrecision || stepHours > 1 {
+        // 当前拿的是低精度数据：记下这次「重试主源」的时刻，退避窗口（60/120/300 秒）从这里算。
+        if source.isLowPrecision {
             markLowPrecisionAttempt()
         }
         fetchPrimary(place: place, url: url, attempt: 0, completion: completion)
         return true
     }
 
-    /// ① 主源：失败后 2 秒重试一次，两次都失败才降级。
+    /// ① 主源：**失败一次就立刻降级**（不再等 2 秒重试，界面不用干等）。
     private func fetchPrimary(
         place: Place,
         url: URL,
@@ -171,7 +187,7 @@ final class WeatherStore {
                     self.finishPrimary(place: place, payload: payload, completion: completion)
                     return
                 }
-                self.retryOrFallback(
+                self.primaryFailed(
                     place: place,
                     url: url,
                     attempt: attempt,
@@ -179,7 +195,7 @@ final class WeatherStore {
                     completion: completion
                 )
             case .failure(let reason):
-                self.retryOrFallback(
+                self.primaryFailed(
                     place: place,
                     url: url,
                     attempt: attempt,
@@ -190,7 +206,12 @@ final class WeatherStore {
         }
     }
 
-    private func retryOrFallback(
+    /// 主源这一次失败之后做什么（判定在 Core 里，便于自检）。
+    ///
+    /// 现在 `WeatherParsing.primaryMaxAttempts == 1`，所以**第一次失败就是降级**：
+    /// 立刻去问 7Timer!，把 3 小时粒度的数据先摆在界面上，而不是让用户盯着空白等重试。
+    /// `.retry` 分支保留着（且不再有 2 秒等待），以后若把 `primaryMaxAttempts` 调大就可直接用。
+    private func primaryFailed(
         place: Place,
         url: URL,
         attempt: Int,
@@ -198,17 +219,20 @@ final class WeatherStore {
         completion: ((WeatherSnapshot?) -> Void)?
     ) {
         lastErrorDescription = failure
-        if attempt == 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + primaryRetryDelaySeconds) { [weak self] in
-                guard let self else { return }
-                self.fetchPrimary(place: place, url: url, attempt: 1, completion: completion)
-            }
-            return
+        // 正在显示 7Timer! 数据：这次失败要计入退避档位（60 → 120 → 300 秒，见
+        // `WeatherParsing.lowPrecisionRetryDelay`）。主源数据时不计：那套走 5 分钟节流。
+        if source.isLowPrecision {
+            noteLowPrecisionFailure()
         }
-        degrade(place: place, completion: completion)
+        switch WeatherParsing.afterPrimaryFailure(attempt: attempt) {
+        case .fallback:
+            degrade(place: place, completion: completion)
+        case .retry:
+            fetchPrimary(place: place, url: url, attempt: attempt + 1, completion: completion)
+        }
     }
 
-    /// 主源成功：整份换成 1 小时粒度。
+    /// 主源成功：整份换成 1 小时粒度，**清空退避**（连续失败次数归零）。
     private func finishPrimary(
         place: Place,
         payload: (current: (temperatureC: Int, code: Int), hourly: [WeatherHour]),
@@ -223,10 +247,12 @@ final class WeatherStore {
         save(place: place, snapshot: snapshot)
         lastErrorDescription = nil
         lastResultDescription = L("diag.primarySuccess")
+        // 切回主源：退避与「低精度轮询」的计时一起重置，回到 30 分钟过期 / 5 分钟节流的普通逻辑。
+        resetLowPrecisionRetry()
         finish(place: place, completion: completion)
     }
 
-    /// ②③④ 主源两次都失败之后的降级链。
+    /// ②③④ 主源失败之后的降级链（**只失败一次就进来**，不再有重试）。
     private func degrade(place: Place, completion: ((WeatherSnapshot?) -> Void)?) {
         let age = ageSeconds()
         let hasCache = defaults.object(forKey: Key.temperature) != nil && belongsTo(place)
@@ -262,6 +288,13 @@ final class WeatherStore {
                         source: .sevenTimer
                     )
                     self.save(place: place, snapshot: snapshot)
+                    // 「重试主源」的计时从降级这一刻开始：主源刚失败过，立刻再打一次只是浪费，
+                    // 所以 60 秒后才试；这次失败同时计入退避档位（连续 1 次 → 60 秒、
+                    // 2 次 → 120 秒、≥3 次 → 300 秒，见 `WeatherParsing.lowPrecisionRetryDelay`）。
+                    if self.lowPrecisionFailures == 0 {
+                        self.noteLowPrecisionFailure()
+                    }
+                    self.markLowPrecisionAttempt()
                     self.lastErrorDescription = nil
                     self.lastResultDescription = L("diag.fellBack")
                     self.finish(place: place, completion: completion, snapshot: snapshot)
@@ -306,11 +339,11 @@ final class WeatherStore {
 
     private func get(url: URL, completion: @escaping (FetchResult) -> Void) {
         var request = URLRequest(url: url)
-        request.timeoutInterval = requestTimeoutSeconds
-        // 网络在切换（Wi-Fi ↔ 蜂窝）时等一下，而不是立刻失败。
+        // 与 session 的 `timeoutIntervalForRequest` 同一个值（5 秒）：主源要尽快失败、尽快降级。
+        request.timeoutInterval = TimeInterval(WeatherParsing.requestTimeoutSeconds)
         request.setValue("TrueSolarTime-iOS", forHTTPHeaderField: "User-Agent")
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        session.dataTask(with: request) { data, response, error in
             let result: FetchResult
             if let error {
                 result = .failure(Self.describe(error: error))
@@ -349,12 +382,12 @@ final class WeatherStore {
     /// 每秒由界面调用一次：请求卡住太久就复位，避免 `inFlight` 永远为 true、
     /// 后续刷新全被 `guard !inFlight` 挡掉（真机上出现过一直停在「正在请求…」的现象）。
     ///
-    /// 最长链路是「主源超时 15s + 等 2s + 主源再超时 15s + 备用源 15s」，约 47 秒，
-    /// 阈值取 70 秒才不会把正在降级的请求误判成卡死。
+    /// 最长链路现在是「主源 5 秒 + 备用源 5 秒 ≈ 10 秒」（去掉 2 秒重试之后更短了），
+    /// 阈值取 30 秒：给慢网 / DNS 卡住留 3 倍余量，又不会把正在降级的请求误判成卡死。
     func watchdog() {
         guard inFlight, let startedAt = attemptStartedAt else { return }
         let elapsed = Date().timeIntervalSince(startedAt)
-        guard elapsed > 70 else { return }
+        guard elapsed > 30 else { return }
         inFlight = false
         attemptStartedAt = nil
         lastErrorDescription = Lf("diag.noResponse", Int(elapsed))
@@ -434,32 +467,27 @@ final class WeatherStore {
         guard let age = ageSeconds() else { return true }
         if age > Int(displayMaxAgeSeconds) { return true }
 
-        let isStale = age > Int(ttlSeconds)
-        let isLowPrecision = source.isLowPrecision || stepHours > 1
-
-        if isStale {
-            // 过期：纯判定一定给 true，再叠上 5 分钟失败节流 ——
-            // 否则一直失败时每次回到前台都会立刻打一次网络（原有的节流语义不能丢）。
-            guard WeatherParsing.shouldRefresh(
-                isStale: true,
-                isLowPrecision: isLowPrecision,
-                lastLowPrecisionAttempt: lowPrecisionSinceAttemptSeconds()
-            ) else { return false }
-            let sinceAttempt = Int(Date().timeIntervalSince1970 - defaults.double(forKey: Key.attemptAt))
-            return sinceAttempt >= Int(retryAfterFailureSeconds)
+        // 低精度数据（7Timer! / 3 小时）：按退避表轮询主源（前台 60 → 120 → 300 秒、后台 10 分钟），
+        // 不看 30 分钟过期与否 —— 手里只有 3 小时粒度时，唯一要紧的是尽快切回 1 小时数据。
+        // 成功一次 `source` 就变回 `.openMeteo`，这条分支随即失效（主源数据绝不按 60 秒轮询）。
+        if source.isLowPrecision {
+            return WeatherParsing.shouldRefresh(
+                isStale: age > Int(ttlSeconds),
+                isLowPrecision: true,
+                lastLowPrecisionAttempt: lowPrecisionSinceAttemptSeconds(),
+                consecutiveFailures: lowPrecisionFailures,
+                isForeground: isForeground,
+                ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle
+            )
         }
 
-        // 未过期：只有「低精度也要升级」这一条会触发；回到前台 / 切换地点可跳过 10 分钟窗口。
-        guard isLowPrecision else { return false }
-        if ignoreLowPrecisionThrottle { return true }
-        return WeatherParsing.shouldRefresh(
-            isStale: false,
-            isLowPrecision: true,
-            lastLowPrecisionAttempt: lowPrecisionSinceAttemptSeconds()
-        )
+        // 主源数据：30 分钟过期才刷；过期后叠 5 分钟失败节流（一直失败时别每次回前台都打网络）。
+        guard age > Int(ttlSeconds) else { return false }
+        let sinceAttempt = Int(Date().timeIntervalSince1970 - defaults.double(forKey: Key.attemptAt))
+        return sinceAttempt >= Int(failureRetrySeconds)
     }
 
-    /// 距上一次「低精度触发刷新」过去了多少秒；从没试过返回 nil。
+    /// 距上一次「重试主源」过去了多少秒；从没试过返回 nil。
     private func lowPrecisionSinceAttemptSeconds() -> Int? {
         guard defaults.object(forKey: Key.lowPrecisionAttempt) != nil else { return nil }
         return Int(Date().timeIntervalSince1970 - defaults.double(forKey: Key.lowPrecisionAttempt))
@@ -467,6 +495,30 @@ final class WeatherStore {
 
     private func markLowPrecisionAttempt() {
         defaults.set(Date().timeIntervalSince1970, forKey: Key.lowPrecisionAttempt)
+    }
+
+    /// 「重试主源」的连续失败次数（退避档位）。成功一次主源就归零。
+    private var lowPrecisionFailures: Int {
+        defaults.integer(forKey: Key.lowPrecisionFailures)
+    }
+
+    /// 记一次「重试主源」失败：60 → 120 → 300 秒（封顶 5 分钟）。
+    private func noteLowPrecisionFailure() {
+        let next = min(lowPrecisionFailures + 1, 99)
+        defaults.set(next, forKey: Key.lowPrecisionFailures)
+    }
+
+    /// 切回主源：把退避与「低精度轮询」的计时一起清掉，回到普通逻辑。
+    private func resetLowPrecisionRetry() {
+        defaults.set(0, forKey: Key.lowPrecisionFailures)
+        // 清掉时间戳：下次真要降级时，第一次重试不必等窗口。
+        defaults.removeObject(forKey: Key.lowPrecisionAttempt)
+    }
+
+    /// 前后台变化（`AppModel` 按 `scenePhase` 调）：前台才按 60 秒起步的退避轮询主源，
+    /// 后台最少隔 10 分钟才试一次。
+    func setForeground(_ foreground: Bool) {
+        isForeground = foreground
     }
 
     private func markAttempt() {

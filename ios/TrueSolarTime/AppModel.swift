@@ -85,6 +85,12 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.now = Date()
             WeatherStore.shared.watchdog()
+            // 降级到 7Timer! 之后要「尽快切回主源」：每秒判一次该不该试主源。
+            // 真正的间隔由退避表决定（前台 60 → 120 → 300 秒、后台 10 分钟），
+            // 所以这里不会真的每秒发请求；切回主源后这条自动失效。
+            if WeatherStore.shared.source.isLowPrecision {
+                self.refreshWeather()
+            }
             let status = self.weather == nil ? WeatherStore.shared.diagnosticsSummary() : ""
             if status != self.weatherStatus {
                 self.weatherStatus = status
@@ -230,7 +236,7 @@ final class AppModel: ObservableObject {
         weather = WeatherStore.shared.cached(for: newPlace)
 
         if moved || userChosen || previous.source != newPlace.source {
-            // 切换地点可以立刻触发一次（包括「低精度升级」那条，不受 10 分钟窗口限制）。
+            // 切换地点可以立刻触发一次（包括「低精度升级」那条，不受 60 秒窗口限制）。
             refreshData(forceDistrict: userChosen, ignoreLowPrecisionThrottle: true)
             rescheduleReminders()
         }
@@ -242,28 +248,15 @@ final class AppModel: ObservableObject {
     ///
     /// - Parameters:
     ///   - forceDistrict: 用户刚选了地点，忽略区划缓存的 5 km / 30 天判定，强制反查一次。
-    ///   - ignoreLowPrecisionThrottle: 回到前台 / 切换地点时为 true：低精度数据的「升级刷新」
-    ///     不受 10 分钟节流限制（用户刚打开 App，值得立刻试着回到 1 小时数据）。
+    ///   - ignoreLowPrecisionThrottle: 回到前台 / 切换地点时为 true：降级后「重试主源」的退避窗口
+    ///     直接跳过（用户刚打开 App，值得立刻试着回到 1 小时数据）。
     func refreshData(
         forceWeather: Bool = false,
         forceDistrict: Bool = false,
         ignoreLowPrecisionThrottle: Bool = false
     ) {
         let currentPlace = place
-        let started = WeatherStore.shared.requestRefresh(
-            place: currentPlace,
-            force: forceWeather,
-            ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle
-        ) { [weak self] _ in
-            guard let self else { return }
-            self.weatherLoading = false
-            // 请求在飞的时候可能已经换了城市：一律按**当前地点**重新读缓存。
-            // `cached(for:)` 自带 ≤5 km 校验，所以 A 城市的天气永远不会被写到 B 城市下。
-            self.weather = WeatherStore.shared.cached(for: self.place)
-        }
-        if started {
-            weatherLoading = true
-        }
+        refreshWeather(force: forceWeather, ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle)
         DistrictStore.shared.requestRefresh(place: currentPlace, force: forceDistrict) { [weak self] names in
             guard let self else { return }
             self.districtName = names
@@ -275,6 +268,38 @@ final class AppModel: ObservableObject {
             self.keyTimeStatus = KeyTimeStore.shared.diagnosticsSummary()
             // 关键时间可能刚更新，重排「进入关键时间」报时。
             self.rescheduleReminders()
+        }
+    }
+
+    /// 只刷新天气（不牵动区划名与关键时间）。
+    ///
+    /// 逐时行拿到 7Timer! 数据时，主源的「秒级判定 + 退避窗口」走的就是这条路 ——
+    /// 每判定一次都去反查区划名 / 抓关键时间会白白多打网络。
+    private func refreshWeather(force: Bool = false, ignoreLowPrecisionThrottle: Bool = false) {
+        let started = WeatherStore.shared.requestRefresh(
+            place: place,
+            force: force,
+            ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.weatherLoading = false
+            // 请求在飞的时候可能已经换了城市：一律按**当前地点**重新读缓存。
+            // `cached(for:)` 自带 ≤5 km 校验，所以 A 城市的天气永远不会被写到 B 城市下。
+            self.weather = WeatherStore.shared.cached(for: self.place)
+        }
+        if started {
+            weatherLoading = true
+        }
+    }
+
+    /// 前后台变化（由 `ContentView` 的 `scenePhase` 驱动）。
+    ///
+    /// 前台：立刻试一次主源（不等计时器）；后台：退避窗口退到 10 分钟（`WeatherStore.setForeground`），
+    /// 不参与 60 秒轮询。
+    func setAppActive(_ active: Bool) {
+        WeatherStore.shared.setForeground(active)
+        if active {
+            handleBecameActive()
         }
     }
 
@@ -371,7 +396,7 @@ final class AppModel: ObservableObject {
         } else if location.hasPermission && place.source != .manual {
             startGpsTracking(announce: false)
         }
-        // 回到前台：低精度数据的「升级刷新」立刻试一次（不受 10 分钟节流限制）。
+        // 回到前台：降级后「重试主源」立刻试一次（跳过退避窗口，不等计时器）。
         refreshData(ignoreLowPrecisionThrottle: true)
         rescheduleReminders()
     }

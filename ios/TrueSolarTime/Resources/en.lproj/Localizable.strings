@@ -147,7 +147,7 @@
 /* Diagnostics: weather */
 "diag.urlFailed" = "Could not build the request URL from the coordinates";
 "diag.parseFailed" = "Could not parse the response";
-"diag.timeout" = "Request timed out (15 s)";
+"diag.timeout" = "Request timed out (5 s)";
 "diag.offline" = "Device is offline";
 "diag.dns" = "DNS lookup failed (api.open-meteo.com)";
 "diag.cannotConnect" = "Cannot connect to the server";

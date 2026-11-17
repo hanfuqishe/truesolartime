@@ -148,7 +148,7 @@
 /* 診斷：天氣 */
 "diag.urlFailed" = "座標無法產生請求網址";
 "diag.parseFailed" = "無法解析回傳內容";
-"diag.timeout" = "請求逾時（15 秒）";
+"diag.timeout" = "請求逾時（5 秒）";
 "diag.offline" = "裝置未連線";
 "diag.dns" = "網域名稱解析失敗（api.open-meteo.com）";
 "diag.cannotConnect" = "無法連線至伺服器";

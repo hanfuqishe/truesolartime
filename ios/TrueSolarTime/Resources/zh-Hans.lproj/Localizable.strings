@@ -147,7 +147,7 @@
 /* 诊断：天气 */
 "diag.urlFailed" = "坐标无法生成请求地址";
 "diag.parseFailed" = "返回内容无法解析";
-"diag.timeout" = "请求超时（15 秒）";
+"diag.timeout" = "请求超时（5 秒）";
 "diag.offline" = "设备未联网";
 "diag.dns" = "域名解析失败（api.open-meteo.com）";
 "diag.cannotConnect" = "无法连接服务器";

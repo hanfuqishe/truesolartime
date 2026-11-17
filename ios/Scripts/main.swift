@@ -2847,48 +2847,209 @@ expect(
     ) == ["现在", "22时", "23时", "0时", "1时", "2时"]
 )
 
-print("== 刷新触发条件（过期 / 低精度，两条互不干扰）==")
+print("== 刷新触发条件（低精度按退避轮询主源 / 主源 30 分钟过期）==")
+// 低精度（7Timer! / 3 小时）：**只看 60 秒窗口**，不看 30 分钟过期与否。
 expect(
-    "低精度且未过期 → 也要刷（尽快升级回 1 小时数据）",
+    "低精度：从没试过 → 立刻刷（尽快切回 1 小时数据）",
     WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: nil)
-)
-expect(
-    "低精度：10 分钟内刚试过 → 先不刷",
-    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 5 * 60)
 )
 expect(
     "低精度：刚试过 0 秒 → 不刷",
     !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 0)
 )
 expect(
-    "低精度：刚好 10 分钟 → 可以再试",
+    "低精度：59 秒前试过 → 还没到窗口，先不刷",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 59),
+    "actual=\(WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 59))"
+)
+expect(
+    "低精度：刚好 60 秒 → 可以再试",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 60),
+    "actual=\(WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 60))"
+)
+expect(
+    "低精度：61 秒前试过 → 再试",
+    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 61)
+)
+expect(
+    "低精度：10 分钟前试过 → 当然再试（窗口是 60 秒不是 10 分钟）",
     WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 600)
 )
 expect(
-    "低精度：11 分钟前试过 → 再试",
-    WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 11 * 60)
+    "低精度 + 已过期：仍只看 60 秒窗口（1 秒前试过 → 不刷）",
+    !WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: true, lastLowPrecisionAttempt: 1),
+    "actual=\(WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: true, lastLowPrecisionAttempt: 1))"
 )
 expect(
-    "升级成功后（高精度 + 未过期）→ 不再触发",
-    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: nil)
-)
-expect(
-    "高精度 + 很久没试过 → 不刷（不因为节流窗口过期就乱刷）",
-    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: 60 * 60)
-)
-expect(
-    "过期时低精度节流不挡（两条互不干扰）",
-    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: true, lastLowPrecisionAttempt: 1)
-)
-expect(
-    "过期 + 高精度照样刷",
-    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: false, lastLowPrecisionAttempt: 60)
+    "低精度 + 已过期 + 60 秒前试过 → 再试",
+    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: true, lastLowPrecisionAttempt: 60)
 )
 expect(
     "时间戳异常（负数）不会被永久节流",
     WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: -1)
 )
-expect("低精度节流窗口是 10 分钟", WeatherParsing.lowPrecisionRetrySeconds == 600)
+expect(
+    "低精度轮询窗口是 60 秒",
+    WeatherParsing.lowPrecisionRetrySeconds == 60,
+    "actual=\(WeatherParsing.lowPrecisionRetrySeconds)"
+)
+
+// 主源数据（1 小时粒度）：切回主源后**绝不按 60 秒轮询**，仍是 30 分钟过期逻辑。
+expect(
+    "主源 + 未过期 → 不刷（不按 60 秒轮询）",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: nil)
+)
+expect(
+    "主源 + 未过期 + 刚好 60 秒前试过 → 仍然不刷",
+    !WeatherParsing.shouldRefresh(isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: 60)
+)
+expect(
+    "主源 + 已过期 → 刷（30 分钟 TTL）",
+    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: false, lastLowPrecisionAttempt: nil)
+)
+expect(
+    "主源 + 已过期 + 刚试过 → TTL 说了算，仍然刷（5 分钟失败节流在 WeatherStore 里）",
+    WeatherParsing.shouldRefresh(isStale: true, isLowPrecision: false, lastLowPrecisionAttempt: 1)
+)
+expect(
+    "常量：TTL 30 分钟 / 失败节流 5 分钟 / 单次请求超时 5 秒",
+    WeatherParsing.cacheTTLSeconds == 30 * 60
+        && WeatherParsing.primaryFailureRetrySeconds == 5 * 60
+        && WeatherParsing.requestTimeoutSeconds == 5,
+    "ttl=\(WeatherParsing.cacheTTLSeconds) retry=\(WeatherParsing.primaryFailureRetrySeconds) timeout=\(WeatherParsing.requestTimeoutSeconds)"
+)
+
+print("== 主源失败 → 立刻降级（不再有「2 秒后重试一次」）==")
+expect("主源最多试 1 次", WeatherParsing.primaryMaxAttempts == 1)
+expect(
+    "第 1 次失败（attempt 0）直接进 fallback",
+    WeatherParsing.afterPrimaryFailure(attempt: 0) == .fallback,
+    "actual=\(WeatherParsing.afterPrimaryFailure(attempt: 0))"
+)
+expect("attempt 1 也是 fallback（retry 分支不可达）", WeatherParsing.afterPrimaryFailure(attempt: 1) == .fallback)
+expect("attempt 5 仍是 fallback", WeatherParsing.afterPrimaryFailure(attempt: 5) == .fallback)
+
+print("== 降级后重试主源：前台退避 60 → 120 → 300 秒 / 后台 10 分钟 ==")
+// 退避表（纯函数，前台按连续失败次数升档、封顶 5 分钟；后台固定 10 分钟）。
+expect(
+    "前台第 1 次（连续失败 0 或 1）→ 60 秒",
+    WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 0, isForeground: true) == 60
+        && WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 1, isForeground: true) == 60,
+    "actual=\(WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 1, isForeground: true))"
+)
+expect(
+    "前台第 2 次 → 120 秒",
+    WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 2, isForeground: true) == 120,
+    "actual=\(WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 2, isForeground: true))"
+)
+expect(
+    "前台第 3 次 → 300 秒（封顶）",
+    WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 3, isForeground: true) == 300,
+    "actual=\(WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 3, isForeground: true))"
+)
+expect(
+    "前台第 4 次 → 仍 300 秒（不会无限涨）",
+    WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: 4, isForeground: true) == 300
+)
+expect(
+    "后台任意次数 → 600 秒（不参与 60 秒轮询）",
+    [0, 1, 2, 3, 9, 50].allSatisfy {
+        WeatherParsing.lowPrecisionRetryDelay(consecutiveFailures: $0, isForeground: false) == 600
+    }
+)
+expect(
+    "退避常量：起步 60 / 封顶 300 / 后台 600",
+    WeatherParsing.lowPrecisionRetrySeconds == 60
+        && WeatherParsing.lowPrecisionRetryMaxSeconds == 300
+        && WeatherParsing.lowPrecisionRetryBackgroundSeconds == 600,
+    "base=\(WeatherParsing.lowPrecisionRetrySeconds) max=\(WeatherParsing.lowPrecisionRetryMaxSeconds) bg=\(WeatherParsing.lowPrecisionRetryBackgroundSeconds)"
+)
+
+// `shouldRefresh` 真的接入了退避表（不是只有常量对）。
+expect(
+    "低精度 + 失败 1 次 + 59 秒 → 不刷",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 59,
+        consecutiveFailures: 1, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 1 次 + 60 秒 → 刷",
+    WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 60,
+        consecutiveFailures: 1, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 2 次 + 119 秒 → 不刷（退避到 120）",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 119,
+        consecutiveFailures: 2, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 2 次 + 120 秒 → 刷",
+    WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 120,
+        consecutiveFailures: 2, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 3 次 + 299 秒 → 不刷（退避到 300）",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 299,
+        consecutiveFailures: 3, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 3 次 + 300 秒 → 刷",
+    WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 300,
+        consecutiveFailures: 3, isForeground: true
+    )
+)
+expect(
+    "低精度 + 失败 9 次 + 299 秒 → 不刷（封顶还是 300）",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 299,
+        consecutiveFailures: 9, isForeground: true
+    )
+)
+expect(
+    "后台：失败 1 次 + 60 秒 → 不刷（后台 10 分钟）",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 60,
+        consecutiveFailures: 1, isForeground: false
+    )
+)
+expect(
+    "后台：失败 1 次 + 599 秒 → 不刷",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 599,
+        consecutiveFailures: 1, isForeground: false
+    )
+)
+expect(
+    "后台：失败 1 次 + 600 秒 → 刷",
+    WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 600,
+        consecutiveFailures: 1, isForeground: false
+    )
+)
+expect(
+    "回到前台：刚试过也立刻再试一次（跳过退避窗口）",
+    WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: true, lastLowPrecisionAttempt: 0,
+        consecutiveFailures: 3, isForeground: true, ignoreLowPrecisionThrottle: true
+    )
+)
+expect(
+    "切回主源后（高精度）不再按退避节奏轮询",
+    !WeatherParsing.shouldRefresh(
+        isStale: false, isLowPrecision: false, lastLowPrecisionAttempt: 60,
+        consecutiveFailures: 0, isForeground: true
+    )
+)
 
 // 缓存必须属于当前地点：> 5 km 就当没有缓存（新地点显示占位符，绝不用旧城市的数据顶上）。
 expect(

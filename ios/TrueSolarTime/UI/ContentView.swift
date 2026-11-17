@@ -104,8 +104,18 @@ struct ContentView: View {
             model.startGpsTracking(announce: false)
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .active {
-                model.handleBecameActive()
+            switch phase {
+            case .active:
+                // 回到前台：立刻试一次主源（不等退避计时器），并把天气轮询切回前台节奏。
+                model.setAppActive(true)
+            case .background:
+                // 退到后台：重试主源的最小间隔变成 10 分钟（不参与 60 秒轮询）。
+                model.setAppActive(false)
+            case .inactive:
+                // 下拉通知中心 / 切到多任务：什么都不做，别把前台节奏误判成后台。
+                break
+            @unknown default:
+                break
             }
         }
     }

@@ -558,33 +558,100 @@ enum WeatherParsing {
     static let cacheTTLSeconds: Int = 30 * 60
     /// 显示用的硬上限：**24 小时**。取数一直失败时，旧数据继续显示一天，超过才当没有数据。
     static let displayMaxAgeSeconds: Int = 24 * 60 * 60
-    /// 「低精度触发」刷新的节流窗口：最多每 10 分钟试一次。
-    static let lowPrecisionRetrySeconds: Int = 10 * 60
+    /// 低精度数据（7Timer! / 3 小时）**轮询主源**的**起步**间隔：**60 秒**（前台第一次重试）。
+    ///
+    /// 手里只有 3 小时粒度时，唯一要紧的是尽快切回 1 小时的主源，所以先每 60 秒试一次；
+    /// 连续失败就退避（见 `lowPrecisionRetryDelay`），成功一次就整份换成主源数据
+    /// （`source` 变 `.openMeteo`），这套节奏随即失效。
+    static let lowPrecisionRetrySeconds: Int = 60
+    /// 前台退避的**封顶**：5 分钟（连续失败 3 次及以上）。
+    static let lowPrecisionRetryMaxSeconds: Int = 5 * 60
+    /// 后台（App 不在前台）的最小重试间隔：**10 分钟**，不参与 60 秒轮询。
+    static let lowPrecisionRetryBackgroundSeconds: Int = 10 * 60
+    /// 主源数据**过期之后**的失败重试间隔：5 分钟（一直失败时别每次回前台都打一次网络）。
+    static let primaryFailureRetrySeconds: Int = 5 * 60
+    /// 单次天气请求（主源与备用源）的超时：**5 秒**。
+    ///
+    /// 以前是 15 秒、还要「失败后等 2 秒再试一次」，最坏 30 多秒界面才有内容；
+    /// 现在主源一失败就立刻问 7Timer!，5 秒足够一个正常 HTTPS 往返。
+    static let requestTimeoutSeconds: Int = 5
+    /// 主源最多试几次（含第一次）：**1 = 失败一次立刻降级**，不再有「2 秒后重试一次」。
+    static let primaryMaxAttempts: Int = 1
+
+    /// 主源第 `attempt` 次失败（从 0 起）之后该做什么。
+    enum PrimaryRetry: Equatable {
+        /// 再试一次主源。
+        case retry
+        /// 立刻降级到备用源 7Timer!。
+        case fallback
+    }
+
+    /// 纯判定：主源失败之后要不要再试一次（`attempt` 从 0 起）。
+    ///
+    /// 现在 `primaryMaxAttempts == 1`，所以**第一次失败就是 `.fallback`**：
+    /// 主源不再拖时间，界面尽快拿到 3 小时粒度的数据，而不是继续空白。
+    static func afterPrimaryFailure(attempt: Int) -> PrimaryRetry {
+        attempt + 1 < primaryMaxAttempts ? .retry : .fallback
+    }
+
+    /// 降级之后**重试主源**的间隔（退避表）：
+    ///
+    /// | 连续失败 | 前台 | 后台 |
+    /// |---|---|---|
+    /// | 0 / 1 次（首次） | 60 秒 | 600 秒 |
+    /// | 2 次 | 120 秒 | 600 秒 |
+    /// | ≥ 3 次 | 300 秒（封顶 5 分钟） | 600 秒 |
+    ///
+    /// - Parameters:
+    ///   - consecutiveFailures: **连续**失败次数（一次成功就清零）。`0` 与 `1` 同样按「首次 60 秒」算。
+    ///   - isForeground: App 是否在前台。后台不参与 60 秒轮询，最少隔 10 分钟才试。
+    static func lowPrecisionRetryDelay(consecutiveFailures: Int, isForeground: Bool) -> TimeInterval {
+        guard isForeground else { return TimeInterval(lowPrecisionRetryBackgroundSeconds) }
+        switch max(consecutiveFailures, 1) {
+        case 1: return TimeInterval(lowPrecisionRetrySeconds)
+        case 2: return TimeInterval(lowPrecisionRetrySeconds * 2)
+        default: return TimeInterval(lowPrecisionRetryMaxSeconds)
+        }
+    }
 
     /// 这一轮该不该刷新（纯判定，便于自检）。
     ///
-    /// 满足**任意一条**即刷新：
-    /// 1. 数据已过期（超过 `cacheTTLSeconds`）；
-    /// 2. 当前显示的是**低精度数据**（`source = 7Timer!` / `stepHours = 3`），即使未过期也刷 ——
-    ///    目的是尽快升级回 Open-Meteo 的 1 小时数据。
+    /// **低精度数据（`source = 7Timer!` / 3 小时粒度）：按退避表轮询主源。**
+    /// 前台 60 → 120 → 300 秒（封顶 5 分钟），后台固定 10 分钟；连续失败次数由
+    /// `WeatherStore` 记录，成功切回主源就清零。这里不看 30 分钟过期与否 ——
+    /// 3 小时粒度没什么可等的，窗口一到再试，失败了界面照旧显示 7Timer! 数据（不清空）。
+    /// 切回主源后 `isLowPrecision` 变 false，这套节奏立刻失效：**主源数据绝不按 60 秒轮询**。
     ///
-    /// 只有「低精度」这一条受节流：10 分钟内已经试过就先算了（失败不该让界面变差，
-    /// 也不该每回到前台就打一次网络）。过期与低精度互不干扰：过期就是过期，立刻刷。
+    /// **主源数据：过期就刷，不过期不刷。**
+    /// 这里只管 30 分钟 TTL；「一直失败」的 5 分钟节流在 `WeatherStore` 里用
+    /// `primaryFailureRetrySeconds` 单独管（两件事互不干扰）。
     ///
     /// - Parameters:
-    ///   - isStale: 数据是否已过期。
+    ///   - isStale: 数据是否已过期（超过 30 分钟 TTL）。
     ///   - isLowPrecision: 当前数据是否低精度（3 小时粒度）。
-    ///   - lastLowPrecisionAttempt: 距上一次「低精度触发刷新」过去了多少秒；从没试过传 nil。
+    ///   - lastLowPrecisionAttempt: 距上一次「重试主源」过去了多少秒；从没试过传 nil。
+    ///   - consecutiveFailures: 连续失败次数（决定退避档位）。
+    ///   - isForeground: App 是否在前台（前台退避，后台 10 分钟）。
+    ///   - ignoreLowPrecisionThrottle: 回到前台 / 切换地点时的「立刻试一次」，不等窗口。
     static func shouldRefresh(
         isStale: Bool,
         isLowPrecision: Bool,
-        lastLowPrecisionAttempt: Int?
+        lastLowPrecisionAttempt: Int?,
+        consecutiveFailures: Int = 0,
+        isForeground: Bool = true,
+        ignoreLowPrecisionThrottle: Bool = false
     ) -> Bool {
-        if isStale { return true }
-        guard isLowPrecision else { return false }
+        guard isLowPrecision else { return isStale }
+        // 刚回到前台 / 刚换了地点：立刻试一次，不等退避窗口。
+        if ignoreLowPrecisionThrottle { return true }
         guard let last = lastLowPrecisionAttempt else { return true }
         // 时间戳异常（负数）当作「从没试过」，别把它永久节流掉。
-        return last < 0 || last >= lowPrecisionRetrySeconds
+        guard last >= 0 else { return true }
+        let delay = lowPrecisionRetryDelay(
+            consecutiveFailures: consecutiveFailures,
+            isForeground: isForeground
+        )
+        return TimeInterval(last) >= delay
     }
 
     /// 主源失败之后怎么办。
