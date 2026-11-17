@@ -1450,6 +1450,104 @@ expect(
     thinState.zoomStep == 0
 )
 
+// MARK: 三条防「狂闪」的不变式（UI 快照 / 回弹静默窗口 / 视口静默期）
+
+var snapshotState = autoOverseas()
+let snapshotBefore = snapshotState.uiState(requestedZoom: 12)
+snapshotState.recordOSMTile(success: false, at: 10)
+snapshotState.recordOSMTile(success: false, at: 11)
+let snapshotAfter = snapshotState.uiState(requestedZoom: 12)
+expect(
+    "有效 plan 不变时 uiState 不变（OSM 失败计数涨到 2 也不发布）",
+    snapshotBefore == snapshotAfter && snapshotState.osmFailures == 2,
+    "before=\(snapshotBefore) after=\(snapshotAfter)"
+)
+snapshotState.recordOSMTile(success: false, at: 12)
+let snapshotFellBack = snapshotState.uiState(requestedZoom: 12)
+expect(
+    "回退后 uiState 才变：source / fellBack 反映出来，zoom 仍是 12（未降级）",
+    snapshotFellBack != snapshotAfter
+        && snapshotFellBack.source == .amapVector
+        && snapshotFellBack.fellBack
+        && snapshotFellBack.zoom == 12
+        && snapshotFellBack.degraded == false
+)
+
+var blankCountState = autoOverseas()
+blankCountState.recordOSMTile(success: false, at: 1)
+blankCountState.recordOSMTile(success: false, at: 2)
+blankCountState.recordOSMTile(success: false, at: 3)
+let blankBefore = blankCountState.uiState(requestedZoom: 12)
+blankCountState.recordAmapTile(blank: true, at: 10) // 只涨 blankDetections，不够一屏
+let blankAfter = blankCountState.uiState(requestedZoom: 12)
+expect(
+    "空白判定计数涨了、但有效 plan 没变 → uiState 仍不变",
+    blankBefore == blankAfter && blankCountState.blankDetections == 1,
+    "blanks=\(blankCountState.blankDetections)"
+)
+
+// 网络持续失败时，z3 出了图也不许立刻弹回（静默窗口 30 秒）。
+var quietState = autoOverseas()
+quietState.recordOSMTile(success: false, at: 1)
+quietState.recordOSMTile(success: false, at: 2)
+quietState.recordOSMTile(success: false, at: 3)
+var quietClock: TimeInterval = 3
+blankScreen(&quietState, tiles: 4, clock: &quietClock)
+blankScreen(&quietState, tiles: 4, clock: &quietClock)
+blankScreen(&quietState, tiles: 4, clock: &quietClock)
+let failingAt = quietClock
+expect(
+    "先降到 z3（zoomStep 3）",
+    quietState.effectiveZoom(requested: 12) == 3,
+    "actual=\(String(describing: quietState.effectiveZoom(requested: 12)))"
+)
+quietState.recordAmapTile(blank: false, at: failingAt + 5)
+expect(
+    "z3 出图但距上次失败只有 5 秒 → 不回弹（30 秒静默窗口）",
+    quietState.effectiveZoom(requested: 12) == 3,
+    "actual=\(String(describing: quietState.effectiveZoom(requested: 12)))"
+)
+quietState.recordAmapTile(blank: false, at: failingAt + 31)
+expect(
+    "静默 30 秒之后才允许回弹一档（z3 → z10）",
+    quietState.effectiveZoom(requested: 12) == 10,
+    "actual=\(String(describing: quietState.effectiveZoom(requested: 12)))"
+)
+quietState.recordAmapTile(blank: false, at: failingAt + 31 + 31)
+expect(
+    "回弹后 5 分钟内不再回弹（冷却）",
+    quietState.effectiveZoom(requested: 12) == 10,
+    "actual=\(String(describing: quietState.effectiveZoom(requested: 12)))"
+)
+quietState.recordAmapTile(blank: false, at: failingAt + 31 + 301)
+expect(
+    "冷却 5 分钟之后才能再回弹一档",
+    quietState.effectiveZoom(requested: 12) == 11,
+    "actual=\(String(describing: quietState.effectiveZoom(requested: 12)))"
+)
+
+// 程序化改视口（setRegion）会取消在飞的请求：2 秒内回来的失败不算。
+var settleState = autoOverseas()
+settleState.noteViewportChanged(at: 100)
+settleState.recordOSMTile(success: false, at: 101)
+expect(
+    "视口静默期内（2 秒）的 OSM 失败被忽略",
+    settleState.osmFailures == 0 && settleState.isViewportSettling(now: 101),
+    "failures=\(settleState.osmFailures)"
+)
+settleState.recordOSMTile(success: false, at: 103)
+expect(
+    "静默期过后照常计数",
+    settleState.osmFailures == 1,
+    "failures=\(settleState.osmFailures)"
+)
+expect(
+    "常量：回弹静默 30 秒 / 回弹冷却 5 分钟 / 视口静默 2 秒",
+    BasemapState.recoveryQuietSeconds == 30
+        && BasemapState.recoveryCooldownSeconds == 300
+        && BasemapState.viewportSettleSeconds == 2
+)
+
 // MARK: 瓦片工具
 
 expect(

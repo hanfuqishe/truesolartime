@@ -39,11 +39,11 @@ struct MapCard: View {
             }
 
             ZStack {
-                MapViewRepresentable(place: place, style: resolvedStyle, revision: basemap.revision)
+                MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState)
                     .aspectRatio(4.0 / 3.0, contentMode: .fit)
 
                 // 连 z3 全球底图都空白：原地显示一行小字，不要空着。
-                if basemap.isUnavailable {
+                if basemap.uiState.unavailable {
                     Text(L("map.unavailable"))
                         .font(.system(size: 12))
                         .foregroundStyle(palette.onSurfaceVariant)
@@ -86,8 +86,9 @@ private struct MapViewRepresentable: UIViewRepresentable {
 
     let place: Place
     let style: MapStyle
-    /// 底图状态版本号：源 / 缩放变了就重建 overlay（MapKit 会丢掉旧的瓦片缓存）。
-    let revision: Int
+    /// 有效 plan 快照（源 / 缩放 / 不可用）：**只有它变了才重建 overlay**。
+    /// 计数（OSM 失败次数 / 空白判定次数）不在里面，所以不会因为「又失败一块瓦片」而重组地图。
+    let plan: BasemapUiState
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -95,16 +96,18 @@ private struct MapViewRepresentable: UIViewRepresentable {
         mapView.isPitchEnabled = false
         mapView.pointOfInterestFilter = .excludingAll
         mapView.delegate = context.coordinator
-        context.coordinator.attach(style: style, revision: revision, to: mapView)
-        context.coordinator.move(to: place, style: style, on: mapView, animated: false)
+        context.coordinator.attach(style: style, plan: plan, to: mapView)
+        context.coordinator.applyViewportIfNeeded(to: place, style: style, on: mapView)
         return mapView
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        if context.coordinator.currentStyle != style || context.coordinator.revision != revision {
-            context.coordinator.attach(style: style, revision: revision, to: mapView)
+        if context.coordinator.currentStyle != style || context.coordinator.plan != plan {
+            context.coordinator.attach(style: style, plan: plan, to: mapView)
         }
-        context.coordinator.move(to: place, style: style, on: mapView, animated: true)
+        // 视口只在**一个地方**、且只在「地点真的变了」时才动：
+        // 每次状态发布都 `setRegion` 会把用户手动平移/缩放顶回去，也会和动画互相打断。
+        context.coordinator.applyViewportIfNeeded(to: place, style: style, on: mapView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -114,11 +117,21 @@ private struct MapViewRepresentable: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
 
         var currentStyle: MapStyle?
-        var revision = -1
+        var plan: BasemapUiState?
         private var tileOverlay: BasemapTileOverlay?
         private var annotation: MKPointAnnotation?
+        /// 上一次真正应用过的视口：WGS-84 坐标 + 底图样式 + 实际画到地图上的坐标（已按底图换算）。
+        /// 只在「地点 / 样式」变化时才动地图；重建 overlay 时用它把标记放回原位。
+        private var appliedViewport: (
+            latitude: Double,
+            longitude: Double,
+            style: MapStyle,
+            mapCoordinate: CLLocationCoordinate2D,
+            label: String
+        )?
+        private let viewportSpanMeters: CLLocationDistance = 12_000
 
-        func attach(style: MapStyle, revision: Int, to mapView: MKMapView) {
+        func attach(style: MapStyle, plan: BasemapUiState, to mapView: MKMapView) {
             if let existing = tileOverlay {
                 mapView.removeOverlay(existing)
             }
@@ -132,15 +145,33 @@ private struct MapViewRepresentable: UIViewRepresentable {
             mapView.addOverlay(overlay, level: .aboveLabels)
 
             let point = MKPointAnnotation()
+            // 重建 overlay 不代表地点变了：把标记放回上次的坐标，别让它留在 (0,0)。
+            if let viewport = appliedViewport {
+                point.coordinate = viewport.mapCoordinate
+                point.title = viewport.label
+            }
             mapView.addAnnotation(point)
 
             tileOverlay = overlay
             annotation = point
             currentStyle = style
-            self.revision = revision
+            self.plan = plan
         }
 
-        func move(to place: Place, style: MapStyle, on mapView: MKMapView, animated: Bool) {
+        /// **唯一**的视口入口：一次 `setRegion` 同时给 center + span。
+        ///
+        /// 不做「先 setCenter 再 setZoom」、也不在别处单独改 span —— 两次动画会互相打断
+        /// （安卓那边就是这样停在半路、标记不居中的）。地点没变就直接返回，因此
+        /// 底图状态变化（回退 / 降级）不会把用户的平移缩放顶回去。
+        func applyViewportIfNeeded(to place: Place, style: MapStyle, on mapView: MKMapView) {
+            let last = appliedViewport
+            let sameSpot = last.map {
+                abs($0.latitude - place.latitude) < 1e-6
+                    && abs($0.longitude - place.longitude) < 1e-6
+                    && $0.style == style
+            } ?? false
+            guard !sameSpot else { return }
+
             let converted = MapCoordinates.toMapCoordinates(
                 style: style,
                 latitude: place.latitude,
@@ -151,8 +182,16 @@ private struct MapViewRepresentable: UIViewRepresentable {
             annotation?.coordinate = coordinate
             annotation?.title = place.displayLabel
 
-            let region = MKCoordinateRegion(center: coordinate, latitudinalMeters: 12_000, longitudinalMeters: 12_000)
-            mapView.setRegion(region, animated: animated)
+            // 程序化改视口会取消在飞的瓦片请求：接下来 2 秒内回来的失败一律不计。
+            BasemapController.shared.noteViewportChanged()
+
+            let region = MKCoordinateRegion(
+                center: coordinate,
+                latitudinalMeters: viewportSpanMeters,
+                longitudinalMeters: viewportSpanMeters
+            )
+            mapView.setRegion(region, animated: false)
+            appliedViewport = (place.latitude, place.longitude, style, coordinate, place.displayLabel)
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {

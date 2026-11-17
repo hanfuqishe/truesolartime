@@ -75,6 +75,18 @@ struct BasemapState: Equatable {
     static let worldZoom = 3
     /// 一屏至少看过这么多块瓦片才判「整屏空白」（只有 1 块也可能是地图刚起步的边缘瓦片）。
     static let minTilesPerScreen = 2
+    /// **回弹静默窗口**：最近 30 秒内有过新的失败，就不许把降级档位往回调。
+    ///
+    /// 安卓真机的教训：z3 一出图就立刻弹回 z12，z12 又失败 → 11 → 10 → 3 → 又出图 → 弹回…
+    /// 2 秒内发了 441 次状态。回弹必须有静默窗口，否则就是一个自激循环。
+    static let recoveryQuietSeconds: TimeInterval = 30
+    /// **回弹冷却**：回弹过一次之后，5 分钟内不再回弹（否则会在两档之间来回抖）。
+    static let recoveryCooldownSeconds: TimeInterval = 300
+    /// 程序化改视口（`setRegion`）后的静默期：这段时间里回来的失败**不计**。
+    ///
+    /// 改视口会取消在飞的瓦片请求，网络层会把「被取消」也报成失败；把它当真实失败计数，
+    /// 就等于自己给自己喂失败，正好喂出上面那个循环。
+    static let viewportSettleSeconds: TimeInterval = 2
 
     // MARK: 状态
 
@@ -91,6 +103,12 @@ struct BasemapState: Equatable {
     private(set) var zoomStep = 0
     private(set) var lastSwitchAt: TimeInterval
     private(set) var lastProbeAt: TimeInterval?
+    /// 最近一次**真实**失败的时刻（OSM 失败 / 高德空白 / 整屏空白降级）。回弹静默窗口用它。
+    private(set) var lastFailureAt: TimeInterval?
+    /// 最近一次「降级档位往回弹」的时刻。回弹冷却用它。
+    private(set) var lastRecoveryAt: TimeInterval?
+    /// 程序化改视口之后的静默期截止时刻（这之前回来的失败不计）。
+    private(set) var viewportSettleUntil: TimeInterval = -Double.greatestFiniteMagnitude
     private var screenTiles = 0
     private var screenBlankTiles = 0
 
@@ -109,6 +127,23 @@ struct BasemapState: Equatable {
     }
 
     // MARK: 派生状态
+
+    /// 对外暴露的**唯一**快照：UI 只订阅它。
+    ///
+    /// 为什么要压成一个值类型：安卓真机上「441 次状态发布」里有大量只是 `zoomFailures` 变了，
+    /// 每次都触发整块地图重组，叠加缩放来回弹就是「狂闪」。把「有效 plan」快照化之后，
+    /// **计数类字段（failures / blankCount / zoomFailures）变化不会改变 `BasemapUiState`**，
+    /// 界面自然不会因为计数而重绘。
+    func uiState(requestedZoom: Int) -> BasemapUiState {
+        BasemapUiState(
+            requestedZoom: requestedZoom,
+            source: active,
+            zoom: effectiveZoom(requested: requestedZoom),
+            degraded: isDegraded,
+            unavailable: status == .unavailable,
+            fellBack: didFallBackToAmap
+        )
+    }
 
     var status: Status {
         if zoomStep >= 4 { return .unavailable }
@@ -147,7 +182,30 @@ struct BasemapState: Equatable {
         return now - last >= Self.probeIntervalSeconds
     }
 
+    /// 允许把降级档位往回弹吗？
+    ///
+    /// 三个条件缺一不可：
+    /// 1. 自动模式、确实处于降级中（0 < `zoomStep` < 4）；
+    /// 2. **最近 30 秒没有新的失败**（回弹静默窗口）—— 否则「z3 出图 → 立刻弹回 z12」会自激；
+    /// 3. **距上次回弹 ≥ 5 分钟**（回弹冷却）—— 否则会在相邻两档之间来回抖。
+    func canRecoverChain(now: TimeInterval) -> Bool {
+        guard mode == .auto, zoomStep > 0, zoomStep < 4 else { return false }
+        if let lastFailureAt, now - lastFailureAt < Self.recoveryQuietSeconds { return false }
+        if let lastRecoveryAt, now - lastRecoveryAt < Self.recoveryCooldownSeconds { return false }
+        return true
+    }
+
     // MARK: 事件
+
+    /// 程序化改了视口（`setRegion`）—— 紧接着 2 秒内回来的失败一律丢弃。
+    mutating func noteViewportChanged(at now: TimeInterval) {
+        viewportSettleUntil = now + Self.viewportSettleSeconds
+    }
+
+    /// 还在视口静默期内吗（这期间的瓦片结果不算数）。
+    func isViewportSettling(now: TimeInterval) -> Bool {
+        now < viewportSettleUntil
+    }
 
     /// 一块 OSM 瓦片的结果（成功 = 拿到了非空图片；失败 = 超时 / 非 2xx / 解析不出来）。
     mutating func recordOSMTile(success: Bool, at now: TimeInterval) {
@@ -155,6 +213,8 @@ struct BasemapState: Equatable {
         guard mode == .auto else { return }
         // 已经回退到高德了：OSM 结果只可能来自探测，走 `probeSucceeded`。
         guard active == .osm else { return }
+        // 程序化改视口后的静默期：这时回来的「失败」多半是改视口把自己的请求取消了，不算。
+        guard !isViewportSettling(now: now) else { return }
         // 切源宽限期内的失败丢弃（上一个源的迟到结果）。
         guard now - lastSwitchAt >= Self.switchGraceSeconds else { return }
 
@@ -163,6 +223,7 @@ struct BasemapState: Equatable {
             return
         }
         osmFailures += 1
+        lastFailureAt = now
         guard osmFailures >= Self.osmFailureLimit else { return }
 
         // 连续 3 次失败：回退到高德，并开始 5 分钟一次的探测。
@@ -179,6 +240,8 @@ struct BasemapState: Equatable {
     mutating func recordAmapTile(blank: Bool, at now: TimeInterval) {
         guard mode == .auto else { return }
         guard active != .osm else { return }
+        // 程序化改视口后的静默期内的结果不算（那批瓦片可能是被我们取消的）。
+        guard !isViewportSettling(now: now) else { return }
         // 切源宽限期内的结果丢弃，免得拿上一个源的残瓦片判空白。
         guard now - lastSwitchAt >= Self.switchGraceSeconds else { return }
 
@@ -186,7 +249,20 @@ struct BasemapState: Equatable {
         if blank {
             blankDetections += 1
             screenBlankTiles += 1
+            lastFailureAt = now
+            return
         }
+        // 这一档能出图：在**静默窗口 + 冷却**都满足时才允许把降级档位往回弹。
+        recoverChainIfAllowed(at: now)
+    }
+
+    /// 降级档位往回弹一档（受 `canRecoverChain` 约束）。
+    private mutating func recoverChainIfAllowed(at now: TimeInterval) {
+        guard canRecoverChain(now: now) else { return }
+        zoomStep = max(zoomStep - 1, 0)
+        lastRecoveryAt = now
+        screenTiles = 0
+        screenBlankTiles = 0
     }
 
     /// 「这一屏画完了」：整屏都空白才降一级。
@@ -202,7 +278,8 @@ struct BasemapState: Equatable {
         guard mode == .auto, active != .osm else { return }
         guard screenTiles >= Self.minTilesPerScreen, screenBlankTiles == screenTiles else { return }
         zoomStep = min(zoomStep + 1, 4)
-        _ = now
+        // 降级本身就是一次失败：把静默窗口重新拉开，别让下一屏的图马上把档位弹回去。
+        lastFailureAt = now
     }
 
     /// 探测结果：成功就切回 OSM 并全部清零（缩放也回到正常）。
@@ -215,12 +292,30 @@ struct BasemapState: Equatable {
         screenBlankTiles = 0
         lastSwitchAt = now
         lastProbeAt = now
+        lastRecoveryAt = now
     }
 
     /// 探测失败：只更新时间戳，等下一个 5 分钟。
     mutating func probeFailed(at now: TimeInterval) {
         lastProbeAt = now
     }
+}
+
+/// UI 只订阅这个快照。**计数（failures / blankCount / zoomFailures）不在里面** ——
+/// 它们变了界面不重绘，也就不会出现「2 秒 441 次状态发布 + 缩放来回弹」那种狂闪。
+struct BasemapUiState: Equatable {
+    /// 地图当前请求的缩放（MapKit 给的）。
+    let requestedZoom: Int
+    /// 实际使用的瓦片源。
+    let source: BasemapSource
+    /// 实际请求的缩放；`nil` = 底图不可用。
+    let zoom: Int?
+    /// 是否处于降级状态。
+    let degraded: Bool
+    /// 是否连 z3 都空白（界面显示「底图不可用」）。
+    let unavailable: Bool
+    /// 是否因为 OSM 不可达回退到了高德。
+    let fellBack: Bool
 }
 
 /// 瓦片几何 / URL / 魔数校验（纯函数，自检覆盖）。

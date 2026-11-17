@@ -6,18 +6,22 @@ import UIKit
 /// - 按「样式 + 地点」建立 / 重建状态（自动 → 可回退；手动 → 一切兜底关掉）；
 /// - 每块瓦片的加载结果喂回状态机（OSM 成败、高德空白）；
 /// - 回退后每 5 分钟探测一次 OSM（z3 小瓦片 + 图片魔数校验），成功即切回；
+/// - **只把「有效 plan 快照」（`BasemapUiState`）发布给界面**：计数变化不发通知，
+///   所以不会出现安卓那种「2 秒 441 次状态发布 + 缩放来回弹 → 狂闪」；
 /// - 给界面与诊断页提供一行行文字。
 final class BasemapController: ObservableObject {
 
     static let shared = BasemapController()
 
-    /// 状态变了就自增：`MapCard` 用它触发重建 overlay。
-    @Published private(set) var revision = 0
+    /// 界面**唯一**订阅的东西：有效 plan 的快照。等值时不赋值，SwiftUI 就不会重组。
+    @Published private(set) var uiState: BasemapUiState
 
     private(set) var state: BasemapState
     private var configuredStyle: MapStyle?
     private var configuredSiteKey: String?
     private var place: Place?
+    /// 最近一次 MapKit 请求的缩放（不算「计数」，但也只有它变化才需要重算快照）。
+    private var lastRequestedZoom = 12
 
     /// 一屏瓦片的「静默」计时：最后一块瓦片回来 1.2 秒后判整屏。
     private var settleWorkItem: DispatchWorkItem?
@@ -31,7 +35,9 @@ final class BasemapController: ObservableObject {
     private var probeInFlight = false
 
     private init() {
-        state = BasemapState(mode: .manual, preferred: .osm, now: 0)
+        let initial = BasemapState(mode: .manual, preferred: .osm, now: 0)
+        state = initial
+        uiState = initial.uiState(requestedZoom: 12)
     }
 
     // MARK: 配置
@@ -56,7 +62,7 @@ final class BasemapController: ObservableObject {
         configuredStyle = style
         configuredSiteKey = siteKey
         self.place = place
-        bump()
+        publishIfChanged()
     }
 
     /// 诊断用：当前是不是「自动」。
@@ -74,22 +80,30 @@ final class BasemapController: ObservableObject {
 
     /// 这一块瓦片该从哪个源、哪个缩放级别取；`nil` = 底图不可用（连 z3 都空白）。
     func plan(requestedZoom: Int) -> (source: BasemapSource, zoom: Int)? {
+        if requestedZoom != lastRequestedZoom {
+            lastRequestedZoom = requestedZoom
+            publishIfChanged()
+        }
         guard let zoom = state.effectiveZoom(requested: requestedZoom) else { return nil }
         return (state.active, zoom)
     }
 
-    // MARK: 结果回灌
+    // MARK: 结果回灌（计数变化**不**发布）
 
     func noteOSMTile(success: Bool, now: Date = Date()) {
-        let before = state
         state.recordOSMTile(success: success, at: now.timeIntervalSince1970)
-        if state != before { bump() }
+        publishIfChanged()
     }
 
     func noteAmapTile(blank: Bool, now: Date = Date()) {
-        let before = state
         state.recordAmapTile(blank: blank, at: now.timeIntervalSince1970)
-        if state != before { bump() }
+        publishIfChanged()
+    }
+
+    /// 程序化改了视口：接下来 2 秒内回来的失败不算（那是被我们自己取消掉的请求）。
+    func noteViewportChanged(now: Date = Date()) {
+        state.noteViewportChanged(at: now.timeIntervalSince1970)
+        // 静默期只影响内部计数，不改变有效 plan，故不发布。
     }
 
     /// 每请求一块瓦片就调一次：1.2 秒没有新瓦片 = 这一屏画完了 → 判整屏空白。
@@ -97,9 +111,8 @@ final class BasemapController: ObservableObject {
         settleWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let before = self.state
             self.state.closeScreenBatch(at: Date().timeIntervalSince1970)
-            if self.state != before { self.bump() }
+            self.publishIfChanged()
         }
         settleWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
@@ -120,7 +133,7 @@ final class BasemapController: ObservableObject {
               let url = BasemapTiles.tileURL(source: .osm, x: coords.x, y: coords.y, z: BasemapState.worldZoom)
         else {
             state.probeFailed(at: Date().timeIntervalSince1970)
-            bump()
+            publishIfChanged()
             return
         }
 
@@ -140,12 +153,12 @@ final class BasemapController: ObservableObject {
                 } else {
                     self.state.probeFailed(at: Date().timeIntervalSince1970)
                 }
-                self.bump()
+                self.publishIfChanged()
             }
         }.resume()
     }
 
-    // MARK: 诊断 / 署名
+    // MARK: 署名 / 诊断
 
     /// 署名：实际使用的瓦片源；自动模式回退过就追加一句「OSM 不可达，已回退高德」。
     var attribution: String {
@@ -162,14 +175,13 @@ final class BasemapController: ObservableObject {
     }
 
     /// 诊断第一行：实际源 · 状态 · 缩放（降级时带标记）。
-    func diagnosticsSummary(requestedZoom: Int = 12) -> String {
-        let zoom = state.effectiveZoom(requested: requestedZoom) ?? 0
+    func diagnosticsSummary() -> String {
         let suffix = state.isDegraded ? L("map.degraded") : ""
         return Lf(
             "map.diagSummary",
             activeSource.label,
             statusText(),
-            zoom,
+            uiState.zoom ?? 0,
             suffix
         )
     }
@@ -192,7 +204,11 @@ final class BasemapController: ObservableObject {
         )
     }
 
-    private func bump() {
-        revision &+= 1
+    /// **只在有效 plan 变了才发布**。计数（OSM 失败次数 / 空白判定次数 / 内部屏幕计数）变化时
+    /// 这里什么都不做 —— 界面不会因为「又失败了一块瓦片」而整块重组。
+    private func publishIfChanged() {
+        let next = state.uiState(requestedZoom: lastRequestedZoom)
+        guard next != uiState else { return }
+        uiState = next
     }
 }
