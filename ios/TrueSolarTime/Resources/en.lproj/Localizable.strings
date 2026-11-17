@@ -33,6 +33,16 @@
 "map.styleAmapSatellite" = "AutoNavi satellite";
 "map.attributionOsm" = "Map data © OpenStreetMap contributors";
 "map.attributionAmap" = "Base map © AutoNavi";
+"map.fallbackNote" = "OSM unreachable — fell back to AutoNavi";
+"map.unavailable" = "Basemap unavailable";
+"map.statusLive" = "OK";
+"map.statusProbing" = "fell back; retrying OSM";
+"map.statusUnavailable" = "unavailable";
+"map.degraded" = " (degraded)";
+"map.diagBasemap" = "Basemap";
+"map.diagSummary" = "source %@ · %@ · z%d%@";
+"map.diagDetail" = "preferred %@ · OSM failures %d · blank tiles %d · next probe %@";
+"map.probeIn" = "in %d s";
 
 /* Settings */
 "settings.title" = "Location & reminders";

@@ -85,6 +85,8 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.now = Date()
             WeatherStore.shared.watchdog()
+            // 底图回退后每 5 分钟探测一次 OSM（`tick` 内部判定，到点才真的发请求）。
+            BasemapController.shared.tick()
             // 降级到 7Timer! 之后要「尽快切回主源」：每秒判一次该不该试主源。
             // 真正的间隔由退避表决定（前台 60 → 120 → 300 秒、后台 10 分钟），
             // 所以这里不会真的每秒发请求；切回主源后这条自动失效。

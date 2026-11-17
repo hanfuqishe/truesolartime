@@ -1212,6 +1212,279 @@ expect(
     "day=\(SunPathGeometry.dayArcLineWidth) night=\(SunPathGeometry.nightArcLineWidth) dash=\(SunPathGeometry.nightArcDash)"
 )
 
+print("== 地图底图兜底：空白瓦片像素判定 + 四级降级状态机 ==")
+
+// MARK: 空白瓦片判定（构造像素样本，1×1 采样点就够：判定是逐像素统计的）
+
+/// 用一组颜色铺成 `count` 个样本（均匀铺开，方便构造「纯色 / 灰底+字 / 多色」）。
+func tileSamples(_ colors: [(r: UInt8, g: UInt8, b: UInt8)], repeating count: Int = 64) -> [(r: UInt8, g: UInt8, b: UInt8)] {
+    var samples: [(r: UInt8, g: UInt8, b: UInt8)] = []
+    samples.reserveCapacity(count)
+    for index in 0..<count {
+        samples.append(colors[index % colors.count])
+    }
+    return samples
+}
+
+let solidGrey = BlankTileAnalysis.analyze(samples: tileSamples([(200, 200, 200)]))
+expect(
+    "纯色瓦片 → 空白（方差 0）",
+    solidGrey?.isBlank == true && solidGrey?.distinctColors == 1,
+    "actual=\(String(describing: solidGrey))"
+)
+// 高德那种灰底 + 很淡的水印：方差远小于 400、颜色种类远小于 8。
+let greyWatermark = BlankTileAnalysis.analyze(samples: tileSamples(
+    [(232, 232, 232), (232, 232, 232), (232, 232, 232), (246, 246, 246)]
+))
+expect(
+    "灰底 + 淡水印 → 空白（颜色少且方差低）",
+    greyWatermark?.isBlank == true
+        && greyWatermark!.distinctColors < BlankTileAnalysis.manyColors
+        && greyWatermark!.variance < BlankTileAnalysis.mixedVariance,
+    "actual distinct=\(greyWatermark?.distinctColors ?? -1) var=\(greyWatermark?.variance ?? -1)"
+)
+// 颜色多、方差大：真正的地图内容。
+var manyColors: [(r: UInt8, g: UInt8, b: UInt8)] = []
+for index in 0..<12 {
+    manyColors.append((
+        UInt8(40 + index * 17),
+        UInt8(200 - index * 11),
+        UInt8(30 + index * 13)
+    ))
+}
+let richTile = BlankTileAnalysis.analyze(samples: tileSamples(manyColors))
+expect(
+    "多种颜色 → 非空白（颜色种类 ≥ 8 且方差大）",
+    richTile?.isBlank == false
+        && richTile!.distinctColors >= BlankTileAnalysis.manyColors,
+    "actual distinct=\(richTile?.distinctColors ?? -1) var=\(richTile?.variance ?? -1)"
+)
+// 纯蓝的海面：靠「海洋豁免」不算空白，否则整片海图会被降级。
+let pureSea = BlankTileAnalysis.analyze(samples: tileSamples([(30, 90, 160)]))
+expect(
+    "纯蓝海面 → 非空白（色相 212°、饱和 0.68、亮度 95 ⇒ 海洋豁免）",
+    pureSea?.isBlank == false && (pureSea?.oceanRatio ?? 0) >= BlankTileAnalysis.oceanMinRatio,
+    "actual ocean=\(pureSea?.oceanRatio ?? -1)"
+)
+expect(
+    "海洋判定的色相区间是 185–265°、饱和 ≥ 0.22、亮度 ≥ 60",
+    BlankTileAnalysis.oceanHueRange == 185...265
+        && BlankTileAnalysis.oceanMinSaturation == 0.22
+        && BlankTileAnalysis.oceanMinLightness == 60
+        && BlankTileAnalysis.isOcean(r: 30, g: 90, b: 160)
+        && !BlankTileAnalysis.isOcean(r: 30, g: 200, b: 90)
+)
+// 7 / 8 / 9 种颜色的边界：阈值是「颜色种类 < 8」。
+// 用两个通道各取几个 16 的整数倍，保证量化到高 4 位后颜色数正好是构造的数量，
+// 且方差落在 12…400 之间（这样唯一的判据就是颜色种类）。
+let sevenColors = tileSamples([
+    (96, 96, 128), (112, 96, 128), (128, 96, 128), (144, 96, 128),
+    (96, 112, 128), (112, 112, 128), (128, 112, 128)
+])
+let eightColors = tileSamples([
+    (96, 96, 128), (112, 96, 128), (128, 96, 128), (144, 96, 128),
+    (96, 112, 128), (112, 112, 128), (128, 112, 128), (144, 112, 128)
+])
+let nineColors = eightColors + [(160, 96, 128)]
+let sevenResult = BlankTileAnalysis.analyze(samples: sevenColors)
+let eightResult = BlankTileAnalysis.analyze(samples: eightColors)
+let nineResult = BlankTileAnalysis.analyze(samples: nineColors)
+expect(
+    "颜色种类 7 种（< 8）且方差 < 400 → 空白",
+    sevenResult?.distinctColors == 7
+        && sevenResult!.variance >= BlankTileAnalysis.minVariance
+        && sevenResult!.variance < BlankTileAnalysis.mixedVariance
+        && sevenResult!.isBlank,
+    "colors=\(sevenResult?.distinctColors ?? -1) var=\(sevenResult?.variance ?? -1)"
+)
+expect(
+    "颜色种类 8 种（不再 < 8）→ 非空白（边界）",
+    eightResult?.distinctColors == 8 && eightResult!.isBlank == false,
+    "colors=\(eightResult?.distinctColors ?? -1)"
+)
+expect(
+    "颜色种类 9 种 → 非空白",
+    nineResult?.distinctColors == 9 && nineResult!.isBlank == false,
+    "colors=\(nineResult?.distinctColors ?? -1)"
+)
+expect("空样本 → 判定不出来（nil），不当作空白", BlankTileAnalysis.analyze(reds: [], greens: [], blues: []) == nil)
+
+// MARK: 状态机
+
+/// 造一个「境外自动」的初始状态：首选 OSM，可回退。
+func autoOverseas(now: TimeInterval = 0) -> BasemapState {
+    BasemapState(mode: .auto, preferred: .osm, now: now)
+}
+
+var osmState = autoOverseas()
+osmState.recordOSMTile(success: false, at: 10)
+osmState.recordOSMTile(success: false, at: 11)
+expect(
+    "OSM 连续失败 2 次：还不回退",
+    osmState.active == .osm && osmState.osmFailures == 2 && osmState.status == .live,
+    "active=\(osmState.active) failures=\(osmState.osmFailures)"
+)
+osmState.recordOSMTile(success: false, at: 12)
+expect(
+    "OSM 连续失败 3 次 → 回退到高德，并进入探测状态",
+    osmState.active == .amapVector && osmState.status == .probing && osmState.didFallBackToAmap,
+    "active=\(osmState.active) status=\(osmState.status)"
+)
+
+var resetState = autoOverseas()
+resetState.recordOSMTile(success: false, at: 10)
+resetState.recordOSMTile(success: false, at: 11)
+resetState.recordOSMTile(success: true, at: 12)
+resetState.recordOSMTile(success: false, at: 13)
+resetState.recordOSMTile(success: false, at: 14)
+expect(
+    "成功一次即清零：再失败 2 次也不会回退",
+    resetState.active == .osm && resetState.osmFailures == 2,
+    "active=\(resetState.active) failures=\(resetState.osmFailures)"
+)
+
+var graceState = autoOverseas()
+graceState.recordOSMTile(success: false, at: 10)
+graceState.recordOSMTile(success: false, at: 11)
+graceState.recordOSMTile(success: false, at: 12) // 12 秒回退，lastSwitchAt = 12
+graceState.recordAmapTile(blank: true, at: 14) // 切源 2 秒内：丢弃
+expect(
+    "切源 5 秒内的高德结果丢弃（不累计到这一屏）",
+    graceState.blankDetections == 0,
+    "actual=\(graceState.blankDetections)"
+)
+graceState.recordAmapTile(blank: true, at: 17) // 17 秒：过宽限期
+expect("切源 5 秒后开始计数", graceState.blankDetections == 1, "actual=\(graceState.blankDetections)")
+
+var probeState = autoOverseas()
+probeState.recordOSMTile(success: false, at: 100)
+probeState.recordOSMTile(success: false, at: 101)
+probeState.recordOSMTile(success: false, at: 102)
+expect(
+    "回退后 5 分钟内不探测",
+    !probeState.shouldProbe(now: 102 + 299) && probeState.nextProbeAt == 102 + 300,
+    "next=\(String(describing: probeState.nextProbeAt))"
+)
+expect("回退后 5 分钟到点就探测", probeState.shouldProbe(now: 102 + 300))
+probeState.probeFailed(at: 402)
+expect("探测失败：等下一个 5 分钟", !probeState.shouldProbe(now: 500) && probeState.active == .amapVector)
+probeState.probeSucceeded(at: 702)
+expect(
+    "探测成功 → 切回 OSM 并清零（缩放也恢复）",
+    probeState.active == .osm
+        && probeState.osmFailures == 0
+        && probeState.zoomStep == 0
+        && probeState.status == .live
+        && probeState.effectiveZoom(requested: 12) == 12,
+    "active=\(probeState.active) step=\(probeState.zoomStep)"
+)
+
+var manualState = BasemapState(mode: .manual, preferred: .osm, now: 0)
+for index in 0..<6 {
+    manualState.recordOSMTile(success: false, at: TimeInterval(index))
+}
+manualState.recordAmapTile(blank: true, at: 20)
+manualState.recordAmapTile(blank: true, at: 21)
+manualState.closeScreenBatch(at: 22)
+expect(
+    "手动选底图：不回退、不探测、不降级",
+    manualState.active == .osm
+        && manualState.osmFailures == 0
+        && manualState.zoomStep == 0
+        && !manualState.shouldProbe(now: 10_000)
+        && manualState.status == .live,
+    "active=\(manualState.active) failures=\(manualState.osmFailures) step=\(manualState.zoomStep)"
+)
+
+// 逐级降级：只有「整屏都空白」才降。
+var degradeState = autoOverseas()
+degradeState.recordOSMTile(success: false, at: 1)
+degradeState.recordOSMTile(success: false, at: 2)
+degradeState.recordOSMTile(success: false, at: 3) // 回退到高德，lastSwitchAt = 3
+var degradeClock: TimeInterval = 3
+func blankScreen(_ state: inout BasemapState, tiles: Int, clock: inout TimeInterval) {
+    for _ in 0..<tiles {
+        clock += 6 // 过 5 秒宽限期
+        state.recordAmapTile(blank: true, at: clock)
+    }
+    state.closeScreenBatch(at: clock)
+}
+expect("回退后先按请求的缩放正常显示（z12）", degradeState.effectiveZoom(requested: 12) == 12)
+blankScreen(&degradeState, tiles: 4, clock: &degradeClock)
+expect("整屏空白 → 降到 z11", degradeState.effectiveZoom(requested: 12) == 11, "actual=\(String(describing: degradeState.effectiveZoom(requested: 12)))")
+blankScreen(&degradeState, tiles: 4, clock: &degradeClock)
+expect("再整屏空白 → 降到 z10", degradeState.effectiveZoom(requested: 12) == 10)
+blankScreen(&degradeState, tiles: 4, clock: &degradeClock)
+expect("第三屏空白 → z3 全球底图", degradeState.effectiveZoom(requested: 12) == 3)
+blankScreen(&degradeState, tiles: 4, clock: &degradeClock)
+expect(
+    "z3 仍空白 → 底图不可用（effectiveZoom 为 nil、状态 unavailable）",
+    degradeState.effectiveZoom(requested: 12) == nil && degradeState.status == .unavailable,
+    "status=\(degradeState.status)"
+)
+
+// 整屏判据：只要有一块有内容，就不降级。
+var mixedState = autoOverseas()
+mixedState.recordOSMTile(success: false, at: 1)
+mixedState.recordOSMTile(success: false, at: 2)
+mixedState.recordOSMTile(success: false, at: 3)
+var mixedClock: TimeInterval = 3
+for index in 0..<4 {
+    mixedClock += 6
+    mixedState.recordAmapTile(blank: index != 2, at: mixedClock) // 第 3 块有内容
+}
+mixedState.closeScreenBatch(at: mixedClock)
+expect(
+    "一屏里有一块有内容 → 不降级（整屏判据）",
+    mixedState.zoomStep == 0 && mixedState.blankDetections == 3,
+    "step=\(mixedState.zoomStep) blanks=\(mixedState.blankDetections)"
+)
+var thinState = autoOverseas()
+thinState.recordOSMTile(success: false, at: 1)
+thinState.recordOSMTile(success: false, at: 2)
+thinState.recordOSMTile(success: false, at: 3)
+thinState.recordAmapTile(blank: true, at: 10)
+thinState.closeScreenBatch(at: 10)
+expect(
+    "一屏只有 1 块瓦片时不判空白（避免地图刚起步就降级）",
+    thinState.zoomStep == 0
+)
+
+// MARK: 瓦片工具
+
+expect(
+    "父瓦片折算：z12 (1234,567) → z10 (308,141)",
+    BasemapTiles.parentTile(x: 1234, y: 567, from: 12, to: 10)?.x == 308
+        && BasemapTiles.parentTile(x: 1234, y: 567, from: 12, to: 10)?.y == 141
+)
+expect(
+    "z12 → z3 也是同一套折算（shift 9）",
+    BasemapTiles.parentTile(x: 1234, y: 567, from: 12, to: 3)?.x == 2
+        && BasemapTiles.parentTile(x: 1234, y: 567, from: 12, to: 3)?.y == 1
+)
+expect("反向（放大的）折算不合法 → nil", BasemapTiles.parentTile(x: 1, y: 1, from: 3, to: 12) == nil)
+let shanghaiTile = BasemapTiles.tile(latitude: 31.2304, longitude: 121.4737, zoom: 12)
+expect(
+    "经纬度 → 瓦片：上海 z12 = (3430, 1673)",
+    shanghaiTile?.x == 3430 && shanghaiTile?.y == 1673,
+    "actual=\(String(describing: shanghaiTile))"
+)
+expect(
+    "PNG 魔数通过、HTML 假页面不通过（探测防劫持）",
+    BasemapTiles.looksLikeImage(data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]))
+        && BasemapTiles.looksLikeImage(data: Data([0xFF, 0xD8, 0xFF, 0xE0]))
+        && !BasemapTiles.looksLikeImage(data: Data("<html>".utf8))
+        && !BasemapTiles.looksLikeImage(data: nil)
+        && !BasemapTiles.looksLikeImage(data: Data())
+)
+expect(
+    "瓦片地址：OSM 与高德各自的模板都被替换掉占位符",
+    BasemapTiles.tileURL(source: .osm, x: 1, y: 2, z: 3)?.absoluteString
+        == "https://tile.openstreetmap.org/3/1/2.png"
+        && BasemapTiles.tileURL(source: .amapVector, x: 1, y: 2, z: 3)?.absoluteString.contains("x=1&y=2&z=3") == true,
+    "osm=\(String(describing: BasemapTiles.tileURL(source: .osm, x: 1, y: 2, z: 3)))"
+)
+
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

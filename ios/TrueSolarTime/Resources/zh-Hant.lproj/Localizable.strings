@@ -34,6 +34,16 @@
 "map.styleAmapSatellite" = "高德衛星";
 "map.attributionOsm" = "地圖資料 © OpenStreetMap 貢獻者";
 "map.attributionAmap" = "底圖 © 高德地圖";
+"map.fallbackNote" = "OSM 不可達，已回退高德";
+"map.unavailable" = "底圖不可用";
+"map.statusLive" = "正常";
+"map.statusProbing" = "回退中，等待探測";
+"map.statusUnavailable" = "底圖不可用";
+"map.degraded" = "（已降級）";
+"map.diagBasemap" = "地圖底圖";
+"map.diagSummary" = "實際源 %@ · %@ · z%d%@";
+"map.diagDetail" = "首選 %@ · OSM 失敗 %d 次 · 空白判定 %d 次 · 下次探測 %@";
+"map.probeIn" = "%d 秒後";
 
 /* 設定頁 */
 "settings.title" = "位置與提醒";

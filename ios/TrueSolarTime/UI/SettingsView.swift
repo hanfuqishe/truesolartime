@@ -152,6 +152,13 @@ struct SettingsView: View {
                                 diagnosticLine(title: L("settings.diagLastFailure"), value: WeatherStore.shared.failureSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
                                 diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
+                                // 地图底图：实际源（含「OSM 失败 3 次后回退」）、状态、缩放降级、
+                                // 首选源、OSM 失败次数、空白瓦片判定次数、下次探测时间。
+                                diagnosticLine(
+                                    title: L("map.diagBasemap"),
+                                    value: BasemapController.shared.diagnosticsSummary()
+                                )
+                                diagnosticLine(title: "", value: BasemapController.shared.diagnosticsDetail())
                             }
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)
