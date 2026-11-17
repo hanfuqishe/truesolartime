@@ -32,20 +32,16 @@ export class AppPalette {
    */
   sunArc: string;
   /**
-   * 太阳点**实心核心**的颜色（取值见 [SunDialColors]）。
+   * 太阳卡圆盘「当前太阳点」的颜色（取值见 [SunDialColors]）。
    *
-   * 白天深金 `#B8860B`（对白卡 ≥3:1，读起来是「点」而不是光斑）；夜间 `#E0B84A`。
+   * 白天 `#D9A520`、夜间 `#F5D68A`；画法与首页时间轴「现在」圆点完全一致
+   * （单个径向渐变圆，半径 5.5vp、色标 0/0.45/1、alpha 1/0.45/0）。
    * 地平线 / 运动箭头 / 刻度点不用它（分别用 subtle / subtle / accent）。
    */
-  sunDotCore: string;
-  /** 太阳点**中心高光**色（半径 0.9vp、alpha 1.0）：白天 `#FFF2C8`，夜间 `#FFF8E1`。 */
-  sunDotHighlight: string;
-  /** 太阳点**外圈柔光**色：从核心半径到 5.5vp 的径向渐变（0.45 → 0）。白天 `#D9A520`，夜间 `#F5D68A`。 */
-  sunGlow: string;
+  sunDot: string;
 
   constructor(page: string, card: string, chip: string, text: string, subtle: string, divider: string,
-    accent: string, onAccent: string, sunArc: string, sunDotCore: string, sunDotHighlight: string,
-    sunGlow: string) {
+    accent: string, onAccent: string, sunArc: string, sunDot: string) {
     this.page = page;
     this.card = card;
     this.chip = chip;
@@ -55,24 +51,20 @@ export class AppPalette {
     this.accent = accent;
     this.onAccent = onAccent;
     this.sunArc = sunArc;
-    this.sunDotCore = sunDotCore;
-    this.sunDotHighlight = sunDotHighlight;
-    this.sunGlow = sunGlow;
+    this.sunDot = sunDot;
   }
 }
 
 const DAY: AppPalette = new AppPalette(
   '#FFF8F1', '#FFFDFA', '#F2E3D3', '#211A15', '#6E5A49', '#E7D8C8', '#B4550A', '#FFFFFF',
-  // 白天：淡金弧 + 三层太阳点（深金核心 / 近白高光 / 金色外圈柔光）。
-  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_SUN_DOT_HIGHLIGHT,
-  SunDialColors.DAY_SUN_GLOW
+  // 白天：淡金弧 + 金色太阳点（与时间轴圆点同画法）。
+  SunDialColors.DAY_ARC, SunDialColors.DAY_SUN_DOT
 );
 
 const NIGHT: AppPalette = new AppPalette(
   '#0B1220', '#16203A', '#24304F', '#E8EDF7', '#9AA7BF', '#24304F', '#F5D68A', '#0B1220',
-  // 夜间：金色弧 + 三层太阳点（暖金核心 / 近白高光 / 金色外圈柔光）。
-  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT_CORE, SunDialColors.NIGHT_SUN_DOT_HIGHLIGHT,
-  SunDialColors.NIGHT_SUN_GLOW
+  // 夜间：金色弧 + 金色太阳点（与时间轴圆点同画法）。
+  SunDialColors.NIGHT_ARC, SunDialColors.NIGHT_SUN_DOT
 );
 
 export function paletteFor(isDay: boolean): AppPalette {

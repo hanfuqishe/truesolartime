@@ -1,16 +1,15 @@
 /**
- * 太阳卡圆盘的配色、线宽与太阳点三层画法参数，以及可测的对比度工具。
+ * 太阳卡圆盘的配色、线宽与太阳点（= 时间轴「现在」圆点）的参数，以及可测的对比度工具。
  *
- * 这些常量放在 core 里是为了让 `Tools/core-check.ts` 能直接断言「弧够淡、点够清晰、线够细、
- * 三层色值/尺寸」——UI 侧只从 `common/Theme.ets` 的 palette / 本类取，全工程唯一来源，
- * 不在绘制代码里散落 hex 或魔法数字。
+ * 这些常量放在 core 里是为了让 `Tools/core-check.ts` 能直接断言「弧够淡、线够细、
+ * 太阳点与时间轴圆点逐项一致」——UI 侧只从 `common/Theme.ets` 的 palette / 本类取，
+ * 全工程唯一来源，不在绘制代码里散落 hex 或魔法数字。
  *
- * 太阳点改成「清晰点 + 中心高光 + 外圈炫光」三层（不再是从圆心就开始渐变的整团光斑）：
- *   ① 实心核心：半径 [DOT_CORE_RADIUS]，白天 `#B8860B`（对白卡 ≥3:1），夜里 `#E0B84A`；
- *   ② 中心高光：半径 [DOT_HIGHLIGHT_RADIUS]，白天 `#FFF2C8`、夜里 `#FFF8E1`，alpha 1.0；
- *   ③ 外圈柔光：从核心半径到 [DOT_GLOW_RADIUS] 的径向渐变，白天 `#D9A520` 0.45 → 0，
- *      夜里 `#F5D68A` 0.45 → 0（起点就是核心半径，不遮住核心）。
- *  地平线以下不画光斑：只留一圈 1vp 的空心描边。
+ * **太阳点不再自创画法**：逐项照搬首页 0–24 时时间轴「现在」圆点——
+ * 单个径向渐变圆、半径 [DOT_RADIUS]（5.5vp）、色标 [DOT_STOPS]（0 / 0.45 / 1）、
+ * alpha [DOT_ALPHAS]（1 / 0.45 / 0，即中间就开始软化，边缘完全透明），渐变**从圆心 0 开始**。
+ * 只有颜色不同：白天 `#D9A520`、夜间 `#F5D68A`。
+ * 地平线以下用同尺寸、同渐变结构的柔化点（透明度减半），不画硬边描边圈。
  *
  * 白天弧 `#E8CFA0`（线宽 1.6vp，只作路径示意）；夜间弧/虚线保持原样（1.5vp、4/4vp）。
  */
@@ -19,18 +18,12 @@ export class SunDialColors {
   static readonly DAY_CARD: string = '#FFFDFA';
   /** 白天弧：淡金色，仅作路径示意。 */
   static readonly DAY_ARC: string = '#E8CFA0';
-  /** 白天太阳点：实心核心（深金，对白卡 ≥3:1）。 */
-  static readonly DAY_SUN_DOT_CORE: string = '#B8860B';
-  /** 白天太阳点：中心高光（近白暖金，alpha 1.0）。 */
-  static readonly DAY_SUN_DOT_HIGHLIGHT: string = '#FFF2C8';
-  /** 白天太阳点：外圈柔光。 */
-  static readonly DAY_SUN_GLOW: string = '#D9A520';
+  /** 白天太阳点：金色（与时间轴圆点同结构、同尺寸）。 */
+  static readonly DAY_SUN_DOT: string = '#D9A520';
   /** 夜间弧：保持原来的金色。 */
   static readonly NIGHT_ARC: string = '#F5D68A';
-  /** 夜间太阳点：实心核心 / 中心高光 / 外圈柔光。 */
-  static readonly NIGHT_SUN_DOT_CORE: string = '#E0B84A';
-  static readonly NIGHT_SUN_DOT_HIGHLIGHT: string = '#FFF8E1';
-  static readonly NIGHT_SUN_GLOW: string = '#F5D68A';
+  /** 夜间太阳点：保持原来的金色。 */
+  static readonly NIGHT_SUN_DOT: string = '#F5D68A';
   /** 夜间虚线（palette.subtle 的夜间值）：中性灰。 */
   static readonly NIGHT_DASH: string = '#9AA7BF';
 
@@ -41,23 +34,42 @@ export class SunDialColors {
   /** 夜晚虚线间隔（vp）：线宽 1.5 时 4/4 与原来的 6/6 视觉密度相当。 */
   static readonly NIGHT_DASH_LENGTH: number = 4;
 
-  /** 太阳点核心实心半径（vp）：清晰点，不做渐变淡化。 */
-  static readonly DOT_CORE_RADIUS: number = 2.4;
-  /** 中心高光半径（vp）：“炫”的关键，小、亮、实心。 */
-  static readonly DOT_HIGHLIGHT_RADIUS: number = 0.9;
-  /** 外圈柔光外沿半径（vp）。 */
-  static readonly DOT_GLOW_RADIUS: number = 5.5;
-  /** 外圈柔光渐变起点半径（vp）：= 核心半径，柔光不盖住核心。 */
-  static readonly DOT_GLOW_START_RADIUS: number = 2.4;
-  /** 外圈柔光起点 alpha（向外线性淡出到 0）。 */
-  static readonly DOT_GLOW_ALPHA: number = 0.45;
-  /** 地平线以下空心点的描边半径（vp）与线宽（vp）。 */
-  static readonly DOT_HOLLOW_RADIUS: number = 2.4;
-  static readonly DOT_HOLLOW_STROKE_WIDTH: number = 1;
-  /** 空心点垫底圆半径（vp）：避免与夜晚虚线糊在一起，不算光斑。 */
-  static readonly DOT_HOLLOW_PAD_RADIUS: number = 3.0;
-  /** 太阳点硬描边的透明度：已去掉（<0.15 视为没有硬边），保留常量便于断言。 */
-  static readonly DOT_RING_ALPHA: number = 0;
+  /**
+   * 太阳点 / 时间轴圆点的渐变半径（vp）。
+   *
+   * 时间轴那颗点就是 11×11vp 的盒子 + `radialGradient(radius: 5.5)`；太阳点照搬。
+   */
+  static readonly DOT_RADIUS: number = 5.5;
+  /** 渐变色标位置（与时间轴圆点一致）：0 / 0.45 / 1。 */
+  static readonly DOT_STOPS: number[] = [0, 0.45, 1];
+  /** 渐变色标 alpha（与时间轴圆点一致）：1 / 0.45 / 0 —— 从圆心开始柔和过渡。 */
+  static readonly DOT_ALPHAS: number[] = [1, 0.45, 0];
+  /** 地平线以下柔化点的 alpha 缩放（同尺寸同画法，只是更淡）。 */
+  static readonly DOT_BELOW_HORIZON_SCALE: number = 0.5;
+
+  /** 给 `#RRGGBB` 叠一层 alpha（`#AARRGGBB`）：渐变与 Canvas 都只吃字符串颜色。 */
+  static withAlpha(hex: string, alpha: number): string {
+    if (hex.length !== 7) {
+      return hex;
+    }
+    const value: number = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+    const body: string = value < 16 ? `0${value.toString(16)}` : value.toString(16);
+    return `#${body}${hex.substring(1)}`.toUpperCase();
+  }
+
+  /**
+   * 按时间轴圆点的 alpha 序列生成三档颜色（0 / 0.45 / 1）。
+   *
+   * @param base 基础色（白天 `#D9A520` / 夜间 `#F5D68A`）
+   * @param alphaScale 整体透明度缩放：1 = 地平线以上；0.5 = 地平线以下的柔化点。
+   */
+  static dotGradientColors(base: string, alphaScale: number = 1): string[] {
+    const colors: string[] = [];
+    for (const alpha of SunDialColors.DOT_ALPHAS) {
+      colors.push(SunDialColors.withAlpha(base, alpha * alphaScale));
+    }
+    return colors;
+  }
 
   /** `#RRGGBB` / `#AARRGGBB` → `[r, g, b]`（0–255，忽略 alpha）。 */
   static rgb(hex: string): number[] {

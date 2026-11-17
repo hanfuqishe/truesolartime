@@ -1001,10 +1001,16 @@ struct Index {
             .width(this.cs(11))
             .height(this.cs(11))
             .borderRadius(this.cs(5.5))
+            // 时间轴「现在」圆点：太阳点逐项照搬的就是这一套 ——
+            // 半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0（从圆心开始柔和过渡）。
             .radialGradient({
               center: ['50%', '50%'],
-              radius: 5.5,
-              colors: [[this.dotColor(), 0], [this.dotColor(), 0.45], [`#00${this.dotColor().substring(1)}`, 1]]
+              radius: SunDialColors.DOT_RADIUS,
+              colors: [
+                [SunDialColors.dotGradientColors(this.dotColor())[0], SunDialColors.DOT_STOPS[0]],
+                [SunDialColors.dotGradientColors(this.dotColor())[1], SunDialColors.DOT_STOPS[1]],
+                [SunDialColors.dotGradientColors(this.dotColor())[2], SunDialColors.DOT_STOPS[2]]
+              ]
             })
           Row().layoutWeight(this.solarSecond < 86400 ? (86400 - this.solarSecond) / 60 : 0.1)
         }
@@ -1444,50 +1450,21 @@ struct Index {
       }
     }
 
-    // 当前太阳点：三层「清晰点 + 中心高光 + 外圈炫光」（与时间轴那颗点的读法一致）。
-    //   ① 外圈柔光：从核心半径 2.4vp 到 5.5vp 的径向渐变（0.45 → 0），
-    //   ② 实心核心：半径 2.4vp 的深金圆（不渐变淡化，对白卡 ≥3:1），
-    //   ③ 中心高光：半径 0.9vp 的近白暖金（alpha 1.0），这一小点才是「炫」的关键。
-    if (path.isSunUp()) {
-      const glowGradient = ctx.createRadialGradient(
-        path.sunX, path.sunY, SunDialColors.DOT_GLOW_START_RADIUS,
-        path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS);
-      glowGradient.addColorStop(0, this.alphaColor(this.palette.sunGlow, SunDialColors.DOT_GLOW_ALPHA));
-      glowGradient.addColorStop(1, this.alphaColor(this.palette.sunGlow, 0));
-      ctx.beginPath();
-      ctx.fillStyle = glowGradient;
-      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS, 0, full);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.fillStyle = this.palette.sunDotCore;
-      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_CORE_RADIUS, 0, full);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.fillStyle = this.palette.sunDotHighlight;
-      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HIGHLIGHT_RADIUS, 0, full);
-      ctx.fill();
-    } else {
-      // 地平线以下不画光斑：垫一圈卡片底色（避免与虚线糊在一起）后，只留 1vp 的空心描边。
-      ctx.beginPath();
-      ctx.fillStyle = this.palette.card;
-      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HOLLOW_PAD_RADIUS, 0, full);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.strokeStyle = outline;
-      ctx.lineWidth = SunDialColors.DOT_HOLLOW_STROKE_WIDTH;
-      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_HOLLOW_RADIUS, 0, full);
-      ctx.stroke();
-    }
-  }
-
-  /** 给 `#RRGGBB` 叠一层 alpha（`#AARRGGBB`）：Canvas 的 fillStyle/strokeStyle 只吃字符串颜色。 */
-  private alphaColor(color: string, alpha: number): string {
-    if (color.length === 7) {
-      const value: number = Math.round(alpha * 255);
-      const hex: string = value < 16 ? `0${value.toString(16)}` : value.toString(16);
-      return `#${hex}${color.substring(1)}`.toUpperCase();
-    }
-    return color;
+    // 当前太阳点：**逐项照搬**首页时间轴「现在」圆点的画法 ——
+    // 单个径向渐变圆（渐变从圆心 0 开始）：半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0。
+    // 只有颜色不同（白天 #D9A520、夜间 #F5D68A）；地平线以下用同尺寸同画法、整体更淡的柔化点。
+    const dotBaseColor: string = path.isSunUp() ? this.palette.sunDot : this.palette.subtle;
+    const dotAlphaScale: number = path.isSunUp() ? 1 : SunDialColors.DOT_BELOW_HORIZON_SCALE;
+    const dotColors: string[] = SunDialColors.dotGradientColors(dotBaseColor, dotAlphaScale);
+    const dotGradient = ctx.createRadialGradient(
+      path.sunX, path.sunY, 0, path.sunX, path.sunY, SunDialColors.DOT_RADIUS);
+    dotGradient.addColorStop(SunDialColors.DOT_STOPS[0], dotColors[0]);
+    dotGradient.addColorStop(SunDialColors.DOT_STOPS[1], dotColors[1]);
+    dotGradient.addColorStop(SunDialColors.DOT_STOPS[2], dotColors[2]);
+    ctx.beginPath();
+    ctx.fillStyle = dotGradient;
+    ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_RADIUS, 0, full);
+    ctx.fill();
   }
 
   /**

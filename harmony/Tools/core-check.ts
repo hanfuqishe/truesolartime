@@ -1409,7 +1409,7 @@ for (const item of equationCases) {
   near('narrow horizon ends at width - inset', 160 - horizonInset, narrowSpan.endX, 0.5);
 }
 
-// ---- 太阳卡：轨迹线宽 / 太阳点渐变 / 配色对比 ----
+// ---- 太阳卡：轨迹线宽 / 太阳点（= 时间轴圆点）逐项一致 / 配色对比 ----
 {
   const arcContrast: number = SunDialColors.contrastRatio(
     SunDialColors.DAY_ARC, SunDialColors.DAY_CARD);
@@ -1418,11 +1418,11 @@ for (const item of equationCases) {
     SunDialColors.warmth(SunDialColors.NIGHT_DASH);
   check('day arc differs from the night dash in hue', warmthGap >= 0.15, `${warmthGap}`);
   const dotContrast: number = SunDialColors.contrastRatio(
-    SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC);
-  check('sun dot core separates from the day arc', dotContrast >= 1.3, `${dotContrast}`);
-  check('sun dot core is clearly apart from the arc in rgb',
-    SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC) >= 100,
-    `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_ARC)}`);
+    SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC);
+  check('sun dot separates from the day arc', dotContrast >= 1.3, `${dotContrast}`);
+  check('sun dot is clearly apart from the arc in rgb',
+    SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC) >= 100,
+    `${SunDialColors.rgbDistance(SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_ARC)}`);
 
   // 轨迹线宽：白天 1.6、夜晚 1.5（虚线 4/4）；极昼/极夜整圆沿用同一组宽度。
   equal('day arc is a thin 1.6vp line', 1.6, SunDialColors.DAY_ARC_WIDTH);
@@ -1431,34 +1431,24 @@ for (const item of equationCases) {
   check('arc lines are thinner than before', SunDialColors.DAY_ARC_WIDTH < 2.5
     && SunDialColors.NIGHT_ARC_WIDTH < 2.5 && SunDialColors.DAY_ARC_WIDTH > SunDialColors.NIGHT_ARC_WIDTH);
 
-  // 太阳点三层：实心核心 2.4vp + 中心高光 0.9vp + 外圈柔光（2.4 → 5.5vp，0.45 → 0）。
-  near('sun dot core radius', 2.4, SunDialColors.DOT_CORE_RADIUS, 0.001);
-  near('sun dot highlight radius', 0.9, SunDialColors.DOT_HIGHLIGHT_RADIUS, 0.001);
-  near('sun dot glow radius', 5.5, SunDialColors.DOT_GLOW_RADIUS, 0.001);
-  near('sun dot glow starts at the core radius', SunDialColors.DOT_CORE_RADIUS,
-    SunDialColors.DOT_GLOW_START_RADIUS, 0.001);
-  equal('sun dot core color is deep gold', '#B8860B', SunDialColors.DAY_SUN_DOT_CORE);
-  equal('sun dot highlight is near-white warm gold', '#FFF2C8', SunDialColors.DAY_SUN_DOT_HIGHLIGHT);
-  equal('sun glow is gold', '#D9A520', SunDialColors.DAY_SUN_GLOW);
-  equal('sun glow starts at 0.45 alpha', 0.45, SunDialColors.DOT_GLOW_ALPHA);
-  const coreOnCard: number = SunDialColors.contrastRatio(
-    SunDialColors.DAY_SUN_DOT_CORE, SunDialColors.DAY_CARD);
-  check('sun dot core reads as a point on the white card', coreOnCard >= 3.0, `${coreOnCard}`);
-  const highlightLuminance: number = SunDialColors.relativeLuminance(
-    SunDialColors.DAY_SUN_DOT_HIGHLIGHT);
-  check('sun dot highlight is bright enough', highlightLuminance >= 0.8, `${highlightLuminance}`);
-  check('hollow dot matches the core',
-    Math.abs(SunDialColors.DOT_HOLLOW_RADIUS - SunDialColors.DOT_CORE_RADIUS) < 0.001
-      && SunDialColors.DOT_HOLLOW_STROKE_WIDTH === 1);
-  check('sun dot is much smaller than before', SunDialColors.DOT_GLOW_RADIUS < 9
-    && SunDialColors.DOT_CORE_RADIUS < 4);
-  check('sun dot hard ring is removed', SunDialColors.DOT_RING_ALPHA < 0.15,
-    `${SunDialColors.DOT_RING_ALPHA}`);
-  check('night sun dot stays gold',
-    SunDialColors.NIGHT_SUN_DOT_CORE === '#E0B84A'
-      && SunDialColors.NIGHT_SUN_DOT_HIGHLIGHT === '#FFF8E1'
-      && SunDialColors.NIGHT_SUN_GLOW === '#F5D68A'
-      && SunDialColors.NIGHT_ARC === '#F5D68A');
+  // 太阳点 = 时间轴「现在」圆点：同半径、同色标位置、同 alpha 序列，只有颜色不同。
+  near('sun dot radius matches the timeline dot', 5.5, SunDialColors.DOT_RADIUS, 0.001);
+  equal('sun dot colour stops match the timeline dot', '0,0.45,1',
+    SunDialColors.DOT_STOPS.join(','));
+  equal('sun dot alpha stops match the timeline dot', '1,0.45,0',
+    SunDialColors.DOT_ALPHAS.join(','));
+  equal('sun dot gradient starts at the centre', 0, SunDialColors.DOT_STOPS[0]);
+  equal('sun dot is gold by day', '#D9A520', SunDialColors.DAY_SUN_DOT);
+  equal('sun dot is gold by night', '#F5D68A', SunDialColors.NIGHT_SUN_DOT);
+  equal('day gradient colours follow the alpha stops', '#FFD9A520,#73D9A520,#00D9A520',
+    SunDialColors.dotGradientColors(SunDialColors.DAY_SUN_DOT).join(','));
+  equal('night gradient colours follow the alpha stops', '#FFF5D68A,#73F5D68A,#00F5D68A',
+    SunDialColors.dotGradientColors(SunDialColors.NIGHT_SUN_DOT).join(','));
+  check('below-horizon dot keeps the same radius and softer alpha',
+    SunDialColors.DOT_BELOW_HORIZON_SCALE === 0.5
+      && SunDialColors.dotGradientColors(SunDialColors.DAY_SUN_DOT,
+        SunDialColors.DOT_BELOW_HORIZON_SCALE).length === 3);
+  equal('night arc stays gold', '#F5D68A', SunDialColors.NIGHT_ARC);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
