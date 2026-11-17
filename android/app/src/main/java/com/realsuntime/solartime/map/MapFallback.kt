@@ -58,6 +58,28 @@ object MapFallback {
      */
     const val SWITCH_SETTLE_MILLIS = 5_000L
 
+    /**
+     * 程序化改视口（切城市 / 降级改级别）后的「残响」窗口。
+     *
+     * `setCenter` / `setZoom` 会把还在飞的瓦片请求**取消**掉，osmdroid 对取消的请求也报
+     * `MAPTILE_FAIL_ID`。这些「失败」若照常计数，就会变成
+     * 「改级别 → 取消请求 → 一堆失败 → 判该级别没瓦片 → 再改级别」的自激循环
+     * （真机实测：2 秒内 441 次状态发布、缩放 3↔12↔11↔10 狂跳，就是「地图狂闪」）。
+     * 视口刚动过的这一小段窗口内回来的失败一律不计。
+     */
+    const val VIEWPORT_SETTLE_MILLIS = 2_000L
+
+    /** 降级到全球底图后，要「安静」这么久（没有新失败）才允许借「全球图出图」把降级链弹回去。 */
+    const val RECOVERY_QUIET_MILLIS = 30_000L
+
+    /**
+     * 同一会话里「弹回上一级」的尝试最多每 5 分钟一次。
+     *
+     * 没有这条，网络一直坏就会变成 12→11→10→3→12→… 的来回跳（真机实测的狂闪就是这个）。
+     * 5 分钟与 OSM 探测间隔一致：真有恢复，最多 5 分钟后自己回到默认级别。
+     */
+    const val RECOVERY_COOLDOWN_MILLIS = 5 * 60_000L
+
     /** 一次底图选择的结果：Composable 与诊断页都只读它。 */
     fun plan(style: MapStyle, latitude: Double, longitude: Double, state: MapFallbackState): MapTilePlan {
         val preferred = style.effective(latitude, longitude)
@@ -129,16 +151,25 @@ object MapFallback {
             .markZoom(plan.effective, zoom, available = true)
             .copy(lastFailedZoom = null, zoomFailures = 0)
         if (zoom <= MIN_ZOOM) {
-            // 最低级别的全球底图都出图了 = 网络回来了：把「某级别没瓦片」的记忆一起清掉，
-            // 让降级链回到默认级别重试（万一真缺瓦片，会被重新学一遍）。
+            // 最低级别的全球底图都出图了：**在满足恢复条件时**把「某级别没瓦片」的记忆清掉，
+            // 让降级链回到默认级别重试。
             //
-            // **但空白瓦片学来的记忆要留着**：它记的是「这个源在这个地区根本没有内容」，
-            // 是结构性的，不是网络问题。忘掉它就会在
-            // 「z12 空白 → 降到 z3 有全球图 → 弹回 z12 又是空白」之间来回跳（而且第二次
-            // z12 的空白瓦片已在缓存里、不会再有成功回调，跳回去就再也降不下来了）。
-            val sticky = next.blankZooms[plan.effective].orEmpty()
-            val kept = next.unavailableZooms[plan.effective].orEmpty().intersect(sticky)
-            next = next.copy(unavailableZooms = next.unavailableZooms + (plan.effective to kept))
+            // 为什么不能一出图就清（真机实测的「地图狂闪」根因）：清掉 → 回到 z12 又拿不到瓦片
+            // → 再降到 z3 → z3 一出图又清 → 3↔12↔11↔10 无限跳，2 秒内 441 次状态发布。
+            // 所以要求两件事：①最近 [RECOVERY_QUIET_MILLIS] 内没有新失败；②距上次恢复尝试
+            // 至少 [RECOVERY_COOLDOWN_MILLIS]。网络真好时最多 5 分钟后自己回到默认级别，
+            // 网络坏时不会来回跳。
+            //
+            // **空白瓦片学来的记忆另外留着**：它记的是「这个源在这个地区根本没有内容」，
+            // 是结构性的，不是网络问题，只有该级别真出图才清（见 [MapFallbackState.blankZooms]）。
+            if (canRecoverChain(state, nowMillis)) {
+                val sticky = next.blankZooms[plan.effective].orEmpty()
+                val kept = next.unavailableZooms[plan.effective].orEmpty().intersect(sticky)
+                next = next.copy(
+                    unavailableZooms = next.unavailableZooms + (plan.effective to kept),
+                    lastRecoveryAtMillis = nowMillis,
+                )
+            }
         }
         if (plan.effective == MapStyle.OSM) {
             next = next.recovered(nowMillis)
@@ -147,7 +178,8 @@ object MapFallback {
     }
 
     /**
-     * 一块瓦片加载失败（osmdroid 已把 HTTP 非 2xx / 连接超时 / 解码失败统一收敛成失败回调）：
+     * 一块瓦片加载失败（osmdroid 已把 HTTP 非 2xx / 连接超时 / **被取消的请求** / 解码失败
+     * 统一收敛成失败回调）：
      * * 正在用 OSM：累计连续失败，够 [FAILURE_THRESHOLD] 次就回退到高德；
      * * 正在用高德：同一级别连续失败够 [FAILURE_THRESHOLD] 次才判「这个级别没瓦片」，交给 [zoomPlan] 降级。
      */
@@ -162,7 +194,26 @@ object MapFallback {
         if (style != MapStyle.AUTO) return state
         // 刚切过源：这些失败多半属于切换前就发出去的请求，丢了不算。
         if (state.isSettling(nowMillis)) return state
+        // 刚程序化改过视口（切城市 / 降级）：那是我们主动取消了在飞的请求，失败不算。
+        if (state.isSettlingViewport(nowMillis)) return state
         return registerFailure(style, latitude, longitude, zoom, state, nowMillis, blank = false)
+    }
+
+    /** 程序化改视口后的「残响」判定（见 [VIEWPORT_SETTLE_MILLIS]）。 */
+    fun onViewportChanged(state: MapFallbackState, nowMillis: Long): MapFallbackState =
+        state.copy(viewportChangedAtMillis = nowMillis)
+
+    /**
+     * 现在允许借「全球底图出图」把降级链弹回上一级吗（见 [RECOVERY_QUIET_MILLIS] / [RECOVERY_COOLDOWN_MILLIS]）。
+     *
+     * 纯函数，单测直接盯：网络一直坏时必须为 false，否则就是来回跳。
+     */
+    fun canRecoverChain(state: MapFallbackState, nowMillis: Long): Boolean {
+        val lastFailure = state.lastFailedAtMillis
+        if (lastFailure != null && nowMillis - lastFailure < RECOVERY_QUIET_MILLIS) return false
+        val lastRecovery = state.lastRecoveryAtMillis
+        if (lastRecovery != null && nowMillis - lastRecovery < RECOVERY_COOLDOWN_MILLIS) return false
+        return true
     }
 
     /**
@@ -210,7 +261,11 @@ object MapFallback {
         val plan = plan(style, latitude, longitude, state)
         if (plan.effective != MapStyle.OSM) {
             val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
-            var next = state.copy(lastFailedZoom = zoom, zoomFailures = streak)
+            var next = state.copy(
+                lastFailedZoom = zoom,
+                zoomFailures = streak,
+                lastFailedAtMillis = nowMillis,
+            )
             if (streak >= FAILURE_THRESHOLD) {
                 next = next
                     .markZoom(plan.effective, zoom, available = false)
@@ -221,7 +276,9 @@ object MapFallback {
             return next
         }
         val failures = state.osmFailures + 1
-        if (failures < FAILURE_THRESHOLD) return state.copy(osmFailures = failures)
+        if (failures < FAILURE_THRESHOLD) {
+            return state.copy(osmFailures = failures, lastFailedAtMillis = nowMillis)
+        }
         return state.copy(
             osmFailures = failures,
             fellBack = true,
@@ -270,6 +327,12 @@ data class MapFallbackState(
     val lastBlankColorKinds: Int? = null,
     /** 最近一次切源（回退 / 恢复）的时刻，用来丢弃切换瞬间还在飞的旧请求的失败。 */
     val switchedAtMillis: Long? = null,
+    /** 最近一次**程序化**改视口（切城市 / 降级改级别）的时刻，见 [MapFallback.VIEWPORT_SETTLE_MILLIS]。 */
+    val viewportChangedAtMillis: Long? = null,
+    /** 最近一次瓦片失败的时刻：降级链「弹回上一级」要求它之后安静够久（见 [MapFallback.canRecoverChain]）。 */
+    val lastFailedAtMillis: Long? = null,
+    /** 最近一次借「全球底图出图」把降级链弹回去的时刻（冷却用，避免来回跳）。 */
+    val lastRecoveryAtMillis: Long? = null,
 ) {
     /** 该底图在这个级别上是否已被判定「没有瓦片」。 */
     fun zoomUnavailable(style: MapStyle, zoom: Int): Boolean = zoom in unavailableZooms[style].orEmpty()
@@ -278,6 +341,12 @@ data class MapFallbackState(
     fun isSettling(nowMillis: Long): Boolean {
         val at = switchedAtMillis ?: return false
         return nowMillis - at in 0 until MapFallback.SWITCH_SETTLE_MILLIS
+    }
+
+    /** 是否落在「刚程序化改过视口」的残响窗口里（见 [MapFallback.VIEWPORT_SETTLE_MILLIS]）。 */
+    fun isSettlingViewport(nowMillis: Long): Boolean {
+        val at = viewportChangedAtMillis ?: return false
+        return nowMillis - at in 0 until MapFallback.VIEWPORT_SETTLE_MILLIS
     }
 
     /**
@@ -314,6 +383,47 @@ data class MapFallbackState(
         val current = blankZooms[style].orEmpty()
         if (zoom in current) return this
         return copy(blankZooms = blankZooms + (style to current + zoom))
+    }
+}
+
+/**
+ * 地图卡片真正需要的 UI 状态（不可变、小、可比较）。
+ *
+ * 为什么要单独抽一层：瓦片事件（成功 / 失败 / 空白）会把 [MapFallbackState] 改得很勤
+ * （失败连续计数、空白计数……），**这些变化和画面无关**。直接把它推到 Compose，就会
+ * 「每来一块瓦片重组一次」，真机上表现为地图狂闪、卡顿。
+ *
+ * 这里只保留「换个底图 / 换个级别 / 降级 / 底图不可用 / 是否回退」这五件事，
+ * 由 `distinctUntilChanged()` 卡住：**只有最终生效的 plan 变了才对外发新状态**（见 [of]）。
+ */
+data class MapUiState(
+    /** 设置里的模式（自动 / 手动某个底图）—— 署名文案要用。 */
+    val requested: MapStyle,
+    /** 当前实际使用的底图。 */
+    val source: MapStyle,
+    /** 当前实际使用的缩放级别。 */
+    val zoom: Int,
+    /** 是否为绕开「没内容的级别」降过级。 */
+    val degraded: Boolean,
+    /** 连最低级别的全球底图都拿不到：界面显示「底图不可用」。 */
+    val unavailable: Boolean,
+    /** 是否正在用回退出来的底图（高德）。 */
+    val fellBack: Boolean,
+) {
+    companion object {
+        /** 由「设置 + 地点 + 会话状态」算出 UI 状态（纯函数，单测直接盯相等性）。 */
+        fun of(style: MapStyle, latitude: Double, longitude: Double, state: MapFallbackState): MapUiState {
+            val plan = MapFallback.plan(style, latitude, longitude, state)
+            val zoomPlan = MapFallback.zoomPlan(plan, MapFallback.DEFAULT_ZOOM, state)
+            return MapUiState(
+                requested = plan.requested,
+                source = plan.effective,
+                zoom = zoomPlan.zoom,
+                degraded = zoomPlan.degraded,
+                unavailable = zoomPlan.unavailable,
+                fellBack = plan.fellBack,
+            )
+        }
     }
 }
 
@@ -375,7 +485,21 @@ class MapFallbackTracker(
 
     fun appliedZoom(): Int? = zoomApplied
 
+    /**
+     * 地图卡片**程序化**应用完视口（居中 + 级别）后调用。
+     *
+     * 除了记诊断用的级别，还把「刚改过视口」的残响窗口打开：`setCenter` / `setZoom` 会取消
+     * 在飞的瓦片请求，osmdroid 对取消的请求也报失败，这些失败不能计入降级统计
+     * （见 [MapFallback.VIEWPORT_SETTLE_MILLIS] —— 否则就是真机上那个「狂闪」自激循环）。
+     */
     fun onZoomApplied(zoom: Int) {
+        zoomApplied = zoom
+        val now = clock()
+        update { MapFallback.onViewportChanged(it, now) }
+    }
+
+    /** 只记诊断用的级别（瓦片事件里的当下级别），**不**开残响窗口。 */
+    fun noteTileZoom(zoom: Int) {
         zoomApplied = zoom
     }
 
@@ -429,6 +553,8 @@ class MapFallbackTracker(
         }
     }
 
+    // 注意：这个类（以及整个 MapFallback/TileBlank）必须保持**不碰 Android**，
+    // 这样状态机才能纯 JVM 跑单测；要打日志请在 UI 层（MapCard / MainViewModel）打。
     private fun update(block: (MapFallbackState) -> MapFallbackState) {
         synchronized(lock) { _state.value = block(_state.value) }
     }

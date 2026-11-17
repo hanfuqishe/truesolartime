@@ -17,6 +17,7 @@ import com.realsuntime.solartime.data.WeatherRepository
 import com.realsuntime.solartime.map.MapFallbackSession
 import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
+import com.realsuntime.solartime.map.MapUiState
 import com.realsuntime.solartime.map.TileEvent
 import com.realsuntime.solartime.map.TileResult
 import com.realsuntime.solartime.notify.ShiChenReminder
@@ -29,6 +30,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -70,7 +73,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 计数与探测都写在这个状态机里，不散落在 Composable 里。
      */
     private val mapFallback = MapFallbackSession.tracker
+    /** 会话原始状态：只给诊断/排查用，**不要**拿它驱动 Compose（见下面的 [mapUi]）。 */
     val mapFallbackState: StateFlow<MapFallbackState> = mapFallback.state
+
+    /**
+     * 地图卡片**唯一**应该观察的状态：只有「换源 / 换级别 / 是否降级 / 是否底图不可用」这几件事变了才发。
+     *
+     * `mapFallbackState` 里的失败计数、空白计数每来一块瓦片都在变，直接拿去驱动 Compose 就是
+     * 「每块瓦片重组一次」——真机上表现为地图狂闪（实测 2 秒 441 次状态发布、缩放 3↔12↔11↔10 狂跳）。
+     * 这里用 [MapUiState.of] 把状态压成「有效 plan」，再由 `distinctUntilChanged` 卡住。
+     */
+    private val _mapUi = MutableStateFlow(
+        MapUiState.of(settings.mapStyle, settings.place.latitude, settings.place.longitude, mapFallback.snapshot()),
+    )
+    val mapUi: StateFlow<MapUiState> = _mapUi.asStateFlow()
 
     private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
@@ -100,6 +116,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var stopTracking: (() -> Unit)? = null
     private var announcedFirstFix = false
+    private var tileEventCount = 0
 
     init {
         viewModelScope.launch {
@@ -124,6 +141,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { mapFallback.probeIfDue() }
                 delay(MAP_PROBE_TICK_MILLIS)
             }
+        }
+        // 地图卡片的 UI 状态：把「会话状态 + 地点 + 设置」压成 MapUiState，只在其真的变化时才发。
+        viewModelScope.launch {
+            combine(mapFallback.state, _place, _mapStyle) { state, place, style ->
+                MapUiState.of(style, place.latitude, place.longitude, state)
+            }.distinctUntilChanged().collect { _mapUi.value = it }
         }
         // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
         // 小组件也会被系统屏蔽（桌面显示「加载失败」），打开一次就恢复。
@@ -249,8 +272,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onMapTileEvent(event: TileEvent) {
         val place = _place.value
         val style = _mapStyle.value
-        // 瓦片事件里的级别就是地图当下的真实级别：顺便记进诊断，省一次监听。
-        mapFallback.onZoomApplied(event.zoom)
+        tileEventCount++
+        if (event.result != TileResult.LOADED || tileEventCount % 40 == 0) {
+            android.util.Log.w("MapFx", "tileEvent ${event.result} z=${event.zoom} #$tileEventCount")
+        }
+        // 只记诊断用的「当下级别」，**不**开「刚改过视口」的残响窗口：
+        // 瓦片事件是结果不是原因，拿它当视口变化会把窗口无限续期，真失败就再也数不到了。
+        mapFallback.noteTileZoom(event.zoom)
         when (event.result) {
             TileResult.LOADED ->
                 mapFallback.onTileLoaded(style, place.latitude, place.longitude, event.zoom)
@@ -263,9 +291,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 地图上真正生效的缩放级别（被降级链改过时也要如实记下来）。 */
+    /** 地图卡片「程序化应用完视口」：记级别 + 打开残响窗口（见 [MapFallbackTracker.onZoomApplied]）。 */
     fun onMapZoomApplied(zoom: Int) {
         mapFallback.onZoomApplied(zoom)
+    }
+
+    /** 这一级是否已被判「没内容/没瓦片」（空白检测的定时重扫据此跳过已经判过的级别）。 */
+    fun isMapZoomUnavailable(zoom: Int): Boolean {
+        val place = _place.value
+        val state = mapFallback.snapshot()
+        val plan = com.realsuntime.solartime.map.MapFallback.plan(
+            _mapStyle.value,
+            place.latitude,
+            place.longitude,
+            state,
+        )
+        return state.zoomUnavailable(plan.effective, zoom)
     }
 
     fun setKeepScreenOn(enabled: Boolean) {

@@ -2,6 +2,7 @@ package com.realsuntime.solartime.map
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -301,11 +302,131 @@ class MapFallbackTest {
         assertEquals(MapFallback.MIN_ZOOM, offline.zoom)
         assertTrue(offline.unavailable) // 界面显示「底图不可用」，不是一块空白
 
-        // 网络回来：最低级别出图 → 「某级别没瓦片」的记忆被清掉，缩放回到默认级别
+        // 网络回来：最低级别出图 + 安静够久 → 「某级别没瓦片」的记忆被清掉，缩放回到默认级别
+        now += MapFallback.RECOVERY_QUIET_MILLIS + MapFallback.RECOVERY_COOLDOWN_MILLIS
         tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
         val recovered = tracker.zoomPlan(tracker.planAt(MapStyle.AUTO, paris), 12)
         assertEquals(12, recovered.zoom)
         assertFalse(recovered.unavailable)
+    }
+
+    /**
+     * 真机上「地图狂闪」的根因回归：网络一直坏时，z3 一出图就把降级链弹回 z12，
+     * z12 又失败 → 再降到 z3 → 又弹回……实测 2 秒内 441 次状态发布、缩放 3↔12↔11↔10 狂跳。
+     * 现在要求「安静 30 秒 + 距上次恢复尝试 5 分钟」，网络坏时必须原地不动。
+     */
+    @Test
+    fun globalTileLoadDoesNotBounceBackWhileTheNetworkKeepsFailing() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        listOf(12, 11, 10, MapFallback.MIN_ZOOM).forEach { tracker.failTiles(threshold, zoom = it) }
+        assertEquals(MapFallback.MIN_ZOOM, tracker.zoomPlan(plan, 12).zoom)
+
+        // 刚失败完（1 秒后）z3 就出图：不允许弹回
+        now += 1_000L
+        tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
+        assertEquals(MapFallback.MIN_ZOOM, tracker.zoomPlan(plan, 12).zoom)
+
+        // 安静够久：允许弹一次
+        now += MapFallback.RECOVERY_QUIET_MILLIS
+        tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+
+        // 回去仍然失败（网络没真恢复）→ 再降下来；冷却期内不许再弹回
+        listOf(12, 11, 10, MapFallback.MIN_ZOOM).forEach {
+            now += MapFallback.VIEWPORT_SETTLE_MILLIS + 500L // 越过「视口残响」窗口
+            tracker.failTiles(threshold, zoom = it)
+        }
+        assertEquals(MapFallback.MIN_ZOOM, tracker.zoomPlan(plan, 12).zoom)
+        now += MapFallback.RECOVERY_QUIET_MILLIS + 1_000L
+        tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
+        assertEquals("冷却期内不许再弹回", MapFallback.MIN_ZOOM, tracker.zoomPlan(plan, 12).zoom)
+    }
+
+    /**
+     * 第二条真机回归：`setCenter` / `setZoom` 会取消在飞的瓦片请求，osmdroid 对取消的请求也报失败。
+     * 这些失败若照常计数 → 判该级别没瓦片 → 再改级别 → 又取消一批 → 自激循环（狂闪的另一半）。
+     */
+    @Test
+    fun failuresRightAfterAProgrammaticViewportChangeAreIgnored() {
+        val tracker = newTracker()
+        tracker.failTiles(threshold)
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertTrue(plan.fellBack)
+
+        // 刚程序化改过视口：这一批「失败」是被取消的旧请求，不能算
+        tracker.onZoomApplied(12)
+        repeat(threshold * 3) {
+            now += 10L
+            tracker.onTileFailed(MapStyle.AUTO, paris.first, paris.second, 12)
+        }
+        assertEquals(0, tracker.snapshot().zoomFailures)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+        assertFalse(tracker.snapshot().zoomUnavailable(MapStyle.AMAP_VECTOR, 12))
+
+        // 窗口过去后，真没网仍然能被诊断出来
+        now += MapFallback.VIEWPORT_SETTLE_MILLIS
+        tracker.failTiles(threshold, zoom = 12)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
+    }
+
+    // ------------------------------------------------------------ 只有「有效 plan」变化才对外发状态
+
+    @Test
+    fun uiStateOnlyChangesWhenTheEffectivePlanChanges() {
+        // 同一份 plan 下，纯计数（失败次数 / 空白次数 / 连续失败）怎么变，UI 状态都必须相等 ——
+        // 否则每块瓦片都会让 MapCard 重组一次（真机上的狂闪就是 441 次发布）。
+        val base = MapUiState.of(MapStyle.AUTO, paris.first, paris.second, MapFallbackState())
+        val noisy = MapUiState.of(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            MapFallbackState(
+                osmFailures = 2,
+                zoomFailures = 2,
+                lastFailedZoom = 12,
+                blankTileCount = 7,
+                lastBlankZoom = 12,
+                lastBlankColorKinds = 3,
+                lastFailedAtMillis = now,
+                switchedAtMillis = now,
+            ),
+        )
+        assertEquals(base, noisy)
+
+        // 回退（换成高德）→ 必须变
+        val fallenBackState = MapFallbackState(fellBack = true, fallbackFailures = MapFallback.FAILURE_THRESHOLD)
+        val fallenBack = MapUiState.of(MapStyle.AUTO, paris.first, paris.second, fallenBackState)
+        assertNotEquals(base, fallenBack)
+        assertEquals(MapStyle.AMAP_VECTOR, fallenBack.source)
+        assertTrue(fallenBack.fellBack)
+
+        // 降级（z12 判没瓦片）→ 必须变
+        val degraded = MapUiState.of(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            MapFallbackState(fellBack = true, fallbackFailures = 1, unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12))),
+        )
+        assertNotEquals(fallenBack, degraded)
+        assertEquals(11, degraded.zoom)
+        assertTrue(degraded.degraded)
+
+        // 连 z3 也没瓦片 → 「底图不可用」必须变
+        val offline = MapUiState.of(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            MapFallbackState(
+                fellBack = true,
+                fallbackFailures = 1,
+                unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12, 11, 10, MapFallback.MIN_ZOOM)),
+            ),
+        )
+        assertNotEquals(degraded, offline)
+        assertTrue(offline.unavailable)
+        assertEquals(MapFallback.MIN_ZOOM, offline.zoom)
     }
 
     @Test

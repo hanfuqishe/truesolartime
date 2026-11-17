@@ -175,7 +175,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     val zoneOffsetSeconds by viewModel.zoneOffsetSeconds.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
-    val mapFallback by viewModel.mapFallbackState.collectAsStateWithLifecycle()
+    // 只观察「有效 plan」这一层（源 / 级别 / 降级 / 底图不可用）：瓦片计数怎么变都不重组。
+    // 见 MainViewModel.mapUi —— 直接观察 MapFallbackState 会让每块瓦片都触发一次重组。
+    val mapUi by viewModel.mapUi.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -375,10 +377,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     LockedCardDensity {
                         MapCard(
                             place = place,
-                            mapStyle = mapStyle,
-                            fallback = mapFallback,
+                            ui = mapUi,
+                            isZoomUnavailable = viewModel::isMapZoomUnavailable,
                             onTileEvent = viewModel::onMapTileEvent,
-                            onZoomApplied = viewModel::onMapZoomApplied,
+                            onViewportApplied = viewModel::onMapZoomApplied,
                             mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
                         )
                     }

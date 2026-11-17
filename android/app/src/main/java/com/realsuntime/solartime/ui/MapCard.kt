@@ -42,16 +42,16 @@ import com.realsuntime.solartime.data.MapConfig
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.map.MapFallback
-import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
-import com.realsuntime.solartime.map.MapTilePlan
 import com.realsuntime.solartime.map.MapTileSources
+import com.realsuntime.solartime.map.MapUiState
 import com.realsuntime.solartime.map.TileBlank
 import com.realsuntime.solartime.map.TileContent
 import com.realsuntime.solartime.map.TileEvent
 import com.realsuntime.solartime.map.TileResult
 import com.realsuntime.solartime.solar.TimeFormat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
@@ -89,28 +89,28 @@ private const val BLANK_RESCAN_MILLIS = 2_000L
 @Composable
 fun MapCard(
     place: Place,
-    mapStyle: MapStyle,
-    fallback: MapFallbackState,
+    ui: MapUiState,
+    isZoomUnavailable: (Int) -> Boolean,
     onTileEvent: (TileEvent) -> Unit,
-    onZoomApplied: (Int) -> Unit,
+    onViewportApplied: (Int) -> Unit,
     modifier: Modifier = Modifier,
     mapAspectRatio: Float = 4f / 3f,
 ) {
     val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    val plan = remember(mapStyle, place.latitude, place.longitude, fallback) {
-        MapFallback.plan(mapStyle, place.latitude, place.longitude, fallback)
-    }
-    val zoomPlan = remember(plan, fallback) {
-        MapFallback.zoomPlan(plan, MapFallback.DEFAULT_ZOOM, fallback)
-    }
-    val style = plan.effective
+    val style = ui.source
+    val composeCount = remember { intArrayOf(0) }
+    composeCount[0]++
+    android.util.Log.w(
+        "MapFx",
+        "compose #${composeCount[0]} place=${place.latitude},${place.longitude} ui=$ui",
+    )
     // 瓦片回调挂在很久以前创建的 MapView 上，必须拿「最新一版」回调，不能记住 factory 那一刻的。
     val latestTileEvent = rememberUpdatedState(onTileEvent)
     // 空白检测也要看「最新一版」的源：factory 里记住的 style 在回退之后就是旧的了。
     val latestStyle = rememberUpdatedState(style)
-    // 定时重扫要看「最新一版」的回退状态，别因为记住旧值把已经降级的级别又刷一遍。
-    val latestFallback = rememberUpdatedState(fallback)
+    // 定时重扫要看「最新一版」的判定（这一级是否已经判过没内容），别拿旧值反复刷新计数。
+    val latestUnavailable = rememberUpdatedState(isZoomUnavailable)
     // 空白检测器整个卡片生命周期只有一个：已分析瓦片的记忆要跨重组保留。
     val blankWatcher = remember { TileBlankWatcher { latestStyle.value } }
 
@@ -148,45 +148,59 @@ fun MapCard(
                             context = context,
                             place = place,
                             style = style,
-                            zoom = zoomPlan.zoom,
+                            zoom = ui.zoom,
                             watcher = blankWatcher,
                             onTileEvent = { event -> latestTileEvent.value(event) },
                         ).also { mapView = it }
                     },
                     update = { view -> syncMap(view, place, style) },
                 )
-                if (zoomPlan.unavailable) {
+                if (ui.unavailable) {
                     // 真没网：地图区域给一行字，别让用户对着一块空白以为功能坏了。
                     MapUnavailableLabel()
                 }
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = attributionText(context, plan),
+                text = attributionText(context, ui),
                 style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 
-    LaunchedEffect(place, style, mapView) {
+    // 唯一一处视口操作，顺序固定：**居中 → 缩放 → 再确认居中**。
+    //
+    // 这三步必须在一个效果里、且不能用 animateTo：
+    // * 以前用 `animateTo`（带动画）+ 另一个 `LaunchedEffect` 里 `setZoom`，两个效果会互相打断 ——
+    //   `setZoom` 会 `forceFinished` 掉平移动画，地图就停在中途，真机上就是「标记不在中心」；
+    // * 居中放在缩放之后再做一次，是因为缩放会按当前滚动中心重算，先居中再缩放偶尔会差几个像素。
+    LaunchedEffect(place, ui.source, ui.zoom, mapView) {
         val view = mapView ?: return@LaunchedEffect
-        val (latitude, longitude) = markerPointOf(place, style)
-        view.controller.animateTo(GeoPoint(latitude, longitude))
-    }
-
-    // 只在我们主动改级别（首次进入 / 降级链下探）时动缩放，用户自己捏合放大后不再抢回来。
-    LaunchedEffect(zoomPlan.zoom, mapView) {
-        val view = mapView ?: return@LaunchedEffect
-        if (view.zoomLevelDouble.roundToInt() != zoomPlan.zoom) {
-            view.controller.setZoom(zoomPlan.zoom.toDouble())
+        val (latitude, longitude) = markerPointOf(place, ui.source)
+        val target = GeoPoint(latitude, longitude)
+        view.controller.setCenter(target)
+        if (view.zoomLevelDouble.roundToInt() != ui.zoom) {
+            view.controller.setZoom(ui.zoom.toDouble())
         }
-        onZoomApplied(zoomPlan.zoom)
+        view.controller.setCenter(target)
+        android.util.Log.w("MapFx", "applyViewport zoom=${ui.zoom} center=${view.mapCenter} from=${place.label}")
+        // 告诉状态机「视口刚被程序化改过」：这之后 2 秒内回来的瓦片失败是被取消的旧请求，不计入降级。
+        onViewportApplied(ui.zoom)
+        launch {
+            delay(3_000L)
+            val now = view.mapCenter
+            val drift = Math.hypot(now.latitude - target.latitude, now.longitude - target.longitude)
+            android.util.Log.w(
+                "MapFx",
+                "centerCheck from=${place.label} target=$latitude,$longitude actual=${now.latitude},${now.longitude} drift=$drift",
+            )
+        }
     }
 
     // 连最低级别都没瓦片：定期重画，网络一恢复就自己出图（静默，不打扰用户）。
-    LaunchedEffect(zoomPlan.unavailable, mapView) {
-        if (!zoomPlan.unavailable) return@LaunchedEffect
+    LaunchedEffect(ui.unavailable, mapView) {
+        if (!ui.unavailable) return@LaunchedEffect
         val view = mapView ?: return@LaunchedEffect
         while (true) {
             delay(TILE_RETRY_MILLIS)
@@ -198,15 +212,14 @@ fun MapCard(
     //
     // 空白瓦片一旦进了磁盘缓存，重启 App / 平移回看过的区域时**不会再有成功回调**，
     // 只靠回调就永远发现不了（用户看到的就是「重启后又变回一片灰」）。
-    // 每 BLANK_RESCAN_MILLIS 看一眼，最多报 FAILURE_THRESHOLD 块空白 —— 正好够降一级。
+    // 每 BLANK_RESCAN_MILLIS 看一眼；这一级已经判过「没内容」就跳过，不再刷计数。
     LaunchedEffect(style, mapView) {
         val view = mapView ?: return@LaunchedEffect
         if (!style.isGcj02) return@LaunchedEffect
         while (true) {
             delay(BLANK_RESCAN_MILLIS)
             val zoom = view.zoomLevelDouble.roundToInt()
-            // 这一级已经被判「没内容」了就别再刷计数了，等降级链把它换掉。
-            if (latestFallback.value.zoomUnavailable(style, zoom)) continue
+            if (latestUnavailable.value(zoom)) continue
             val scan = blankWatcher.scan(view, zoom, maxBlank = MapFallback.FAILURE_THRESHOLD)
             when {
                 scan.blanks.isNotEmpty() -> scan.blanks.forEach { latestTileEvent.value(it) }
@@ -226,12 +239,12 @@ fun MapCard(
 }
 
 /** 底图署名必须跟着**实际使用的源**走：回退到高德就署高德，自动模式再补一句为什么。 */
-private fun attributionText(context: Context, plan: MapTilePlan): String =
-    if (plan.requested == MapStyle.AUTO) {
-        val hint = if (plan.fellBack) R.string.map_auto_fallback else R.string.map_auto_selected
-        MapText.attribution(context, plan.effective) + " · " + context.getString(hint)
+private fun attributionText(context: Context, ui: MapUiState): String =
+    if (ui.requested == MapStyle.AUTO) {
+        val hint = if (ui.fellBack) R.string.map_auto_fallback else R.string.map_auto_selected
+        MapText.attribution(context, ui.source) + " · " + context.getString(hint)
     } else {
-        MapText.attribution(context, plan.effective)
+        MapText.attribution(context, ui.source)
     }
 
 @Composable
@@ -482,11 +495,16 @@ private data class TileScan(val inspected: Int, val blanks: List<TileEvent>) {
 private fun syncMap(view: MapView, place: Place, style: MapStyle) {
     val tileSource = MapTileSources.tileSourceOf(style)
     if (view.tileProvider.tileSource.name() != tileSource.name()) {
+        android.util.Log.w(
+            "MapFx",
+            "setTileSource ${view.tileProvider.tileSource.name()} -> ${tileSource.name()} (clears tile cache)",
+        )
         view.setTileSource(tileSource)
     }
     val marker = view.overlays.filterIsInstance<Marker>().firstOrNull() ?: return
     val (latitude, longitude) = markerPointOf(place, style)
     if (marker.position.latitude != latitude || marker.position.longitude != longitude) {
+        android.util.Log.w("MapFx", "marker move ${marker.position} -> $latitude,$longitude")
         marker.position = GeoPoint(latitude, longitude)
         marker.title = place.label
         view.invalidate()
