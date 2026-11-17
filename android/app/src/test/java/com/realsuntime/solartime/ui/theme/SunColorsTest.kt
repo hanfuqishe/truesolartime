@@ -37,14 +37,31 @@ class SunColorsTest {
         assertTrue("暖度差太小，色相上分不开：$gap", gap >= SunColors.MIN_WARMTH_GAP)
     }
 
-    /** 太阳点必须比弧实：两者对比度 ≥ 2.0，且点在白卡上本身也够清楚。 */
+    /**
+     * 太阳点是**亮金**（用户点名要的金色），与淡金弧的对比度只要求 ≥1.3；
+     * 真正把点从弧里「切」出来的是外面那圈深金描边（见下一条）。
+     */
     @Test
     fun sunDotStandsOutFromThePaleArc() {
         val sunVsArc = SunColors.contrastRatio(SunColors.DAY_SUN, SunColors.DAY_ARC)
-        assertTrue("太阳点与弧的对比度不够：$sunVsArc", sunVsArc >= 2.0)
+        assertTrue("亮金点与弧的对比度太低：$sunVsArc", sunVsArc >= 1.3)
         val sunVsCard = SunColors.contrastRatio(SunColors.DAY_SUN, cardSurface)
         val arcVsCard = SunColors.contrastRatio(SunColors.DAY_ARC, cardSurface)
         assertTrue("太阳点应比弧更明显：$sunVsCard vs $arcVsCard", sunVsCard > arcVsCard)
+    }
+
+    /** 亮金点靠 50% 的深金细描边与淡金弧分离：描边色与弧的对比度 ≥2.5。 */
+    @Test
+    fun sunDotRingSeparatesTheDotFromTheArc() {
+        val ringVsArc = SunColors.contrastRatio(SunColors.DAY_SUN_RING, SunColors.DAY_ARC)
+        assertTrue("描边与弧的对比度不够，点会糊进弧里：$ringVsArc", ringVsArc >= 2.5)
+        // 描边比填充深：这样「金点 + 深边」才有层次，而不是整点变暗。
+        assertTrue(
+            "描边应该比填充更深",
+            SunColors.relativeLuminance(SunColors.DAY_SUN_RING) <
+                SunColors.relativeLuminance(SunColors.DAY_SUN),
+        )
+        assertEquals(0.5f, SunColors.DAY_SUN_RING_ALPHA, 1e-6f)
     }
 
     /** 三个颜色的 RGB 距离：弧 / 点 / 虚线两两分得开（报告里也给出这组数）。 */
@@ -64,13 +81,15 @@ class SunColorsTest {
         )
     }
 
-    /** 常量钉死：hex 与刻度透明度别再被随手改掉（改配色要连注释与测试一起改）。 */
+    /** 常量钉死：hex 与透明度别再被随手改掉（改配色要连注释与测试一起改）。 */
     @Test
     fun paletteConstantsArePinned() {
         assertEquals(0xFFE6CB9C.toInt(), SunColors.DAY_ARC)
-        assertEquals(0xFFB8860B.toInt(), SunColors.DAY_SUN)
+        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
+        assertEquals(0xFF8A6508.toInt(), SunColors.DAY_SUN_RING)
         assertEquals(0xFFFFFBF6.toInt(), SunColors.CARD_SURFACE_LIGHT)
         assertEquals(0xFF857468.toInt(), SunColors.NIGHT_DASH_LIGHT)
+        assertEquals(0.5f, SunColors.DAY_SUN_RING_ALPHA, 1e-6f)
         assertEquals(0.7f, SunColors.DAY_TICK_ALPHA, 1e-6f)
         assertEquals(0.15, SunColors.MIN_WARMTH_GAP, 1e-9)
     }

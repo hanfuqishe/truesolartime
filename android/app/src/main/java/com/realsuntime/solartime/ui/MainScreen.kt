@@ -97,6 +97,7 @@ import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.ui.theme.sunDayArcColor
 import com.realsuntime.solartime.ui.theme.sunDotColor
+import com.realsuntime.solartime.ui.theme.sunDotRingColor
 import com.realsuntime.solartime.ui.theme.sunTickColor
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
@@ -1187,10 +1188,11 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
-    // 太阳点用深金、刻度点用太阳金 70%，形成「弧很淡、点很实」的层次；
-    // 地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
+    // 太阳点是亮金 + 一圈深金细描边（亮金与淡金弧只差 1.43，靠这圈边把点「框」出来），
+    // 刻度点用太阳金 70%。地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
-    val sunDotColor = sunDotColor()
+    val sunDotFill = sunDotColor()
+    val sunDotRing = sunDotRingColor()
     val sunTickColor = sunTickColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
@@ -1385,11 +1387,20 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             if (path.isSunUp) {
                 // 柔光只放到 1.5 倍：正午太阳点就在圆顶，光圈再大就会碰到上面的上中天标签。
                 drawCircle(
-                    color = sunDotColor.copy(alpha = 0.18f),
+                    color = sunDotFill.copy(alpha = 0.18f),
                     radius = sunRadius * 1.5f,
                     center = sun,
                 )
-                drawCircle(color = sunDotColor, radius = sunRadius, center = sun)
+                drawCircle(color = sunDotFill, radius = sunRadius, center = sun)
+                // 亮金点与淡金弧只差 1.43 的对比度：加一圈 1dp 的深金描边把点从弧里「切」出来。
+                sunDotRing?.let { ring ->
+                    drawCircle(
+                        color = ring,
+                        radius = sunRadius,
+                        center = sun,
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                }
             } else {
                 // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫的话会和虚线糊成一团。
                 drawCircle(
