@@ -86,6 +86,641 @@ expect("北纬 78° 夏至极昼", polarSummer.polar == .midnightSun && polarSum
 let polarWinter = SolarTimeMath.sunTimes(containing: date("2024-12-21T04:00:00Z"), latitude: 78.0, longitude: 15.0)
 expect("北纬 78° 冬至极夜", polarWinter.polar == .polarNight && polarWinter.sunset == nil)
 
+print("== 太阳卡圆盘：一天 24 小时的圆 × 可移动地平线 ==")
+// 模型（见 Core/SunPathGeometry.swift）：圆 = 一天 24 小时（12:00 正上方、00:00 正下方）；
+// 地平线是一条水平弦，高度由日出时刻决定：昼长 12h 过圆心、>12h 下移、<12h 上移，
+// 极昼沉到圆下方（整圆白天）、极夜升到圆上方（整圆夜晚）。角度一律用**当地真太阳时**。
+let dialSize = CGSize(width: 200, height: 200)
+let dialRadius: CGFloat = 76 // = 0.38 × 200
+let dialCenter = CGPoint(x: 100, y: 100)
+
+func dialHour(_ time: TimeOfDay?) -> Double? {
+    time.map { Double($0.secondsOfDay) / 3600.0 }
+}
+
+/// 用一份真实快照算出圆盘几何（日出/日落/当前时刻都取真太阳时）。
+func dialPath(_ snapshot: SolarSnapshot) -> SunPath {
+    SunPathGeometry.compute(
+        size: dialSize,
+        sunriseHour: dialHour(snapshot.sunriseTrueSolar),
+        sunsetHour: dialHour(snapshot.sunsetTrueSolar),
+        trueSolarHour: Double(snapshot.trueSolarTime.secondsOfDay) / 3600.0,
+        isPolarDay: snapshot.polar == .midnightSun,
+        isPolarNight: snapshot.polar == .polarNight
+    )
+}
+
+// 6) 半径 = 0.38 × min(w, h)（±0.5pt），圆心居中。
+let squareDial = SunPathGeometry.compute(
+    size: dialSize,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose("圆盘半径 = 0.38 × min(w, h)", squareDial.radius, 76, tolerance: 0.5, unit: " pt")
+expectClose("圆盘圆心居中（x）", squareDial.center.x, 100, tolerance: 0.5, unit: " pt")
+expectClose("圆盘圆心居中（y）", squareDial.center.y, 100, tolerance: 0.5, unit: " pt")
+let wideDial = SunPathGeometry.compute(
+    size: CGSize(width: 220, height: 180),
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose("非方形区域取短边：0.38 × 180", wideDial.radius, 68.4, tolerance: 0.5, unit: " pt")
+expectClose("非方形区域圆心仍在中央（x）", wideDial.center.x, 110, tolerance: 0.5, unit: " pt")
+expectClose("非方形区域圆心仍在中央（y）", wideDial.center.y, 90, tolerance: 0.5, unit: " pt")
+
+// 角度换算：θ 的单位是**弧度**（输入 0…24 时 → (−π, π]）。
+expectClose("12:00 的角度是 0（圆顶）", SunPathGeometry.angleOfDayHour(12), 0, tolerance: 1e-9)
+expectClose("06:00 的角度是 −π/2（圆左）", SunPathGeometry.angleOfDayHour(6), -Double.pi / 2, tolerance: 1e-9)
+expectClose("18:00 的角度是 +π/2（圆右）", SunPathGeometry.angleOfDayHour(18), Double.pi / 2, tolerance: 1e-9)
+expectClose("00:00 的角度是 −π（圆底）", abs(SunPathGeometry.angleOfDayHour(0)), Double.pi, tolerance: 1e-9)
+
+// 1) 春分赤道附近：昼长 ≈ 12h → 地平线 ≈ 圆心 y。
+let equatorEquinox = SolarTimeSnapshot.compute(
+    date: date("2024-03-20T04:00:00Z"),
+    latitude: 0,
+    longitude: 0,
+    offsetSeconds: 0
+)
+let equatorPath = dialPath(equatorEquinox)
+if let daylight = equatorEquinox.daylightSeconds {
+    expectClose("赤道春分昼长 ≈ 12h", Double(daylight) / 3600.0, 12.0, tolerance: 0.2, unit: " h")
+} else {
+    expect("赤道春分应有日出日落", false)
+}
+expectClose("赤道春分地平线 ≈ 圆心 y", equatorPath.horizonY, equatorPath.center.y, tolerance: 3.0, unit: " pt")
+expect("昼长正好 12h：地平线过圆心", abs(squareDial.horizonY - dialCenter.y) < 0.01, "horizonY=\(squareDial.horizonY)")
+if let chord = SunPathGeometry.horizonChord(path: squareDial) {
+    let sunrisePoint = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 6)
+    let sunsetPoint = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 18)
+    expectClose("弦左端 = 06:00 的位置（日出刻度点）", chord.start.x, sunrisePoint.x, tolerance: 0.5, unit: " pt")
+    expectClose("弦右端 = 18:00 的位置（日落刻度点）", chord.end.x, sunsetPoint.x, tolerance: 0.5, unit: " pt")
+} else {
+    expect("昼长 12h 时地平线应是一条圆内的弦", false)
+}
+
+// 2) 中纬度夏至（昼长 > 12h）→ 地平线在圆心下方。
+let shanghaiSummer = SolarTimeSnapshot.compute(
+    date: date("2024-06-21T04:00:00Z"),
+    latitude: 31.2304,
+    longitude: 121.4737,
+    offsetSeconds: 8 * 3600
+)
+let summerPath = dialPath(shanghaiSummer)
+if let daylight = shanghaiSummer.daylightSeconds {
+    expect("上海夏至昼长 > 12h", Double(daylight) > 43_200, "actual=\(Double(daylight) / 3600.0) h")
+} else {
+    expect("上海夏至应有日出日落", false)
+}
+expect(
+    "上海夏至地平线在圆心下方",
+    summerPath.horizonY > summerPath.center.y,
+    "horizonY=\(summerPath.horizonY) center=\(summerPath.center.y)"
+)
+expect(
+    "上海夏至下移量明显（> 0.1R）",
+    summerPath.horizonY - summerPath.center.y > summerPath.radius * 0.1,
+    String(format: "offset=%.2f pt", summerPath.horizonY - summerPath.center.y)
+)
+
+// 3) 中纬度冬至（昼长 < 12h）→ 地平线在圆心上方。
+let shanghaiWinter = SolarTimeSnapshot.compute(
+    date: date("2024-12-21T04:00:00Z"),
+    latitude: 31.2304,
+    longitude: 121.4737,
+    offsetSeconds: 8 * 3600
+)
+let winterPath = dialPath(shanghaiWinter)
+if let daylight = shanghaiWinter.daylightSeconds {
+    expect("上海冬至昼长 < 12h", Double(daylight) < 43_200, "actual=\(Double(daylight) / 3600.0) h")
+} else {
+    expect("上海冬至应有日出日落", false)
+}
+expect(
+    "上海冬至地平线在圆心上方",
+    winterPath.horizonY < winterPath.center.y,
+    "horizonY=\(winterPath.horizonY) center=\(winterPath.center.y)"
+)
+expect(
+    "上海冬至上移量明显（> 0.1R）",
+    winterPath.center.y - winterPath.horizonY > winterPath.radius * 0.1,
+    String(format: "offset=%.2f pt", winterPath.center.y - winterPath.horizonY)
+)
+
+// 4) 极昼 → 地平线沉到圆下方；极夜 → 升到圆上方。
+let polarDaySnapshot = SolarTimeSnapshot.compute(
+    date: date("2024-06-21T04:00:00Z"),
+    latitude: 78.0,
+    longitude: 15.0,
+    offsetSeconds: 3_600
+)
+let polarDayPath = dialPath(polarDaySnapshot)
+expect(
+    "极昼快照确实是极昼（没有日出日落）",
+    polarDaySnapshot.polar == .midnightSun
+        && polarDaySnapshot.sunriseTrueSolar == nil
+        && polarDaySnapshot.sunsetTrueSolar == nil
+)
+expect(
+    "极昼：地平线沉到圆下方（y_h > C.y + R）",
+    polarDayPath.horizonY > polarDayPath.center.y + polarDayPath.radius,
+    "horizonY=\(polarDayPath.horizonY) limit=\(polarDayPath.center.y + polarDayPath.radius)"
+)
+expect(
+    "极昼：圆和地平线没有交点（不画日出日落刻度点）",
+    SunPathGeometry.horizonChord(path: polarDayPath) == nil
+)
+expect(
+    "极昼：整圆都是白天（太阳点在地平线以上）",
+    SunPathGeometry.isSunAboveHorizon(path: polarDayPath)
+)
+
+let polarNightSnapshot = SolarTimeSnapshot.compute(
+    date: date("2024-12-21T04:00:00Z"),
+    latitude: 78.0,
+    longitude: 15.0,
+    offsetSeconds: 3_600
+)
+let polarNightPath = dialPath(polarNightSnapshot)
+expect(
+    "极夜快照确实是极夜（没有日出日落）",
+    polarNightSnapshot.polar == .polarNight
+        && polarNightSnapshot.sunriseTrueSolar == nil
+        && polarNightSnapshot.sunsetTrueSolar == nil
+)
+expect(
+    "极夜：地平线升到圆上方（y_h < C.y − R）",
+    polarNightPath.horizonY < polarNightPath.center.y - polarNightPath.radius,
+    "horizonY=\(polarNightPath.horizonY) limit=\(polarNightPath.center.y - polarNightPath.radius)"
+)
+expect(
+    "极夜：圆和地平线没有交点（不画日出日落刻度点）",
+    SunPathGeometry.horizonChord(path: polarNightPath) == nil
+)
+expect(
+    "极夜：整圆都是夜晚（太阳点在地平线以下）",
+    !SunPathGeometry.isSunAboveHorizon(path: polarNightPath)
+)
+expect(
+    "极昼 / 极夜标记原样带出来",
+    polarDayPath.isPolarDay && !polarDayPath.isPolarNight
+        && polarNightPath.isPolarNight && !polarNightPath.isPolarDay
+)
+
+// 5) 太阳点：12:00 在圆顶、00:00 在圆底、06:00 在圆左、18:00 在圆右；23:30 → 00:30 连续。
+let noonPoint = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 12)
+expectClose("12:00 太阳点在圆顶（x = C.x）", noonPoint.x, dialCenter.x, tolerance: 0.5, unit: " pt")
+expectClose("12:00 太阳点在圆顶（y = C.y − R）", noonPoint.y, dialCenter.y - dialRadius, tolerance: 0.5, unit: " pt")
+let midnightPoint = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 0)
+expectClose("00:00 太阳点在圆底（x = C.x）", midnightPoint.x, dialCenter.x, tolerance: 0.5, unit: " pt")
+expectClose("00:00 太阳点在圆底（y = C.y + R）", midnightPoint.y, dialCenter.y + dialRadius, tolerance: 0.5, unit: " pt")
+let sunrisePointOfDay = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 6)
+expectClose("06:00 太阳点在圆左（x = C.x − R）", sunrisePointOfDay.x, dialCenter.x - dialRadius, tolerance: 0.5, unit: " pt")
+expectClose("06:00 太阳点与圆心同高（y = C.y）", sunrisePointOfDay.y, dialCenter.y, tolerance: 0.5, unit: " pt")
+let sunsetPointOfDay = SunPathGeometry.point(center: dialCenter, radius: dialRadius, hour: 18)
+expectClose("18:00 太阳点在圆右（x = C.x + R）", sunsetPointOfDay.x, dialCenter.x + dialRadius, tolerance: 0.5, unit: " pt")
+expectClose("18:00 太阳点与圆心同高（y = C.y）", sunsetPointOfDay.y, dialCenter.y, tolerance: 0.5, unit: " pt")
+
+let lateNight = SunPathGeometry.compute(
+    size: dialSize,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 23.5,
+    isPolarDay: false,
+    isPolarNight: false
+)
+let earlyMorning = SunPathGeometry.compute(
+    size: dialSize,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 0.5,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose(
+    "23:30 与 00:30 的 y 完全相同（跨午夜不跳变）",
+    lateNight.sunPoint.y,
+    earlyMorning.sunPoint.y,
+    tolerance: 1e-9
+)
+expect(
+    "23:30 / 00:30 都贴着圆底（> C.y + 0.9R）",
+    lateNight.sunPoint.y > dialCenter.y + dialRadius * 0.9
+        && earlyMorning.sunPoint.y > dialCenter.y + dialRadius * 0.9
+)
+expect(
+    "23:30 → 00:30 横向只差 < 0.3R（连续前进，不是绕到对面）",
+    abs(lateNight.sunPoint.x - earlyMorning.sunPoint.x) < dialRadius * 0.3,
+    String(format: "dx=%.2f pt", abs(lateNight.sunPoint.x - earlyMorning.sunPoint.x))
+)
+expect("23:30 在地平线以下（空心）", !SunPathGeometry.isSunAboveHorizon(path: lateNight))
+expect("12:00 在地平线以上（实心）", SunPathGeometry.isSunAboveHorizon(path: squareDial))
+expect("上海夏至正午的太阳点在地平线以上", SunPathGeometry.isSunAboveHorizon(path: summerPath))
+expect("赤道春分 03:52（夜里）的太阳点在地平线以下", !SunPathGeometry.isSunAboveHorizon(path: equatorPath))
+
+// MARK: 圆盘外侧标签（日出 / 上中天 / 日落 / 极昼极夜）—— 锚点 + 预算矩形
+
+// 圆盘画布 = 卡片内容宽 × 194（iPhone 15 内容宽 313），半径 = 0.38 × 194 ≈ 73.7（与安卓同档）。
+let dialCanvas = CGSize(width: 313, height: 194)
+let canvasRadius = SunPathGeometry.radiusRatio * dialCanvas.height
+let canvasCenter = CGPoint(x: dialCanvas.width / 2.0, y: dialCanvas.height / 2.0)
+
+/// 标签预算矩形到圆心的最近距离 ≥ 半径 → 整块在圆外，不会压到圆弧。
+func rectAvoidsCircle(_ rect: CGRect, center: CGPoint, radius: CGFloat) -> Bool {
+    let nearestX = min(max(center.x, rect.minX), rect.maxX)
+    let nearestY = min(max(center.y, rect.minY), rect.maxY)
+    let dx = Double(nearestX - center.x)
+    let dy = Double(nearestY - center.y)
+    return (dx * dx + dy * dy).squareRoot() >= Double(radius) - 1e-6
+}
+
+/// 标签预算矩形四边都在画布内。
+func rectInsideCanvas(_ rect: CGRect, size: CGSize) -> Bool {
+    rect.minX >= -1e-6 && rect.maxX <= size.width + 1e-6
+        && rect.minY >= -1e-6 && rect.maxY <= size.height + 1e-6
+}
+
+func rectText(_ rect: CGRect) -> String {
+    String(format: "x %.1f…%.1f, y %.1f…%.1f", rect.minX, rect.maxX, rect.minY, rect.maxY)
+}
+
+func labelText(_ label: SunPathLabel?) -> String {
+    guard let label else { return "nil" }
+    return String(format: "(%.1f, %.1f) %@", label.point.x, label.point.y, String(describing: label.alignment))
+}
+
+/// 锚点四边都在画布内、各留 ≥8pt（需求里的「标签锚点不越出画布」）。
+func labelAnchorInside(_ label: SunPathLabel, size: CGSize, margin: CGFloat = 8) -> Bool {
+    label.point.x >= margin && label.point.x <= size.width - margin
+        && label.point.y >= margin && label.point.y <= size.height - margin
+}
+
+// 画布从正方形（313×194 之前是 313×313）改成 194 高：半径、圆心跟着变，先钉住这两条。
+let canvasDial = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose("新画布半径 = 0.38 × 194", canvasDial.radius, 73.72, tolerance: 0.1, unit: " pt")
+expectClose("新画布圆心 x = 313/2", canvasDial.center.x, 156.5, tolerance: 0.1, unit: " pt")
+expectClose("新画布圆心 y = 194/2", canvasDial.center.y, 97.0, tolerance: 0.1, unit: " pt")
+
+// 日出 0:00（日落 24:00）：θ = −180°，太阳点在圆底，地平线与圆**相切于最下方**（弦长 0）。
+let tangentDial = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 0,
+    sunsetHour: 24,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose(
+    "日出 0:00：地平线与圆相切于圆底（y_h = C.y + R）",
+    tangentDial.horizonY,
+    tangentDial.center.y + tangentDial.radius,
+    tolerance: 0.5,
+    unit: " pt"
+)
+if let tangentChord = SunPathGeometry.horizonChord(path: tangentDial) {
+    expect(
+        "日出 0:00：弦长为 0（日出 / 日落交点重合在圆底）",
+        abs(tangentChord.end.x - tangentChord.start.x) < 0.5
+            && abs(tangentChord.start.x - tangentDial.center.x) < 0.5
+            && abs(tangentChord.start.y - (tangentDial.center.y + tangentDial.radius)) < 0.5,
+        "start=\(tangentChord.start) end=\(tangentChord.end)"
+    )
+} else {
+    expect("日出 0:00 应仍是一条（退化的）弦", false)
+}
+let tangentArc = SunPathGeometry.dayArcAngles(
+    sunriseHour: 0,
+    sunsetHour: 24,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expect(
+    "日出 0:00：白天弧是整圆（弦退化成切点，昼长 24h）",
+    tangentArc != nil && abs((tangentArc!.end - tangentArc!.start) - 2 * Double.pi) < 1e-9,
+    tangentArc.map { "span=\(($0.end - $0.start) * 180 / Double.pi)°" } ?? "nil"
+)
+
+// 极短弦：昼长 1 小时（两个交点只隔 ±7.5°）。
+let shortChordDial = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 11.5,
+    sunsetHour: 12.5,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expectClose(
+    "极短弦（昼长 1 小时）：弦端点到圆心的高差 = R·cos(7.5°)",
+    shortChordDial.horizonY,
+    shortChordDial.center.y - shortChordDial.radius * CGFloat(cos(7.5 * Double.pi / 180.0)),
+    tolerance: 0.01,
+    unit: " pt"
+)
+
+// 六种场景：赤道春分、上海夏至、极昼、极夜、极短弦（昼长 1 小时）、日出 0:00（相切）。
+let labelCases: [(name: String, path: SunPath, dayLength: Double?)] = [
+    ("赤道春分", SunPathGeometry.compute(
+        size: dialCanvas,
+        sunriseHour: dialHour(equatorEquinox.sunriseTrueSolar),
+        sunsetHour: dialHour(equatorEquinox.sunsetTrueSolar),
+        trueSolarHour: 12,
+        isPolarDay: false,
+        isPolarNight: false
+    ), 12.11),
+    ("上海夏至", SunPathGeometry.compute(
+        size: dialCanvas,
+        sunriseHour: dialHour(shanghaiSummer.sunriseTrueSolar),
+        sunsetHour: dialHour(shanghaiSummer.sunsetTrueSolar),
+        trueSolarHour: 12,
+        isPolarDay: false,
+        isPolarNight: false
+    ), 14.18),
+    ("极昼", SunPathGeometry.compute(
+        size: dialCanvas,
+        sunriseHour: nil,
+        sunsetHour: nil,
+        trueSolarHour: 4.97,
+        isPolarDay: true,
+        isPolarNight: false
+    ), nil),
+    ("极夜", SunPathGeometry.compute(
+        size: dialCanvas,
+        sunriseHour: nil,
+        sunsetHour: nil,
+        trueSolarHour: 5.03,
+        isPolarDay: false,
+        isPolarNight: true
+    ), nil),
+    ("极短弦（昼长 1 小时）", shortChordDial, 1.0),
+    ("日出 0:00（相切）", tangentDial, 24.0)
+]
+
+// 每个场景：算标签锚点，断「锚点不越界 / 不压圆 / 互不重叠 / 地平线贯穿」。
+var labelReports: [String] = []
+for (name, path, dayLength) in labelCases {
+    let labels = SunPathGeometry.labels(path: path, size: dialCanvas, dayLengthHours: dayLength)
+    let chord = SunPathGeometry.horizonChord(path: path)
+    let xLeft = chord?.start.x ?? path.center.x
+    let xRight = chord?.end.x ?? path.center.x
+    let isPolar = path.isPolarDay || path.isPolarNight
+    let isShortDay = (dayLength ?? 24.0) <= SunPathGeometry.shortDayHours
+    let isLongDay = (dayLength ?? 24.0) >= 24.0 - SunPathGeometry.shortDayHours
+
+    // 1) 锚点都在画布内（左右上下各 ≥8pt）。
+    for (labelName, label) in [("日出", labels.sunrise), ("日落", labels.sunset),
+                               ("上中天", labels.noon), ("极昼极夜", labels.polar)] {
+        if let label {
+            expect(
+                "\(name)：\(labelName)锚点不越出画布（各 ≥8pt）",
+                labelAnchorInside(label, size: dialCanvas),
+                labelText(label)
+            )
+        }
+    }
+
+    // 2) 预算矩形：在画布内、不压圆、互不重叠。
+    let sunriseRect = SunPathGeometry.rect(for: labels.sunrise, budget: SunPathGeometry.sideLabelBudget)
+    let sunsetRect = SunPathGeometry.rect(for: labels.sunset, budget: SunPathGeometry.sideLabelBudget)
+    let noonRect = SunPathGeometry.rect(for: labels.noon, budget: SunPathGeometry.noonLabelBudget)
+    let polarRect = SunPathGeometry.rect(for: labels.polar, budget: SunPathGeometry.polarLabelBudget)
+
+    var blocks: [(String, CGRect)] = []
+    if let sunriseRect { blocks.append(("日出", sunriseRect)) }
+    if let sunsetRect { blocks.append(("日落", sunsetRect)) }
+    if let noonRect { blocks.append(("上中天", noonRect)) }
+    if let polarRect { blocks.append(("极昼极夜", polarRect)) }
+
+    for (blockName, rect) in blocks {
+        expect(
+            "\(name)：\(blockName)标签块在画布内",
+            rectInsideCanvas(rect, size: dialCanvas),
+            rectText(rect)
+        )
+        if blockName == "极昼极夜" {
+            // 「极昼 / 极夜」这一行本来就在圆心、圆内：只需要它水平居中、整块不出圆。
+            expect(
+                "\(name)：极昼 / 极夜那一行在圆内且水平居中",
+                abs(rect.midX - path.center.x) < 0.01
+                    && rect.maxX - rect.minX < path.radius * 2
+                    && rect.maxY - rect.minY < path.radius * 2,
+                rectText(rect)
+            )
+        } else {
+            expect(
+                "\(name)：\(blockName)标签块不压圆弧",
+                rectAvoidsCircle(rect, center: path.center, radius: path.radius),
+                "\(rectText(rect)) R=\(path.radius)"
+            )
+        }
+    }
+    for i in 0..<blocks.count {
+        for j in (i + 1)..<blocks.count {
+            expect(
+                "\(name)：\(blocks[i].0) 与 \(blocks[j].0) 标签不重叠",
+                !blocks[i].1.intersects(blocks[j].1),
+                "\(rectText(blocks[i].1)) vs \(rectText(blocks[j].1))"
+            )
+        }
+    }
+
+    // 3) 日出 / 日落标签的方向：左交点左侧（右对齐）、右交点右侧（左对齐），且都在交点外侧。
+    if isPolar {
+        expect(
+            "\(name)：极昼 / 极夜没有交点，不画日出 / 日落标签",
+            labels.sunrise == nil && labels.sunset == nil
+        )
+    } else if let sunrise = labels.sunrise, let sunset = labels.sunset {
+        if !isShortDay {
+            expect(
+                "\(name)：日出标签锚在左交点左侧 10pt（右对齐）",
+                sunrise.alignment == .trailing
+                    && abs(sunrise.point.x - (xLeft - SunPathGeometry.labelOffsetX)) < 0.01,
+                "anchor=\(labelText(sunrise)) xLeft=\(xLeft)"
+            )
+            expect(
+                "\(name)：日落标签锚在右交点右侧 10pt（左对齐）",
+                sunset.alignment == .leading
+                    && abs(sunset.point.x - (xRight + SunPathGeometry.labelOffsetX)) < 0.01,
+                "anchor=\(labelText(sunset)) xRight=\(xRight)"
+            )
+        }
+        if isShortDay {
+            let expectedY = path.center.y - path.radius + SunPathGeometry.shortDayRowOffset
+            expect(
+                "\(name)：短昼保护——标签落到圆顶下方一行（y = 圆顶 + 26）",
+                abs(sunrise.point.y - expectedY) < 0.01 && abs(sunset.point.y - expectedY) < 0.01,
+                String(format: "y=%.2f expected=%.2f", sunrise.point.y, expectedY)
+            )
+            let rowDy = Double(sunrise.point.y - path.center.y)
+            let halfWidth = CGFloat((Double(path.radius * path.radius) - rowDy * rowDy).squareRoot())
+            expect(
+                "\(name)：短昼保护——标签左右仍各离圆弧 10pt",
+                abs(abs(sunrise.point.x - path.center.x) - (halfWidth + SunPathGeometry.labelOffsetX)) < 0.01,
+                String(format: "|x−C.x|=%.2f expected=%.2f",
+                       abs(sunrise.point.x - path.center.x),
+                       halfWidth + SunPathGeometry.labelOffsetX)
+            )
+        } else if isLongDay {
+            expect(
+                "\(name)：弦退化时标签放到地平线下方（远离圆心一侧）",
+                abs(sunrise.point.y - (path.horizonY + SunPathGeometry.labelOffsetY)) < 0.01
+                    && abs(sunset.point.y - (path.horizonY + SunPathGeometry.labelOffsetY)) < 0.01,
+                String(format: "y=%.2f horizon=%.2f", sunrise.point.y, path.horizonY)
+            )
+        } else {
+            expect(
+                "\(name)：日出 / 日落标签比交点抬高 10pt（地平线从字下过）",
+                abs(sunrise.point.y - (path.horizonY - SunPathGeometry.labelOffsetY)) < 0.01
+                    && abs(sunset.point.y - (path.horizonY - SunPathGeometry.labelOffsetY)) < 0.01,
+                String(format: "y=%.2f horizon=%.2f", sunrise.point.y, path.horizonY)
+            )
+        }
+        expect(
+            "\(name)：日出标签右边界 ≤ 左交点",
+            sunriseRect == nil || sunriseRect!.maxX <= xLeft + 0.01,
+            sunriseRect.map(rectText) ?? "nil"
+        )
+        expect(
+            "\(name)：日落标签左边界 ≥ 右交点",
+            sunsetRect == nil || sunsetRect!.minX >= xRight - 0.01,
+            sunsetRect.map(rectText) ?? "nil"
+        )
+        expect(
+            "\(name)：日出标签右边界 < 右交点、日落标签左边界 > 左交点（弦再短也不越界）",
+            sunriseRect == nil || sunsetRect == nil
+                || (sunriseRect!.maxX < xRight && sunsetRect!.minX > xLeft),
+            "\(sunriseRect.map(rectText) ?? "nil") / \(sunsetRect.map(rectText) ?? "nil")"
+        )
+    } else {
+        expect("\(name)：正常日必须有日出 / 日落标签", false)
+    }
+
+    // 4) 上中天：圆顶点上方居中、底边离圆顶 8pt；极夜没有。
+    if path.isPolarNight {
+        expect("\(name)：极夜不显示上中天标签", labels.noon == nil)
+    } else if let noon = labels.noon, let noonRect {
+        expect(
+            "\(name)：上中天标签水平居中",
+            abs(noon.point.x - path.center.x) < 0.01 && noon.alignment == .bottom,
+            labelText(noon)
+        )
+        expectClose(
+            "\(name)：上中天底边离圆顶 8pt",
+            noonRect.maxY,
+            path.center.y - path.radius - SunPathGeometry.noonGap,
+            tolerance: 0.01,
+            unit: " pt"
+        )
+    } else {
+        expect("\(name)：正常日 / 极昼必须有上中天标签", false)
+    }
+
+    // 5) 极昼 / 极夜：圆心一行，极昼保留上中天、极夜不画。
+    if isPolar {
+        expect(
+            "\(name)：极昼 / 极夜那一行在圆心",
+            labels.polar != nil
+                && abs(labels.polar!.point.x - path.center.x) < 0.01
+                && abs(labels.polar!.point.y - path.center.y) < 0.01
+                && labels.polar!.alignment == .center
+        )
+        if path.isPolarDay {
+            expect("\(name)：极昼保留上中天标签", labels.noon != nil)
+        }
+        let word = path.isPolarDay ? "sun.polarDayShort" : "sun.polarNightShort"
+        expect(
+            "\(name)：极昼 / 极夜短词三语齐全",
+            L10n.t(word, language: .simplified) != word
+                && L10n.t(word, language: .traditional) != word
+                && L10n.t(word, language: .english) != word
+        )
+    }
+
+    // 6) 地平线：正常日 = 弦 + 两侧各 0.2R；极昼 / 极夜 / 相切 = 画满画布。
+    let startX = SunPathGeometry.horizonStartX(path: path, size: dialCanvas)
+    let endX = SunPathGeometry.horizonEndX(path: path, size: dialCanvas)
+    let chordLength = chord.map { $0.end.x - $0.start.x } ?? 0
+    if chordLength > 1 {
+        expect(
+            "\(name)：地平线 = 弦 + 左右各 0.2R（延伸到圆外）",
+            endX - startX >= chordLength + 2 * path.radius * SunPathGeometry.horizonOverhangRatio - 0.5,
+            String(format: "length=%.1f chord=%.1f", endX - startX, chordLength)
+        )
+    } else {
+        expect(
+            "\(name)：没有有效的弦（极昼 / 极夜 / 相切）时地平线画满画布",
+            abs((endX - startX) - (dialCanvas.width - 2 * SunPathGeometry.horizonInset)) < 0.5,
+            String(format: "length=%.1f", endX - startX)
+        )
+    }
+    if name == "赤道春分" {
+        expect(
+            "赤道春分：地平线长度 > 直径（默认情形，需求原文那条）",
+            endX - startX > 2 * path.radius,
+            String(format: "length=%.1f 2R=%.1f", endX - startX, 2 * path.radius)
+        )
+    }
+    expect(
+        "\(name)：地平线两端不越出画布（左右各留 4pt）",
+        startX >= 0 && endX <= dialCanvas.width && startX <= endX
+    )
+
+    // 7) 报告用：锚点坐标。
+    labelReports.append(
+        "\(name)：日出 \(labelText(labels.sunrise)) / 日落 \(labelText(labels.sunset)) / 上中天 \(labelText(labels.noon))"
+    )
+}
+print("标签锚点（画布 313×194，半径 \(String(format: "%.2f", canvasRadius))）：")
+for report in labelReports {
+    print("  · \(report)")
+}
+
+// 圆盘的颜色也守一遍：全部取主题 token，白天弧用 primary，夜晚弧用 50% 的次要文字色。
+func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Double) -> ThemeColor {
+    func mix(_ f: Double, _ b: Double) -> UInt32 {
+        UInt32(min(max((f * alpha + b * (1 - alpha)) * 255.0, 0), 255).rounded())
+    }
+    let hex = (mix(foreground.red, background.red) << 16)
+        | (mix(foreground.green, background.green) << 8)
+        | mix(foreground.blue, background.blue)
+    return ThemeColor(hex: hex)
+}
+
+let dayArcContrast = ThemeColors.day.primary.contrast(with: ThemeColors.day.surface)
+let nightArcContrast = ThemeColors.night.primary.contrast(with: ThemeColors.night.surface)
+expect(
+    "圆盘白天弧（primary）对比度 ≥ 3（亮暗两套）",
+    dayArcContrast >= 3 && nightArcContrast >= 3,
+    String(format: "day=%.2f night=%.2f", dayArcContrast, nightArcContrast)
+)
+let dayNightArc = dialBlend(ThemeColors.day.onSurfaceVariant, over: ThemeColors.day.surface, alpha: 0.5)
+let nightNightArc = dialBlend(ThemeColors.night.onSurfaceVariant, over: ThemeColors.night.surface, alpha: 0.5)
+let dayNightArcContrast = dayNightArc.contrast(with: ThemeColors.day.surface)
+let nightNightArcContrast = nightNightArc.contrast(with: ThemeColors.night.surface)
+expect(
+    "圆盘夜晚弧（50% 次要色）仍看得见：对比度 ≥ 1.6",
+    dayNightArcContrast >= 1.6 && nightNightArcContrast >= 1.6,
+    String(format: "day=%.2f night=%.2f", dayNightArcContrast, nightNightArcContrast)
+)
+expect(
+    "夜晚弧弱于白天弧（同一条圆上分得出昼夜）",
+    dayNightArcContrast < dayArcContrast && nightNightArcContrast < nightArcContrast,
+    String(format: "day: %.2f<%.2f night: %.2f<%.2f",
+           dayNightArcContrast, dayArcContrast, nightNightArcContrast, nightArcContrast)
+)
+
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
@@ -766,7 +1401,9 @@ let expectedPresets: [(String, Int)] = [
     ("city.lhasa", 28_800), ("city.hongkong", 28_800),
     ("city.honolulu", -36_000), ("city.losangeles", -28_800), ("city.newyork", -18_000),
     ("city.london", 0), ("city.paris", 3_600), ("city.dubai", 14_400),
-    ("city.newdelhi", 19_800), ("city.tokyo", 32_400), ("city.singapore", 28_800), ("city.sydney", 36_000)
+    ("city.newdelhi", 19_800), ("city.tokyo", 32_400), ("city.singapore", 28_800), ("city.sydney", 36_000),
+    // 极圈内两座城市：摩尔曼斯克 +3（俄罗斯经度分段 <40°E）、中山站 +8（南极站按北京时间）
+    ("city.murmansk", 10_800), ("city.zhongshan", 28_800)
 ]
 for (presetKey, expected) in expectedPresets {
     guard let preset = Place.presets.first(where: { $0.presetKey == presetKey }) else {
@@ -779,7 +1416,191 @@ for (presetKey, expected) in expectedPresets {
         "得到 \(preset.standardOffsetSeconds)（\(TimeFormat.utcOffsetLabel(seconds: preset.standardOffsetSeconds))）"
     )
 }
-expect("内置城市数量 ≥ 20", Place.presets.count >= 20, "实际 \(Place.presets.count)")
+expect("内置城市数量 = 22（原 20 + 极圈内 2 座）", Place.presets.count == 22, "实际 \(Place.presets.count)")
+
+print("== 极圈内两座城市：坐标 / 时区 / 极昼极夜文案（验证太阳圆盘用）==")
+// 摩尔曼斯克（68.97°N, 33.08°E）：北极圈内，夏至极昼、冬至极夜。
+// 中山站（69.37°S, 76.38°E）：南极圈内，季节相反 —— 北半球夏至时它极夜。
+let murmansk = Place.presets.first { $0.presetKey == "city.murmansk" }
+let zhongshan = Place.presets.first { $0.presetKey == "city.zhongshan" }
+expect("摩尔曼斯克坐标 68.97°N / 33.08°E", murmansk?.latitude == 68.97 && murmansk?.longitude == 33.08)
+expect("中山站坐标 69.37°S / 76.38°E", zhongshan?.latitude == -69.37 && zhongshan?.longitude == 76.38)
+expect(
+    "摩尔曼斯克国家码 ru → UTC+3（不是按经度近似的 +2）",
+    murmansk?.countryCode == "ru"
+        && TimeFormat.utcOffsetLabel(seconds: murmansk?.standardOffsetSeconds ?? 0) == "UTC+3",
+    "得到 \(TimeFormat.utcOffsetLabel(seconds: murmansk?.standardOffsetSeconds ?? 0))"
+)
+expect(
+    "中山站国家码 aq → UTC+8（南极站按北京时间，不是按 76°E 近似的 +5）",
+    zhongshan?.countryCode == "aq"
+        && TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0) == "UTC+8",
+    "得到 \(TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0))"
+)
+expect(
+    "没有 aq 覆盖时会退成 +5（说明这条覆盖是必要的）",
+    SolarTimeMath.approxZoneOffsetSeconds(longitude: 76.38) == 18_000,
+    "得到 \(SolarTimeMath.approxZoneOffsetSeconds(longitude: 76.38))"
+)
+// 三语城市名
+expect(
+    "摩尔曼斯克三语（摩尔曼斯克 / 莫曼斯克 / Murmansk）",
+    L10n.t("city.murmansk", language: .simplified) == "摩尔曼斯克"
+        && L10n.t("city.murmansk", language: .traditional) == "莫曼斯克"
+        && L10n.t("city.murmansk", language: .english) == "Murmansk"
+)
+expect(
+    "中山站三语（中山站 / 中山站 / Zhongshan Station）",
+    L10n.t("city.zhongshan", language: .simplified) == "中山站"
+        && L10n.t("city.zhongshan", language: .traditional) == "中山站"
+        && L10n.t("city.zhongshan", language: .english) == "Zhongshan Station"
+)
+// 极昼 / 极夜：`SolarSnapshot.polar` 只有这两种非 normal 状态，`SunCard` 据此改文案（不显示具体时刻）。
+let murmanskSummer = SolarTimeSnapshot.compute(
+    date: date("2026-06-21T12:00:00Z"), latitude: 68.97, longitude: 33.08, countryCode: "ru"
+)
+let murmanskWinter = SolarTimeSnapshot.compute(
+    date: date("2026-12-21T12:00:00Z"), latitude: 68.97, longitude: 33.08, countryCode: "ru"
+)
+let zhongshanJune = SolarTimeSnapshot.compute(
+    date: date("2026-06-21T12:00:00Z"), latitude: -69.37, longitude: 76.38, countryCode: "aq"
+)
+let zhongshanDecember = SolarTimeSnapshot.compute(
+    date: date("2026-12-21T12:00:00Z"), latitude: -69.37, longitude: 76.38, countryCode: "aq"
+)
+expect("摩尔曼斯克 6 月极昼", murmanskSummer.polar == .midnightSun, "得到 \(murmanskSummer.polar)")
+expect("摩尔曼斯克 12 月极夜", murmanskWinter.polar == .polarNight, "得到 \(murmanskWinter.polar)")
+expect("中山站 6 月极夜（南半球季节相反）", zhongshanJune.polar == .polarNight, "得到 \(zhongshanJune.polar)")
+expect("中山站 12 月极昼", zhongshanDecember.polar == .midnightSun, "得到 \(zhongshanDecember.polar)")
+expect(
+    "极昼/极夜时不显示日出日落时刻（快照里没有这两个值）",
+    murmanskSummer.sunriseBeijing == nil && murmanskSummer.sunsetBeijing == nil
+        && murmanskWinter.sunriseBeijing == nil && murmanskWinter.sunsetBeijing == nil
+        && zhongshanJune.sunriseBeijing == nil && zhongshanJune.sunsetBeijing == nil
+        && zhongshanDecember.sunriseBeijing == nil && zhongshanDecember.sunsetBeijing == nil
+)
+// 文案：极昼 / 极夜（三语），带上「上中天」时刻，不出现「日出/日落」时刻。
+expect(
+    "极昼文案三语齐全",
+    L10n.f("sun.polarDay", language: .simplified, ["12:00"]).hasPrefix("极昼：")
+        && L10n.f("sun.polarDay", language: .traditional, ["12:00"]).hasPrefix("極晝：")
+        && L10n.f("sun.polarDay", language: .english, ["12:00"]).hasPrefix("Midnight sun:")
+)
+expect(
+    "极夜文案三语齐全",
+    L10n.f("sun.polarNight", language: .simplified, ["12:00"]).hasPrefix("极夜：")
+        && L10n.f("sun.polarNight", language: .traditional, ["12:00"]).hasPrefix("極夜：")
+        && L10n.f("sun.polarNight", language: .english, ["12:00"]).hasPrefix("Polar night:")
+)
+
+print("== 法定标准时间 CivicTime（中国全境 +8、南极中国站 +8、其它按 tzdata）==")
+// 这一条是「标准时间」的唯一口径：界面左栏、UTC 标签、日出日落/上中天、真太阳时的
+// 经度修正基准全部走 `CivicTime.standardOffsetMinutes`，不允许有第二套。
+func civicMinutes(
+    _ latitude: Double,
+    _ longitude: Double,
+    _ countryCode: String?,
+    _ timeZoneIdentifier: String? = nil
+) -> Int {
+    CivicTime.standardOffsetMinutes(
+        latitude: latitude,
+        longitude: longitude,
+        countryCode: countryCode,
+        timeZoneIdentifier: timeZoneIdentifier
+    )
+}
+
+// ① 中国境内（含港澳台）恒 +8：乌鲁木齐在 tzdata 里是 Asia/Urumqi（+6），但中国官方时间 +8。
+expect(
+    "乌鲁木齐 → 480（不是 tzdata 的 Asia/Urumqi +6）",
+    civicMinutes(43.8256, 87.6168, "cn") == 480,
+    "得到 \(civicMinutes(43.8256, 87.6168, "cn"))"
+)
+expect(
+    "乌鲁木齐没有国家码也 +8（包围盒兜底，仍不是 +6）",
+    civicMinutes(43.8256, 87.6168, nil) == 480,
+    "得到 \(civicMinutes(43.8256, 87.6168, nil))"
+)
+expect("北京 → 480", civicMinutes(39.9042, 116.4074, "cn") == 480)
+expect("香港 / 澳门 / 台北 → 480", ["hk", "mo", "tw"].allSatisfy { civicMinutes(22.3193, 114.1694, $0) == 480 })
+// ② 中国南极考察站 +8（四个站全覆盖）
+expect(
+    "中山站 → 480",
+    civicMinutes(-69.3733, 76.38, "aq") == 480,
+    "得到 \(civicMinutes(-69.3733, 76.38, "aq"))"
+)
+expect(
+    "长城 / 昆仑 / 泰山三站 → 480",
+    civicMinutes(-62.2167, -58.9667, "aq") == 480
+        && civicMinutes(-80.4167, 77.1167, "aq") == 480
+        && civicMinutes(-73.8667, 76.9833, "aq") == 480
+)
+expect(
+    "站点识别按 50 km 半径（中山站 → 中山站）",
+    CivicTime.chinaAntarcticStationName(latitude: -69.3733, longitude: 76.38) == "中山站 Zhongshan"
+)
+expect(
+    "邻近的他国站点不会被当成中国站（Davis 站 -68.58, 77.97 → nil）",
+    CivicTime.chinaAntarcticStationName(latitude: -68.58, longitude: 77.97) == nil
+)
+// ③ 其它国家：按现有国家表（多时区大国按经度分段）
+expect(
+    "摩尔曼斯克 → 180",
+    civicMinutes(68.97, 33.08, "ru") == 180,
+    "得到 \(civicMinutes(68.97, 33.08, "ru"))"
+)
+expect(
+    "纽约 → -300 或 -240（当前 tzdata 实际值）",
+    [-300, -240].contains(civicMinutes(40.7, -74.0, "us")),
+    "得到 \(civicMinutes(40.7, -74.0, "us"))"
+)
+expect(
+    "加德满都 → 345（半小时时区没被取整）",
+    civicMinutes(27.7, 85.3, "np") == 345,
+    "得到 \(civicMinutes(27.7, 85.3, "np"))"
+)
+// 判定顺序：① 中国优先于时区标识；③ 时区标识优先于国家表。
+expect(
+    "中国优先于时区标识（乌鲁木齐给 UTC 也还是 +8）",
+    civicMinutes(43.8256, 87.6168, "cn", "UTC") == 480
+)
+expect(
+    "时区标识优先于国家表（UTC 覆盖俄罗斯 +3）",
+    civicMinutes(68.97, 33.08, "ru", "UTC") == 0
+)
+// 唯一来源：`SolarTimeMath` 的秒版入口必须与 CivicTime 完全一致（界面/通知都走它）。
+expect(
+    "秒版入口与分钟版同源（乌鲁木齐 480 分 = 28800 秒）",
+    SolarTimeMath.standardZoneOffsetSeconds(countryCode: "cn", latitude: 43.8256, longitude: 87.6168) == 28_800
+        && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "aq", latitude: -69.3733, longitude: 76.38) == 28_800
+        && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "ru", latitude: 68.97, longitude: 33.08) == 10_800
+)
+// 端到端：乌鲁木齐的 UTC 标签与标准时间，以及真太阳时相对它的偏移。
+let urumqi = SolarTimeSnapshot.compute(
+    date: date("2026-11-03T04:00:00Z"),
+    latitude: 43.8256,
+    longitude: 87.6168,
+    countryCode: "cn"
+)
+expect("乌鲁木齐快照 UTC+8", urumqi.utcLabel == "UTC+8", "得到 \(urumqi.utcLabel)")
+expect(
+    "乌鲁木齐标准时间 = 北京时间 12:00",
+    urumqi.standardTime.hour == 12,
+    "得到 \(urumqi.standardTime.clock)"
+)
+// 真太阳时 = 标准时间 − 经度差 − 均时差。经度 87.6168°E 比 120°E 少 32.383°，
+// 每度 4 分钟 → 约 −129.5 分钟；均时差当天约 +16 分钟 → 合计约 −113 分钟 ≈ 早 1 小时 53 分。
+let urumqiDelta = Int(urumqi.trueSolarTime.secondsOfDay) - Int(urumqi.standardTime.secondsOfDay)
+expect(
+    "乌鲁木齐真太阳时比标准时间早约 1 小时 53 分（−113 分钟，含均时差）",
+    abs(urumqiDelta + 113 * 60) <= 180,
+    "实际差 \(urumqiDelta / 60) 分钟（\(urumqi.trueSolarTime.clock) vs \(urumqi.standardTime.clock)）"
+)
+expect(
+    "经度修正本身是 −129.5 分钟（不含均时差）",
+    abs((-4.0 * (120.0 - 87.6168)) + 129.5) < 0.1,
+    "得到 \((-4.0 * (120.0 - 87.6168)))"
+)
 
 print("== 本地化（三语 strings + 语言匹配）==")
 // 1) 三份表的 key 集合必须一致、值非空、格式参数一致、简繁互斥、英文无 CJK

@@ -18,7 +18,10 @@
 "sun.sunrise" = "日出";
 "sun.noon" = "上中天";
 "sun.sunset" = "日落";
+"sun.daylightLength" = "白晝時長";
 "sun.daylight" = "白晝 %@ · 真太陽時 日出 %@ 日落 %@";
+"sun.polarDayShort" = "極晝";
+"sun.polarNightShort" = "極夜";
 "sun.polarDay" = "極晝：太陽整日不落，上中天（當地標準時間）%@";
 "sun.polarNight" = "極夜：太陽整日不出，上中天（當地標準時間）%@";
 
@@ -218,6 +221,8 @@
 "city.tokyo" = "東京";
 "city.singapore" = "新加坡";
 "city.sydney" = "雪梨";
+"city.murmansk" = "莫曼斯克";
+"city.zhongshan" = "中山站";
 
 /* 其它 */
 "weather.title" = "天氣";

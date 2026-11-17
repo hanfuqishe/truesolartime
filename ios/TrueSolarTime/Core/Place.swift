@@ -91,10 +91,17 @@ struct Place: Equatable {
         Place(latitude: 40.7128, longitude: -74.0060, source: .manual, label: "", presetKey: "city.newyork", countryCode: "us"),
         Place(latitude: 51.5074, longitude: -0.1278, source: .manual, label: "", presetKey: "city.london", countryCode: "gb"),
         Place(latitude: 48.8566, longitude: 2.3522, source: .manual, label: "", presetKey: "city.paris", countryCode: "fr"),
+        // 北极圈内（68.97°N）：摩尔曼斯克时间 = UTC+3（俄罗斯按经度分段，33.08°E 落在 <40 那一段）。
+        // 夏至前后极昼、冬至前后极夜，用来验证极昼/极夜文案与太阳圆盘。
+        Place(latitude: 68.97, longitude: 33.08, source: .manual, label: "", presetKey: "city.murmansk", countryCode: "ru"),
         Place(latitude: 25.2048, longitude: 55.2708, source: .manual, label: "", presetKey: "city.dubai", countryCode: "ae"),
         Place(latitude: 28.6139, longitude: 77.2090, source: .manual, label: "", presetKey: "city.newdelhi", countryCode: "in"),
         Place(latitude: 35.6762, longitude: 139.6503, source: .manual, label: "", presetKey: "city.tokyo", countryCode: "jp"),
         Place(latitude: 1.3521, longitude: 103.8198, source: .manual, label: "", presetKey: "city.singapore", countryCode: "sg"),
+        // 南极圈内（69.37°S）：中山站。南极没有民用时区，国内各站按北京时间，
+        // 所以国家码给 "aq" 并在 `ZoneTable` 里显式定成 UTC+8（否则按 76.38°E 近似会得到 +5）。
+        // 南半球季节相反：北半球夏至时它极夜、冬至时它极昼。
+        Place(latitude: -69.37, longitude: 76.38, source: .manual, label: "", presetKey: "city.zhongshan", countryCode: "aq"),
         Place(latitude: -33.8688, longitude: 151.2093, source: .manual, label: "", presetKey: "city.sydney", countryCode: "au"),
     ]
 

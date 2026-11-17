@@ -9,9 +9,9 @@
     <string name="sunrise">日出</string>
     <string name="solar_noon">上中天</string>
     <string name="sunset">日落</string>
-    <string name="daylight_line">白昼 %1$s　真太阳时 %2$s – %3$s</string>
-    <string name="polar_day">极昼：太阳整日不落，上中天（当地标准时间）%1$s</string>
-    <string name="polar_night">极夜：太阳整日不出，上中天（当地标准时间）%1$s</string>
+    <string name="sun_daylight_line">白昼 %1$s</string>
+    <string name="sun_polar_day">极昼</string>
+    <string name="sun_polar_night">极夜</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地图</string>
     <string name="map_auto_selected">按所在地区自动选择</string>
@@ -72,6 +72,8 @@
     <string name="city_tokyo">东京</string>
     <string name="city_singapore">新加坡</string>
     <string name="city_sydney">悉尼</string>
+    <string name="city_murmansk">摩尔曼斯克</string>
+    <string name="city_zhongshan">中山站</string>
 
     <string name="map_style_auto">自动</string>
     <string name="map_style_osm">OpenStreetMap</string>

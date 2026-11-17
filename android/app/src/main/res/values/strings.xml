@@ -9,9 +9,9 @@
     <string name="sunrise">Sunrise</string>
     <string name="solar_noon">Solar noon</string>
     <string name="sunset">Sunset</string>
-    <string name="daylight_line">Daylight %1$s　true solar %2$s – %3$s</string>
-    <string name="polar_day">Midnight sun: the sun never sets. Solar noon (local time) %1$s</string>
-    <string name="polar_night">Polar night: the sun never rises. Solar noon (local time) %1$s</string>
+    <string name="sun_daylight_line">Daylight %1$s</string>
+    <string name="sun_polar_day">Polar day</string>
+    <string name="sun_polar_night">Polar night</string>
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
     <string name="map_auto_selected">auto-selected by region</string>
@@ -72,6 +72,8 @@
     <string name="city_tokyo">Tokyo</string>
     <string name="city_singapore">Singapore</string>
     <string name="city_sydney">Sydney</string>
+    <string name="city_murmansk">Murmansk</string>
+    <string name="city_zhongshan">Zhongshan Station</string>
 
     <string name="map_style_auto">Auto</string>
     <string name="map_style_osm">OpenStreetMap</string>

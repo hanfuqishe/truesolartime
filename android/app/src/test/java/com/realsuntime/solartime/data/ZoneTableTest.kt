@@ -1,5 +1,6 @@
 package com.realsuntime.solartime.data
 
+import com.realsuntime.solartime.solar.SolarTimeMath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -73,8 +74,9 @@ class ZoneTableTest {
             assertTrue("${preset.labelResName} 缺少国家码", preset.countryCode != null)
             assertTrue("${preset.countryCode} 不在表里", ZoneTable.knows(preset.countryCode))
         }
-        // 20 个常用城市：前 10 个是中国境内（含香港），后 10 个按 UTC 偏移从西到东排列。
-        assertEquals(20, Place.PRESETS.size)
+        // 22 个常用城市：前 10 个是中国境内（含香港）；第 11 个起是境外城市，
+        // 末尾两个是极圈城市（摩尔曼斯克 / 中山站），用来验证极昼／极夜。
+        assertEquals(22, Place.PRESETS.size)
         val expected = listOf(
             -10 * 3600, // 檀香山
             -8 * 3600,  // 洛杉矶
@@ -86,6 +88,8 @@ class ZoneTableTest {
             9 * 3600,   // 东京
             8 * 3600,   // 新加坡
             10 * 3600,  // 悉尼
+            3 * 3600,   // 摩尔曼斯克：ru + 经度 33.08°E < 40°E → UTC+3
+            8 * 3600,   // 中山站：国家码 cn → UTC+8（站上惯例，不用经度取整的 +5）
         )
         val overseas = Place.PRESETS.drop(10)
         assertEquals(expected.size, overseas.size)
@@ -95,5 +99,23 @@ class ZoneTableTest {
                 ZoneTable.offsetSeconds(preset.countryCode, preset.longitude, fallback),
             )
         }
+    }
+
+    @Test
+    fun polarPresetsResolveToTheirDocumentedZones() {
+        val murmansk = Place.PRESETS.first { it.labelResName == "city_murmansk" }
+        assertEquals(68.97, murmansk.latitude, 1e-9)
+        assertEquals(33.08, murmansk.longitude, 1e-9)
+        assertEquals("ru", murmansk.countryCode)
+        // 摩尔曼斯克在北极圈内，但不在俄罗斯的「+4 及以上」经度段：仍是莫斯科时间 UTC+3。
+        assertEquals(3 * 3600, ZoneTable.offsetSeconds(murmansk.countryCode, murmansk.longitude, fallback))
+
+        val zhongshan = Place.PRESETS.first { it.labelResName == "city_zhongshan" }
+        assertEquals(-69.37, zhongshan.latitude, 1e-9)
+        assertEquals(76.38, zhongshan.longitude, 1e-9)
+        // 显式用 cn：中山站按中国站务惯例使用 UTC+8；若按经度取整会得到 +5。
+        assertEquals("cn", zhongshan.countryCode)
+        assertEquals(8 * 3600, ZoneTable.offsetSeconds(zhongshan.countryCode, zhongshan.longitude, fallback))
+        assertEquals(5 * 3600, SolarTimeMath.standardZoneOffsetSeconds(zhongshan.latitude, zhongshan.longitude))
     }
 }

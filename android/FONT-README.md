@@ -51,7 +51,8 @@ py -3 -m fontTools.subset NotoSansSC-Medium.ttf  --text-file=chars_medium.txt `
 `chars_regular.txt`（567 个码位）—— **只给 Normal 字重**用，固定文案够用：
 
 1. `res/values*/**.xml` 里所有字符串值 + `android:text` / `contentDescription`（三个语言版本，
-   含 `shichen_names`、`weekdays`、天气词、20 个预设城市名等）；
+   含 `shichen_names`、`weekdays`、天气词、预设城市名等 —— 预设名单是活表，新增城市
+   （如极圈城市「摩尔曼斯克」「中山站」）若还不在当前字体子集里，缺的字会回落到系统字体）；
 2. `app/src/main/java` 下所有 Kotlin 字符串字面量（`CityIndex.RAW` 的城市名、中文数字等）；
 3. ASCII 可打印字符 + UI 会用到的符号（`·°′″−–—…「」《》、。：；！？（）` 等）。
 

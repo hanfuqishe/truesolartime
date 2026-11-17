@@ -94,6 +94,25 @@ class SolarTimeMathTest {
     }
 
     @Test
+    fun polarPresetCitiesFlipBetweenMidnightSunAndPolarNight() {
+        // 两个新增的极圈预设城市：摩尔曼斯克（68.97°N 33.08°E）与中山站（69.37°S 76.38°E）。
+        val murmanskSummer = SolarTimeMath.sunTimes(LocalDate.of(2026, 6, 21), 68.97, 33.08)
+        assertEquals(SolarTimeMath.PolarState.MIDNIGHT_SUN, murmanskSummer.polar)
+        assertNull(murmanskSummer.sunrise)
+        val murmanskWinter = SolarTimeMath.sunTimes(LocalDate.of(2026, 12, 21), 68.97, 33.08)
+        assertEquals(SolarTimeMath.PolarState.POLAR_NIGHT, murmanskWinter.polar)
+        assertNull(murmanskWinter.sunrise)
+
+        // 南半球相反：12 月是极昼、6 月是极夜。
+        val zhongshanSummer = SolarTimeMath.sunTimes(LocalDate.of(2026, 12, 21), -69.37, 76.38)
+        assertEquals(SolarTimeMath.PolarState.MIDNIGHT_SUN, zhongshanSummer.polar)
+        assertNull(zhongshanSummer.sunset)
+        val zhongshanWinter = SolarTimeMath.sunTimes(LocalDate.of(2026, 6, 21), -69.37, 76.38)
+        assertEquals(SolarTimeMath.PolarState.POLAR_NIGHT, zhongshanWinter.polar)
+        assertNull(zhongshanWinter.sunrise)
+    }
+
+    @Test
     fun altitudeIsHighestNearTrueSolarNoon() {
         val noon = Instant.parse("2026-11-02T04:00:00Z")
         val noonAltitude = SolarTimeMath.solarAltitudeDegrees(noon, 39.9042, 116.4074)

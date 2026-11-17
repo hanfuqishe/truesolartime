@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -59,8 +60,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -73,7 +74,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
@@ -95,6 +97,7 @@ import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
+import kotlin.math.roundToInt
 
 /** 宽屏断点：内容区达到这个宽度就把大卡片与太阳卡片并排（与鸿蒙版同一条规则：560）。 */
 private val WIDE_LAYOUT_MIN_WIDTH = 560.dp
@@ -113,8 +116,37 @@ private const val FALLBACK_HERO_CLOCK_SP = 42f
 private const val CLOCK_FIT_SAFETY = 0.97f
 private const val MIN_HERO_CLOCK_SP = 24f
 private const val MAX_HERO_CLOCK_SP = 80f
-/** 宽屏并排时把太阳弧线压矮：压低后太阳卡比大卡片略矮，行高由大卡片决定，橙色卡片里就不会再留空白。 */
-private val WIDE_ARC_HEIGHT = 74.dp
+/** 太阳卡的内边距（沿用 20dp；圆盘画布铺满卡片内容宽度，标签在里面留白）。 */
+private val SUN_CARD_PADDING = 20.dp
+/** 标题行与圆盘画布之间的间距。 */
+private val SUN_TITLE_GAP = 8.dp
+/**
+ * 圆盘画布的高度。
+ *
+ * 卡片是满宽的（手机 280~331dp），正方形画布会把卡片顶到 370dp 上下；改成「满宽 + 定高」的扁画布后，
+ * 圆按 `min(w, h)` 取半径，卡片高度反而比带右栏时更低（282dp vs 286dp）。
+ */
+private val SUN_DIAL_HEIGHT = 194.dp
+/** 圆盘画布与下方「白昼」行之间的间距。 */
+private val SUN_DAYLIGHT_GAP = 4.dp
+/** 外侧时间标签与圆（含表圈）的水平间距。 */
+private val SUN_LABEL_GAP = 10.dp
+/** 上中天标签底边与圆顶之间的竖直间距（≥ 太阳点的柔光半径，正午的太阳点就在圆顶）。 */
+private val SUN_NOON_LABEL_GAP = 8.dp
+/**
+ * 短昼保护：日出／日落挤在圆顶附近时，两个标签至少下沉到圆顶下方这么远。
+ * 取值 ≈ 标签自身行高（16dp）+ 2dp，保证不和圆顶上方的上中天标签撞在同一行。
+ */
+private val SUN_LABEL_TOP_INSET = 18.dp
+/**
+ * 日出／日落标签从交点往上抬这么多，给**延伸后的地平线**让路：
+ * 抬 10dp 后文字底边仍在地平线上方 2dp，那条贯穿线就能从标签底下穿过去而不压字。
+ */
+private val SUN_LABEL_RISE = 10.dp
+/** 地平线画满画布（极昼极夜）时，左右各留的内边距。 */
+private val SUN_HORIZON_INSET = 4.dp
+/** 标签距画布左右边缘的最小留白（要求 ≥8dp）。 */
+private val SUN_LABEL_SIDE_INSET = 8.dp
 /** 地图视口的宽高比：手机 4:3、平板 16:9（与鸿蒙版一致）。 */
 private const val PHONE_MAP_ASPECT_RATIO = 4f / 3f
 private const val WIDE_MAP_ASPECT_RATIO = 16f / 9f
@@ -299,7 +331,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                     SunCard(
                                         snapshot = snapshot,
                                         modifier = Modifier.fillMaxHeight(),
-                                        arcHeight = WIDE_ARC_HEIGHT,
                                     )
                                 }
                             }
@@ -1046,7 +1077,6 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
 private fun SunCard(
     snapshot: SolarSnapshot,
     modifier: Modifier = Modifier,
-    arcHeight: Dp = 110.dp,
 ) {
     val context = LocalContext.current
     Card(
@@ -1055,7 +1085,7 @@ private fun SunCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(SUN_CARD_PADDING)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.sun_section_title),
@@ -1072,121 +1102,339 @@ private fun SunCard(
                 )
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(SUN_TITLE_GAP))
 
-            SunArc(
-                progress = daylightProgress(snapshot),
-                isDay = snapshot.isDay,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(arcHeight),
+            // 圆盘铺满卡片内容宽度：日出／上中天／日落三个时间直接标在圆的外侧，
+            // 不再占右边一整栏，所以卡片高度比带右栏时更低。
+            SunDial(snapshot = snapshot)
+
+            Spacer(Modifier.height(SUN_DAYLIGHT_GAP))
+
+            Text(
+                text = stringResource(R.string.sun_daylight_line, daylightText(context, snapshot)),
+                style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** 白昼时长的读数：极昼按整天算、极夜按 0，其余用日出日落算出来的秒数。 */
+private fun daylightText(context: Context, snapshot: SolarSnapshot): String = when (snapshot.polar) {
+    SolarTimeMath.PolarState.MIDNIGHT_SUN -> TimeText.duration(context, DAY_SECONDS)
+    SolarTimeMath.PolarState.POLAR_NIGHT -> TimeText.duration(context, 0L)
+    SolarTimeMath.PolarState.NORMAL -> TimeText.duration(context, snapshot.daylightSeconds)
+}
+
+/**
+ * 圆盘上的一个外侧标签：天然尺寸的 `Text`，用 `offset` 摆到 `SunPathGeometry.labelAnchors`
+ * 算出来的锚点上（对齐方式、夹取都由调用方算好）。
+ *
+ * 用真正的 `Text` 而不是画到 Canvas 里，是为了保住无障碍朗读与卡片自带的字体／字重补偿。
+ */
+@Composable
+private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntOffset) {
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.offset { offset },
+    )
+}
+
+/**
+ * 时间圆盘：**圆 = 一天 24 小时**，12:00 在正上方、00:00 在正下方，
+ * 地平线是一条水平线，其高度由日出时刻决定（见 `SunPathGeometry`）。
+ *
+ * 盘面画五样东西：
+ * 1. 外圆淡描边：画在弧线外侧 3dp 当「表圈」，所以两条弧线不会把它盖掉；
+ * 2. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
+ * 3. 地平线：中段是圆的弦，两侧各伸出 0.2R（略淡），极昼极夜没有弦就画满画布；
+ * 4. 日出 / 日落刻度点：弦与圆的两个交点（极昼极夜不画）；
+ * 5. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点。
+ *
+ * 三个时间标签直接标在圆外：日出在左交点左侧（右对齐）、日落在右交点右侧（左对齐）、
+ * 上中天在圆顶正上方（居中），三者都离圆 10dp，不会压到弧线。
+ * 极昼／极夜没有交点：不再画日出／日落标签，只在圆心写一行「极昼」／「极夜」；
+ * 其中极昼**保留**上中天标签，极夜连它也不画（太阳整日不升，上中天没有意义）。
+ *
+ * 时刻全部用**当地真太阳时**（圆盘的角度就是真太阳时的小时数）；标签文字用当地标准时，
+ * 两者口径不同是有意的 —— 盘上讲太阳的实际位置，标签写当地钟表上的时刻。
+ * 颜色一律取主题 token（白天／夜间两套由 `TrueSolarTimeTheme` 换掉色板），这里不写死颜色。
+ */
+@Composable
+private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val polar = snapshot.polar
+    val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
+    val polarNight = polar == SolarTimeMath.PolarState.POLAR_NIGHT
+    // 极昼 / 极夜没有日出日落：传 null，让几何层按 polar 标志把地平线沉到圆下 / 升到圆上。
+    val normal = polar == SolarTimeMath.PolarState.NORMAL
+    val sunriseHour = if (normal) snapshot.sunriseTrueSolar.toHours() else null
+    val sunsetHour = if (normal) snapshot.sunsetTrueSolar.toHours() else null
+    val trueSolarHour = snapshot.trueSolarTime.toSecondOfDay() / SECONDS_PER_HOUR
+
+    val labelStyle = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium)
+    val dataColor = MaterialTheme.colorScheme.onSurface
+    val sunriseText = TimeFormat.clock(snapshot.sunriseLocal)
+    val sunsetText = TimeFormat.clock(snapshot.sunsetLocal)
+    val noonText = TimeFormat.clock(snapshot.solarNoonLocal)
+    val polarText = stringResource(if (polarDay) R.string.sun_polar_day else R.string.sun_polar_night)
+
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    var dialPx by remember { mutableStateOf(IntSize.Zero) }
+    val sideGapPx = with(density) { SUN_LABEL_GAP.toPx() }
+    val noonGapPx = with(density) { SUN_NOON_LABEL_GAP.toPx() }
+    val dropPx = with(density) { SUN_LABEL_TOP_INSET.toPx() }
+    val risePx = with(density) { SUN_LABEL_RISE.toPx() }
+    val sideInsetPx = with(density) { SUN_LABEL_SIDE_INSET.roundToPx() }
+    val horizonInsetPx = with(density) { SUN_HORIZON_INSET.toPx() }
+
+    // 标签尺寸要先量出来：锚点给的是「文字的边缘 / 中心」，摆位得用真实宽高。
+    val sunriseLabel = remember(sunriseText, labelStyle) {
+        measurer.measure(sunriseText, labelStyle, maxLines = 1, softWrap = false)
+    }
+    val sunsetLabel = remember(sunsetText, labelStyle) {
+        measurer.measure(sunsetText, labelStyle, maxLines = 1, softWrap = false)
+    }
+    val noonLabel = remember(noonText, labelStyle) {
+        measurer.measure(noonText, labelStyle, maxLines = 1, softWrap = false)
+    }
+    val polarLabel = remember(polarText, labelStyle) {
+        measurer.measure(polarText, labelStyle, maxLines = 1, softWrap = false)
+    }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(SUN_DIAL_HEIGHT)
+            // 画布尺寸只能用 onSizeChanged 拿：宽屏分支里卡片在 IntrinsicSize.Max 下，
+            // BoxWithConstraints 这类 SubcomposeLayout 参与固有测量会抛异常（见 HeroCard 注释）。
+            .onSizeChanged { dialPx = it },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val path = SunPathGeometry.compute(
+                width = size.width,
+                height = size.height,
+                sunriseHour = sunriseHour,
+                sunsetHour = sunsetHour,
+                trueSolarHour = trueSolarHour,
+                isPolarDay = polarDay,
+                isPolarNight = polarNight,
+            )
+            val center = Offset(path.centerX, path.centerY)
+            val rimStroke = 1.dp.toPx()
+            val rimGap = 3.dp.toPx()
+            val arcStroke = 2.5.dp.toPx()
+            val tickRadius = 2.5.dp.toPx()
+            val sunRadius = 4.5.dp.toPx()
+            val nightDash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 6.dp.toPx()))
+            val arcTopLeft = Offset(path.centerX - path.radius, path.centerY - path.radius)
+            val arcSize = Size(path.radius * 2f, path.radius * 2f)
+
+            // 外圆淡描边：比弧线（画在半径 R 上）再外扩 3dp 当「表圈」，
+            // 否则会被覆盖整圈的白天弧 / 夜晚虚线盖掉、根本看不见。
+            drawCircle(
+                color = scheme.outlineVariant,
+                radius = path.radius + rimGap,
+                center = center,
+                style = Stroke(rimStroke),
             )
 
-            Spacer(Modifier.height(10.dp))
-
-            if (snapshot.polar == SolarTimeMath.PolarState.NORMAL) {
-                Row(Modifier.fillMaxWidth()) {
-                    SunTimeItem(stringResource(R.string.sunrise), snapshot.sunriseLocal, Modifier.weight(1f))
-                    SunTimeItem(stringResource(R.string.solar_noon), snapshot.solarNoonLocal, Modifier.weight(1f))
-                    SunTimeItem(stringResource(R.string.sunset), snapshot.sunsetLocal, Modifier.weight(1f))
+            val span = SunPathGeometry.dayArcSpan(sunriseHour, sunsetHour)
+            if (span == null) {
+                // 整圆只有一种性质：极昼画实线亮弧，极夜画虚线暗弧。
+                if (path.isWholeCircleDay) {
+                    drawCircle(
+                        color = scheme.primary,
+                        radius = path.radius,
+                        center = center,
+                        style = Stroke(arcStroke),
+                    )
+                } else {
+                    drawCircle(
+                        color = scheme.outline,
+                        radius = path.radius,
+                        center = center,
+                        style = Stroke(width = arcStroke, pathEffect = nightDash),
+                    )
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = stringResource(
-                        R.string.daylight_line,
-                        TimeText.duration(context, snapshot.daylightSeconds),
-                        TimeFormat.clock(snapshot.sunriseTrueSolar),
-                        TimeFormat.clock(snapshot.sunsetTrueSolar),
+            } else {
+                // 白天弧：从日出刻度顺时针经过 12:00（正上方）扫到日落刻度。
+                drawArc(
+                    color = scheme.primary,
+                    startAngle = span.startDegrees,
+                    sweepAngle = span.sweepDegrees,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = arcStroke, cap = StrokeCap.Round),
+                )
+                // 夜晚弧：剩下那一圈，虚线、低对比度。
+                drawArc(
+                    color = scheme.outline,
+                    startAngle = span.startDegrees + span.sweepDegrees,
+                    sweepAngle = 360f - span.sweepDegrees,
+                    useCenter = false,
+                    topLeft = arcTopLeft,
+                    size = arcSize,
+                    style = Stroke(width = arcStroke, pathEffect = nightDash),
+                )
+            }
+
+            // 地平线：中段是弦（实色），两侧各伸出 0.2R（淡一点），读起来才是一条「贯穿的线」；
+            // 极昼 / 极夜 / 0:00 相切时没有弦，直接画满画布。线比弧线细（1dp）。
+            val horizon = SunPathGeometry.horizonSpan(path, size.width, horizonInsetPx)
+            val halfChord = SunPathGeometry.horizonHalfChord(path)
+            val chordStart = (path.centerX - halfChord).coerceIn(horizon.startX, horizon.endX)
+            val chordEnd = (path.centerX + halfChord).coerceIn(horizon.startX, horizon.endX)
+            if (chordEnd - chordStart > 0.5f) {
+                val faint = scheme.outline.copy(alpha = HORIZON_OUTSIDE_ALPHA)
+                drawLine(faint, Offset(horizon.startX, path.horizonY), Offset(chordStart, path.horizonY), rimStroke)
+                drawLine(scheme.outline, Offset(chordStart, path.horizonY), Offset(chordEnd, path.horizonY), rimStroke)
+                drawLine(faint, Offset(chordEnd, path.horizonY), Offset(horizon.endX, path.horizonY), rimStroke)
+            } else {
+                drawLine(scheme.outline, Offset(horizon.startX, path.horizonY), Offset(horizon.endX, path.horizonY), rimStroke)
+            }
+
+            // 日出 / 日落刻度：正好落在地平线与圆的交点上（极昼极夜没有交点）。
+            if (span != null && sunriseHour != null && sunsetHour != null) {
+                for (hour in listOf(sunriseHour, sunsetHour)) {
+                    drawCircle(
+                        color = scheme.primary,
+                        radius = tickRadius,
+                        center = Offset(
+                            SunPathGeometry.hourX(path.centerX, path.radius, hour),
+                            SunPathGeometry.hourY(path.centerY, path.radius, hour),
+                        ),
+                    )
+                }
+            }
+
+            // 当前太阳点：白天实心亮色 + 柔光，夜里空心暗色。
+            val sun = Offset(path.sunX, path.sunY)
+            if (path.isSunUp) {
+                // 柔光只放到 1.5 倍：正午太阳点就在圆顶，光圈再大就会碰到上面的上中天标签。
+                drawCircle(
+                    color = scheme.primary.copy(alpha = 0.18f),
+                    radius = sunRadius * 1.5f,
+                    center = sun,
+                )
+                drawCircle(color = scheme.primary, radius = sunRadius, center = sun)
+            } else {
+                // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫的话会和虚线糊成一团。
+                drawCircle(
+                    color = scheme.surface,
+                    radius = sunRadius + 1.5.dp.toPx(),
+                    center = sun,
+                )
+                drawCircle(
+                    color = scheme.outline,
+                    radius = sunRadius,
+                    center = sun,
+                    style = Stroke(width = 1.5.dp.toPx()),
+                )
+            }
+        }
+
+        // 标签层：等画布量到尺寸后再摆，坐标全部来自纯几何函数。
+        if (dialPx.width > 0 && dialPx.height > 0) {
+            val path = SunPathGeometry.compute(
+                width = dialPx.width.toFloat(),
+                height = dialPx.height.toFloat(),
+                sunriseHour = sunriseHour,
+                sunsetHour = sunsetHour,
+                trueSolarHour = trueSolarHour,
+                isPolarDay = polarDay,
+                isPolarNight = polarNight,
+            )
+            val anchors = SunPathGeometry.labelAnchors(
+                path = path,
+                sunriseHour = sunriseHour,
+                sunsetHour = sunsetHour,
+                sideGap = sideGapPx,
+                noonGap = noonGapPx,
+                minLabelDrop = dropPx,
+                sideLabelRise = risePx,
+            )
+            // 夹进画布：左右各留 sideInset，竖直方向不出画布（极端昼长时标签会顶到边上）。
+            fun placed(x: Float, y: Float, w: Int, h: Int): IntOffset {
+                val maxX = (dialPx.width - w - sideInsetPx).coerceAtLeast(sideInsetPx)
+                val maxY = (dialPx.height - h).coerceAtLeast(0)
+                return IntOffset(
+                    x.roundToInt().coerceIn(sideInsetPx, maxX),
+                    y.roundToInt().coerceIn(0, maxY),
+                )
+            }
+
+            if (path.hasTransitLabel) {
+                DialLabel(
+                    text = noonText,
+                    style = labelStyle,
+                    color = dataColor,
+                    offset = placed(
+                        anchors.noonX - noonLabel.size.width / 2f,
+                        anchors.noonY - noonLabel.size.height,
+                        noonLabel.size.width,
+                        noonLabel.size.height,
                     ),
-                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (normal) {
+                DialLabel(
+                    text = sunriseText,
+                    style = labelStyle,
+                    color = dataColor,
+                    offset = placed(
+                        anchors.sunriseX - sunriseLabel.size.width,
+                        anchors.sunriseY - sunriseLabel.size.height / 2f,
+                        sunriseLabel.size.width,
+                        sunriseLabel.size.height,
+                    ),
+                )
+                DialLabel(
+                    text = sunsetText,
+                    style = labelStyle,
+                    color = dataColor,
+                    offset = placed(
+                        anchors.sunsetX,
+                        anchors.sunsetY - sunsetLabel.size.height / 2f,
+                        sunsetLabel.size.width,
+                        sunsetLabel.size.height,
+                    ),
                 )
             } else {
-                Text(
-                    text = if (snapshot.polar == SolarTimeMath.PolarState.MIDNIGHT_SUN) {
-                        stringResource(
-                            R.string.polar_day,
-                            TimeFormat.clock(snapshot.solarNoonLocal),
-                        )
-                    } else {
-                        stringResource(
-                            R.string.polar_night,
-                            TimeFormat.clock(snapshot.solarNoonLocal),
-                        )
-                    },
-                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                DialLabel(
+                    text = polarText,
+                    style = labelStyle,
+                    color = MaterialTheme.colorScheme.primary,
+                    offset = placed(
+                        anchors.polarX - polarLabel.size.width / 2f,
+                        anchors.polarY - polarLabel.size.height / 2f,
+                        polarLabel.size.width,
+                        polarLabel.size.height,
+                    ),
                 )
             }
         }
     }
 }
 
-@Composable
-private fun SunTimeItem(label: String, time: LocalTime?, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = TimeFormat.clock(time),
-            style = cardTextStyle(
-                TextStyle(fontSize = 17.sp, fontFeatureSettings = "tnum"),
-                FontWeight.Medium,
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
+/** 地平线伸出圆外那两段的透明度：比圆内的弦淡一点，区分「圆内」与「圆外」。 */
+private const val HORIZON_OUTSIDE_ALPHA = 0.55f
 
-@Composable
-private fun SunArc(progress: Float, isDay: Boolean, modifier: Modifier = Modifier) {
-    val trackColor = MaterialTheme.colorScheme.outlineVariant
-    val sunColor = if (isDay) Color(0xFFFFB300) else MaterialTheme.colorScheme.outline
+/** 一天的秒数：极昼时白昼时长按整天算。 */
+private const val DAY_SECONDS = 86_400L
 
-    Canvas(modifier) {
-        val horizonY = size.height * 0.88f
-        val start = Offset(size.width * 0.06f, horizonY)
-        val end = Offset(size.width * 0.94f, horizonY)
-        val control = Offset(size.width / 2f, -size.height * 0.42f)
+private const val SECONDS_PER_HOUR = 3600.0
 
-        val arc = Path().apply {
-            moveTo(start.x, start.y)
-            quadraticTo(control.x, control.y, end.x, end.y)
-        }
-        drawPath(
-            path = arc,
-            color = trackColor,
-            style = Stroke(width = 2.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))),
-        )
-        drawLine(trackColor, Offset(0f, horizonY), Offset(size.width, horizonY), strokeWidth = 2f)
-
-        val t = progress.coerceIn(0f, 1f)
-        val u = 1f - t
-        val sunX = u * u * start.x + 2f * u * t * control.x + t * t * end.x
-        val sunY = u * u * start.y + 2f * u * t * control.y + t * t * end.y
-        val center = Offset(sunX, sunY)
-        if (isDay) {
-            drawCircle(sunColor.copy(alpha = 0.18f), radius = 20f, center = center)
-        }
-        drawCircle(sunColor, radius = 7f, center = center)
-    }
-}
-
-private fun daylightProgress(snapshot: SolarSnapshot): Float {
-    val sunrise = snapshot.sunriseTrueSolar ?: return 0.5f
-    val sunset = snapshot.sunsetTrueSolar ?: return 0.5f
-    val start = sunrise.toSecondOfDay().toFloat()
-    var end = sunset.toSecondOfDay().toFloat()
-    if (end <= start) end += 86_400f
-    var current = snapshot.trueSolarTime.toSecondOfDay().toFloat()
-    if (current < start) current += 86_400f
-    return ((current - start) / (end - start)).coerceIn(0f, 1f)
-}
+/** 真太阳时的小时数（0–24，含小数）；为空时返回 null（极昼 / 极夜）。 */
+private fun LocalTime?.toHours(): Double? = this?.toSecondOfDay()?.div(SECONDS_PER_HOUR)
 
 /** Compose 的 LocalView.context 可能是 ContextWrapper 包了几层，取出宿主 Activity。 */
 private tailrec fun Context.findActivity(): Activity? = when (this) {

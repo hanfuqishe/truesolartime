@@ -17,7 +17,10 @@
 "sun.sunrise" = "Sunrise";
 "sun.noon" = "Solar noon";
 "sun.sunset" = "Sunset";
+"sun.daylightLength" = "Daylight";
 "sun.daylight" = "Daylight %@ · sunrise %@ · sunset %@ (true solar time)";
+"sun.polarDayShort" = "Midnight sun";
+"sun.polarNightShort" = "Polar night";
 "sun.polarDay" = "Midnight sun: the sun never sets. Solar noon (local standard time) %@";
 "sun.polarNight" = "Polar night: the sun never rises. Solar noon (local standard time) %@";
 
@@ -217,6 +220,8 @@
 "city.tokyo" = "Tokyo";
 "city.singapore" = "Singapore";
 "city.sydney" = "Sydney";
+"city.murmansk" = "Murmansk";
+"city.zhongshan" = "Zhongshan Station";
 
 /* Misc */
 "weather.title" = "Weather";

@@ -1,7 +1,6 @@
 package com.realsuntime.solartime.data
 
 import android.content.Context
-import com.realsuntime.solartime.solar.SolarTimeMath
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -13,24 +12,26 @@ import java.time.ZoneOffset
  *  1. 中国境内（含港澳台与新疆）恒为 UTC+8，钉在 `Asia/Shanghai`，不按经度算；
  *  2. 境外优先用**设备时区** —— 人在当地时手机通常已自动切换，还能顺带照顾夏令时；
  *  3. 设备时区与观测点的标准偏移对不上时（人在国内、手工指定了纽约坐标），退到固定的
- *     `GMT±H:MM`，由 [ZoneTable] 按国家码 + 经度给出偏移（多时区大国按经度分段）。
+ *     `GMT±H:MM`，偏移由 [CivicTime] 判定（[ZoneTable] 的国家码 + 经度分段，多时区大国按经度）。
  *
  * 没有国家码（未联网、没配 Key、刚启动）时，[ZoneTable] 的兜底是按经度每 15° 取整。
  */
 object LocalZone {
 
     /**
-     * 观测点的标准时区偏移（秒，相对 UTC，**不含夏令时**）。
+     * 观测点的标准时间偏移（秒，相对 UTC，**不含夏令时**）。
      *
-     * 用于「换个地方就是另一个时区」这类粗判断；界面显示请用 [offsetSeconds]（含夏令时）。
+     * 具体规则见 [CivicTime]：中国（含港澳台）与中国南极考察站恒为 +8，其余走
+     * [ZoneTable] 的国家/经度分段。用于「换个地方就是另一个时区」这类粗判断；
+     * 界面显示请用 [offsetSeconds]（含夏令时）。
      */
-    fun standardOffsetSeconds(context: Context, place: Place): Int = ZoneTable.offsetSeconds(
+    fun standardOffsetSeconds(context: Context, place: Place): Int = CivicTime.standardOffsetSeconds(
+        latitude = place.latitude,
+        longitude = place.longitude,
         // 预设城市自带国家码，**优先用它**：选中纽约就能立刻按表算出 −5，不必等（也可能永远
         // 不会成功的）逆地理编码。只有 GPS / 手动坐标（countryCode 为空）才去认缓存里的国家码。
         countryCode = place.countryCode?.takeUnless { it.isBlank() }
             ?: DistrictResolver.cachedCountryCode(context, place),
-        longitude = place.longitude,
-        fallbackSeconds = SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude),
     )
 
     /**
@@ -39,16 +40,12 @@ object LocalZone {
      * **不能只看经纬度包围盒**：73–135°E / 18–54°N 这个矩形把印度、尼泊尔、
      * 东南亚一大片都框进去了。新德里（77.2°E, 28.6°N）就在框内，之前会被当成
      * 中国而显示 UTC+8、并且逆地理跑去问高德（境外查不到）。
-     * 有国家码时以国家码为准，没有才退回包围盒。
+     * 有国家码时以国家码为准，没有才退回包围盒；判定本身在 [CivicTime.isChina]。
      */
     fun isInChina(context: Context, place: Place): Boolean {
         val code = place.countryCode?.takeUnless { it.isBlank() }
             ?: DistrictResolver.cachedCountryCode(context, place).takeIf { it.isNotBlank() }
-        if (code != null) {
-            val c = code.lowercase()
-            return c == "cn" || c == "hk" || c == "mo" || c == "tw"
-        }
-        return SolarTimeMath.isInChinaBbox(place.latitude, place.longitude)
+        return CivicTime.isChina(place.latitude, place.longitude, code)
     }
     /** 观测点此刻的法定时区；`TextClock#setTimeZone` 也吃它的 [ZoneId.id]。 */
     fun zoneIdFor(context: Context, place: Place, now: Instant): ZoneId {

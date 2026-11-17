@@ -281,6 +281,8 @@ object CityIndex {
         内罗毕|-1.29|36.82|Nairobi
         拉各斯|6.52|3.38|Lagos
         卡萨布兰卡|33.57|-7.59|Casablanca
+        摩尔曼斯克|68.97|33.08|Murmansk
+        中山站|-69.37|76.38|Zhongshan Station
     """.trimIndent()
 
     private val entries: List<Entry> by lazy {

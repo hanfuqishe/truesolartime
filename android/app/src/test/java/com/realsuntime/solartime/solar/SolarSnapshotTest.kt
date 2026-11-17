@@ -2,6 +2,7 @@ package com.realsuntime.solartime.solar
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -129,5 +130,39 @@ class SolarSnapshotTest {
         assertEquals(SolarTimeMath.standardZoneOffsetSeconds(35.6762, 139.6503), tokyo.localOffsetSeconds)
         assertEquals(9 * 3600, tokyo.localOffsetSeconds)
         assertEquals(13, tokyo.localStandardTime.hour)
+    }
+
+    @Test
+    fun polarSnapshotsShowDashesInsteadOfSunriseAndSunset() {
+        // 摩尔曼斯克 12 月 21 日：极夜，日出／日落没有时刻可显示，卡片两格退成 "--:--"，
+        // 下面那行写「极夜：太阳整日不出，上中天（当地标准时间）…」。
+        val murmansk = SolarTimeSnapshot.compute(
+            instant = Instant.parse("2026-12-21T12:00:00Z"),
+            latitude = 68.97,
+            longitude = 33.08,
+            zoneOffsetSeconds = 3 * 3600,
+        )
+        assertEquals(SolarTimeMath.PolarState.POLAR_NIGHT, murmansk.polar)
+        assertNull(murmansk.sunriseLocal)
+        assertNull(murmansk.sunsetLocal)
+        assertEquals("--:--", TimeFormat.clock(murmansk.sunriseLocal))
+        assertEquals("--:--", TimeFormat.clock(murmansk.sunsetLocal))
+        assertNull(murmansk.daylightSeconds)
+        assertNotNull(murmansk.solarNoonLocal)
+
+        // 中山站同一天是极昼：太阳整日不落，两格同样是 "--:--"。
+        val zhongshan = SolarTimeSnapshot.compute(
+            instant = Instant.parse("2026-12-21T12:00:00Z"),
+            latitude = -69.37,
+            longitude = 76.38,
+            zoneOffsetSeconds = 8 * 3600,
+        )
+        assertEquals(SolarTimeMath.PolarState.MIDNIGHT_SUN, zhongshan.polar)
+        assertNull(zhongshan.sunriseLocal)
+        assertNull(zhongshan.sunsetLocal)
+        assertEquals("--:--", TimeFormat.clock(zhongshan.sunriseLocal))
+        assertEquals("--:--", TimeFormat.clock(zhongshan.sunsetLocal))
+        assertNull(zhongshan.daylightSeconds)
+        assertNotNull(zhongshan.solarNoonLocal)
     }
 }

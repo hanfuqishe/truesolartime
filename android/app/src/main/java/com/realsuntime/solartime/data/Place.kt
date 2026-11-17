@@ -44,6 +44,15 @@ data class Place(
             Place(35.6762, 139.6503, PlaceSource.MANUAL, "", "city_tokyo", "jp"),
             Place(1.3521, 103.8198, PlaceSource.MANUAL, "", "city_singapore", "sg"),
             Place(-33.8688, 151.2093, PlaceSource.MANUAL, "", "city_sydney", "au"),
+            // 极圈城市：用来验证极昼／极夜。两个都不在 CityIndex 的行政区划语境里，
+            // 但选城市时直接读 labelResName，不依赖逆地理编码。
+            // 摩尔曼斯克（68.97°N 33.08°E）：俄罗斯，北极圈内，夏季极昼、冬季极夜。
+            //   时区按 `ru` + 经度分段（33.08°E < 40°E）→ UTC+3（莫斯科时间）。
+            Place(68.9700, 33.0800, PlaceSource.MANUAL, "", "city_murmansk", "ru"),
+            // 中山站（69.37°S 76.38°E）：中国南极考察站，南极圈内，南半球夏季极昼、冬季极夜。
+            //   时区显式用 `cn` → UTC+8：中山站按中国站务惯例使用北京时间；ZoneTable 没有
+            //   `aq` 条目，若写 aq 会退回「按经度取整」得到 +5，与站上实际使用的 UTC+8 不符。
+            Place(-69.3700, 76.3800, PlaceSource.MANUAL, "", "city_zhongshan", "cn"),
         )
 
         const val MIN_LATITUDE = -90.0
