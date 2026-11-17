@@ -7,9 +7,8 @@ import org.junit.Test
 /**
  * 太阳卡白天配色的断言（`SunColors` 是纯 Kotlin，测试不依赖 Compose）。
  *
- * 这版的要求：太阳点**照搬时间轴「现在」圆点**的画法（一个渐变圆、三档色标 0/0.55/1、
- * alpha 1/1/0，内圈 55% 实心），
- * 只有颜色不同（白天 `#D9A520`、夜间 `#F5D68A`）；上一版的三层结构与硬描边都不许再出现。
+ * 这版的要求：太阳点分成**两层** —— 纯色实心核心（2.75dp、alpha 1.0）+ 外圈光晕（2.75→5.5dp、
+ * alpha 0.35→0）；单层渐变的画法在真机上被渲染成均匀半透明，已废弃。
  * 弧与夜晚虚线**不再比「谁更深」**，而是靠色相（暖金 vs 中性灰）区分。
  */
 class SunColorsTest {
@@ -49,7 +48,7 @@ class SunColorsTest {
         assertTrue("太阳点应比弧更明显：$sunVsCard vs $arcVsCard", sunVsCard > arcVsCard)
     }
 
-    /** 上一版（三层结构）的硬描边已经整圈删除：alpha 常量必须是 0（不再有一圈实色边）。 */
+    /** 硬描边仍然没有回来：alpha 常量必须是 0（不再有一圈实色边）。 */
     @Test
     fun sunDotHasNoHardRing() {
         assertTrue(
@@ -60,39 +59,36 @@ class SunColorsTest {
     }
 
     /**
-     * 太阳点就是**一个**单色渐变圆：三档色标全是同一个金，位置 / alpha 与时间轴圆点共用同一组数组。
+     * 核心是**不透明纯色**：两套主题的核心色 ARGB 高字节都是 0xFF，alpha 常量算出来必须等于 1.0。
      *
-     * alpha 从中心到 55% 半径都是 1.0，之后线性降到 0：圆点中间是实心的，只有边缘柔化，
-     * 不是「实心核心 + 外圈」两层。
+     * 这就是真机上「弧线从点下面透出来」的修复点 —— 核心不再经过任何渐变 / alpha 混合。
      */
     @Test
-    fun sunDotIsASingleGoldSoftDot() {
-        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
-
-        val stops = SunColors.sunDotStops(night = false)
-        assertEquals(3, stops.size)
-        stops.forEach {
-            assertEquals("整颗点应只有一个金色", SunColors.DAY_SUN, it.argb)
-        }
-        assertEquals(SunColors.softDotStopPositions(), stops.map { it.position })
-        assertEquals(SunColors.softDotStopAlphas(), stops.map { it.alpha })
-        assertEquals(0f, stops.first().position, 1e-6f)
-        assertEquals(1f, stops.first().alpha, 1e-6f)
-        assertEquals(1f, stops.last().position, 1e-6f)
-        assertEquals(0f, stops.last().alpha, 1e-6f)
+    fun sunDotCoreIsOpaqueGold() {
+        assertEquals(0xFF, SunColors.DAY_SUN ushr 24)
+        assertEquals(0xFF, SunColors.NIGHT_SUN ushr 24)
+        assertEquals(1f, SunColors.SUN_DOT_CORE_ALPHA, 1e-6f)
+        assertEquals(SunColors.DAY_SUN, SunColors.sunDotCoreColor(night = false))
+        assertEquals(SunColors.NIGHT_SUN, SunColors.sunDotCoreColor(night = true))
     }
 
-    /** 夜间换成夜金 `#F5D68A`（与 `DarkColors.primary` 一致），位置 / alpha 数组一个不许变。 */
+    /** 光晕是同一个金的两档：内沿（核心外沿）alpha 0.35 → 外沿 0，位置从 2.75/5.5 = 0.5 起。 */
     @Test
-    fun nightDotUsesTheNightGoldWithTheSameShape() {
-        assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN)
+    fun sunDotGlowFadesFromGoldToTransparent() {
+        val innerStop = SunColors.SUN_DOT_GLOW_INNER_STOP
 
-        val stops = SunColors.sunDotStops(night = true)
-        assertEquals(3, stops.size)
-        stops.forEach { assertEquals("夜间整颗点应只有一个夜金", SunColors.NIGHT_SUN, it.argb) }
-        assertEquals(SunColors.softDotStopPositions(), stops.map { it.position })
-        assertEquals(SunColors.softDotStopAlphas(), stops.map { it.alpha })
-        assertEquals(0f, stops.last().alpha, 1e-6f)
+        val dayStops = SunColors.sunDotGlowStops(night = false)
+        assertEquals(2, dayStops.size)
+        assertEquals(innerStop, dayStops.first().position, 1e-6f)
+        assertEquals(0.35f, dayStops.first().alpha, 1e-6f)
+        assertEquals(SunColors.DAY_SUN, dayStops.first().argb)
+        assertEquals(1f, dayStops.last().position, 1e-6f)
+        assertEquals("外沿必须是 alpha 0", 0f, dayStops.last().alpha, 1e-6f)
+        assertEquals(SunColors.DAY_SUN, dayStops.last().argb)
+
+        SunColors.sunDotGlowStops(night = true).forEach {
+            assertEquals("夜间光晕应同为夜金", SunColors.NIGHT_SUN, it.argb)
+        }
     }
 
     /** 三个颜色的 RGB 距离：弧 / 点 / 虚线两两分得开（报告里也给出这组数）。 */

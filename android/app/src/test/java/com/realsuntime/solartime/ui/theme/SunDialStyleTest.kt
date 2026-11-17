@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 太阳圆盘的几何常量断言（纯 Kotlin，不依赖 Compose）：线宽 / 虚线、太阳点与时间轴圆点。
+ * 太阳圆盘的几何常量断言（纯 Kotlin，不依赖 Compose）：线宽 / 虚线、太阳点两层、时间轴圆点。
  *
  * 常量都放在 [SunColors] 里：颜色、线宽、圆点尺寸是同一张「圆盘外观规格表」，绘制代码只取常量。
  */
@@ -32,88 +32,87 @@ class SunDialStyleTest {
         )
     }
 
+    /** 太阳点核心：半径 2.75dp 的**纯色**圆，颜色 alpha 必须是 1.0（真机上单层渐变曾整颗半透明）。 */
+    @Test
+    fun sunDotCoreIsSolidAndFullyOpaque() {
+        assertEquals(2.75f, SunColors.SUN_DOT_CORE_RADIUS_DP, 1e-6f)
+        assertEquals("核心颜色的 alpha 必须是 1.0", 1f, SunColors.SUN_DOT_CORE_ALPHA, 1e-6f)
+        // 两套主题的核心色都在 ARGB 高字节写死 0xFF。
+        assertEquals(0xFF, SunColors.DAY_SUN ushr 24)
+        assertEquals(0xFF, SunColors.NIGHT_SUN ushr 24)
+        assertEquals(SunColors.DAY_SUN, SunColors.sunDotCoreColor(night = false))
+        assertEquals(SunColors.NIGHT_SUN, SunColors.sunDotCoreColor(night = true))
+    }
+
     /**
-     * 用户最终裁定：太阳点与时间轴「现在」圆点**完全同参**，只允许颜色不同。
+     * 尺寸对齐时间轴：太阳核心 = 时间轴半径 × 0.5（2.75dp），光晕外沿 = 时间轴半径（5.5dp）。
      *
-     * 半径是同一个常量（[SunColors.SUN_DOT_RADIUS_DP] = [SunColors.SOFT_DOT_RADIUS_DP]），
-     * 色标位置数组、alpha 数组也必须是同一份。
+     * 这样两颗点整体一样大（直径 11dp），太阳点的实心部分也和时间轴点的实心部分一样大。
      */
     @Test
-    fun sunDotUsesTheSameRadiusAsTheTimelineDot() {
-        assertEquals(5.5f, SunColors.SOFT_DOT_RADIUS_DP, 1e-6f)
+    fun sunDotMatchesTheTimelineDotSolidPart() {
         assertEquals(
-            "太阳点半径必须等于时间轴圆点半径（同一个常量）",
-            SunColors.SOFT_DOT_RADIUS_DP,
-            SunColors.SUN_DOT_RADIUS_DP,
+            "太阳核心半径必须等于时间轴半径的一半",
+            SunColors.SOFT_DOT_RADIUS_DP * 0.5f,
+            SunColors.SUN_DOT_CORE_RADIUS_DP,
             1e-6f,
         )
-        // 实心内圈的外沿：5.5 × 0.55 = 3.025dp。
-        assertEquals(3.025f, SunColors.SOFT_DOT_MID_RADIUS_DP, 1e-4f)
+        assertEquals(
+            "太阳光晕外沿必须等于时间轴半径",
+            SunColors.SOFT_DOT_RADIUS_DP,
+            SunColors.SUN_DOT_GLOW_RADIUS_DP,
+            1e-6f,
+        )
     }
 
-    /** 色标位置数组完全相同：0 / 0.55 / 1（不是从核心半径起，而是从圆心 0 起）。 */
+    /**
+     * 外圈光晕：从**核心外沿 2.75dp** 开始（不是从圆心），到 5.5dp 结束，alpha 0.35 → 0。
+     *
+     * 渐变位置 0.5 = 2.75 / 5.5；换算回 dp 必须正好是核心半径，否则光晕会盖住核心或离得太远。
+     */
     @Test
-    fun sunDotStopPositionsMatchTheTimelineDot() {
-        val shared = SunColors.softDotStopPositions()
-        assertEquals(listOf(0f, 0.55f, 1f), shared)
-        for (night in listOf(false, true)) {
-            val stops = SunColors.sunDotStops(night)
-            assertEquals("夜=$night 应有三档色标", 3, stops.size)
-            assertEquals("夜=$night 色标位置必须与时间轴相同", shared, stops.map { it.position })
-            assertEquals(0f, stops.first().position, 1e-6f)
-            assertEquals("渐变必须从圆心 0 开始", 0f, stops.first().position, 1e-6f)
-        }
-    }
+    fun sunDotGlowStartsAtTheCoreEdge() {
+        val innerStop = SunColors.SUN_DOT_GLOW_INNER_STOP
+        assertTrue("光晕起点不能是 0（那就盖住核心了）：$innerStop", innerStop > 0f)
+        assertEquals(
+            "起点位置 = 核心半径 / 光晕半径",
+            SunColors.SUN_DOT_CORE_RADIUS_DP / SunColors.SUN_DOT_GLOW_RADIUS_DP,
+            innerStop,
+            1e-6f,
+        )
+        assertEquals("起点位置 = 0.5", 0.5f, innerStop, 1e-6f)
+        assertEquals(
+            "起点换算回 dp 必须正好是核心半径",
+            SunColors.SUN_DOT_CORE_RADIUS_DP,
+            innerStop * SunColors.SUN_DOT_GLOW_RADIUS_DP,
+            1e-4f,
+        )
+        assertEquals(0.35f, SunColors.SUN_DOT_GLOW_ALPHA, 1e-6f)
 
-    /** alpha 数组完全相同：1 / 1 / 0（内圈 55% 完全不透明，之后线性渐隐）。 */
-    @Test
-    fun sunDotStopAlphasMatchTheTimelineDot() {
-        val shared = SunColors.softDotStopAlphas()
-        assertEquals(listOf(1f, 1f, 0f), shared)
         for (night in listOf(false, true)) {
-            val stops = SunColors.sunDotStops(night)
-            assertEquals("夜=$night alpha 数组必须与时间轴相同", shared, stops.map { it.alpha })
-            assertEquals(1f, stops.first().alpha, 1e-6f)
-            assertEquals(1f, stops[1].alpha, 1e-6f)
-            assertEquals(0f, stops.last().alpha, 1e-6f)
+            val stops = SunColors.sunDotGlowStops(night)
+            assertEquals("夜=$night 光晕应有两个色标", 2, stops.size)
+            assertEquals(innerStop, stops.first().position, 1e-6f)
+            assertEquals(0.35f, stops.first().alpha, 1e-6f)
+            assertEquals(1f, stops.last().position, 1e-6f)
+            assertEquals("外沿 alpha 必须 0", 0f, stops.last().alpha, 1e-6f)
+            assertTrue("色标位置必须严格递增", stops.last().position > stops.first().position)
+            assertEquals(SunColors.sunDotCoreColor(night), stops.first().argb)
         }
     }
 
     /**
-     * **半径一半（0.5）处仍然完全不透明**：这是这轮改动的核心。
+     * 时间轴「现在」圆点**恢复原曲线**：色标 0 / 0.5 / 1、alpha 1 / 0.45 / 0。
      *
-     * 旧曲线 0 / 0.5 / 1 + 1 / 0.45 / 0，半径一半就已经 45%；新曲线在 0.55 之前都是 1.0，
-     * 所以圆点有一个实实在在的实心内圈，不会在米白卡片上散成一片。
+     * 上一轮为了统一改成 0.55 / 1.0，用户说效果没以前好；这里钉住「只有圆心完全不透明」。
      */
     @Test
-    fun dotIsStillFullyOpaqueAtHalfTheRadius() {
-        assertEquals("半径 0.5 处必须完全不透明", 1f, SunColors.softDotAlphaAt(0.5f), 1e-6f)
-        assertEquals("实心内圈外沿 0.55 处仍是满色", 1f, SunColors.softDotAlphaAt(0.55f), 1e-6f)
+    fun timelineDotIsBackToItsOriginalCurve() {
+        assertEquals(5.5f, SunColors.SOFT_DOT_RADIUS_DP, 1e-6f)
+        assertEquals(listOf(0f, 0.5f, 1f), SunColors.softDotStopPositions())
+        assertEquals(listOf(1f, 0.45f, 0f), SunColors.softDotStopAlphas())
         assertEquals(1f, SunColors.softDotAlphaAt(0f), 1e-6f)
-        // 0.55 → 1 线性渐隐：0.775（正中）应是 0.5，边缘 0。
-        assertEquals(0.5f, SunColors.softDotAlphaAt(0.775f), 1e-3f)
+        assertEquals("半径一半处应为 0.45", 0.45f, SunColors.softDotAlphaAt(0.5f), 1e-6f)
         assertEquals(0f, SunColors.softDotAlphaAt(1f), 1e-6f)
-        // 整条曲线单调不增 —— 不许出现「先亮后暗再亮」的怪曲线。
-        var previous = SunColors.softDotAlphaAt(0f)
-        var position = 0f
-        while (position <= 1f) {
-            val alpha = SunColors.softDotAlphaAt(position)
-            assertTrue("alpha 曲线必须单调不增：@$position -> $alpha < $previous", alpha <= previous + 1e-6f)
-            previous = alpha
-            position += 0.01f
-        }
-    }
-
-    /** 唯一允许的差异是颜色：白天 `#D9A520`、夜间 `#F5D68A`，各自整颗点只有一个色。 */
-    @Test
-    fun sunDotColorsAreGoldAndNightGold() {
-        SunColors.sunDotStops(night = false).forEach {
-            assertEquals(SunColors.DAY_SUN, it.argb)
-        }
-        SunColors.sunDotStops(night = true).forEach {
-            assertEquals(SunColors.NIGHT_SUN, it.argb)
-        }
-        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
-        assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN)
     }
 }
