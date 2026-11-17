@@ -124,6 +124,32 @@ enum DistrictNaming {
         movedKm > moveThresholdKm || !(ageSeconds >= 0 && ageSeconds <= maxAgeSeconds)
     }
 
+    // MARK: - 缓存能不能用 / 卡片上显示什么（纯逻辑，便于自检）
+
+    /// 缓存里的地名能不能用在这个地点上。
+    ///
+    /// 两条硬要求：
+    /// 1. **必须存过坐标**。旧版本的缓存只存了名字、没存坐标 —— 那种缓存对**任何**坐标都会被判成
+    ///    「同一地点」，于是手动输入埃及坐标时卡片上仍挂着「北京」（本次修的 bug）。
+    ///    没坐标就一律不可用（宁可显示「-」，也不要张冠李戴）。
+    /// 2. 相距 ≤ `moveThresholdKm`（5 km）才算同一地点（GPS 抖动 / 步行范围内复用，换城市不复用）。
+    static func cacheMatches(storedLatitude: Double?, storedLongitude: Double?, place: Place) -> Bool {
+        guard let storedLatitude, let storedLongitude else { return false }
+        let moved = distanceKm(storedLatitude, storedLongitude, place.latitude, place.longitude)
+        return moved <= moveThresholdKm
+    }
+
+    /// 卡片左上角那一行城市名，三段式（与 Android `MainScreen.cityText` 一致）：
+    ///
+    /// ① 反查到的行政区划名优先（**只有属于当前地点时才给得出来**，见 `cacheMatches`）；
+    /// ② 反查没结果时，**只有预设城市**才回退显示预设名（如「纽约」）；
+    /// ③ 手工坐标与 GPS 没有名字可用 —— 显示半角「-」（既定产品决策：失败**不回填旧地名**）。
+    static func cardCityText(district: DistrictNames?, place: Place) -> String {
+        if let full = district?.full, !full.isEmpty { return full }
+        if let preset = place.presetLabel, !preset.isEmpty { return preset }
+        return "-"
+    }
+
     static let moveThresholdKm = 5.0
     static let maxAgeSeconds: TimeInterval = 30 * 24 * 60 * 60
 

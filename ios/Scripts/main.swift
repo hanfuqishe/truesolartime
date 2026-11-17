@@ -1058,12 +1058,14 @@ let dayArcContrast = dayArc.contrast(with: ThemeColors.day.surface)
 let nightArcContrast = nightThemeArc.contrast(with: ThemeColors.night.surface)
 let dayPrimaryContrast = ThemeColors.day.primary.contrast(with: ThemeColors.day.surface)
 expect(
-    "圆盘白天弧「很轻」但仍看得见：白天 1.4…1.8、夜间 ≥ 3",
-    dayArcContrast >= 1.4 && dayArcContrast <= 1.8 && nightArcContrast >= 3,
-    String(format: "day=%.2f (sunArc %@) night=%.2f (sunArc %@)",
+    "圆盘白天弧「很轻」但仍看得见：白天 1.40…1.55、夜间 ≥ 3",
+    dayArc.hexText == "#EAD095"
+        && dayArcContrast >= 1.40 && dayArcContrast <= 1.55
+        && nightArcContrast >= 3,
+    String(format: "day=%.3f (sunArc %@) night=%.2f (sunArc %@)",
            dayArcContrast, dayArc.hexText, nightArcContrast, nightThemeArc.hexText)
 )
-// 用户连着报两次「白天弧太深」：主色 4.80、上一版 #CA8751 是 2.87，现在 #E8CFA0 是 1.47。
+// 用户连着报两次「白天弧太深」：主色 4.80、上一版 #CA8751 是 2.87，现在 #EAD095 是 1.46。
 expect(
     "白天弧比主色浅得多（对比度至少低 2.5，且亮度更高）",
     dayArcContrast <= dayPrimaryContrast - 2.5
@@ -1158,8 +1160,8 @@ expect(
     "stops=\(halo.stops.map { ($0.alpha, $0.location) })"
 )
 expect(
-    "颜色不变：白天 #D9A520、夜间 #F5D68A（核心与光晕同色）",
-    ThemeColors.day.sunDot.hexText == "#D9A520"
+    "颜色：白天核心 #D9AC1C（Android DAY_SUN）、夜间 #F5D68A（核心与光晕同色）",
+    ThemeColors.day.sunDot.hexText == "#D9AC1C"
         && ThemeColors.night.sunDot.hexText == "#F5D68A"
         && ThemeColors.night.sunDot == ThemeColors.night.primary,
     "day=\(ThemeColors.day.sunDot.hexText) night=\(ThemeColors.night.sunDot.hexText)"
@@ -1178,15 +1180,29 @@ expect(
     "hollow=\(SunPathGeometry.sunHollowRadius) line=\(SunPathGeometry.sunHollowLineWidth)"
 )
 expect(
+    "太阳核心对卡片 ≥ 2.0（核心清晰）",
+    ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface) >= 2.0,
+    String(format: "dot %@ / card = %.3f",
+           ThemeColors.day.sunDot.hexText,
+           ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface))
+)
+expect(
     "太阳点对卡片比淡金弧实：对比度高于弧",
     ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface) > dayArcContrast,
     String(format: "dot=%.2f arc=%.2f",
            ThemeColors.day.sunDot.contrast(with: ThemeColors.day.surface), dayArcContrast)
 )
 expect(
-    "太阳点仍比淡金弧显眼：对弧对比 ≥ 1.3",
+    "太阳点 vs 淡金弧 ≥ 1.3（核心与弧分得开）",
     ThemeColors.day.sunDot.contrast(with: dayArc) >= 1.3,
-    String(format: "actual=%.2f", ThemeColors.day.sunDot.contrast(with: dayArc))
+    String(format: "actual=%.3f", ThemeColors.day.sunDot.contrast(with: dayArc))
+)
+expect(
+    "夜间三档仍是 #F5D68A（弧 / 核心 / 光晕同色，一点没动）",
+    ThemeColors.night.sunArc.hexText == "#F5D68A"
+        && ThemeColors.night.sunDot.hexText == "#F5D68A"
+        && ThemeColors.night.sunArc == ThemeColors.night.sunDot,
+    "arc=\(ThemeColors.night.sunArc.hexText) dot=\(ThemeColors.night.sunDot.hexText)"
 )
 expect(
     "轨迹线线宽：白天 1.6pt、夜晚 1.5pt、虚线 4/4pt",
@@ -1556,6 +1572,86 @@ expect(
 expect(
     "中英混排：逗号分隔、不直连",
     DistrictNaming.compose(parts: ["Manhattan", "纽约"])?.full == "Manhattan, 纽约"
+)
+
+print("== 手动坐标的地名：不许残留上一个城市（本地输入埃及 → 不能显示北京）==")
+// 现场坐标：25.2048N, 30.2708E（埃及）。时区对（UTC+2）、地名却显示「北京」——
+// 根因是「缓存里只存了名字、没存坐标」时旧代码跳过了 5 km 校验，任何坐标都会拿到北京那份缓存；
+// 而且反查失败时 DistrictStore 什么都不回调，界面就一直挂着旧名字。
+let egyptManual = Place(
+    latitude: 25.2048,
+    longitude: 30.2708,
+    source: .manual,
+    label: "手动设置"
+)
+let beijingPlace = Place.presets[0] // 北京（预设）
+expect(
+    "旧缓存（没存坐标）一律不可用 —— 这正是「埃及坐标显示北京」的根因",
+    !DistrictNaming.cacheMatches(storedLatitude: nil, storedLongitude: nil, place: egyptManual)
+)
+expect(
+    "缓存坐标是北京的，用在埃及坐标上 → 不可用",
+    !DistrictNaming.cacheMatches(
+        storedLatitude: beijingPlace.latitude,
+        storedLongitude: beijingPlace.longitude,
+        place: egyptManual
+    )
+)
+expect(
+    "缓存坐标就是当前地点（100 m 内）→ 可用",
+    DistrictNaming.cacheMatches(
+        storedLatitude: egyptManual.latitude + 0.001,
+        storedLongitude: egyptManual.longitude,
+        place: egyptManual
+    )
+)
+expect(
+    "缓存坐标超出 5 km → 不可用",
+    !DistrictNaming.cacheMatches(
+        storedLatitude: egyptManual.latitude + 0.2,
+        storedLongitude: egyptManual.longitude,
+        place: egyptManual
+    )
+)
+// 卡片那一行地名（三段式）：反查失败 → 「-」（不回填旧地名）。
+let gizaNames = DistrictNames(full: "Giza, Egypt", short: "Giza", countryCode: "eg")
+expect(
+    "手动坐标 + 反查成功 → 显示反查结果",
+    DistrictNaming.cardCityText(district: gizaNames, place: egyptManual) == "Giza, Egypt",
+    "actual=\(DistrictNaming.cardCityText(district: gizaNames, place: egyptManual))"
+)
+expect(
+    "手动坐标 + 反查失败（nil）→ 半角「-」（不回填旧地名）",
+    DistrictNaming.cardCityText(district: nil, place: egyptManual) == "-",
+    "actual=\(DistrictNaming.cardCityText(district: nil, place: egyptManual))"
+)
+expect(
+    "从预设城市切到手动坐标：旧地名清空后就是「-」，不会残留北京",
+    DistrictNaming.cardCityText(district: nil, place: egyptManual) != "北京市"
+        && DistrictNaming.cardCityText(district: nil, place: egyptManual) == "-"
+)
+expect(
+    "预设城市 + 反查失败 → 回退预设城市名（这是唯一允许的兜底）",
+    DistrictNaming.cardCityText(district: nil, place: beijingPlace) == beijingPlace.displayLabel,
+    "actual=\(DistrictNaming.cardCityText(district: nil, place: beijingPlace))"
+)
+expect(
+    "预设城市 + 反查成功 → 反查结果优先",
+    DistrictNaming.cardCityText(district: gizaNames, place: beijingPlace) == "Giza, Egypt"
+)
+expect(
+    "GPS 定位 + 反查失败 → 「-」（GPS 的 label 是占位词，不能当地名）",
+    DistrictNaming.cardCityText(
+        district: nil,
+        place: Place(latitude: 25.2048, longitude: 30.2708, source: .gps, label: "GPS · 精度 12 米")
+    ) == "-"
+)
+expect(
+    "空名字（复用了上一次的空 full）也当作没有 → 「-」",
+    DistrictNaming.cardCityText(
+        district: DistrictNames(full: "", short: "", countryCode: nil),
+        place: egyptManual
+    ) == "-"
 )
 
 print("== 区划名变长后的档位退化（不能只显示 New … 还判档 0）==")

@@ -64,22 +64,18 @@ struct ContentView: View {
                     // 版本号同时是「隐藏的诊断入口」：连续点 7 次（间隔 ≤2 秒）才在设置页
                     // 露出「诊断」区块。不显眼、不会误触，也不写偏好设置（重启回到隐藏）。
                     //
-                    // 第二行是**数据来源署名**：主源 Open-Meteo 是 CC BY 4.0，必须署名；
-                    // 降级到 7Timer! 之后不能再写 Open-Meteo，所以文案跟着实际源切换。
-                    VStack(spacing: 2) {
-                        Text(versionLabel)
-                        Text(model.weatherAttribution)
-                            .font(.system(size: 11))
-                            .multilineTextAlignment(.center)
-                    }
-                    .foregroundStyle(palette.onSurfaceVariant)
-                    .font(.system(size: 12))
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 6)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        model.registerVersionTap()
-                    }
+                    // 首页原先还有第二行「天气数据 © …」的来源署名，按用户要求去掉了（没必要，
+                    // 而且会把页脚撑成两行）。**署名本身没有取消**：CC BY 4.0 的合规标注移到了
+                    // 设置页「关于」里（见 `SettingsView`），仍然是跟着实际数据源切换的那一句。
+                    Text(versionLabel)
+                        .foregroundStyle(palette.onSurfaceVariant)
+                        .font(.system(size: 12))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            model.registerVersionTap()
+                        }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -120,19 +116,13 @@ struct ContentView: View {
         }
     }
 
-    /// 卡片上那一行城市名，三段式（与 Android `MainScreen.cityText` 一致）：
+    /// 卡片上那一行城市名。规则抽在 Core 的 `DistrictNaming.cardCityText`（可自检）：
     ///
-    /// ① 反查到的行政区划名优先（`DistrictStore` 带 5 km 校验：换了城市就当作没有缓存）；
-    /// ② 反查尚未返回 / 失败时，只有**预设城市**才回退显示预设城市名（如「纽约」）；
-    /// ③ 手工坐标与 GPS 定位没有名字可用（label 是「手动设置」这类占位词），显示半角「-」。
+    /// ① 反查到的行政区划名优先；
+    /// ② 反查失败时，只有**预设城市**才回退显示预设城市名（如「纽约」）；
+    /// ③ 手工坐标与 GPS 定位没有名字可用 → 半角「-」（失败**不回填**上一个城市的地名）。
     private var cityText: String {
-        if let district = model.districtName?.full, !district.isEmpty {
-            return district
-        }
-        if let preset = model.place.presetLabel, !preset.isEmpty {
-            return preset
-        }
-        return "-"
+        DistrictNaming.cardCityText(district: model.districtName, place: model.place)
     }
 
     /// 时间轴上关键时段的颜色。

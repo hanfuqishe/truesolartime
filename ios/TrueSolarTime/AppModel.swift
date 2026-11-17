@@ -226,8 +226,10 @@ final class AppModel: ObservableObject {
         ) > DistrictNaming.moveThresholdKm
 
         if moved || userChosen {
-            // 换了地点：立刻把上一个地点的区划名撤掉，新名字回来之前卡片显示预设城市名 / 减号。
-            // （`cachedNames(for:)` 自带 5 km 校验，跨城时必然得到 nil。）
+            // **先清空，再只看同一地点的缓存**：
+            // 换城市 / 手工输入新坐标时，上一个城市的地名一秒都不许留在卡片上
+            // （曾经出现过「手动输入埃及坐标，地名还显示北京」）。
+            // `cachedNames(for:)` 现在要求缓存里**存过坐标**且相距 ≤5 km，否则返回 nil。
             districtName = DistrictStore.shared.cachedNames(for: newPlace)
         }
         // 天气缓存与地点绑定：**只显示属于当前地点的数据**（≤5 km 匹配）。
@@ -259,8 +261,10 @@ final class AppModel: ObservableObject {
         refreshWeather(force: forceWeather, ignoreLowPrecisionThrottle: ignoreLowPrecisionThrottle)
         DistrictStore.shared.requestRefresh(place: currentPlace, force: forceDistrict) { [weak self] names in
             guard let self else { return }
+            // 反查失败 → names 为 nil → 名字清成 nil（卡片显示「-」），
+            // **绝不保留上一个城市的地名**（既定产品决策）。
             self.districtName = names
-            self.adoptCountryCodeIfNeeded(names.countryCode)
+            self.adoptCountryCodeIfNeeded(names?.countryCode)
         }
         KeyTimeStore.shared.requestRefresh { [weak self] schedule in
             guard let self else { return }

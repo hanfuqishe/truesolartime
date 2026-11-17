@@ -55,15 +55,22 @@ final class DistrictStore {
 
     /// 读缓存的地名。
     ///
-    /// 传入 `place` 时会核对缓存对应的坐标：换了城市（相距超过 5 km）就当作没有缓存，
-    /// 避免切到纽约后卡片上还挂着北京上一次的「北京市东城区」。
+    /// 传入 `place` 时会**核对缓存对应的坐标**：没存过坐标（旧版本缓存）或换了城市（> 5 km）
+    /// 都当作没有缓存 —— 否则手动输入埃及坐标时，卡片上会挂着上一次的「北京」。
     func cachedNames(for place: Place? = nil) -> DistrictNames? {
         guard let full = defaults.string(forKey: Key.full) else { return nil }
-        if let place, defaults.object(forKey: Key.latitude) != nil {
-            let lat = defaults.double(forKey: Key.latitude)
-            let lon = defaults.double(forKey: Key.longitude)
-            let moved = DistrictNaming.distanceKm(lat, lon, place.latitude, place.longitude)
-            if moved > DistrictNaming.moveThresholdKm { return nil }
+        if let place {
+            let storedLatitude = defaults.object(forKey: Key.latitude) != nil
+                ? defaults.double(forKey: Key.latitude)
+                : nil
+            let storedLongitude = defaults.object(forKey: Key.longitude) != nil
+                ? defaults.double(forKey: Key.longitude)
+                : nil
+            guard DistrictNaming.cacheMatches(
+                storedLatitude: storedLatitude,
+                storedLongitude: storedLongitude,
+                place: place
+            ) else { return nil }
         }
         let short = defaults.string(forKey: Key.short) ?? full
         return DistrictNames(full: full, short: short, countryCode: defaults.string(forKey: Key.country))
@@ -77,7 +84,7 @@ final class DistrictStore {
     /// 连续切换城市时：旧请求会被取消，并用「代号」把迟到的旧结果丢掉，
     /// 否则会出现「切到纽约，卡片却回填北京的地名」。
     /// 但**同一个地点**的请求还在路上时不做取消 —— 反复 cancel 会让回调丢失。
-    func requestRefresh(place: Place, force: Bool = false, completion: ((DistrictNames) -> Void)? = nil) {
+    func requestRefresh(place: Place, force: Bool = false, completion: ((DistrictNames?) -> Void)? = nil) {
         let siteKey = Self.siteKey(place)
         if inFlight, siteKey == inFlightSiteKey, !force { return }
         if !force, !needsRefresh(place) { return }
@@ -107,7 +114,7 @@ final class DistrictStore {
         locale: Locale,
         isRetry: Bool,
         generation: Int,
-        completion: ((DistrictNames) -> Void)?
+        completion: ((DistrictNames?) -> Void)?
     ) {
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
         geocoder.reverseGeocodeLocation(location, preferredLocale: locale) { [weak self] placemarks, error in
@@ -158,7 +165,7 @@ final class DistrictStore {
         place: Place,
         generation: Int,
         attempt: Int,
-        completion: ((DistrictNames) -> Void)?
+        completion: ((DistrictNames?) -> Void)?
     ) {
         guard let url = NominatimReverse.url(
             latitude: place.latitude,
@@ -166,7 +173,7 @@ final class DistrictStore {
             language: Self.nominatimLanguage
         ) else {
             lastErrorDescription = L("district.osmUrlFailed")
-            inFlight = false
+            fail(completion: completion)
             return
         }
 
@@ -214,7 +221,7 @@ final class DistrictStore {
                 return
             }
             self.lastErrorDescription = Lf("district.osmFailed", reason)
-            self.inFlight = false
+            self.fail(completion: completion)
         }.resume()
     }
 
@@ -223,13 +230,25 @@ final class DistrictStore {
         place: Place,
         names: DistrictNames,
         provider: String,
-        completion: ((DistrictNames) -> Void)?
+        completion: ((DistrictNames?) -> Void)?
     ) {
         inFlight = false
         DispatchQueue.main.async {
             self.lastProvider = provider
             self.save(place: place, names: names, provider: provider)
             completion?(names)
+        }
+    }
+
+    /// 失败收尾：复位 in-flight 并**把 nil 回调出去**。
+    ///
+    /// 界面拿到 nil 就显示半角「-」（既定产品决策）。绝不能「什么都不回调」——
+    /// 那样卡片会一直挂着上一个城市的地名（手动输入埃及坐标却显示「北京」就是这么来的）。
+    private func fail(completion: ((DistrictNames?) -> Void)?) {
+        inFlight = false
+        lastProvider = "-"
+        DispatchQueue.main.async {
+            completion?(nil)
         }
     }
 

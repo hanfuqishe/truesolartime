@@ -71,21 +71,21 @@ struct ThemeColors: Equatable {
     let onPrimary: ThemeColor
     /// 圆盘「地平线以上」那段白天弧的颜色（**实线**）。
     ///
-    /// 白天主题用**淡金色** `#E8CFA0`：弧只是「路径示意」，压在近白的卡片底（`surface`）上
-    /// 只有 **1.47:1**，几乎不发沉 —— 主色 `#B4550A` 是 4.80:1（用户连报两次「白天弧太重」），
-    /// 中间的 `#CA8751` 也有 2.87:1，都还是太实。
+    /// 白天主题用**淡金** `#EAD095`（与 Android 定稿的 `DAY_ARC` **完全同值**）：弧只是「路径示意」，
+    /// 压在近白的卡片底（`surface #FFFBF6`）上只有 **1.46:1**，几乎不发沉 —— 主色 `#B4550A` 是 4.80:1
+    /// （用户连报两次「白天弧太重」），中间的 `#CA8751` 也有 2.87:1，都还是太实。
     ///
-    /// 淡到 1.5:1 之后，与夜晚虚线（`onSurfaceVariant` 50% ≈ `#A8A098` / 2.50:1）**不再是深浅之分**，
-    /// 而是**色相之分**：弧是暖金（r−b = 0.28），虚线是中性灰（r−b = 0.06），加上实线 vs 虚线、
-    /// 2.5pt vs 1.6pt，两者一眼分得开（自检断言的就是这条色相不变式）。
+    /// 淡到 1.46:1 之后，与夜晚虚线（`onSurfaceVariant` 50% ≈ `#A8A098` / 2.50:1）**不再是深浅之分**，
+    /// 而是**色相之分**：弧是暖金（r−b = 0.33），虚线是中性灰（r−b = 0.06），加上实线 vs 虚线、
+    /// 1.6pt vs 1.5pt，两者一眼分得开（自检断言的就是这条色相不变式）。
     ///
     /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就真的看不见了。
     let sunArc: ThemeColor
-    /// 太阳点的颜色（核心实心与柔光**同色**，跟时间轴那个「现在」圆点一样：只有一层颜色）。
+    /// 太阳点的颜色（核心实心与光晕**同色**）。
     ///
-    /// 白天 `#D9A520`（与卡片 2.18:1、与淡金弧 1.48:1）；夜间 `#F5D68A`（等于 `primary`）。
-    /// 画法与尺寸**完全照搬时间轴**（`NowDotStyle`：核心 5.5pt + 外扩 2pt / 0.28 柔光），
-    /// 用户最终裁定「不要自创画法，只换颜色」——所以这里**不再**有高光色 / 外圈色。
+    /// 白天 `#D9AC1C`（与 Android 定稿的 `DAY_SUN` **完全同值**）：对卡片 **2.07:1**、
+    /// 对淡金弧 **1.41:1**；夜间 `#F5D68A`（等于 `primary`）。
+    /// 画法：核心 5.5pt 纯色（alpha 1.0）+ 独立光晕（`SunHaloStyle`：5.5→7.5pt，0.35→0）。
     let sunDot: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
@@ -111,11 +111,10 @@ struct ThemeColors: Equatable {
         outlineVariant: ThemeColor(hex: 0xD7C4B5),
         primary: ThemeColor(hex: 0xB4550A),
         onPrimary: ThemeColor(hex: 0xFFFFFF),
-        // 白天弧：淡金色（只是路径示意）。卡片底 #FFFBF6 上 1.47:1，比主色（4.80:1）轻得多。
-        // 不建议再浅到 #ECD6AC（1.38:1）—— 会低于「看得见」的下限 1.4。
-        sunArc: ThemeColor(hex: 0xE8CFA0),
-        // 太阳点：金 #D9A520（核心与柔光同色，画法/尺寸照搬时间轴，只换颜色）。
-        sunDot: ThemeColor(hex: 0xD9A520),
+        // 白天弧：淡金 #EAD095（= Android `DAY_ARC`）。卡片底 #FFFBF6 上 1.46:1，比主色（4.80:1）轻得多。
+        sunArc: ThemeColor(hex: 0xEAD095),
+        // 太阳点：金 #D9AC1C（= Android `DAY_SUN`）。对卡片 2.07:1、对弧 1.41:1；光晕跟随核心色。
+        sunDot: ThemeColor(hex: 0xD9AC1C),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),

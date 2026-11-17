@@ -172,6 +172,14 @@ struct SettingsView: View {
                         Text(L("settings.aboutBody"))
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)
+
+                        // 数据来源署名（许可要求的合规标注）：首页那行已按用户要求去掉，
+                        // 这一句必须留着 —— 主源 Open-Meteo 是 CC BY 4.0，降级到 7Timer! 之后
+                        // 不能再写 Open-Meteo，所以文案跟着 `AppModel.weatherAttribution` 切换。
+                        Text(model.weatherAttribution)
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.onSurfaceVariant)
+                            .padding(.top, 2)
                     }
                 }
                 .padding(20)
