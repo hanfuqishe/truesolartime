@@ -308,6 +308,13 @@ def _reuse_stored_cert(token: str):
     except Exception as exc:  # 格式坏了就当作没有
         print(f"      secrets 里的证书无法解析（{exc}），改为新建")
         return None
+    # 私钥必须真能解析，否则后面 openssl 导 p12 会报
+    # "Expecting: ANY PRIVATE KEY"（secret 贴错或与证书配不上时踩过）
+    try:
+        serialization.load_pem_private_key(key_pem.encode("ascii"), password=None)
+    except Exception as exc:
+        print(f"      KEY_PEM_BASE64 不是可用私钥（{exc}），本次改为新建")
+        return None
     serial = cert.serial_number
     for c in _distribution_certs(token):
         content = (c.get("attributes") or {}).get("certificateContent")
