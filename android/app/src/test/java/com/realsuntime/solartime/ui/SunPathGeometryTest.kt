@@ -647,4 +647,104 @@ class SunPathGeometryTest {
             assertEquals(north.horizonY, south.horizonY, 1e-4f)
         }
     }
+
+    // ---- 圆盘内侧的「太阳运动方向」箭头 ----
+
+    private fun arrowAngle(path: SunPath, x: Float, y: Float): Double =
+        Math.toDegrees(kotlin.math.atan2((y - path.centerY).toDouble(), (x - path.centerX).toDouble()))
+
+    /** 从 start 到 end 的屏幕扫角，归一到 (−180, 180]：正 = 顺时针，负 = 逆时针。 */
+    private fun arrowSweep(path: SunPath, arrow: MotionArrow): Double {
+        val start = arrowAngle(path, arrow.startX, arrow.startY)
+        val end = arrowAngle(path, arrow.endX, arrow.endY)
+        return (end - start + 540.0) % 360.0 - 180.0
+    }
+
+    /** 北半球 12:00：弧从 start 顺时针扫到 end（时间增大的方向），箭头尖 == end。 */
+    @Test
+    fun motionArrowRunsClockwiseInTheNorth() {
+        val path = dial(6.0, 18.0, trueSolarHour = 12.0)
+        val arrow = SunPathGeometry.motionArrow(path, 12.0)
+        assertEquals("箭头尖就是弧的终点（x）", arrow.endX, arrow.tipX, 0f)
+        assertEquals("箭头尖就是弧的终点（y）", arrow.endY, arrow.tipY, 0f)
+        val sweep = arrowSweep(path, arrow)
+        assertEquals("北半球 12:00 应顺时针扫过 +30°，实际 $sweep", 30.0, sweep, 0.1)
+        // 12:00 的弧在圆顶附近，两端都在圆心上方。
+        assertTrue("起点应在圆顶附近", arrow.startY < path.centerY)
+        assertTrue("终点应在圆顶附近", arrow.endY < path.centerY)
+    }
+
+    /** 南半球：start/end 关于竖轴镜像，且行进方向反过来（逆时针）。 */
+    @Test
+    fun motionArrowMirrorsInTheSouth() {
+        val north = dial(6.0, 18.0, trueSolarHour = 12.0)
+        val south = dialSouth(6.0, 18.0, trueSolarHour = 12.0)
+        val n = SunPathGeometry.motionArrow(north, 12.0)
+        val s = SunPathGeometry.motionArrow(south, 12.0)
+
+        assertEquals("start 应关于竖轴镜像（x）", 2 * north.centerX - n.startX, s.startX, 0.5f)
+        assertEquals("start 应关于竖轴镜像（y）", n.startY, s.startY, 0.5f)
+        assertEquals("end 应关于竖轴镜像（x）", 2 * north.centerX - n.endX, s.endX, 0.5f)
+        assertEquals("end 应关于竖轴镜像（y）", n.endY, s.endY, 0.5f)
+        assertEquals("南半球应逆时针扫过 −30°", -30.0, arrowSweep(south, s), 0.1)
+    }
+
+    /** 弧在 0.72R 的内圆上、跨角恒定 30°、以太阳点角度为中心，且箭头尖离太阳点足够远。 */
+    @Test
+    fun motionArrowStaysOnTheInnerCircleAndClearOfTheSun() {
+        val expectedRadiusRatio = SunPathGeometry.MOTION_ARROW_RADIUS_RATIO
+        val expectedSpan = SunPathGeometry.MOTION_ARROW_SPAN_DEG.toDouble()
+        val hours = listOf(0.0, 2.5, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 23.5)
+        for (hour in hours) {
+            for (south in listOf(false, true)) {
+                val path = if (south) {
+                    dialSouth(6.0, 18.0, trueSolarHour = hour)
+                } else {
+                    dial(6.0, 18.0, trueSolarHour = hour)
+                }
+                val arrow = SunPathGeometry.motionArrow(path, hour)
+                val expectedRadius = path.radius * expectedRadiusRatio
+                val startDistance = kotlin.math.hypot(
+                    (arrow.startX - path.centerX).toDouble(),
+                    (arrow.startY - path.centerY).toDouble(),
+                )
+                val endDistance = kotlin.math.hypot(
+                    (arrow.endX - path.centerX).toDouble(),
+                    (arrow.endY - path.centerY).toDouble(),
+                )
+                assertEquals("$south $hour 起点半径", expectedRadius.toDouble(), startDistance, 0.5)
+                assertEquals("$south $hour 终点半径", expectedRadius.toDouble(), endDistance, 0.5)
+
+                // 两端夹角 = 30°。
+                var span = kotlin.math.abs(arrowAngle(path, arrow.endX, arrow.endY) -
+                    arrowAngle(path, arrow.startX, arrow.startY)) % 360.0
+                if (span > 180.0) span = 360.0 - span
+                assertEquals("$south $hour 跨角", expectedSpan, span, 0.1)
+
+                // 弧以太阳点角度为中心：两端中点与圆心连线，角度应与太阳点一致。
+                val midAngle = Math.toDegrees(
+                    kotlin.math.atan2(
+                        ((arrow.startY + arrow.endY) / 2f - path.centerY).toDouble(),
+                        ((arrow.startX + arrow.endX) / 2f - path.centerX).toDouble(),
+                    ),
+                )
+                val sunAngle = Math.toDegrees(
+                    kotlin.math.atan2(
+                        (path.sunY - path.centerY).toDouble(),
+                        (path.sunX - path.centerX).toDouble(),
+                    ),
+                )
+                var centerDelta = kotlin.math.abs(midAngle - sunAngle) % 360.0
+                if (centerDelta > 180.0) centerDelta = 360.0 - centerDelta
+                assertEquals("$south $hour 弧应以太阳点为中心", 0.0, centerDelta, 0.1)
+
+                // 箭头尖离太阳点 > 6dp（太阳点在 R 上、柔光 6.75dp，弧在 0.72R）。
+                val sunDistance = kotlin.math.hypot(
+                    (arrow.tipX - path.sunX).toDouble(),
+                    (arrow.tipY - path.sunY).toDouble(),
+                )
+                assertTrue("$south $hour 箭头离太阳点太近：$sunDistance", sunDistance > 6.0)
+            }
+        }
+    }
 }

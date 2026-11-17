@@ -120,6 +120,25 @@ data class HorizonSpan(val startX: Float, val endX: Float) {
     val length: Float get() = endX - startX
 }
 
+/**
+ * 圆盘**内侧**那段「太阳运动方向」的短弧 + 箭头（像素坐标）。
+ *
+ * - [startX] / [startY]：弧的起点（当前真太阳时角度 **−** 半跨角，时间较早的一端）；
+ * - [endX] / [endY]：弧的终点（角度 **+** 半跨角，运动方向的下游）；
+ * - [tipX] / [tipY]：箭头尖，等于终点。
+ *
+ * 北半球从 start 到 end 在屏幕上是**顺时针**（时间增大的方向）；南半球整个 x 镜像，
+ * 所以是**逆时针**。方向完全由 [SunPath.southernHemisphere] 决定，UI 不再另算一套。
+ */
+data class MotionArrow(
+    val startX: Float,
+    val startY: Float,
+    val endX: Float,
+    val endY: Float,
+    val tipX: Float,
+    val tipY: Float,
+)
+
 /** 圆盘几何的唯一入口：纯 Kotlin，不依赖 Android 绘图 API。 */
 object SunPathGeometry {
 
@@ -138,6 +157,12 @@ object SunPathGeometry {
      * 极夜时 `horizonY < centerY − radius`（整圆在夜晚），渲染时整圆不会被切成两段弧。
      */
     const val POLAR_HORIZON_RATIO = 1.25f
+
+    /** 运动方向箭头所在圆的半径（相对轨迹圆 R）：画在圆内侧，离太阳点（在 R 上）留出足够空隙。 */
+    const val MOTION_ARROW_RADIUS_RATIO = 0.72f
+
+    /** 运动方向箭头短弧的跨角（度），以当前太阳点角度为中心左右各一半。 */
+    const val MOTION_ARROW_SPAN_DEG = 30f
 
     private const val HOURS_PER_DAY = 24.0
 
@@ -245,6 +270,45 @@ object SunPathGeometry {
             isPolarDay = isPolarDay,
             isPolarNight = isPolarNight,
             southernHemisphere = southernHemisphere,
+        )
+    }
+
+    /**
+     * 圆盘内侧那段「太阳运动方向」短弧的起止点（见 [MotionArrow]）。
+     *
+     * 弧以 [currentTrueSolarHour] 对应的圆心角为中心、左右各 [spanDeg] / 2，画在半径
+     * `radiusRatio × R` 的同心圆上（默认 0.72R，离太阳点所在的 R 还有 0.28R ≈ 20dp）。
+     * 半球决定 x 是否镜像：北半球 start → end 顺时针，南半球逆时针。
+     *
+     * 端点用与太阳点**同一套**参数化（[hourX] / [hourY] 的公式），所以两端的半径恒等于
+     * `radiusRatio × R`、两端夹角恒等于 [spanDeg]，不受半球影响。
+     */
+    fun motionArrow(
+        path: SunPath,
+        currentTrueSolarHour: Double,
+        radiusRatio: Float = MOTION_ARROW_RADIUS_RATIO,
+        spanDeg: Float = MOTION_ARROW_SPAN_DEG,
+    ): MotionArrow {
+        val arrowRadius = path.radius * radiusRatio
+        val halfSpan = Math.toRadians(spanDeg / 2.0)
+        val centerAngle = angleOfDayHour(currentTrueSolarHour)
+
+        fun point(theta: Double): Pair<Float, Float> {
+            val offset = arrowRadius * sin(theta).toFloat()
+            val x = if (path.southernHemisphere) path.centerX - offset else path.centerX + offset
+            return x to (path.centerY - arrowRadius * cos(theta).toFloat())
+        }
+
+        val (startX, startY) = point(centerAngle - halfSpan)
+        val (endX, endY) = point(centerAngle + halfSpan)
+        // 箭头尖就是弧的终点（运动方向的下游）。
+        return MotionArrow(
+            startX = startX,
+            startY = startY,
+            endX = endX,
+            endY = endY,
+            tipX = endX,
+            tipY = endY,
         )
     }
 

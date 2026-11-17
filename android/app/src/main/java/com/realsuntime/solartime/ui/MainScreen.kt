@@ -60,6 +60,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -97,7 +98,9 @@ import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
+import kotlin.math.atan2
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /** 宽屏断点：内容区达到这个宽度就把大卡片与太阳卡片并排（与鸿蒙版同一条规则：560）。 */
 private val WIDE_LAYOUT_MIN_WIDTH = 560.dp
@@ -1150,11 +1153,13 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 时间圆盘：**圆 = 一天 24 小时**，12:00 在正上方、00:00 在正下方，
  * 地平线是一条水平线，其高度由日出时刻决定（见 `SunPathGeometry`）。
  *
- * 盘面画四样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
+ * 盘面画五样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
  * 1. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
  * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
  * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
- * 4. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点。
+ * 4. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点；
+ * 5. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
+ *    （北半球顺时针、南半球逆时针，颜色 onSurfaceVariant，不与主色抢视觉）。
  *
  * 南半球（`snapshot.latitude < 0`）时圆盘整体左右镜像：观察者面朝北，06:00 的太阳在右、
  * 18:00 在左，太阳从右往左走；三处竖直基准（12:00 圆顶、00:00 圆底、地平线高度）不变，
@@ -1308,6 +1313,57 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                     )
                 }
             }
+
+            // 运动方向箭头：画在圆内侧 0.72R 上的一小段弧（跨 30°，以当前太阳点角度为中心），
+            // 末端一个实心小三角。方向与太阳点同一套参数化 —— 北半球顺时针、南半球逆时针。
+            // 颜色刻意用低对比的 onSurfaceVariant（不用主色，免得和白天弧抢视觉）。
+            val motion = SunPathGeometry.motionArrow(path, trueSolarHour)
+            val arrowRadius = path.radius * SunPathGeometry.MOTION_ARROW_RADIUS_RATIO
+            val arrowStartAngle = Math.toDegrees(
+                atan2(
+                    (motion.startY - path.centerY).toDouble(),
+                    (motion.startX - path.centerX).toDouble(),
+                ),
+            ).toFloat()
+            val arrowEndAngle = Math.toDegrees(
+                atan2(
+                    (motion.endY - path.centerY).toDouble(),
+                    (motion.endX - path.centerX).toDouble(),
+                ),
+            ).toFloat()
+            // 归一到 (−180, 180]：正 = 顺时针（北半球），负 = 逆时针（南半球）。
+            val arrowSweep = ((arrowEndAngle - arrowStartAngle + 540f) % 360f) - 180f
+            drawArc(
+                color = scheme.onSurfaceVariant,
+                startAngle = arrowStartAngle,
+                sweepAngle = arrowSweep,
+                useCenter = false,
+                topLeft = Offset(path.centerX - arrowRadius, path.centerY - arrowRadius),
+                size = Size(arrowRadius * 2f, arrowRadius * 2f),
+                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
+            )
+            // 箭头尖 = 弧的终点，朝向该点的切线方向：顺时针是 (−r.y, r.x)，逆时针取反。
+            val radiusX = motion.endX - path.centerX
+            val radiusY = motion.endY - path.centerY
+            val radiusLength = sqrt(radiusX * radiusX + radiusY * radiusY).coerceAtLeast(0.001f)
+            val clockwise = if (arrowSweep > 0f) 1f else -1f
+            val dirX = clockwise * (-radiusY / radiusLength)
+            val dirY = clockwise * (radiusX / radiusLength)
+            val headLength = 5.dp.toPx()
+            val headHalfWidth = headLength * 0.45f
+            val headBaseX = motion.tipX - dirX * headLength
+            val headBaseY = motion.tipY - dirY * headLength
+            val normalX = -dirY
+            val normalY = dirX
+            drawPath(
+                path = Path().apply {
+                    moveTo(motion.tipX, motion.tipY)
+                    lineTo(headBaseX + normalX * headHalfWidth, headBaseY + normalY * headHalfWidth)
+                    lineTo(headBaseX - normalX * headHalfWidth, headBaseY - normalY * headHalfWidth)
+                    close()
+                },
+                color = scheme.onSurfaceVariant,
+            )
 
             // 当前太阳点：白天实心亮色 + 柔光，夜里空心暗色。
             val sun = Offset(path.sunX, path.sunY)
