@@ -51,7 +51,6 @@ import com.realsuntime.solartime.map.TileEvent
 import com.realsuntime.solartime.map.TileResult
 import com.realsuntime.solartime.solar.TimeFormat
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
@@ -99,12 +98,6 @@ fun MapCard(
     val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     val style = ui.source
-    val composeCount = remember { intArrayOf(0) }
-    composeCount[0]++
-    android.util.Log.w(
-        "MapFx",
-        "compose #${composeCount[0]} place=${place.latitude},${place.longitude} ui=$ui",
-    )
     // 瓦片回调挂在很久以前创建的 MapView 上，必须拿「最新一版」回调，不能记住 factory 那一刻的。
     val latestTileEvent = rememberUpdatedState(onTileEvent)
     // 空白检测也要看「最新一版」的源：factory 里记住的 style 在回退之后就是旧的了。
@@ -184,18 +177,8 @@ fun MapCard(
             view.controller.setZoom(ui.zoom.toDouble())
         }
         view.controller.setCenter(target)
-        android.util.Log.w("MapFx", "applyViewport zoom=${ui.zoom} center=${view.mapCenter} from=${place.label}")
         // 告诉状态机「视口刚被程序化改过」：这之后 2 秒内回来的瓦片失败是被取消的旧请求，不计入降级。
         onViewportApplied(ui.zoom)
-        launch {
-            delay(3_000L)
-            val now = view.mapCenter
-            val drift = Math.hypot(now.latitude - target.latitude, now.longitude - target.longitude)
-            android.util.Log.w(
-                "MapFx",
-                "centerCheck from=${place.label} target=$latitude,$longitude actual=${now.latitude},${now.longitude} drift=$drift",
-            )
-        }
     }
 
     // 连最低级别都没瓦片：定期重画，网络一恢复就自己出图（静默，不打扰用户）。
@@ -495,16 +478,11 @@ private data class TileScan(val inspected: Int, val blanks: List<TileEvent>) {
 private fun syncMap(view: MapView, place: Place, style: MapStyle) {
     val tileSource = MapTileSources.tileSourceOf(style)
     if (view.tileProvider.tileSource.name() != tileSource.name()) {
-        android.util.Log.w(
-            "MapFx",
-            "setTileSource ${view.tileProvider.tileSource.name()} -> ${tileSource.name()} (clears tile cache)",
-        )
         view.setTileSource(tileSource)
     }
     val marker = view.overlays.filterIsInstance<Marker>().firstOrNull() ?: return
     val (latitude, longitude) = markerPointOf(place, style)
     if (marker.position.latitude != latitude || marker.position.longitude != longitude) {
-        android.util.Log.w("MapFx", "marker move ${marker.position} -> $latitude,$longitude")
         marker.position = GeoPoint(latitude, longitude)
         marker.title = place.label
         view.invalidate()

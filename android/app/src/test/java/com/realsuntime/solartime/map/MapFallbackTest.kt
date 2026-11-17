@@ -371,6 +371,17 @@ class MapFallbackTest {
         assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
     }
 
+    /** 视口残响只该保护高德：OSM 的失败是「网络不通」的证据，不能被它吞掉（否则回退会变慢）。 */
+    @Test
+    fun viewportSettleDoesNotSwallowOsmFailures() {
+        val tracker = newTracker()
+        tracker.onZoomApplied(12) // 刚切完城市，视口残响窗口开着
+        tracker.failTiles(threshold) // OSM 连不上
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertTrue("OSM 失败必须照常累计并回退", plan.fellBack)
+        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+    }
+
     // ------------------------------------------------------------ 只有「有效 plan」变化才对外发状态
 
     @Test

@@ -195,7 +195,15 @@ object MapFallback {
         // 刚切过源：这些失败多半属于切换前就发出去的请求，丢了不算。
         if (state.isSettling(nowMillis)) return state
         // 刚程序化改过视口（切城市 / 降级）：那是我们主动取消了在飞的请求，失败不算。
-        if (state.isSettlingViewport(nowMillis)) return state
+        //
+        // **只对高德这一支生效**：降级链的自激循环发生在高德（改级别 → 取消 → 失败 → 再改级别），
+        // 需要这道闸；而 OSM 的失败正是「网络不通」的证据，吞掉只会让回退到高德变慢。
+        // （切源那一瞬间的旧 OSM 请求由上面的 SWITCH_SETTLE_MILLIS 负责丢掉。）
+        if (state.isSettlingViewport(nowMillis) &&
+            plan(style, latitude, longitude, state).effective != MapStyle.OSM
+        ) {
+            return state
+        }
         return registerFailure(style, latitude, longitude, zoom, state, nowMillis, blank = false)
     }
 

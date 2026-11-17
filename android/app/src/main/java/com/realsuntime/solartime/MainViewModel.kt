@@ -116,7 +116,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var stopTracking: (() -> Unit)? = null
     private var announcedFirstFix = false
-    private var tileEventCount = 0
 
     init {
         viewModelScope.launch {
@@ -272,10 +271,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onMapTileEvent(event: TileEvent) {
         val place = _place.value
         val style = _mapStyle.value
-        tileEventCount++
-        if (event.result != TileResult.LOADED || tileEventCount % 40 == 0) {
-            android.util.Log.w("MapFx", "tileEvent ${event.result} z=${event.zoom} #$tileEventCount")
-        }
         // 只记诊断用的「当下级别」，**不**开「刚改过视口」的残响窗口：
         // 瓦片事件是结果不是原因，拿它当视口变化会把窗口无限续期，真失败就再也数不到了。
         mapFallback.noteTileZoom(event.zoom)
