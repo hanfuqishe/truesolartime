@@ -1039,7 +1039,8 @@ print(String(format: "  · 南半球：start (%.1f, %.1f) / end (%.1f, %.1f) / t
              southArrow.tip.x, southArrow.tip.y))
 
 
-// 圆盘的颜色也守一遍：全部取主题 token，白天弧用 primary，夜晚弧用 50% 的次要文字色。
+// 圆盘的颜色也守一遍：全部取主题 token，白天弧用 sunArc（白天主题比主色浅一档），
+// 夜晚弧用 50% 的次要文字色。
 func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Double) -> ThemeColor {
     func mix(_ f: Double, _ b: Double) -> UInt32 {
         UInt32(min(max((f * alpha + b * (1 - alpha)) * 255.0, 0), 255).rounded())
@@ -1050,12 +1051,35 @@ func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Dou
     return ThemeColor(hex: hex)
 }
 
-let dayArcContrast = ThemeColors.day.primary.contrast(with: ThemeColors.day.surface)
-let nightArcContrast = ThemeColors.night.primary.contrast(with: ThemeColors.night.surface)
+let dayArc = ThemeColors.day.sunArc
+let nightThemeArc = ThemeColors.night.sunArc
+let dayArcContrast = dayArc.contrast(with: ThemeColors.day.surface)
+let nightArcContrast = nightThemeArc.contrast(with: ThemeColors.night.surface)
+let dayPrimaryContrast = ThemeColors.day.primary.contrast(with: ThemeColors.day.surface)
 expect(
-    "圆盘白天弧（primary）对比度 ≥ 3（亮暗两套）",
-    dayArcContrast >= 3 && nightArcContrast >= 3,
-    String(format: "day=%.2f night=%.2f", dayArcContrast, nightArcContrast)
+    "圆盘白天弧看得见：白天 ≥ 2.6、夜间 ≥ 3",
+    dayArcContrast >= 2.6 && nightArcContrast >= 3,
+    String(format: "day=%.2f (sunArc %@) night=%.2f (sunArc %@)",
+           dayArcContrast, dayArc.hexText, nightArcContrast, nightThemeArc.hexText)
+)
+// 用户报的就是这一条：白天弧用主色 #B4550A 时是 4.80:1，在白卡片上太深。
+expect(
+    "白天主题的白天弧比主色浅（对比度至少低 1.5，且亮度更高）",
+    dayArcContrast <= dayPrimaryContrast - 1.5
+        && dayArc.relativeLuminance > ThemeColors.day.primary.relativeLuminance + 0.1,
+    String(format: "arc=%.2f primary=%.2f arcL=%.3f primaryL=%.3f",
+           dayArcContrast, dayPrimaryContrast,
+           dayArc.relativeLuminance, ThemeColors.day.primary.relativeLuminance)
+)
+expect(
+    "白天弧不是主色本身，也不是另一套主题的取值",
+    dayArc != ThemeColors.day.primary && dayArc.hexText != "#B4550A" && dayArc != nightThemeArc,
+    "actual=\(dayArc.hexText)"
+)
+expect(
+    "夜间主题的白天弧保持原样（= 主色 #F5D68A，深底上不许再调浅）",
+    nightThemeArc == ThemeColors.night.primary && nightThemeArc.hexText == "#F5D68A",
+    "actual=\(nightThemeArc.hexText)"
 )
 let dayNightArc = dialBlend(ThemeColors.day.onSurfaceVariant, over: ThemeColors.day.surface, alpha: 0.5)
 let nightNightArc = dialBlend(ThemeColors.night.onSurfaceVariant, over: ThemeColors.night.surface, alpha: 0.5)
@@ -1071,6 +1095,25 @@ expect(
     dayNightArcContrast < dayArcContrast && nightNightArcContrast < nightArcContrast,
     String(format: "day: %.2f<%.2f night: %.2f<%.2f",
            dayNightArcContrast, dayArcContrast, nightNightArcContrast, nightArcContrast)
+)
+// 调浅之后仍要和夜晚虚线明显区分：色差（RGB 距离）与亮度差都要够。
+let arcChannelGap = abs(dayArc.red - dayNightArc.red)
+    + abs(dayArc.green - dayNightArc.green)
+    + abs(dayArc.blue - dayNightArc.blue)
+expect(
+    "白天弧与夜晚虚线明显区分（RGB 距离 ≥ 0.4、对比度 ≥ 1.1、白天更暖）",
+    arcChannelGap >= 0.4
+        && dayArc.contrast(with: dayNightArc) >= 1.1
+        && (dayArc.red - dayArc.green) >= 0.2,
+    String(format: "gap=%.2f contrast=%.2f r-g=%.2f（夜晚虚线 %@）",
+           arcChannelGap, dayArc.contrast(with: dayNightArc),
+           dayArc.red - dayArc.green, dayNightArc.hexText)
+)
+// 太阳点保持主色（更实），与调浅后的弧形成层次。
+expect(
+    "太阳点（primary）与白天弧仍分得开：对比度 ≥ 1.4",
+    ThemeColors.day.primary.contrast(with: dayArc) >= 1.4,
+    String(format: "actual=%.2f", ThemeColors.day.primary.contrast(with: dayArc))
 )
 
 print("== 十二时辰 ==")
@@ -3119,7 +3162,7 @@ let themeNightColors = ThemeColors.night
 expect("亮/暗是两套不同的 token", themeDayColors != themeNightColors)
 expect("isDay 标记正确", themeDayColors.isDay && !themeNightColors.isDay)
 expect("of(isDay:) 取到对应的一套", ThemeColors.of(isDay: true) == .day && ThemeColors.of(isDay: false) == .night)
-expect("token 数量固定（12 个语义色）", themeDayColors.tokens.count == 12, "actual=\(themeDayColors.tokens.count)")
+expect("token 数量固定（13 个语义色）", themeDayColors.tokens.count == 13, "actual=\(themeDayColors.tokens.count)")
 expect("token 名字不重复", Set(themeDayColors.tokens.map(\.name)).count == themeDayColors.tokens.count)
 
 // 逐个 token：两套都必须有值（不能是 0x000000 占位）且亮暗不同。

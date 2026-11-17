@@ -95,6 +95,7 @@ import com.realsuntime.solartime.solar.SolarTimeMath
 import com.realsuntime.solartime.solar.SolarTimeSnapshot
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.theme.TrueSolarTimeTheme
+import com.realsuntime.solartime.ui.theme.sunDayArcColor
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
@@ -1183,6 +1184,9 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
 @Composable
 private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
+    // 白天弧单独取一个浅色：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
+    // 地平线 / 太阳点 / 刻度 / 箭头仍用各自原来的 token，弧变浅后反而形成层次。
+    val dayArcColor = sunDayArcColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
     val polarNight = polar == SolarTimeMath.PolarState.POLAR_NIGHT
@@ -1258,7 +1262,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 // 整圆只有一种性质：极昼画实线亮弧，极夜画虚线暗弧。
                 if (path.isWholeCircleDay) {
                     drawCircle(
-                        color = scheme.primary,
+                        color = dayArcColor,
                         radius = path.radius,
                         center = center,
                         style = Stroke(arcStroke),
@@ -1274,7 +1278,7 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             } else {
                 // 白天弧：从日出刻度顺时针经过 12:00（正上方）扫到日落刻度。
                 drawArc(
-                    color = scheme.primary,
+                    color = dayArcColor,
                     startAngle = span.startDegrees,
                     sweepAngle = span.sweepDegrees,
                     useCenter = false,

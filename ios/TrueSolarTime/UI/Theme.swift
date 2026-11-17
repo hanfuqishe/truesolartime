@@ -31,6 +31,8 @@ struct ThemePalette {
     let primary: Color
     /// 强调色底上的文字
     let onPrimary: Color
+    /// 圆盘白天弧（地平线以上的实线）：白天主题比主色浅一档，白卡片上不显沉
+    let sunArc: Color
     /// 错误文字
     let danger: Color
     /// 输入框底色
@@ -51,6 +53,7 @@ struct ThemePalette {
         outlineVariant = Color(hex: colors.outlineVariant.hex)
         primary = Color(hex: colors.primary.hex)
         onPrimary = Color(hex: colors.onPrimary.hex)
+        sunArc = Color(hex: colors.sunArc.hex)
         danger = Color(hex: colors.danger.hex)
         fieldBackground = Color(hex: colors.fieldBackground.hex)
         fieldBorder = Color(hex: colors.fieldBorder.hex)

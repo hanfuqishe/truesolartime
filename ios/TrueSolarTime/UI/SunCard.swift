@@ -242,8 +242,9 @@ struct SunCard: View {
 /// 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
 /// 文字不在这里画（`SunCard` 用真 `Text` 叠在上面），所以这里不需要任何标签尺寸假设。
 ///
-/// 颜色一律取主题 token（`palette.primary` / `palette.onSurfaceVariant` / `palette.surface`），
-/// 两套主题各用自己的一档，**不碰系统色**（系统 `.orange` / `.secondary` 在强制主题下会串色）。
+/// 颜色一律取主题 token（`palette.sunArc` / `palette.primary` / `palette.onSurfaceVariant` /
+/// `palette.surface`），两套主题各用自己的一档，**不碰系统色**（系统 `.orange` / `.secondary`
+/// 在强制主题下会串色）。白天弧单独一档（`sunArc`）：白天主题比主色浅，白卡片上不显沉。
 private struct SunDialCanvas: View {
 
     @Environment(\.palette) private var palette
@@ -275,13 +276,15 @@ private struct SunDialCanvas: View {
             height: path.radius * 2
         ))
 
-        // 两套主题各自的「白天 / 夜晚」两档：白天用主色（暖色），夜晚用次要文字色压暗压淡。
-        let dayColor = palette.primary
+        // 两套主题各自的「白天 / 夜晚」两档：白天用**白天弧专用色**（白天主题比主色浅一档，
+        // 白卡片上不显沉；夜间主题等于主色，保持原样），夜晚用次要文字色压暗压淡。
+        // 太阳点 / 地平线 / 箭头 / 刻度点仍用主色，比弧更实，形成层次。
+        let dayColor = palette.sunArc
         let nightColor = palette.onSurfaceVariant.opacity(0.5)
         let dayStyle = StrokeStyle(lineWidth: 2.5, lineCap: .round)
         let nightStyle = StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [5, 5])
 
-        // 圆的分段：地平线以上 = 白天（实线、主色），以下 = 夜晚（虚线、低对比度）。
+        // 圆的分段：地平线以上 = 白天（实线、`sunArc`），以下 = 夜晚（虚线、低对比度）。
         // 圆盘边界只由这两段弧构成 —— 不再额外描一圈「表圈」。
         if isPolarNight {
             context.stroke(circle, with: .color(nightColor), style: nightStyle)

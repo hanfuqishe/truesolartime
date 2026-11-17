@@ -1331,6 +1331,9 @@ struct Index {
     const height: number = this.sunDialH;
     const accent: string = this.palette.accent;
     const outline: string = this.palette.subtle;
+    // 白天弧专用色：白天是 accent 的 65% 不透明度（浅色卡片上更轻），夜间仍是金色实色。
+    // 地平线 / 太阳点 / 箭头 / 刻度点都不用它，保持原来的 accent / subtle。
+    const arcColor: string = this.palette.sunArc;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
 
@@ -1343,7 +1346,7 @@ struct Index {
       ctx.beginPath();
       ctx.arc(path.centerX, path.centerY, path.radius, 0, full, southern);
       if (path.isWholeCircleDay()) {
-        ctx.strokeStyle = accent;
+        ctx.strokeStyle = arcColor;
         ctx.lineWidth = 2.5;
         ctx.setLineDash([]);
       } else {
@@ -1360,7 +1363,7 @@ struct Index {
       const nightEnd: number = start + (anticlockwise ? sweep - full : sweep + full);
       ctx.beginPath();
       ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep, anticlockwise);
-      ctx.strokeStyle = accent;
+      ctx.strokeStyle = arcColor;
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.setLineDash([]);

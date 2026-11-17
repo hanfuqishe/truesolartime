@@ -69,6 +69,16 @@ struct ThemeColors: Equatable {
     let primary: ThemeColor
     /// 强调色底上的文字（「应用坐标」「使用 GPS 定位」这类主按钮）。
     let onPrimary: ThemeColor
+    /// 圆盘「地平线以上」那段白天弧的颜色（**实线**）。
+    ///
+    /// 白天主题**不能直接用 `primary`**：`#B4550A` 压在近白的卡片底（`surface`）上是 4.8:1，
+    /// 2.5pt 实线在白卡片上显得又沉又黑（用户报的「白天弧太深」）。这里取**主色 70% 叠在卡片底**
+    /// 得到的 `#CA8751`：与主色同色相（不引入第二种暖色），对比度降到 2.87:1，在白底上「轻」，
+    /// 但仍比夜晚虚线（`onSurfaceVariant` 50% ≈ `#A8A098` / 2.50:1）更深，昼夜层次不反。
+    ///
+    /// 夜间主题**保持原样**（`#F5D68A`，等于 `primary`）：深底上再调浅就看不见了。
+    /// 太阳点、地平线、箭头、日出日落刻度点仍用 `primary` —— 它们要比弧更实，才有层次。
+    let sunArc: ThemeColor
     /// 错误文字（坐标校验失败）。纯 `.red` 在暗色底上只有 4:1 左右，深浅两套各取一档。
     let danger: ThemeColor
 
@@ -93,6 +103,9 @@ struct ThemeColors: Equatable {
         outlineVariant: ThemeColor(hex: 0xD7C4B5),
         primary: ThemeColor(hex: 0xB4550A),
         onPrimary: ThemeColor(hex: 0xFFFFFF),
+        // 白天弧：主色 #B4550A 以 70% 叠在卡片底 #FFFBF6 上 = #CA8751（见 `sunArc` 的说明）。
+        // 60% 会得到 #D29768（2.44:1）—— 比夜晚虚线（2.50:1）还淡，昼夜层次会反，所以取 70%。
+        sunArc: ThemeColor(hex: 0xCA8751),
         danger: ThemeColor(hex: 0xB3261E),
         // 亮色保持原样：白底 + 浅棕描边 + 深字（原来的系统 `.roundedBorder` 就是白底）。
         fieldBackground: ThemeColor(hex: 0xFFFFFF),
@@ -112,6 +125,8 @@ struct ThemeColors: Equatable {
         primary: ThemeColor(hex: 0xF5D68A),
         // 淡金底上用深字（白字在 #F5D68A 上只有 1.4:1，等于看不见）。
         onPrimary: ThemeColor(hex: 0x1A1408),
+        // 夜间主题的白天弧**保持原样**（= primary #F5D68A）：深底上再调浅就真的看不见了。
+        sunArc: ThemeColor(hex: 0xF5D68A),
         // 暗色底上的错误色要够亮（纯红在 #0B1220 上只有 4.3:1）。
         danger: ThemeColor(hex: 0xFF8A80),
         // 比卡片底色（#16203A）略亮一档：深色界面里输入框靠「比卡片亮」来暗示可输入，
@@ -137,6 +152,7 @@ struct ThemeColors: Equatable {
             ("outlineVariant", outlineVariant),
             ("primary", primary),
             ("onPrimary", onPrimary),
+            ("sunArc", sunArc),
             ("danger", danger),
             ("fieldBackground", fieldBackground),
             ("fieldBorder", fieldBorder),

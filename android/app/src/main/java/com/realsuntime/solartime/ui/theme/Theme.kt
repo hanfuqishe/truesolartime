@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -74,4 +75,28 @@ fun TrueSolarTimeTheme(
         typography = AppTypography,
         content = content,
     )
+}
+
+/**
+ * 太阳卡圆盘「白天弧」的颜色（主题色板里的派生色，不新增硬编码 hex）。
+ *
+ * - **亮色主题**：主色的 **62% 不透明度**。白底卡片上主色 `#B4550A` 这类橙棕实色太沉、
+ *   太重，压住了整张卡片；调到 62% 后合成出来约 `#D19464`，仍是暖色、仍和夜晚的灰色虚线
+ *   （`outline` + 虚线）一眼能分开。
+ * - **暗色主题**：保持实色主色（深蓝底上现在这档金色正合适，调淡反而糊）。
+ *
+ * 只改白天弧：地平线（`outline`）、太阳点与日出日落刻度（`primary` 实色）、
+ * 运动箭头（`onSurfaceVariant`）都保持原样 —— 弧变浅之后，实色太阳点正好形成层次。
+ *
+ * 判断依据是当前 `surface` 的亮度（主题函数只换 colorScheme，没有额外的暗色标志），
+ * 亮色主题的 `#FFFBF6` 与暗色主题的 `#16203A` 亮度差距极大，不会误判。
+ */
+@Composable
+fun sunDayArcColor(): Color {
+    val scheme = MaterialTheme.colorScheme
+    return if (scheme.surface.luminance() > 0.5f) {
+        scheme.primary.copy(alpha = 0.62f)
+    } else {
+        scheme.primary
+    }
 }
