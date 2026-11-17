@@ -102,6 +102,7 @@ struct SunCard: View {
                 path: dialPath,
                 sunriseHour: sunriseTrueSolarHour,
                 sunsetHour: sunsetTrueSolarHour,
+                trueSolarHour: trueSolarHour,
                 isPolarDay: snapshot.polar == .midnightSun,
                 isPolarNight: snapshot.polar == .polarNight
             )
@@ -250,6 +251,8 @@ private struct SunDialCanvas: View {
     let path: SunPath
     let sunriseHour: Double?
     let sunsetHour: Double?
+    /// 当前真太阳时（小时数）：圆内侧那支「运动方向」小箭头用它定位。
+    let trueSolarHour: Double
     let isPolarDay: Bool
     let isPolarNight: Bool
 
@@ -257,6 +260,7 @@ private struct SunDialCanvas: View {
         Canvas { context, size in
             drawCircleAndArcs(&context)
             drawHorizon(&context, size: size)
+            drawMotionArrow(&context)
             drawSun(&context)
         }
     }
@@ -339,6 +343,64 @@ private struct SunDialCanvas: View {
             let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
             context.fill(Path(ellipseIn: dot), with: .color(palette.primary))
         }
+    }
+
+    // MARK: 运动方向小弧
+
+    /// 圆内侧一段 30° 小弧 + 末端实心箭头：告诉用户太阳往哪走。
+    ///
+    /// 半径 0.72R（离太阳点 0.28R ≈ 20pt，不会和太阳点 / 柔光打架），颜色与地平线同源
+    /// （`onSurfaceVariant`，不抢白天弧的主色）；北半球顺时针、南半球逆时针，由 `SunPath` 的半球决定。
+    private func drawMotionArrow(_ context: inout GraphicsContext) {
+        let arrow = SunPathGeometry.motionArrow(path: path, currentTrueSolarHour: trueSolarHour)
+        let angles = SunPathGeometry.motionArrowAngles(currentTrueSolarHour: trueSolarHour)
+        let radius = path.radius * 0.72
+        let color = palette.onSurfaceVariant.opacity(0.7)
+
+        // 弧：从 start 采到 end（θ 递增 = 运动方向）。
+        var arc = Path()
+        let steps = 18
+        for step in 0...steps {
+            let theta = angles.start + (angles.end - angles.start) * Double(step) / Double(steps)
+            let point = SunPathGeometry.point(
+                center: path.center,
+                radius: radius,
+                theta: theta,
+                southernHemisphere: path.isSouthernHemisphere
+            )
+            if step == 0 {
+                arc.move(to: point)
+            } else {
+                arc.addLine(to: point)
+            }
+        }
+        context.stroke(
+            arc,
+            with: .color(color),
+            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+        )
+
+        // 箭头：终点处的切线方向（对 θ 求导，南北半球符号不同），两条边再合成实心三角。
+        let cosEnd = cos(angles.end)
+        let sinEnd = sin(angles.end)
+        let ux = path.isSouthernHemisphere ? -cosEnd : cosEnd
+        let uy = sinEnd
+        let barb: CGFloat = 5
+        let spread = 25.0 * Double.pi / 180.0
+        func barbPoint(_ sign: Double) -> CGPoint {
+            let cosA = cos(spread * sign)
+            let sinA = sin(spread * sign)
+            // 沿切线反向、再旋转 ±25°，退 5pt。
+            let bx = -(ux * cosA - uy * sinA)
+            let by = -(ux * sinA + uy * cosA)
+            return CGPoint(x: arrow.tip.x + CGFloat(bx) * barb, y: arrow.tip.y + CGFloat(by) * barb)
+        }
+        var head = Path()
+        head.move(to: arrow.tip)
+        head.addLine(to: barbPoint(1))
+        head.addLine(to: barbPoint(-1))
+        head.closeSubpath()
+        context.fill(head, with: .color(color))
     }
 
     // MARK: 当前太阳点

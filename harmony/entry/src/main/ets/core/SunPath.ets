@@ -126,6 +126,31 @@ export class SunLabelAnchors {
 }
 
 /**
+ * 太阳运动方向箭头（画布坐标）：0.72R 的一段短弧 + 末端箭头。
+ *
+ * [startX]/[startY] 与 [endX]/[endY] 是短弧的两端，[tipX]/[tipY] 是箭头尖端（= end）。
+ * 方向跟着半球走：北半球顺时针（end 在 start 顺时针下游），南半球镜像后逆时针。
+ */
+export class MotionArrow {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  tipX: number;
+  tipY: number;
+
+  constructor(startX: number, startY: number, endX: number, endY: number,
+    tipX: number, tipY: number) {
+    this.startX = startX;
+    this.startY = startY;
+    this.endX = endX;
+    this.endY = endY;
+    this.tipX = tipX;
+    this.tipY = tipY;
+  }
+}
+
+/**
  * 地平线的绘制范围（x 起止）。
  *
  * 长度是**固定**的：画布左右各内缩 `horizonSpan` 的 `sideInset`（4vp），与圆心 / 半径 / 昼长
@@ -287,6 +312,33 @@ export class SunPathGeometry {
       path.centerX,
       path.centerY
     );
+  }
+
+  /**
+   * 太阳运动方向箭头：圆**内侧**一段半径 ≈ 0.72R 的短弧，跨 [spanDeg] 度、以当前太阳点角度为中心。
+   *
+   * 北半球顺时针：start = 当前角 − span/2、end = +span/2；南半球镜像后运动方向是逆时针，
+   * start/end 对调，于是 end 永远落在运动下游，tip = end。弧取在 0.72R 处，与 R 上的太阳点
+   * （4.5vp + 柔光）之间留出空隙，不会重叠。极昼／极夜也照画（当前太阳点仍在圆上）。
+   */
+  static motionArrow(path: SunPath, currentTrueSolarHour: number,
+    radiusRatio: number = 0.72, spanDeg: number = 30): MotionArrow {
+    const ringRadius: number = path.radius * radiusRatio;
+    const centerAngle: number = SunPathGeometry.arcAngleOfDayHour(currentTrueSolarHour,
+      path.southernHemisphere);
+    const halfSpan: number = spanDeg * Math.PI / 360.0;
+    // 南半球运动方向是逆时针（canvas 角度递减）：start/end 对调。
+    const startAngle: number = path.southernHemisphere
+      ? centerAngle + halfSpan
+      : centerAngle - halfSpan;
+    const endAngle: number = path.southernHemisphere
+      ? centerAngle - halfSpan
+      : centerAngle + halfSpan;
+    const startX: number = path.centerX + ringRadius * Math.cos(startAngle);
+    const startY: number = path.centerY + ringRadius * Math.sin(startAngle);
+    const endX: number = path.centerX + ringRadius * Math.cos(endAngle);
+    const endY: number = path.centerY + ringRadius * Math.sin(endAngle);
+    return new MotionArrow(startX, startY, endX, endY, endX, endY);
   }
 
   /**

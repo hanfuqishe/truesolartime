@@ -392,4 +392,59 @@ enum SunPathGeometry {
         guard let label else { return nil }
         return rect(for: label, size: budget)
     }
+
+    // MARK: - 太阳运动方向的小弧箭头
+
+    /// 圆盘内侧「太阳往哪走」的小弧：起点、终点（= 箭头尖）、指向。
+    ///
+    /// 弧半径 `0.72R`（离太阳点 0.28R，够远不会糊在一起），跨 `30°`，中心对准当前太阳点的角度。
+    struct MotionArrow: Equatable {
+        /// 弧的起点（当前角 − span/2）。
+        let start: CGPoint
+        /// 弧的终点（当前角 + span/2）——**运动方向的下游**。
+        let end: CGPoint
+        /// 箭头尖（等于 `end`，UI 直接拿来画箭头）。
+        let tip: CGPoint
+    }
+
+    /// 运动小弧的起止角（θ，弧度）：当前角 ± span/2。
+    ///
+    /// 时间往前走就是 θ 递增（06:00 → 12:00 → 18:00），所以 `end` 永远在运动的下游；
+    /// 南半球只是把 x 镜像（看起来逆时针），角度顺序不变。
+    static func motionArrowAngles(
+        currentTrueSolarHour: Double,
+        spanDegrees: CGFloat = 30
+    ) -> (start: Double, end: Double) {
+        let half = Double(spanDegrees) / 2.0 * Double.pi / 180.0
+        let theta = angleOfDayHour(currentTrueSolarHour)
+        return (theta - half, theta + half)
+    }
+
+    /// 算出运动方向小弧的三个点（纯数值，自检直接断坐标与方向）。
+    ///
+    /// - 半径 = `radiusRatio × R`（默认 0.72R），跨 `spanDegrees`（默认 30°），中心是当前太阳点的角度；
+    /// - 两端点都走 `point(θ:...)`，所以**南半球自动镜像**：北半球顺时针、南半球逆时针；
+    /// - `tip == end`：箭头画在终点、指向 θ 递增的方向。
+    static func motionArrow(
+        path: SunPath,
+        currentTrueSolarHour: Double,
+        radiusRatio: CGFloat = 0.72,
+        spanDegrees: CGFloat = 30
+    ) -> MotionArrow {
+        let angles = motionArrowAngles(currentTrueSolarHour: currentTrueSolarHour, spanDegrees: spanDegrees)
+        let radius = path.radius * radiusRatio
+        let start = point(
+            center: path.center,
+            radius: radius,
+            theta: angles.start,
+            southernHemisphere: path.isSouthernHemisphere
+        )
+        let end = point(
+            center: path.center,
+            radius: radius,
+            theta: angles.end,
+            southernHemisphere: path.isSouthernHemisphere
+        )
+        return MotionArrow(start: start, end: end, tip: end)
+    }
 }

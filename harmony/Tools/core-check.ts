@@ -18,7 +18,7 @@ import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
 import { CivicTimeLogic } from './core/CivicTime';
-import { HorizonSpan, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
+import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
@@ -1059,6 +1059,47 @@ for (const item of equationCases) {
   check('southern day arc exists', southArc !== null);
   near('southern arc starts at 0', 0, southArc === null ? -999 : southArc.startDegrees, 1e-3);
   near('southern arc sweeps -180', -180, southArc === null ? -999 : southArc.sweepDegrees, 1e-3);
+
+  // 6c. 运动方向箭头：圆内侧 0.72R 的 30° 短弧，北半球顺时针、南半球逆时针。
+  const arrowNorth: MotionArrow = SunPathGeometry.motionArrow(equinox, 12.0);
+  const arrowSouth: MotionArrow = SunPathGeometry.motionArrow(southNoon, 12.0);
+  check('north motion arrow ends clockwise of start', arrowNorth.endX > arrowNorth.startX,
+    `${arrowNorth.startX} -> ${arrowNorth.endX}`);
+  check('south motion arrow ends counterclockwise of start', arrowSouth.endX < arrowSouth.startX,
+    `${arrowSouth.startX} -> ${arrowSouth.endX}`);
+  // 南半球 = 北半球关于竖轴（x = centerX）的镜像，且方向相反。
+  near('south arrow start mirrors north start', 2 * centerX - arrowNorth.startX,
+    arrowSouth.startX, 0.5);
+  near('south arrow end mirrors north end', 2 * centerX - arrowNorth.endX, arrowSouth.endX, 0.5);
+  near('south arrow start y matches north', arrowNorth.startY, arrowSouth.startY, 0.5);
+  near('south arrow end y matches north', arrowNorth.endY, arrowSouth.endY, 0.5);
+  const arrowRadiusNorth: number = Math.sqrt(
+    Math.pow(arrowNorth.startX - centerX, 2) + Math.pow(arrowNorth.startY - centerY, 2));
+  const arrowRadiusNorthEnd: number = Math.sqrt(
+    Math.pow(arrowNorth.endX - centerX, 2) + Math.pow(arrowNorth.endY - centerY, 2));
+  near('motion arrow start at 0.72R', equinox.radius * 0.72, arrowRadiusNorth, 0.5);
+  near('motion arrow end at 0.72R', equinox.radius * 0.72, arrowRadiusNorthEnd, 0.5);
+  const angleOfPoint = (x: number, y: number): number => Math.atan2(y - centerY, x - centerX);
+  let arrowSpan: number = Math.abs(angleOfPoint(arrowNorth.endX, arrowNorth.endY) -
+    angleOfPoint(arrowNorth.startX, arrowNorth.startY));
+  if (arrowSpan > Math.PI) {
+    arrowSpan = 2 * Math.PI - arrowSpan;
+  }
+  near('motion arrow spans 30 degrees', 30, arrowSpan * 180 / Math.PI, 0.1);
+  let southArrowSpan: number = Math.abs(angleOfPoint(arrowSouth.endX, arrowSouth.endY) -
+    angleOfPoint(arrowSouth.startX, arrowSouth.startY));
+  if (southArrowSpan > Math.PI) {
+    southArrowSpan = 2 * Math.PI - southArrowSpan;
+  }
+  near('southern motion arrow spans 30 degrees', 30, southArrowSpan * 180 / Math.PI, 0.1);
+  check('motion arrow tip is the arc end',
+    arrowNorth.tipX === arrowNorth.endX && arrowNorth.tipY === arrowNorth.endY);
+  const tipToSun: number = Math.sqrt(
+    Math.pow(arrowNorth.tipX - equinox.sunX, 2) + Math.pow(arrowNorth.tipY - equinox.sunY, 2));
+  check('motion arrow clears the sun point', tipToSun > 6, `${tipToSun}`);
+  const southTipToSun: number = Math.sqrt(
+    Math.pow(arrowSouth.tipX - southNoon.sunX, 2) + Math.pow(arrowSouth.tipY - southNoon.sunY, 2));
+  check('southern motion arrow clears the sun point', southTipToSun > 6, `${southTipToSun}`);
 
   // 7. 圆心在画布中央、半径 = 0.38 × min(w, h)，与宽高比无关。
   const sizes: number[][] = [[400, 300], [300, 400], [1080, 1080], [100, 800], [720, 1280]];

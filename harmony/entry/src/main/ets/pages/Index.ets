@@ -10,7 +10,7 @@ import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { CivicTimeLogic } from '../core/CivicTime';
-import { HorizonSpan, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
+import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSlot, WeatherSource, WeatherSnapshot } from '../core/Weather';
 import { ThemeMode } from '../core/ThemeMode';
@@ -1378,6 +1378,45 @@ struct Index {
     ctx.moveTo(horizon.startX, path.horizonY);
     ctx.lineTo(horizon.endX, path.horizonY);
     ctx.stroke();
+
+    // 太阳运动方向：圆内侧 0.72R 的一段 30° 短弧 + 末端实心小三角（北半球顺时针、南半球逆时针）。
+    // 颜色与地平线同源（palette.subtle），线宽 1.5；弧在 0.72R，不会碰到 R 上的太阳点（4.5vp + 柔光）。
+    const arrowHour: number = this.snapshot.trueSolarSeconds / SECONDS_PER_HOUR;
+    const arrow: MotionArrow = SunPathGeometry.motionArrow(path, arrowHour);
+    const arrowRadius: number = path.radius * 0.72;
+    const arrowCenterAngle: number = SunPathGeometry.arcAngleOfDayHour(arrowHour, southern);
+    const arrowHalfSpan: number = 15 * Math.PI / 180;
+    const arrowStartAngle: number = southern
+      ? arrowCenterAngle + arrowHalfSpan
+      : arrowCenterAngle - arrowHalfSpan;
+    const arrowEndAngle: number = southern
+      ? arrowCenterAngle - arrowHalfSpan
+      : arrowCenterAngle + arrowHalfSpan;
+    ctx.beginPath();
+    ctx.arc(path.centerX, path.centerY, arrowRadius, arrowStartAngle, arrowEndAngle, southern);
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    // 箭头：沿 start→end（即运动方向）画一个长 5vp、半宽 2.5vp 的实心小三角，尖端 = end。
+    const arrowDirX: number = arrow.endX - arrow.startX;
+    const arrowDirY: number = arrow.endY - arrow.startY;
+    const arrowDirLength: number = Math.sqrt(arrowDirX * arrowDirX + arrowDirY * arrowDirY);
+    if (arrowDirLength > 0) {
+      const ux: number = arrowDirX / arrowDirLength;
+      const uy: number = arrowDirY / arrowDirLength;
+      const backX: number = -ux * 5;
+      const backY: number = -uy * 5;
+      const perpX: number = -uy * 2.5;
+      const perpY: number = ux * 2.5;
+      ctx.beginPath();
+      ctx.moveTo(arrow.tipX, arrow.tipY);
+      ctx.lineTo(arrow.tipX + backX + perpX, arrow.tipY + backY + perpY);
+      ctx.lineTo(arrow.tipX + backX - perpX, arrow.tipY + backY - perpY);
+      ctx.closePath();
+      ctx.fillStyle = outline;
+      ctx.fill();
+    }
 
     // 日出 / 日落刻度：正好落在地平线与圆的交点上。
     const sunriseHour: number | null = this.sunriseDialHour();

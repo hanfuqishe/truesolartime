@@ -864,6 +864,181 @@ print(String(format: "  · 南半球标签：日出 (%.1f, %.1f) %@ / 日落 (%.
              String(describing: southernLabels.sunset?.alignment ?? .leading)))
 
 
+// MARK: 圆内侧的「太阳运动方向」小弧箭头（北半球顺时针 / 南半球逆时针）
+
+func crossAround(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> Double {
+    let ax = Double(a.x - c.x)
+    let ay = Double(a.y - c.y)
+    let bx = Double(b.x - c.x)
+    let by = Double(b.y - c.y)
+    return ax * by - ay * bx
+}
+
+func pointDistance(_ a: CGPoint, _ b: CGPoint) -> Double {
+    hypot(Double(a.x - b.x), Double(a.y - b.y))
+}
+
+func angleAround(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> Double {
+    let ax = Double(a.x - c.x)
+    let ay = Double(a.y - c.y)
+    let bx = Double(b.x - c.x)
+    let by = Double(b.y - c.y)
+    let dot = ax * bx + ay * by
+    let la = (ax * ax + ay * ay).squareRoot()
+    let lb = (bx * bx + by * by).squareRoot()
+    guard la > 0, lb > 0 else { return 0 }
+    return acos(max(-1, min(1, dot / (la * lb)))) * 180.0 / Double.pi
+}
+
+let noonNorthPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false,
+    southernHemisphere: false
+)
+let noonSouthPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false,
+    southernHemisphere: true
+)
+let northArrow = SunPathGeometry.motionArrow(path: noonNorthPath, currentTrueSolarHour: 12)
+let southArrow = SunPathGeometry.motionArrow(path: noonSouthPath, currentTrueSolarHour: 12)
+
+// 1) 北半球 12:00：end 在 start 之后（屏幕上顺时针）。
+let northCross = crossAround(northArrow.start, northArrow.end, canvasCenter)
+expect(
+    "北半球 12:00：箭头从 start 顺时针走向 end",
+    northCross > 0 && northArrow.end.x > northArrow.start.x,
+    String(format: "cross=%.2f end.x=%.1f start.x=%.1f", northCross, northArrow.end.x, northArrow.start.x)
+)
+
+// 2) 南半球：start / end 关于竖轴镜像，方向相反（逆时针）。
+let southCross = crossAround(southArrow.start, southArrow.end, canvasCenter)
+expect(
+    "南半球：start / end 是北半球关于竖轴的镜像",
+    abs(southArrow.start.x - (2 * canvasCenter.x - northArrow.start.x)) < 1e-9
+        && abs(southArrow.start.y - northArrow.start.y) < 1e-9
+        && abs(southArrow.end.x - (2 * canvasCenter.x - northArrow.end.x)) < 1e-9
+        && abs(southArrow.end.y - northArrow.end.y) < 1e-9,
+    "south start=\(southArrow.start) end=\(southArrow.end)"
+)
+expect(
+    "南半球 12:00：箭头从 start 逆时针走向 end（方向相反）",
+    southCross < 0 && southArrow.end.x < southArrow.start.x,
+    String(format: "cross=%.2f end.x=%.1f start.x=%.1f", southCross, southArrow.end.x, southArrow.start.x)
+)
+
+// 3) 半径 = 0.72R（±0.5pt），tip == end。
+let arrowRadius = canvasRadius * 0.72
+expectClose(
+    "北半球 start 到圆心 = 0.72R",
+    pointDistance(northArrow.start, canvasCenter),
+    0.72 * canvasRadius,
+    tolerance: 0.5,
+    unit: " pt"
+)
+expectClose(
+    "北半球 end 到圆心 = 0.72R",
+    pointDistance(northArrow.end, canvasCenter),
+    0.72 * canvasRadius,
+    tolerance: 0.5,
+    unit: " pt"
+)
+expectClose(
+    "南半球 end 到圆心 = 0.72R",
+    pointDistance(southArrow.end, canvasCenter),
+    0.72 * canvasRadius,
+    tolerance: 0.5,
+    unit: " pt"
+)
+expect(
+    "tip 就是 end（箭头尖落在弧的终点）",
+    northArrow.tip == northArrow.end && southArrow.tip == southArrow.end
+)
+
+// 4) start 与 end 的夹角 = 30°（±0.1°）。
+expectClose(
+    "北半球 start / end 夹角 = 30°",
+    angleAround(northArrow.start, northArrow.end, canvasCenter),
+    30.0,
+    tolerance: 0.1,
+    unit: "°"
+)
+expectClose(
+    "南半球 start / end 夹角 = 30°",
+    angleAround(southArrow.start, southArrow.end, canvasCenter),
+    30.0,
+    tolerance: 0.1,
+    unit: "°"
+)
+
+// 5) 箭头（0.72R）离太阳点（R）至少 6pt：0.28R ≈ 20.6pt。
+let northSunPoint = SunPathGeometry.point(center: canvasCenter, radius: canvasRadius, hour: 12)
+expect(
+    "北半球 tip 离太阳点 > 6pt",
+    pointDistance(northArrow.tip, northSunPoint) > 6,
+    String(format: "d=%.1f pt", pointDistance(northArrow.tip, northSunPoint))
+)
+expect(
+    "南半球 tip 离太阳点 > 6pt",
+    pointDistance(southArrow.tip, northSunPoint) > 6,
+    String(format: "d=%.1f pt", pointDistance(southArrow.tip, northSunPoint))
+)
+
+// 6) 极昼 / 极夜也照画（箭头只跟当前时刻和半球有关，不看 polar 状态）。
+let polarArrowPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: nil,
+    sunsetHour: nil,
+    trueSolarHour: 4.97,
+    isPolarDay: true,
+    isPolarNight: false
+)
+let polarArrow = SunPathGeometry.motionArrow(path: polarArrowPath, currentTrueSolarHour: 4.97)
+expect(
+    "极昼也画运动箭头（半径仍是 0.72R、夹角 30°）",
+    abs(pointDistance(polarArrow.start, canvasCenter) - 0.72 * canvasRadius) < 0.5
+        && abs(angleAround(polarArrow.start, polarArrow.end, canvasCenter) - 30) < 0.1
+)
+let polarNightArrowPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: nil,
+    sunsetHour: nil,
+    trueSolarHour: 5.03,
+    isPolarDay: false,
+    isPolarNight: true
+)
+let polarNightArrow = SunPathGeometry.motionArrow(path: polarNightArrowPath, currentTrueSolarHour: 5.03)
+expect(
+    "极夜也画运动箭头",
+    abs(pointDistance(polarNightArrow.end, canvasCenter) - 0.72 * canvasRadius) < 0.5
+)
+
+// 7) 正午 12:00 的箭头在整个圆盘的上半部分（theta=0 附近），不会跑到下半圆。
+expect(
+    "12:00 的箭头在圆心上方（y < C.y）",
+    northArrow.start.y < canvasCenter.y && northArrow.end.y < canvasCenter.y
+        && southArrow.start.y < canvasCenter.y && southArrow.end.y < canvasCenter.y
+)
+
+print(String(format: "运动小箭头（12:00，半径 0.72R = %.2f）：", arrowRadius))
+print(String(format: "  · 北半球：start (%.1f, %.1f) / end (%.1f, %.1f) / tip (%.1f, %.1f)",
+             northArrow.start.x, northArrow.start.y,
+             northArrow.end.x, northArrow.end.y,
+             northArrow.tip.x, northArrow.tip.y))
+print(String(format: "  · 南半球：start (%.1f, %.1f) / end (%.1f, %.1f) / tip (%.1f, %.1f)",
+             southArrow.start.x, southArrow.start.y,
+             southArrow.end.x, southArrow.end.y,
+             southArrow.tip.x, southArrow.tip.y))
+
+
 // 圆盘的颜色也守一遍：全部取主题 token，白天弧用 primary，夜晚弧用 50% 的次要文字色。
 func dialBlend(_ foreground: ThemeColor, over background: ThemeColor, alpha: Double) -> ThemeColor {
     func mix(_ f: Double, _ b: Double) -> UInt32 {
