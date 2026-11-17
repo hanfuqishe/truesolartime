@@ -61,7 +61,7 @@ struct SolarTimeCard {
   @LocalStorageProp('offsetMinutes') offsetMinutes: number = 480;
   @LocalStorageProp('utcLabel') utcLabel: string = 'UTC+8';
   @LocalStorageProp('hourLabels') hourLabels: string[] = [];
-  @LocalStorageProp('hourConds') hourConds: string[] = [];
+  @LocalStorageProp('hourTemps') hourTemps: string[] = [];
   @LocalStorageProp('hourIcons') hourIcons: string[] = [];
   @LocalStorageProp('temperatureKey') temperatureKey: string = '';
   @LocalStorageProp('inKeyTime') inKeyTime: boolean = false;
@@ -301,7 +301,7 @@ struct SolarTimeCard {
           this.hourCell(
             label,
             index < this.hourIcons.length ? this.hourIcons[index] : 'unknown',
-            index < this.hourConds.length ? this.hourConds[index] : ''
+            index < this.hourTemps.length ? this.hourTemps[index] : ''
           )
         }, (label: string, index: number) => `${index}-${label}`)
       }

@@ -178,7 +178,7 @@ struct Index {
   /** 当前缓存来自哪个源（open-meteo / 7timer）：底部那段署名跟着它切换。 */
   @State weatherSource: string = WeatherSource.OPEN_METEO;
   @State hourLabels: string[] = [];
-  @State hourConds: string[] = [];
+  @State hourTemps: string[] = [];
   @State hourIcons: string[] = [];
   @State keyTimeText: string = '';
   @State keyTimeState: string = '';
@@ -428,19 +428,28 @@ struct Index {
     this.weatherRange = range === null ? '' : `${range[0]}~${range[1]}°`;
     // 六格逐时预报：**槽位数恒为 6**，槽位之间的步长跟着数据源走
     // （主源 1 小时 → 现在/22时/23时/0时/1时/2时；备用源 3 小时 → 现在/23时/2时/5时/8时/11时）。
+    // 图标下方显示**温度**（与 Android / iOS 一致）；「现在」格用实时温度，其余用采样点温度。
     const hourLabelList: string[] = [];
-    const conditions: string[] = [];
     const icons: string[] = [];
     const hourly: HourPoint[] = WeatherService.hourly(this.place);
+    const stepHours: number = WeatherService.stepHours();
     const slotList: WeatherSlot[] = WeatherLogic.visibleSlots(
       hourly,
       Math.floor(now / 1000),
       zoneSeconds,
       WeatherLogic.SLOT_COUNT,
-      WeatherService.stepHours()
+      stepHours
     );
     const slotLabels: string[] = WeatherLogic.slotLabels(slotList, zoneSeconds, language);
     const currentCode: number = weather === null ? -1 : weather.code;
+    const currentTemperature: number | null = weather === null ? null : weather.temperatureC;
+    const temps: (number | null)[] = WeatherLogic.hourTemperatures(
+      hourly,
+      Math.floor(now / 1000),
+      zoneSeconds,
+      stepHours,
+      currentTemperature
+    );
     for (let index = 0; index < slotList.length; index++) {
       const slot: WeatherSlot = slotList[index];
       let point: HourPoint | null = null;
@@ -456,11 +465,10 @@ struct Index {
       }
       const localHour: number = WeatherLogic.localHourOf(slot.epochSeconds, zoneSeconds);
       hourLabelList.push(index < slotLabels.length ? slotLabels[index] : WeatherLogic.hourLabel(localHour, language));
-      conditions.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
       icons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
     this.hourLabels = hourLabelList;
-    this.hourConds = conditions;
+    this.hourTemps = temps.map((value: number | null): string => WeatherLogic.temperatureLabel(value));
     this.hourIcons = icons;
     // 当前地点没有缓存、但正在取数：天气位显示「更新中…」，取完（成败都会落到这里）再改文案。
     this.weatherPending = weather === null && WeatherService.isRefreshing();
@@ -492,7 +500,7 @@ struct Index {
       this.weatherPending = true;
     }
     // 回到前台 / 换了地点：如果手里是低精度数据（7Timer! 3 小时），立刻尝试升级回 1 小时源，
-    // 不等 10 分钟的升级节流（这条 force 只用于「低精度」这一种情形）。
+    // **不等退避计时器**（60/120/300 秒）——这条 force 只用于「低精度」这一种情形。
     const force: boolean = WeatherService.shouldForceUpgrade();
     CardService.refresh(force).then(() => {
       this.refreshDerived();
@@ -1021,7 +1029,7 @@ struct Index {
               .height(this.cs(22))
               .objectFit(ImageFit.Contain)
               .margin({ top: 3 })
-            Text(index < this.hourConds.length ? this.hourConds[index] : '')
+            Text(index < this.hourTemps.length ? this.hourTemps[index] : '')
               .fontSize(this.cs(10))
               .fontFamily(this.cardFont(FontWeight.Normal))
               .lineHeight(this.cardLineHeight(this.cs(10)))

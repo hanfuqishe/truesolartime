@@ -94,7 +94,8 @@ export class CardData {
   offsetMinutes: number = 0;
   /** 六格逐时预报：时刻标签、天气名称、图标名（对应 resources/base/media/wx_*.svg）。 */
   hourLabels: string[] = [];
-  hourConds: string[] = [];
+  /** 六格逐时预报图标下方显示的温度（如「18°」；缺数据显示「-」）。 */
+  hourTemps: string[] = [];
   hourIcons: string[] = [];
   /** "cold" / "hot" / ""，决定时间轴色条颜色。 */
   temperatureKey: string = '';
@@ -153,7 +154,8 @@ export class CardService {
     data.weatherSummary = weather === null
       ? WeatherLogic.PLACEHOLDER
       : `${weather.temperatureC}° ${WeatherLogic.conditionLabel(weather.code, language)}`;
-    CardService.fillHourly(data, now, place, weather === null ? -1 : weather.code, language, zoneSeconds);
+    CardService.fillHourly(data, now, place, weather === null ? -1 : weather.code,
+      weather === null ? null : weather.temperatureC, language, zoneSeconds);
 
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (schedule !== null && schedule.bands.length > 0) {
@@ -184,14 +186,19 @@ export class CardService {
     return local - (local % (24 * 3600 * 1000)) - offsetMillis;
   }
 
-  /** 逐时预报：从当前采样点起六格，第一格标「现在」并用实时天气码；步长跟随数据源（1 或 3 小时）。 */
-  private static fillHourly(data: CardData, now: number, place: Place, currentCode: number, language: string,
-      zoneSeconds: number): void {
+  /**
+   * 逐时预报：从当前采样点起六格，第一格标「现在」并用实时天气码；步长跟随数据源（1 或 3 小时）。
+   * 图标下方显示温度（首格用实时温度，其余用采样点温度；缺数据「-」），与首页大卡片同一规则。
+   */
+  private static fillHourly(data: CardData, now: number, place: Place, currentCode: number,
+      currentTemperature: number | null, language: string, zoneSeconds: number): void {
     const hourly: HourPoint[] = WeatherService.hourly(place);
     const stepHours: number = WeatherService.stepHours();
     const slots: WeatherSlot[] = WeatherLogic.visibleSlots(
       hourly, Math.floor(now / 1000), zoneSeconds, HOUR_CELLS, stepHours);
     const labels: string[] = WeatherLogic.slotLabels(slots, zoneSeconds, language);
+    const temperatures: (number | null)[] = WeatherLogic.hourTemperatures(
+      hourly, Math.floor(now / 1000), zoneSeconds, stepHours, currentTemperature, HOUR_CELLS);
     for (let index = 0; index < slots.length; index++) {
       const slot: WeatherSlot = slots[index];
       let point: HourPoint | null = null;
@@ -209,7 +216,8 @@ export class CardService {
       data.hourLabels.push(index < labels.length
         ? labels[index]
         : CardService.hourLabel(localHour, language));
-      data.hourConds.push(code < 0 ? WeatherLogic.PLACEHOLDER : WeatherLogic.conditionLabel(code, language));
+      data.hourTemps.push(WeatherLogic.temperatureLabel(
+        index < temperatures.length ? temperatures[index] : null));
       data.hourIcons.push(code < 0 ? 'unknown' : WeatherLogic.iconKey(code, localHour >= 6 && localHour <= 17));
     }
   }
@@ -279,8 +287,10 @@ export class CardService {
    * 取数失败也照样推一次：至少时间与时辰是新的。
    *
    * @param force true = 忽略各种节流立刻取一次（应用回到前台 / 用户换了地点）。
+   * @param foreground true = 应用在前台（页面可见）。卡片进程 / 不可见时的刷新传 false：
+   *   低精度数据的升级重试最小间隔 10 分钟，不参与前台的 60/120/300 秒轮询。
    */
-  static async refresh(force: boolean = false): Promise<void> {
+  static async refresh(force: boolean = false, foreground: boolean = true): Promise<void> {
     try {
       await CardService.syncGpsPlace();
     } catch (error) {
@@ -293,7 +303,7 @@ export class CardService {
       console.warn('district refresh failed');
     }
     try {
-      await WeatherService.refreshIfNeeded(place, force);
+      await WeatherService.refreshIfNeeded(place, force, foreground);
     } catch (error) {
       console.warn('weather refresh failed');
     }

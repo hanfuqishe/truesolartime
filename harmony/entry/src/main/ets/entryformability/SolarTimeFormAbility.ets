@@ -33,7 +33,7 @@ export default class SolarTimeFormAbility extends FormExtensionAbility {
   onFormEvent(formId: string, message: string): void {
     // 卡片上没有常驻进程：点一下卡片就重新取数并回推（卡片里的真太阳时是快照）。
     AppStore.init(this.context);
-    CardService.refresh().catch((error: BusinessError) => {
+    CardService.refresh(false, false).catch((error: BusinessError) => {
       console.warn(`onFormEvent refresh failed: ${error.code} ${error.message}`);
     });
   }
@@ -57,7 +57,7 @@ export default class SolarTimeFormAbility extends FormExtensionAbility {
   /** 卡片进程里不能长时间占用，取数交给异步任务，取到后就地推一次。 */
   private static refreshLater(): void {
     setTimeout(() => {
-      CardService.refresh().catch((error: BusinessError) => {
+      CardService.refresh(false, false).catch((error: BusinessError) => {
         console.warn(`card refresh failed: ${error.code} ${error.message}`);
       });
     }, 300);

@@ -30,6 +30,8 @@ export class CachedWeather {
   source: string = '';
   /** 逐时步长（小时）：1 = 主源，3 = 备用源；0 = 旧版本缓存，按来源推。 */
   stepHours: number = 0;
+  /** 当前是低精度数据时，**连续**尝试主源失败的次数（成功切回主源时清零）。 */
+  primaryFailures: number = 0;
 }
 
 /**
@@ -313,7 +315,19 @@ export class AppStore {
     cached.hourly = AppStore.stringValue(store, 'hourly', '');
     cached.source = AppStore.stringValue(store, 'source', '');
     cached.stepHours = AppStore.numberValue(store, 'step_hours', 0);
+    cached.primaryFailures = AppStore.numberValue(store, 'primary_failures', 0);
     return cached;
+  }
+
+  /** 当前低精度数据下，连续尝试主源失败的次数（用于退避；切回主源后清零）。 */
+  static weatherPrimaryFailures(): number {
+    return AppStore.numberValue(AppStore.weatherStore(), 'primary_failures', 0);
+  }
+
+  static setWeatherPrimaryFailures(count: number): void {
+    const store: preferences.Preferences = AppStore.weatherStore();
+    store.putSync('primary_failures', Math.max(0, Math.floor(count)));
+    store.flush();
   }
 
   /** 只记下「尝试过取数」，不改动已有的成功数据（成功时间仍由 saveWeather 维护）。 */

@@ -146,21 +146,23 @@ export class WeatherLogic {
   /** 显示用的时限（与小时预报一致）：取数失败时旧数据最长还能显示 24 小时。 */
   static readonly DISPLAY_MAX_AGE_MILLIS: number = 24 * 60 * 60 * 1000;
   /**
-   * 主源失败后**立刻**重试一次前的等待时长。
+   * 单次 HTTP 请求的超时（连接 / 读取各自 5 秒）。
    *
-   * 只重试一次：一次握手超时/一个坏节点不该让整张卡从 1 小时粒度掉到 3 小时粒度，
-   * 但也不该为了主源把降级拖太久（用户可能正盯着 `--`）。
+   * 主源失败一次就立刻降级到 7Timer!，所以这里不能等太久：5 秒内拿不到就走备用源，
+   * 避免界面长时间停在「更新中…」。
    */
-  static readonly PRIMARY_RETRY_DELAY_MILLIS: number = 2000;
-  /** 单次 HTTP 请求的超时（连接 / 读取各自 10 秒；移动网络冷启动时 5 秒偏紧）。 */
-  static readonly HTTP_TIMEOUT_MILLIS: number = 10000;
+  static readonly HTTP_TIMEOUT_MILLIS: number = 5000;
   /**
-   * 低精度数据（备用源 3 小时）的升级重试节流：**最多每 10 分钟一次**。
+   * 低精度数据（备用源 3 小时）的升级重试节流：**前台首次 60 秒**。
    *
-   * 3 小时数据即使还没过期也要尽快升级回 1 小时源（标签粒度差 3 倍），
-   * 但不能每次回到前台都打一次网络 —— 成功升级后这条自然不再触发。
+   * 连续失败会退避（见 [lowPrecisionRetryDelayMillis]）：60 → 120 → 300 秒封顶；
+   * 后台（不可见 / 卡片刷新）一律 10 分钟。切回主源后这条规则自然不再触发。
    */
-  static readonly LOW_PRECISION_RETRY_MILLIS: number = 10 * 60 * 1000;
+  static readonly LOW_PRECISION_RETRY_MILLIS: number = 60 * 1000;
+  /** 前台连续失败的最大退避间隔（封顶 5 分钟）。 */
+  static readonly LOW_PRECISION_MAX_BACKOFF_MILLIS: number = 5 * 60 * 1000;
+  /** 后台（应用不可见，或卡片刷新路径）重试主源的最小间隔。 */
+  static readonly LOW_PRECISION_BACKGROUND_RETRY_MILLIS: number = 10 * 60 * 1000;
 
   static buildUrl(latitude: number, longitude: number): string {
     return 'https://api.open-meteo.com/v1/forecast' +
@@ -524,6 +526,57 @@ export class WeatherLogic {
   }
 
   /**
+   * 六格逐时气温（与 Android `HeroExtras.hourTemperatures`、iOS `HeroCard.HourlyRow` 同一规则）。
+   *
+   * **首格（「现在」）用实时读数**，其余格用各自采样点的温度；没有该格采样点时是 null。
+   * 「现在」为什么不用采样点：备用源 3 小时才一个采样点，那一格可能是几小时前的读数，
+   * 而卡片日期行显示的是此刻的实时温度，两处挨着却不一样会显得其中一个错了。
+   *
+   * @param currentTemperatureC 卡片日期行用的那个实时温度；没有实时读数时退回该采样点温度。
+   * @param skip 跳过前面几格（桌面卡片的第二排逐时行接在第一排后面）。
+   */
+  static hourTemperatures(
+    points: HourPoint[],
+    nowEpochSeconds: number,
+    zoneOffsetSeconds: number,
+    stepHours: number,
+    currentTemperatureC: number | null,
+    count: number = WeatherLogic.SLOT_COUNT,
+    skip: number = 0
+  ): (number | null)[] {
+    const slots: WeatherSlot[] = WeatherLogic.visibleSlots(
+      points, nowEpochSeconds, zoneOffsetSeconds, count, stepHours, skip);
+    const byEpoch: Map<number, HourPoint> = new Map<number, HourPoint>();
+    for (const point of points) {
+      byEpoch.set(point.epochSeconds, point);
+    }
+    const temperatures: (number | null)[] = [];
+    for (const slot of slots) {
+      const point: HourPoint | undefined = byEpoch.get(slot.epochSeconds);
+      if (slot.isNow) {
+        temperatures.push(currentTemperatureC !== null
+          ? currentTemperatureC
+          : (point === undefined ? null : point.temperatureC));
+      } else {
+        temperatures.push(point === undefined ? null : point.temperatureC);
+      }
+    }
+    return temperatures;
+  }
+
+  /**
+   * 一格温度的文字：有读数时 `18°`（数字 + 度符号，不带 C），缺读数时 `-`。
+   *
+   * 占位符沿用 [PLACEHOLDER]（半角减号），不是 `--`：温度只有「有」和「没有」两种，
+   * 两个字符在 22vp 的图标下面会挤成一条看不清的横线。
+   */
+  static temperatureLabel(temperatureC: number | null): string {
+    return temperatureC === null
+      ? WeatherLogic.PLACEHOLDER
+      : `${Math.round(temperatureC)}°`;
+  }
+
+  /**
    * 主源失败之后怎么办（纯判定，便于自检）。
    *
    * - 没有缓存 → 去问备用源；
@@ -556,13 +609,44 @@ export class WeatherLogic {
       || stepHours > WeatherSource.OPEN_METEO_STEP_HOURS;
   }
 
-  /** 低精度升级判定：低精度且距上次尝试已超过 10 分钟（含从没成功过的情况）。 */
-  static shouldUpgradePrecision(source: string, stepHours: number, sinceAttemptMillis: number): boolean {
+  /**
+   * 拿着低精度数据时，距离下一次「试主源」的等待时长。
+   *
+   * - 后台（应用不可见 / 卡片刷新）→ 10 分钟，不参与 60 秒轮询；
+   * - 前台：0~1 次连续失败 60 秒，2 次 120 秒，3 次及以上 300 秒（封顶 5 分钟）。
+   */
+  static lowPrecisionRetryDelayMillis(consecutiveFailures: number, isForeground: boolean): number {
+    if (!isForeground) {
+      return WeatherLogic.LOW_PRECISION_BACKGROUND_RETRY_MILLIS;
+    }
+    if (consecutiveFailures <= 1) {
+      return WeatherLogic.LOW_PRECISION_RETRY_MILLIS;
+    }
+    if (consecutiveFailures === 2) {
+      return 2 * WeatherLogic.LOW_PRECISION_RETRY_MILLIS;
+    }
+    return WeatherLogic.LOW_PRECISION_MAX_BACKOFF_MILLIS;
+  }
+
+  /** 下一次「试主源」的时刻（毫秒时间戳）：`now + 退避间隔`，便于断言与诊断倒计时。 */
+  static nextLowPrecisionRetryAt(nowMillis: number, consecutiveFailures: number,
+    isForeground: boolean): number {
+    return nowMillis + WeatherLogic.lowPrecisionRetryDelayMillis(consecutiveFailures, isForeground);
+  }
+
+  /** 低精度升级判定：低精度且距上次尝试已超过按「连续失败次数 × 前后台」算出的退避间隔。 */
+  static shouldUpgradePrecision(source: string, stepHours: number, sinceAttemptMillis: number,
+    consecutiveFailures: number = 0, isForeground: boolean = true): boolean {
     if (!WeatherLogic.isLowPrecision(source, stepHours)) {
       return false;
     }
-    // 刚试过（无论成败）就先等着：10 分钟内不重复打网络。
-    return !(sinceAttemptMillis >= 0 && sinceAttemptMillis <= WeatherLogic.LOW_PRECISION_RETRY_MILLIS);
+    const delay: number = WeatherLogic.lowPrecisionRetryDelayMillis(consecutiveFailures, isForeground);
+    return !(sinceAttemptMillis >= 0 && sinceAttemptMillis < delay);
+  }
+
+  /** 回到前台要不要**立刻**试一次（不受剩余退避秒数限制）：只有拿着低精度数据时才需要。 */
+  static shouldForceUpgradeOnForeground(source: string, stepHours: number): boolean {
+    return WeatherLogic.isLowPrecision(source, stepHours);
   }
 
   /**
@@ -570,8 +654,8 @@ export class WeatherLogic {
    *
    *   ① 位置移动超过 5 km（用户换了地点）；
    *   ② 缓存过期（超过 30 分钟）且不在失败后的 5 分钟节流里（[shouldRefresh]）；
-   *   ③ 当前是低精度数据（7Timer! / 3 小时），即使没过期也尝试升级回 1 小时源，
-   *      但要满足 10 分钟节流（[shouldUpgradePrecision]）。
+   *   ③ 当前是低精度数据（7Timer! / 3 小时），即使没过期也按「连续失败退避」尝试升级回
+   *      1 小时源：前台 60 / 120 / 300 秒（封顶），后台一律 10 分钟。
    *
    * 「应用回到前台 / 切换地点」时的立即触发不走这里：调用方直接 force，见
    * services/WeatherService.ets 的 `refreshIfNeeded(place, force)`。
@@ -581,12 +665,15 @@ export class WeatherLogic {
     movedKm: number,
     sinceAttemptMillis: number,
     source: string,
-    stepHours: number
+    stepHours: number,
+    consecutiveFailures: number = 0,
+    isForeground: boolean = true
   ): boolean {
     if (WeatherLogic.shouldRefresh(ageMillis, movedKm, sinceAttemptMillis)) {
       return true;
     }
-    return WeatherLogic.shouldUpgradePrecision(source, stepHours, sinceAttemptMillis);
+    return WeatherLogic.shouldUpgradePrecision(source, stepHours, sinceAttemptMillis,
+      consecutiveFailures, isForeground);
   }
 
   /** 诊断用的「数据过期 N 分钟」；没有缓存（负值）返回空串。 */

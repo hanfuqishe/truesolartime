@@ -43,12 +43,16 @@ struct Settings {
   @State keepScreenOn: boolean = true;
   /** 配色模式：AUTO（默认，按日出日落）/ LIGHT / DARK，见 core/ThemeMode.ets。 */
   @State themeMode: string = ThemeMode.AUTO;
-  /** 诊断：天气源、逐时步长、数据过期分钟数与最近一次失败原因。 */
+  /** 诊断：天气源、逐时步长、上次取数尝试、下次重试倒计时与最近失败原因。 */
   @State weatherSource: string = WeatherSource.OPEN_METEO;
   @State weatherStep: number = 1;
   @State weatherStatus: string = '';
   @State weatherResult: string = '';
   @State weatherFailure: string = '';
+  /** 上次取数尝试的时间文案，例如「08:41（3 分钟前）」；从未试过时是「暂无」。 */
+  @State weatherAttempt: string = '暂无';
+  /** 下次自动取数的倒计时，例如「57 秒后（主源轮询）」。 */
+  @State weatherRetry: string = '—';
   /** 地图底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
   @State mapStyleKey: string = 'auto';
   @State locating: boolean = false;
@@ -108,9 +112,9 @@ struct Settings {
     this.weatherSource = WeatherService.source();
     this.weatherStep = WeatherService.stepHours();
     const ageMinutes: number = WeatherService.ageMinutes();
-    // 低精度（7Timer! 3 小时）即使没过期也会被后台尽快升级回 1 小时源，这里把状态说清楚。
+    // 低精度（7Timer! 3 小时）前台按 60/120/300 秒退避重试主源（后台 10 分钟），成功立刻切回 1 小时源。
     const lowPrecision: string = WeatherLogic.isLowPrecision(this.weatherSource, this.weatherStep)
-      ? '（低精度 3 小时数据，后台会每 10 分钟尝试升级回 1 小时源）'
+      ? '（低精度 3 小时数据：前台按 60/120/300 秒退避重试主源，后台 10 分钟）'
       : '';
     // 缓存按地点区分（≤5 km）：有缓存但它属于上一个城市时，界面显示的是占位符。
     const belongs: boolean = WeatherService.cached(this.place) !== null;
@@ -126,6 +130,30 @@ struct Settings {
     const diag: WeatherDiag = AppStore.weatherDiag();
     this.weatherResult = diag.result.length > 0 ? diag.result : '暂无记录';
     this.weatherFailure = diag.failure;
+
+    // 上次取数尝试（每次取数都会先记一拍，所以它也是「上次主源尝试」）与下次重试倒计时。
+    const attemptMillis: number = WeatherService.lastAttemptMillis();
+    if (attemptMillis > 0) {
+      const agoMinutes: number = Math.max(0, Math.floor((Date.now() - attemptMillis) / 60000));
+      this.weatherAttempt = `${this.clockLabel(attemptMillis)}（${agoMinutes} 分钟前）`;
+    } else {
+      this.weatherAttempt = '暂无';
+    }
+    const retrySeconds: number = WeatherService.nextRetrySeconds();
+    const retryReason: string = WeatherLogic.isLowPrecision(this.weatherSource, this.weatherStep)
+      ? `主源轮询，已连续失败 ${AppStore.weatherPrimaryFailures()} 次`
+      : (ageMinutes > 30 ? '过期重试' : '缓存过期');
+    this.weatherRetry = retrySeconds <= 0
+      ? '即将重试'
+      : `${retrySeconds} 秒后（${retryReason}）`;
+  }
+
+  /** 毫秒时间戳 → 「HH:mm」（本地时区），诊断里显示取数时刻。 */
+  private clockLabel(millis: number): string {
+    const date: Date = new Date(millis);
+    const hour: number = date.getHours();
+    const minute: number = date.getMinutes();
+    return `${hour < 10 ? '0' : ''}${hour}:${minute < 10 ? '0' : ''}${minute}`;
   }
 
   /**
@@ -632,6 +660,16 @@ struct Settings {
               .margin({ top: 4 })
               .width('100%')
             Text(`数据状态：${this.weatherStatus}`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
+              .width('100%')
+            Text(`上次取数尝试：${this.weatherAttempt}`)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
+              .width('100%')
+            Text(`下次重试：${this.weatherRetry}`)
               .fontSize(11)
               .fontColor(this.palette.text)
               .margin({ top: 4 })

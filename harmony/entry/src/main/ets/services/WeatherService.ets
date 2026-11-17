@@ -2,12 +2,14 @@
  * 天气取数：主源 Open-Meteo（1 小时粒度，CC BY 4.0），备用源 7Timer!（3 小时粒度）。
  *
  * 降级链与策略**逐条对齐 Android 的 WeatherRepository**：
- *   ① 主源请求失败（网络错误 / 超时 / 非 2xx / JSON 解析失败）→ 等 2 秒重试**一次**；
- *   ② 仍失败且缓存不超过 30 分钟 → **什么都不做**，界面继续用缓存（不清空）；
- *   ③ 缓存已过期（或根本没有缓存）→ 问备用源 7Timer!，成功就整份换掉（source=7timer、stepHours=3）；
- *   ④ 两个源都失败 → 旧数据继续显示（最长 24 小时），诊断里标「数据过期 N 分钟」。
+ *   ① 主源请求失败（网络错误 / 超时 ≤5 秒 / 非 2xx / JSON 解析失败）→ **立刻**问备用源，不再等 2 秒重试；
+ *   ② 缓存不超过 30 分钟且属于当前地点 → **什么都不做**，界面继续用缓存（不清空）；
+ *   ③ 缓存已过期（或根本没有）→ 问备用源 7Timer!，成功就整份换掉（source=7timer、stepHours=3）；
+ *   ④ 两个源都失败 → 旧数据继续显示（最长 24 小时），诊断里标「数据过期 N 分钟」；
+ *   ⑤ 当前是低精度数据时，前台按 60/120/300 秒退避（封顶 5 分钟）、后台 10 分钟试一次主源，
+ *      成功立刻切回 1 小时源并清零退避；回到前台则立即试一次（不等计时器）。
  *
- * 天气变化慢，缓存 30 分钟；只有缓存过期或位置移动超过 5 km 才请求一次。
+ * 天气变化慢，缓存 30 分钟；只有缓存过期、位置移动超过 5 km、或低精度升级轮询才请求一次。
  * 请求与缓存之外的一切（解析、槽位、降级判定）都在 core/Weather.ets，便于数值自检。
  */
 
@@ -123,7 +125,13 @@ export class WeatherService {
     return WeatherLogic.decodeHourly(cached.hourly);
   }
 
-  static needsRefresh(place: Place): boolean {
+  /**
+   * 该不该刷新。
+   *
+   * @param foreground true = 应用在前台（页面可见）：低精度数据按 60/120/300 秒退避轮询主源；
+   *   false = 后台 / 卡片刷新：低精度升级最小间隔 10 分钟，不参与 60 秒轮询。
+   */
+  static needsRefresh(place: Place, foreground: boolean = true): boolean {
     const cached: CachedWeather = AppStore.weather();
     if (cached.fetchedMillis <= 0 || cached.hourly.length === 0) {
       return true;
@@ -141,18 +149,20 @@ export class WeatherService {
       ? Number.MAX_VALUE
       : CityIndex.distanceKm(latitude, longitude, place.latitude, place.longitude);
     const now: number = Date.now();
-    // 任意一条满足即刷新：过期（含 5 分钟失败节流）或「低精度数据想升级回 1 小时源」（10 分钟节流）。
+    // 任意一条满足即刷新：过期（含 5 分钟失败节流）或「低精度数据想升级回 1 小时源」（按前后台退避）。
     return WeatherLogic.needsFetch(
       now - cached.fetchedMillis,
       moved,
       now - cached.attemptMillis,
       cached.source,
-      cached.stepHours
+      cached.stepHours,
+      cached.primaryFailures,
+      foreground
     );
   }
 
   /**
-   * 应用回到前台 / 切换地点时该不该**立刻**取一次（不受 10 分钟节流）。
+   * 应用回到前台 / 切换地点时该不该**立刻**取一次（不受剩余退避秒数限制）。
    *
    * 只在「当前是低精度数据」时为真：目标就是尽快升级回 Open-Meteo 的 1 小时网格。
    * 当前地点还没有任何缓存时 [needsRefresh] 本来就返回 true，不必再 force。
@@ -162,7 +172,7 @@ export class WeatherService {
     if (cached.fetchedMillis <= 0) {
       return false;
     }
-    return WeatherLogic.isLowPrecision(cached.source, cached.stepHours);
+    return WeatherLogic.shouldForceUpgradeOnForeground(cached.source, cached.stepHours);
   }
 
   /**
@@ -170,33 +180,43 @@ export class WeatherService {
    *
    * @param force true = 忽略所有节流立刻取一次。用于「应用回到前台 / 用户换了地点」，
    *   以及「手里是低精度 3 小时数据、要尽快升级回 1 小时源」这几种情形（见 [shouldForceUpgrade]）。
+   * @param foreground true = 应用在前台（页面可见）；卡片刷新路径传 false。
    */
-  static async refreshIfNeeded(place: Place, force: boolean = false): Promise<boolean> {
-    if (WeatherService.inFlight || (!force && !WeatherService.needsRefresh(place))) {
+  static async refreshIfNeeded(place: Place, force: boolean = false,
+      foreground: boolean = true): Promise<boolean> {
+    if (WeatherService.inFlight || (!force && !WeatherService.needsRefresh(place, foreground))) {
       return false;
     }
     WeatherService.inFlight = true;
     // 先记下尝试时刻：失败后按 5 分钟节流重试；成功时 save 会把它一起刷新。
     AppStore.markWeatherAttempt();
+    const cachedBefore: CachedWeather = AppStore.weather();
+    // 这次是不是「降级后重试主源」：只有这种失败才累计退避次数（首次降级本身不算一次重试失败）。
+    const retryingFromLowPrecision: boolean =
+      WeatherLogic.isLowPrecision(cachedBefore.source, cachedBefore.stepHours);
     let failure: string = '';
     try {
-      // ① 主源。失败后隔 2 秒再试**一次**：一次超时/一个坏节点不值得把粒度从 1 小时降到 3 小时。
-      let body: string | null = await HttpUtil.getText(
+      // ① 主源。**失败一次就立刻降级**：5 秒超时拿不到直接问 7Timer!，不再隔 2 秒重试 ——
+      //    界面可能正等着数据，宁可先用 3 小时粒度的备用源，也不要长时间空白。
+      const body: string | null = await HttpUtil.getText(
         WeatherLogic.buildUrl(place.latitude, place.longitude), {}, WeatherLogic.HTTP_TIMEOUT_MILLIS);
       if (body === null) {
         failure = '主源 Open-Meteo 请求失败（网络错误 / 超时 / 非 2xx）';
-        await WeatherService.delay(WeatherLogic.PRIMARY_RETRY_DELAY_MILLIS);
-        body = await HttpUtil.getText(
-          WeatherLogic.buildUrl(place.latitude, place.longitude), {}, WeatherLogic.HTTP_TIMEOUT_MILLIS);
       }
       const primary: PrimaryWeather | null = body === null ? null : WeatherLogic.parsePrimary(body);
       if (primary !== null) {
+        // 成功切回主源：退避清零，回到普通的 30 分钟过期 / 5 分钟失败节流。
+        AppStore.setWeatherPrimaryFailures(0);
         WeatherService.save(place, primary.snapshot, primary.hourly, WeatherSource.OPEN_METEO);
         WeatherService.record('主源成功', WeatherSource.OPEN_METEO, '');
         return true;
       }
       if (body !== null) {
         failure = '主源 Open-Meteo 响应解析失败（缺 current / hourly）';
+      }
+      // 降级后重试主源又失败 → 连续失败次数 +1（60→120→300 秒退避）。
+      if (retryingFromLowPrecision) {
+        AppStore.setWeatherPrimaryFailures(AppStore.weatherPrimaryFailures() + 1);
       }
 
       // ② 主源失败：缓存还没过期、**且确实属于当前这个地点**，就什么都不动，界面继续用缓存。
@@ -239,6 +259,37 @@ export class WeatherService {
     }
   }
 
+  /** 上次**尝试**取数的时刻（毫秒）；0 = 还没试过。诊断里显示。 */
+  static lastAttemptMillis(): number {
+    return AppStore.weather().attemptMillis;
+  }
+
+  /**
+   * 距离下一次自动取数还有多少秒（诊断用）。
+   *
+   * - 低精度数据：60 秒轮询一次主源（[WeatherLogic.LOW_PRECISION_RETRY_MILLIS]）；
+   * - 主源数据已过期：失败节流 5 分钟后再试（[WeatherLogic.RETRY_AFTER_FAILURE_MILLIS]）；
+   * - 主源数据新鲜：30 分钟过期后才会再取（[WeatherLogic.TTL_MILLIS]）。
+   */
+  static nextRetrySeconds(): number {
+    const cached: CachedWeather = AppStore.weather();
+    if (cached.fetchedMillis <= 0) {
+      return 0;
+    }
+    const now: number = Date.now();
+    const age: number = now - cached.fetchedMillis;
+    const sinceAttempt: number = now - cached.attemptMillis;
+    if (WeatherLogic.isLowPrecision(cached.source, cached.stepHours)) {
+      const delay: number = WeatherLogic.lowPrecisionRetryDelayMillis(
+        cached.primaryFailures, true);
+      return Math.max(0, Math.ceil((delay - sinceAttempt) / 1000));
+    }
+    if (age > WeatherLogic.TTL_MILLIS) {
+      return Math.max(0, Math.ceil((WeatherLogic.RETRY_AFTER_FAILURE_MILLIS - sinceAttempt) / 1000));
+    }
+    return Math.max(0, Math.ceil((WeatherLogic.TTL_MILLIS - age) / 1000));
+  }
+
   /** 写缓存（连同来源与步长一起，界面靠它排逐时行）。 */
   private static save(place: Place, snapshot: WeatherSnapshot, hourly: HourPoint[], source: string): void {
     AppStore.saveWeather(
@@ -260,14 +311,5 @@ export class WeatherService {
     AppStore.saveWeatherDiag(result, WeatherSource.of(source), WeatherSource.stepHoursOf(source), ageMinutes, failure);
     console.info(`[weather] ${result} source=${WeatherSource.of(source)} step=${
       WeatherSource.stepHoursOf(source)}h age=${ageMinutes}min failure=${failure}`);
-  }
-
-  /** 等一会儿（主源失败后隔 2 秒重试一次）。 */
-  private static delay(millis: number): Promise<void> {
-    return new Promise<void>((resolve: () => void) => {
-      setTimeout(() => {
-        resolve();
-      }, millis);
-    });
   }
 }

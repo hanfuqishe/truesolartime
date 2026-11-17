@@ -399,6 +399,33 @@ for (const item of equationCases) {
     threeHourSlots[5].epochSeconds - threeHourSlots[0].epochSeconds);
   equal('3h first slot is the 20:00 reading', utcAt(12), threeHourSlots[0].epochSeconds);
 
+  // 逐时行图标下方显示温度（与 Android `hourTemperatures` 同一规则）：
+  // 首格「现在」用实时读数，其余用采样点温度；缺数据显示 `-`。
+  const temps1h: (number | null)[] = WeatherLogic.hourTemperatures(oneHourPoints, now, 8 * 3600, 1, 18);
+  equal('1h hourly now uses the current reading', 18, temps1h[0] === null ? -999 : temps1h[0]);
+  equal('1h hourly temps follow the sample points', '12,13,14,15,16',
+    temps1h.slice(1).map((value: number | null): number => value === null ? -999 : value).join(','));
+  const labels1h: string[] = temps1h.map((value: number | null): string => WeatherLogic.temperatureLabel(value));
+  equal('1h hourly temperature labels', '18°,12°,13°,14°,15°,16°', labels1h.join(','));
+  check('all hourly temperatures end with the degree sign',
+    labels1h.every((label: string): boolean => label.endsWith('°')));
+  const temps3h: (number | null)[] = WeatherLogic.hourTemperatures(threeHourPoints, now, 8 * 3600, 3, 18);
+  equal('3h hourly now uses the current reading, not the sample point', 18,
+    temps3h[0] === null ? -999 : temps3h[0]);
+  equal('3h hourly sample temps follow', '11,12,13,14,15',
+    temps3h.slice(1).map((value: number | null): number => value === null ? -999 : value).join(','));
+  // 没有实时读数时「现在」退回该采样点温度。
+  const tempsNoCurrent: (number | null)[] = WeatherLogic.hourTemperatures(
+    threeHourPoints, now, 8 * 3600, 3, null);
+  equal('missing current reading falls back to the sample point', 10,
+    tempsNoCurrent[0] === null ? -999 : tempsNoCurrent[0]);
+  // 完全没有采样点：全 null → 全 `-`。
+  const missingTemps: (number | null)[] = WeatherLogic.hourTemperatures([], now, 8 * 3600, 3, null);
+  equal('missing hourly temps are all null', 'null,null,null,null,null,null',
+    missingTemps.map((value: number | null): string => value === null ? 'null' : `${value}`).join(','));
+  equal('missing hourly temperature labels are all dashes', '-,-,-,-,-,-',
+    missingTemps.map((value: number | null): string => WeatherLogic.temperatureLabel(value)).join(','));
+
   // 第二排逐时行按「格数」跳过（不是按小时数硬挪：3 小时源的 6 格就是 18 小时）。
   const secondRow = WeatherLogic.visibleSlots(threeHourPoints, now, 8 * 3600, WeatherLogic.SLOT_COUNT, 3, 6);
   equal('second row skips six slots', '14,17,20,23,2,5', localHours(secondRow, 8 * 3600));
@@ -556,13 +583,21 @@ for (const item of equationCases) {
   equal('stale label 25 hours', '数据过期 1500 分钟', WeatherLogic.staleLabel(25 * 60 * 60 * 1000));
   equal('stale label without cache', '', WeatherLogic.staleLabel(-1));
 
-  // 主源重试与超时：2 秒重试一次、连接/读取各 10 秒。
-  equal('primary retry delay is two seconds', 2000, WeatherLogic.PRIMARY_RETRY_DELAY_MILLIS);
-  equal('http timeout is ten seconds', 10000, WeatherLogic.HTTP_TIMEOUT_MILLIS);
+  // 主源超时：5 秒拿不到就立刻降级（不再「等 2 秒重试一次」）。
+  equal('http timeout is five seconds', 5000, WeatherLogic.HTTP_TIMEOUT_MILLIS);
 
   // ---- 刷新触发：过期 或 低精度升级（任意一条满足即刷新）----
   const MINUTE = 60 * 1000;
   const NEVER_ATTEMPTED = Number.MAX_SAFE_INTEGER;
+  // 主源失败后**直接 fallback**（没有「2 秒重试一次」的中转）：无缓存 / 缓存过期 → 立刻问 7Timer!；
+  // 缓存新鲜且属于当前地点 → 保留缓存、什么都不做。
+  equal('no cache falls back to 7timer immediately', WeatherFallback.TRY_SEVEN_TIMER,
+    WeatherLogic.fallbackFor(false, -1));
+  equal('expired cache falls back to 7timer immediately', WeatherFallback.TRY_SEVEN_TIMER,
+    WeatherLogic.fallbackFor(true, 31 * MINUTE));
+  equal('fresh cache is kept after a primary failure', WeatherFallback.KEEP_CACHE,
+    WeatherLogic.fallbackFor(true, 5 * MINUTE));
+
   // 低精度判定的两个来源都要认：7Timer! 与步长 3。
   check('7timer data is low precision', WeatherLogic.isLowPrecision('7timer', 3));
   check('step 3 alone is low precision', WeatherLogic.isLowPrecision('open-meteo', 3));
@@ -571,35 +606,67 @@ for (const item of equationCases) {
   // ① 低精度 + 未过期 → 仍然要刷新（为了升级回 1 小时源）
   check('low precision refreshes even when fresh',
     WeatherLogic.needsFetch(5 * MINUTE, 0, NEVER_ATTEMPTED, '7timer', 3));
-  // ② 10 分钟内刚试过（无论成败）→ 不重复刷新
-  check('low precision is throttled within ten minutes',
-    !WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
-  check('low precision throttles right at the boundary',
-    !WeatherLogic.needsFetch(5 * MINUTE, 0, WeatherLogic.LOW_PRECISION_RETRY_MILLIS, '7timer', 3));
-  // ③ 超过 10 分钟 → 再试一次
-  check('low precision retries after ten minutes',
-    WeatherLogic.needsFetch(5 * MINUTE, 0, 11 * MINUTE, '7timer', 3));
-  // ④ 升级成功（1 小时源、新鲜）→ 不再触发
-  check('upgraded data does not refresh again',
-    !WeatherLogic.needsFetch(5 * MINUTE, 0, 11 * MINUTE, 'open-meteo', 1));
-  // ⑤ 两条互不干扰：过期与低精度各自成立、各自生效
+  // ② 60 秒内刚试过（无论成败）→ 不重复刷新；满 60 秒立刻再试。
+  check('low precision is throttled at fifty nine seconds',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 59 * 1000, '7timer', 3));
+  check('low precision retries right at sixty seconds',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, 60 * 1000, '7timer', 3));
+  check('low precision retries after a minute',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
+  // ③ 切回主源（1 小时源、新鲜）后 → 不再按 60 秒轮询
+  check('upgraded data does not poll every minute',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, 'open-meteo', 1));
+  // ④ 两条互不干扰：过期与低精度各自成立、各自生效
   check('expired high precision data refreshes',
     WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, 'open-meteo', 1));
   check('expired low precision data refreshes',
     WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, '7timer', 3));
   check('fresh high precision data is left alone',
     !WeatherLogic.needsFetch(5 * MINUTE, 0, NEVER_ATTEMPTED, 'open-meteo', 1));
-  // 失败后的 5 分钟节流只管「过期」这一条，不会把低精度升级一起卡住超过 10 分钟
-  check('failure throttle does not block the low precision upgrade for longer than ten minutes',
-    WeatherLogic.needsFetch(45 * MINUTE, 0, 11 * MINUTE, '7timer', 3)
-      && !WeatherLogic.needsFetch(45 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
+  // 失败后的 5 分钟节流仍然管住「过期」这一条；但低精度数据满 60 秒就会再试。
+  check('failure throttle still gates the expiry path',
+    !WeatherLogic.needsFetch(45 * MINUTE, 0, 30 * 1000, '7timer', 3));
+  check('low precision resumes polling after sixty seconds',
+    WeatherLogic.needsFetch(45 * MINUTE, 0, 2 * MINUTE, '7timer', 3));
   // 移动超过 5 km 一律刷新（换地点）
   check('moving triggers a refresh', WeatherLogic.needsFetch(1 * MINUTE, 6, 0, 'open-meteo', 1));
   // 升级节流的独立判定（界面「回到前台立刻升级」用的也是它）
-  check('precision upgrade waits ten minutes', !WeatherLogic.shouldUpgradePrecision('7timer', 3, 9 * MINUTE));
-  check('precision upgrade fires after ten minutes', WeatherLogic.shouldUpgradePrecision('7timer', 3, 10 * MINUTE + 1));
-  check('precision upgrade ignores high precision data', !WeatherLogic.shouldUpgradePrecision('open-meteo', 1, NEVER_ATTEMPTED));
-  equal('low precision retry window is ten minutes', 10 * 60 * 1000, WeatherLogic.LOW_PRECISION_RETRY_MILLIS);
+  check('precision upgrade waits sixty seconds', !WeatherLogic.shouldUpgradePrecision('7timer', 3, 59 * 1000));
+  check('precision upgrade fires at sixty seconds', WeatherLogic.shouldUpgradePrecision('7timer', 3, 60 * 1000));
+  check('precision upgrade ignores high precision data',
+    !WeatherLogic.shouldUpgradePrecision('open-meteo', 1, NEVER_ATTEMPTED));
+  equal('low precision retry window is sixty seconds', 60 * 1000, WeatherLogic.LOW_PRECISION_RETRY_MILLIS);
+
+  // ---- 降级后重试主源：前台 60→120→300 秒退避（封顶），后台一律 10 分钟 ----
+  equal('foreground retry after first failure is 60s', 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(1, true));
+  equal('foreground retry after two failures is 120s', 2 * 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(2, true));
+  equal('foreground retry after three failures is 300s', 5 * 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(3, true));
+  equal('foreground retry is capped at 300s after four failures', 5 * 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(4, true));
+  equal('background retry is ten minutes regardless of failures', 10 * 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(1, false));
+  equal('background retry stays ten minutes after four failures', 10 * 60 * 1000,
+    WeatherLogic.lowPrecisionRetryDelayMillis(4, false));
+  equal('next retry timestamp adds the backoff delay', 1_000_000 + 2 * 60 * 1000,
+    WeatherLogic.nextLowPrecisionRetryAt(1_000_000, 2, true));
+  equal('next retry timestamp in background adds ten minutes', 1_000_000 + 10 * 60 * 1000,
+    WeatherLogic.nextLowPrecisionRetryAt(1_000_000, 3, false));
+  check('two failures throttle at 119 seconds',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 119 * 1000, '7timer', 3, 2, true));
+  check('two failures retry at 120 seconds',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, 120 * 1000, '7timer', 3, 2, true));
+  check('background does not poll every minute',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, '7timer', 3, 1, false));
+  check('background retries after ten minutes',
+    WeatherLogic.needsFetch(5 * MINUTE, 0, 10 * MINUTE, '7timer', 3, 1, false));
+  check('after switching back to the primary no backoff polling',
+    !WeatherLogic.needsFetch(5 * MINUTE, 0, 2 * MINUTE, 'open-meteo', 1, 4, true)
+      && !WeatherLogic.shouldForceUpgradeOnForeground('open-meteo', 1));
+  check('returning to foreground forces an immediate primary attempt',
+    WeatherLogic.shouldForceUpgradeOnForeground('7timer', 3));
 
   // 数据源标识（缓存里存的就是这两个字符串）：认不出来一律当主源、步长 1。
   equal('open-meteo id', 'open-meteo', WeatherSource.OPEN_METEO);
