@@ -203,6 +203,35 @@ export class MapZoomPlan {
   }
 }
 
+/** 界面只订阅这份快照：有效源 / 缩放 / 降级 / 不可用 / 是否回退。 */
+export class MapUiState {
+  requestedZoom: number = MapFallback.DEFAULT_ZOOM;
+  source: MapStyle = MapStyle.AUTO;
+  zoom: number = MapFallback.DEFAULT_ZOOM;
+  degraded: boolean = false;
+  unavailable: boolean = false;
+  fellBack: boolean = false;
+}
+
+/** 由 plan + zoomPlan 生成 UI 快照（纯函数；失败计数变化不会改变它）。 */
+export function uiStateOf(plan: MapTilePlan, zoomPlan: MapZoomPlan): MapUiState {
+  const state: MapUiState = new MapUiState();
+  state.requestedZoom = zoomPlan.requested;
+  state.source = plan.effective;
+  state.zoom = zoomPlan.zoom;
+  state.degraded = zoomPlan.degraded;
+  state.unavailable = zoomPlan.unavailable;
+  state.fellBack = plan.fellBack;
+  return state;
+}
+
+/** 两份 UI 快照是否完全相同：Index 只在这里返回 false 时才 setState。 */
+export function sameUiState(left: MapUiState, right: MapUiState): boolean {
+  return left.requestedZoom === right.requestedZoom && left.source === right.source &&
+    left.zoom === right.zoom && left.degraded === right.degraded &&
+    left.unavailable === right.unavailable && left.fellBack === right.fellBack;
+}
+
 /** 会话内的底图回退状态（不可变式：纯函数返回新状态）。 */
 export class MapFallbackState {
   /** OSM 连续失败次数。 */
@@ -223,6 +252,28 @@ export class MapFallbackState {
   lastBlankZoom: number = -1;
   lastBlankColorKinds: number = -1;
   switchedAtMillis: number = -1;
+  /** 最近一次失败 / 空白的时刻（回弹静默窗口用）。 */
+  lastFailureMillis: number = -1;
+  /** 最近一次「z3 出图后把上级没瓦片记忆清掉」的时刻（回弹冷却用）。 */
+  lastReboundMillis: number = -1;
+  /** 程序化改视口后的静默截止时刻：这之前回来的失败是自身取消请求造成的，不计。 */
+  viewportSettleUntilMillis: number = -1;
+
+  /** 到点后是否允许「z3 出图 → 清掉上级没瓦片记忆」的回弹：30 秒无新失败且距上次回弹 ≥5 分钟。 */
+  canRecoverChain(nowMillis: number): boolean {
+    if (this.lastFailureMillis >= 0 && nowMillis - this.lastFailureMillis < MapFallback.RECOVER_QUIET_MILLIS) {
+      return false;
+    }
+    if (this.lastReboundMillis >= 0 && nowMillis - this.lastReboundMillis < MapFallback.REBOUND_COOLDOWN_MILLIS) {
+      return false;
+    }
+    return true;
+  }
+
+  /** 程序化改视口后 2 秒内回来的失败不计。 */
+  isViewportSettling(nowMillis: number): boolean {
+    return this.viewportSettleUntilMillis >= 0 && nowMillis < this.viewportSettleUntilMillis;
+  }
 
   /** 该源在这个级别是否已被判定「没有瓦片」。 */
   zoomUnavailable(style: MapStyle, zoom: number): boolean {
@@ -256,6 +307,9 @@ export class MapFallbackState {
     next.lastBlankZoom = this.lastBlankZoom;
     next.lastBlankColorKinds = this.lastBlankColorKinds;
     next.switchedAtMillis = this.switchedAtMillis;
+    next.lastFailureMillis = this.lastFailureMillis;
+    next.lastReboundMillis = this.lastReboundMillis;
+    next.viewportSettleUntilMillis = this.viewportSettleUntilMillis;
     return next;
   }
 
@@ -309,6 +363,19 @@ export class MapFallback {
   static readonly MAX_DEGRADE_STEPS: number = 2;
   /** 切源后的残响窗口。 */
   static readonly SWITCH_SETTLE_MILLIS: number = 5000;
+  /** 回弹前要求的「无新失败」静默时长。 */
+  static readonly RECOVER_QUIET_MILLIS: number = 30 * 1000;
+  /** 两次回弹（z3 出图后清上级记忆）之间的最小间隔。 */
+  static readonly REBOUND_COOLDOWN_MILLIS: number = 5 * 60 * 1000;
+  /** 程序化改视口后的失败静默窗口（自身取消请求的假失败）。 */
+  static readonly VIEWPORT_SETTLE_MILLIS: number = 2000;
+
+  /** 程序化改视口：接下来 2 秒内的失败不计。 */
+  static markViewportSettling(state: MapFallbackState, nowMillis: number): MapFallbackState {
+    const next: MapFallbackState = state.copy();
+    next.viewportSettleUntilMillis = nowMillis + MapFallback.VIEWPORT_SETTLE_MILLIS;
+    return next;
+  }
   /** 全球底图探测用的 z3 瓦片（任何地区都在，体积小）。 */
   static readonly PROBE_URL: string = 'https://tile.openstreetmap.org/3/4/3.png';
 
@@ -359,12 +426,16 @@ export class MapFallback {
     next.lastFailedZoom = -1;
     next.zoomFailures = 0;
     if (zoom <= MapFallback.MIN_ZOOM) {
-      // 保留「空白瓦片」的结构性记忆，只清网络问题学来的。
-      const sticky: number = plan.effective === MapStyle.OSM ? next.osmBlankMask : next.amapBlankMask;
-      if (plan.effective === MapStyle.OSM) {
-        next.osmUnavailableMask = next.osmUnavailableMask & sticky;
-      } else {
-        next.amapUnavailableMask = next.amapUnavailableMask & sticky;
+      // 回弹要有静默窗口 + 冷却：否则 z3 一出图就清上级记忆 → 立刻弹回 z12 → 再失败 → 无限升降。
+      if (state.canRecoverChain(nowMillis)) {
+        // 保留「空白瓦片」的结构性记忆，只清网络问题学来的。
+        const sticky: number = plan.effective === MapStyle.OSM ? next.osmBlankMask : next.amapBlankMask;
+        if (plan.effective === MapStyle.OSM) {
+          next.osmUnavailableMask = next.osmUnavailableMask & sticky;
+        } else {
+          next.amapUnavailableMask = next.amapUnavailableMask & sticky;
+        }
+        next.lastReboundMillis = nowMillis;
       }
     }
     if (plan.effective === MapStyle.OSM) {
@@ -379,7 +450,8 @@ export class MapFallback {
     if (style !== MapStyle.AUTO) {
       return state;
     }
-    if (state.isSettling(nowMillis)) {
+    // 程序化改视口后 2 秒内的失败是自身取消请求造成的假失败；切源残响同样不计。
+    if (state.isViewportSettling(nowMillis) || state.isSettling(nowMillis)) {
       return state;
     }
     return MapFallback.registerFailure(style, latitude, longitude, countryCode, zoom, state, nowMillis, false);
@@ -422,6 +494,7 @@ export class MapFallback {
     if (plan.effective !== MapStyle.OSM) {
       const streak: number = state.lastFailedZoom === zoom ? state.zoomFailures + 1 : 1;
       let next: MapFallbackState = state.copy();
+      next.lastFailureMillis = nowMillis;
       next.lastFailedZoom = zoom;
       next.zoomFailures = streak;
       if (streak >= MapFallback.FAILURE_THRESHOLD) {
@@ -438,6 +511,7 @@ export class MapFallback {
     if (failures < MapFallback.FAILURE_THRESHOLD) {
       const next: MapFallbackState = state.copy();
       next.osmFailures = failures;
+      next.lastFailureMillis = nowMillis;
       return next;
     }
     const next: MapFallbackState = state.copy();
@@ -448,6 +522,7 @@ export class MapFallback {
     next.lastFailedZoom = -1;
     next.zoomFailures = 0;
     next.switchedAtMillis = nowMillis;
+    next.lastFailureMillis = nowMillis;
     return next;
   }
 }

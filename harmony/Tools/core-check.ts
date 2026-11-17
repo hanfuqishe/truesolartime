@@ -22,7 +22,15 @@ import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPath
 import { SunDialColors } from './core/SunDialColors';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
-import { MapFallback, MapFallbackState, MapTileLogic, MapTilePlan } from './core/MapFallback';
+import {
+  MapFallback,
+  MapFallbackState,
+  MapTileLogic,
+  MapTilePlan,
+  MapUiState,
+  sameUiState,
+  uiStateOf
+} from './core/MapFallback';
 
 let passed = 0;
 const failures: string[] = [];
@@ -1183,6 +1191,60 @@ for (const item of equationCases) {
   const rgba: number[] = new Array(256 * 256 * 4).fill(0);
   const samples = MapTileLogic.sampleNearest(rgba, 256, 256);
   check('nearest sampling yields 32x32 colours', samples.length === 1024);
+
+  // ---- 防「切城市后地图狂闪」的三条 ----
+  // ① UI 只订阅有效 plan 快照：快照相同 → sameUiState true，Index 不 setState。
+  const uiPlan: MapTilePlan = MapFallback.plan(MapStyle.AUTO, 51.5074, -0.1278, 'gb', new MapFallbackState());
+  const uiZoom = MapFallback.zoomPlan(uiPlan, 12, new MapFallbackState());
+  const first: MapUiState = uiStateOf(uiPlan, uiZoom);
+  const second: MapUiState = uiStateOf(uiPlan, uiZoom);
+  check('unchanged plan yields the same ui state', sameUiState(first, second));
+  const otherZoom = MapFallback.zoomPlan(uiPlan, 11, new MapFallbackState());
+  check('changed zoom yields a different ui state', !sameUiState(first, uiStateOf(uiPlan, otherZoom)));
+
+  // ② z3 出图后 30 秒静默窗口未满 → 不清上级「没瓦片」记忆，不回弹（否则 z3↔z12 无限升降）。
+  let chain = new MapFallbackState();
+  for (let index = 0; index < 3; index++) {
+    chain = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 12, chain, now + index);
+  }
+  const chainBase: number = now + 10_000;
+  for (const zoom of [12, 11, 10]) {
+    for (let index = 0; index < 3; index++) {
+      chain = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', zoom, chain,
+        chainBase + zoom * 100 + index);
+    }
+  }
+  check('chain starts at z3 after upper zooms fail',
+    MapFallback.zoomPlan(MapFallback.plan(MapStyle.AUTO, 51.5074, -0.1278, 'gb', chain), 12, chain).zoom === 3);
+  const quiet = MapFallback.onTileLoaded(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 3, chain,
+    chainBase + 20_000);
+  check('z3 success does not rebound inside the 30s quiet window',
+    MapFallback.zoomPlan(MapFallback.plan(MapStyle.AUTO, 51.5074, -0.1278, 'gb', quiet), 12, quiet).zoom === 3);
+  const rebound = MapFallback.onTileLoaded(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 3, quiet,
+    chainBase + 20_000 + MapFallback.RECOVER_QUIET_MILLIS + 1_000);
+  check('z3 success rebounds after the quiet window',
+    MapFallback.zoomPlan(MapFallback.plan(MapStyle.AUTO, 51.5074, -0.1278, 'gb', rebound), 12, rebound).zoom === 12);
+
+  // ③ 回弹后 5 分钟冷却：再次 z3 出图也不回弹。
+  const cooled = rebound.copy();
+  cooled.lastReboundMillis = chainBase + 40_000;
+  cooled.lastFailureMillis = -1;
+  cooled.amapUnavailableMask = (1 << 12) | (1 << 11) | (1 << 10);
+  cooled.amapBlankMask = 0;
+  const stillCooling = MapFallback.onTileLoaded(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 3, cooled,
+    cooled.lastReboundMillis + 60_000);
+  check('no rebound within the five minute cooldown',
+    MapFallback.zoomPlan(MapFallback.plan(MapStyle.AUTO, 51.5074, -0.1278, 'gb', stillCooling), 12,
+      stillCooling).zoom === 3);
+
+  // ④ 程序化改视口后 2 秒内的失败不计（自身取消请求造成的假失败）。
+  const viewportSettling = MapFallback.markViewportSettling(new MapFallbackState(), now);
+  const ignoredFailure = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 12,
+    viewportSettling, now + 1_000);
+  check('failures inside the viewport settle window are ignored', ignoredFailure.osmFailures === 0);
+  const countedFailure = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 12,
+    viewportSettling, now + 2_500);
+  check('failures after the settle window are counted', countedFailure.osmFailures === 1);
 }
 
 // ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----

@@ -15,13 +15,15 @@ import {
   MapFallbackState,
   MapTileLogic,
   MapTilePlan,
+  MapUiState,
   MapZoomPlan,
-  TileContent
+  TileContent,
+  uiStateOf
 } from '../core/MapFallback';
 import { Place } from '../core/Place';
 import { HttpUtil } from './HttpUtil';
 
-/** 一次底图加载的结果（界面只读它）。 */
+/** 一次底图加载的结果（界面只读它；uiState 相同就完全不更新）。 */
 export class MapLoadResult {
   tiles: MapTile[] = [];
   zoom: number = MapFallback.DEFAULT_ZOOM;
@@ -29,6 +31,7 @@ export class MapLoadResult {
   unavailable: boolean = false;
   degraded: boolean = false;
   fellBack: boolean = false;
+  uiState: MapUiState = new MapUiState();
 }
 
 export class MapTileService {
@@ -54,12 +57,17 @@ export class MapTileService {
 
   /** 下载并分析一屏瓦片；内部可能降级重试，直到 z3 或拿到内容。 */
   static async load(place: Place, styleKey: string, countryCode: string, centerLatitude: number,
-      centerLongitude: number, requestedZoom: number, widthPx: number, heightPx: number): Promise<MapLoadResult> {
+      centerLongitude: number, requestedZoom: number, widthPx: number, heightPx: number,
+      viewportChanged: boolean = false): Promise<MapLoadResult> {
     MapTileService.lastStyleKey = styleKey;
     MapTileService.lastLatitude = place.latitude;
     MapTileService.lastLongitude = place.longitude;
     MapTileService.lastCountry = countryCode;
     MapTileService.lastRequestedZoom = requestedZoom;
+    if (viewportChanged) {
+      // 程序化改中心/缩放会取消在飞的请求：接下来 2 秒的失败是假失败，别计入统计。
+      MapTileService.state = MapFallback.markViewportSettling(MapTileService.state, Date.now());
+    }
     const style: MapStyle = MapTilesLogic.styleFromKey(styleKey);
     await MapTileService.probeIfDue();
     let attempts: number = 0;
@@ -78,6 +86,7 @@ export class MapTileService {
         result.degraded = zoomPlan.degraded;
         result.fellBack = plan.fellBack;
         result.attribution = MapTileService.attributionFor(plan);
+        result.uiState = uiStateOf(plan, zoomPlan);
         return result;
       }
       const layer: MapLayer = MapTilesLogic.layerForStyle(plan.effective, place.latitude, place.longitude,
@@ -124,6 +133,7 @@ export class MapTileService {
         failed.degraded = nextZoom.degraded;
         failed.fellBack = nextPlan.fellBack;
         failed.attribution = MapTileService.attributionFor(nextPlan);
+        failed.uiState = uiStateOf(nextPlan, nextZoom);
         return failed;
       }
       if (nextZoom.zoom !== zoomPlan.zoom) {
@@ -136,12 +146,19 @@ export class MapTileService {
       result.degraded = zoomPlan.degraded;
       result.fellBack = plan.fellBack;
       result.attribution = MapTileService.attributionFor(plan);
+      result.uiState = uiStateOf(plan, zoomPlan);
       return result;
     }
     const fallbackResult: MapLoadResult = new MapLoadResult();
     fallbackResult.zoom = MapTileService.lastAppliedZoom;
     fallbackResult.degraded = MapTileService.lastDegraded;
     fallbackResult.attribution = MapTileService.lastStyleKey.length > 0 ? MapTileService.currentAttribution() : '';
+    const fallbackStyle: MapStyle = MapTilesLogic.styleFromKey(MapTileService.lastStyleKey);
+    const fallbackPlan: MapTilePlan = MapFallback.plan(fallbackStyle, MapTileService.lastLatitude,
+      MapTileService.lastLongitude, MapTileService.lastCountry, MapTileService.state);
+    const fallbackZoom: MapZoomPlan = MapFallback.zoomPlan(fallbackPlan, MapTileService.lastRequestedZoom,
+      MapTileService.state);
+    fallbackResult.uiState = uiStateOf(fallbackPlan, fallbackZoom);
     return fallbackResult;
   }
 

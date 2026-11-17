@@ -4,6 +4,7 @@ import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { MapTileService, MapLoadResult } from '../services/MapTileService';
+import { MapUiState, sameUiState } from '../core/MapFallback';
 import { Place, PlaceSource } from '../core/Place';
 import { PlaceBadgeLogic } from '../core/PlaceBadge';
 import { Shichen } from '../core/Shichen';
@@ -529,22 +530,42 @@ struct Index {
       this.countryCodeOfPlace());
   }
 
+  /** 上一次真正画到界面上的底图快照：相同就完全不 setState（失败计数变化不会触发 UI 更新）。 */
+  private lastMapUi: MapUiState = new MapUiState();
+
   /** 地图中心复位到观测点：换城市、跟随 GPS 更新坐标后都要复位。 */
   private recenterMap(): void {
     const layer: MapLayer = this.mapLayer();
     const point: number[] = MapTilesLogic.displayPoint(layer, this.place.latitude, this.place.longitude);
-    this.mapCenterLat = point[0];
-    this.mapCenterLon = point[1];
-    this.refreshMap();
+    this.applyViewport(point[0], point[1], this.mapZoom);
+  }
+
+  /**
+   * 视口唯一入口：地点 / 缩放变化都只在这里应用，顺序固定
+   * `setCenter → setZoom → 再 setCenter`，避免中心与缩放两处互相打断；缩放不挪中心。
+   */
+  private applyViewport(latitude: number, longitude: number, zoom: number): void {
+    this.mapCenterLat = latitude;
+    this.mapCenterLon = longitude;
+    this.mapZoom = zoom;
+    this.mapCenterLat = latitude;
+    this.mapCenterLon = longitude;
+    this.refreshMap(true);
   }
 
   /** 重算视口内的瓦片；中心、缩放、视口尺寸任一变化后调用（取数含空白检测与降级）。 */
-  private refreshMap(): void {
+  private refreshMap(viewportChanged: boolean = false): void {
     if (this.mapWpx <= 0 || this.mapHpx <= 0) {
       return;
     }
     MapTileService.load(this.place, this.mapStyleKey, this.countryCodeOfPlace(), this.mapCenterLat,
-      this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx).then((result: MapLoadResult) => {
+      this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx, viewportChanged)
+      .then((result: MapLoadResult) => {
+        // 有效 plan 快照没变就什么都不做：失败/空白计数变化不触发 UI 更新，杜绝自激刷新。
+        if (sameUiState(this.lastMapUi, result.uiState)) {
+          return;
+        }
+        this.lastMapUi = result.uiState;
         this.mapTiles = result.tiles;
         this.mapAttribution = result.attribution;
         this.mapAppliedZoom = result.zoom;
@@ -560,8 +581,7 @@ struct Index {
     if (next === this.mapZoom) {
       return;
     }
-    this.mapZoom = next;
-    this.refreshMap();
+    this.applyViewport(this.mapCenterLat, this.mapCenterLon, next);
   }
 
   private rescheduleReminders(): void {
@@ -1248,7 +1268,7 @@ struct Index {
       .onAreaChange((oldValue: Area, newValue: Area) => {
         this.mapWpx = vp2px(Number(newValue.width));
         this.mapHpx = vp2px(Number(newValue.height));
-        this.refreshMap();
+        this.refreshMap(true);
       })
       .gesture(
         GestureGroup(GestureMode.Parallel,
@@ -1260,8 +1280,7 @@ struct Index {
               if (event.scale > 0) {
                 const next: number = MapTilesLogic.clampZoom(this.mapBaseZoom + Math.log2(event.scale));
                 if (next !== this.mapZoom) {
-                  this.mapZoom = next;
-                  this.refreshMap();
+                  this.applyViewport(this.mapCenterLat, this.mapCenterLon, next);
                 }
               }
             }),
