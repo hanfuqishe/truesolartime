@@ -58,7 +58,15 @@ export class Place {
     new Place(28.6139, 77.2090, PlaceSource.MANUAL, '', '', 'in'),     // 新德里
     new Place(35.6762, 139.6503, PlaceSource.MANUAL, '', '', 'jp'),    // 东京
     new Place(1.3521, 103.8198, PlaceSource.MANUAL, '', '', 'sg'),     // 新加坡
-    new Place(-33.8688, 151.2093, PlaceSource.MANUAL, '', '', 'au')    // 悉尼
+    new Place(-33.8688, 151.2093, PlaceSource.MANUAL, '', '', 'au'),   // 悉尼
+    // 极圈城市：验证极昼／极夜。名字由离线城市表（core/CityIndex）给出，跟其他境外城市一样
+    // 随界面语言变化；国家码只用来定标准时区。
+    // 摩尔曼斯克（68.97°N 33.08°E）：俄罗斯，北极圈内，夏季极昼、冬季极夜；
+    //   ru + 经度 33.08°E < 40°E → UTC+3（莫斯科时间）。
+    new Place(68.9700, 33.0800, PlaceSource.MANUAL, '', '', 'ru'),
+    // 中山站（69.37°S 76.38°E）：中国南极考察站，南极圈内；显式用 cn → UTC+8
+    //（站上按中国站务惯例使用北京时间；ZoneTable 没有 aq 条目，写 aq 会按经度取整成 +5）。
+    new Place(-69.3700, 76.3800, PlaceSource.MANUAL, '', '', 'cn')
   ];
 
   static readonly MIN_LATITUDE: number = -90.0;

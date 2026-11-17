@@ -1153,7 +1153,7 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 盘面画五样东西：
  * 1. 外圆淡描边：画在弧线外侧 3dp 当「表圈」，所以两条弧线不会把它盖掉；
  * 2. 白天弧：实线、主色；夜晚弧：虚线、低对比度；
- * 3. 地平线：中段是圆的弦，两侧各伸出 0.2R（略淡），极昼极夜没有弦就画满画布；
+ * 3. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
  * 4. 日出 / 日落刻度点：弦与圆的两个交点（极昼极夜不画）；
  * 5. 当前太阳点：地平线以上是亮色实心点（带一圈柔光），以下是暗色空心点。
  *
@@ -1287,20 +1287,16 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 )
             }
 
-            // 地平线：中段是弦（实色），两侧各伸出 0.2R（淡一点），读起来才是一条「贯穿的线」；
-            // 极昼 / 极夜 / 0:00 相切时没有弦，直接画满画布。线比弧线细（1dp）。
-            val horizon = SunPathGeometry.horizonSpan(path, size.width, horizonInsetPx)
-            val halfChord = SunPathGeometry.horizonHalfChord(path)
-            val chordStart = (path.centerX - halfChord).coerceIn(horizon.startX, horizon.endX)
-            val chordEnd = (path.centerX + halfChord).coerceIn(horizon.startX, horizon.endX)
-            if (chordEnd - chordStart > 0.5f) {
-                val faint = scheme.outline.copy(alpha = HORIZON_OUTSIDE_ALPHA)
-                drawLine(faint, Offset(horizon.startX, path.horizonY), Offset(chordStart, path.horizonY), rimStroke)
-                drawLine(scheme.outline, Offset(chordStart, path.horizonY), Offset(chordEnd, path.horizonY), rimStroke)
-                drawLine(faint, Offset(chordEnd, path.horizonY), Offset(horizon.endX, path.horizonY), rimStroke)
-            } else {
-                drawLine(scheme.outline, Offset(horizon.startX, path.horizonY), Offset(horizon.endX, path.horizonY), rimStroke)
-            }
+            // 地平线：固定长度的一条横线（画布左右各内缩 4dp），高度由日出时刻决定。
+            // 普通日 / 短昼 / 极昼 / 极夜 / 0:00 相切全部画满这一条，同色同宽（outline, 1dp）——
+            // 圆内那一段就是「弦」，但不再单独加强，否则短昼时看起来会断成两截。
+            val horizon = SunPathGeometry.horizonSpan(size.width, horizonInsetPx)
+            drawLine(
+                color = scheme.outline,
+                start = Offset(horizon.startX, path.horizonY),
+                end = Offset(horizon.endX, path.horizonY),
+                strokeWidth = rimStroke,
+            )
 
             // 日出 / 日落刻度：正好落在地平线与圆的交点上（极昼极夜没有交点）。
             if (span != null && sunriseHour != null && sunsetHour != null) {
@@ -1424,9 +1420,6 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
         }
     }
 }
-
-/** 地平线伸出圆外那两段的透明度：比圆内的弦淡一点，区分「圆内」与「圆外」。 */
-private const val HORIZON_OUTSIDE_ALPHA = 0.55f
 
 /** 一天的秒数：极昼时白昼时长按整天算。 */
 private const val DAY_SECONDS = 86_400L

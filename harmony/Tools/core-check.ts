@@ -9,7 +9,7 @@
 import { BeijingDate, SolarTimeMath, PolarState } from './core/SolarTimeMath';
 import { Shichen } from './core/Shichen';
 import { TimeFormat } from './core/TimeFormat';
-import { SolarTimeSnapshot } from './core/SolarSnapshot';
+import { SolarSnapshot, SolarTimeSnapshot } from './core/SolarSnapshot';
 import { CityIndex } from './core/CityIndex';
 import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint, WeatherSlot, WeatherSource, WeatherFallback } from './core/Weather';
 import { ThemeMode } from './core/ThemeMode';
@@ -17,6 +17,8 @@ import { DistrictNameLogic } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
+import { CivicTimeLogic } from './core/CivicTime';
+import { HorizonSpan, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 
@@ -721,7 +723,7 @@ for (const item of equationCases) {
 // ---- 观测点 ----
 {
   check('default place is Beijing', Place.DEFAULT.labelKey === 'city_beijing' && Place.DEFAULT.latitude === 39.9042);
-  equal('twenty presets', 20, Place.PRESETS.length);
+  equal('twenty two presets', 22, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
 
@@ -743,8 +745,9 @@ for (const item of equationCases) {
   equal('china preset stays utc+8', 8 * 3600,
     ZoneTable.offsetSeconds(Place.PRESETS[8].countryCode, Place.PRESETS[8].longitude, 0));
 
-  // 后 10 个境外城市按 UTC 偏移从西到东：檀香山 −10 … 悉尼 +10。
-  const overseasMinutes: number[] = [-600, -480, -300, 0, 60, 240, 330, 540, 480, 600];
+  // 第 11 个起是境外城市：前 10 个大致按 UTC 偏移从西到东（檀香山 −10 … 悉尼 +10），
+  // 末尾两个是极圈城市（摩尔曼斯克 +3、中山站 +8），用来验证极昼／极夜。
+  const overseasMinutes: number[] = [-600, -480, -300, 0, 60, 240, 330, 540, 480, 600, 180, 480];
   let overseasOffsetsOk: boolean = true;
   let overseasNamesOk: boolean = true;
   for (let i = 0; i < overseasMinutes.length; i++) {
@@ -759,6 +762,36 @@ for (const item of equationCases) {
   }
   check('overseas presets resolve by country code', overseasOffsetsOk);
   check('overseas presets have a city name', overseasNamesOk);
+
+  // 极圈城市：摩尔曼斯克（68.97°N 33.08°E，ru → UTC+3）与中山站（69.37°S 76.38°E，cn → UTC+8）。
+  // 名字和按钮文案一样走 CityIndex；时区靠国家码，不依赖逆地理编码。
+  const murmansk: Place = Place.PRESETS[20];
+  const zhongshan: Place = Place.PRESETS[21];
+  equal('murmansk latitude', 68.97, murmansk.latitude);
+  equal('murmansk longitude', 33.08, murmansk.longitude);
+  equal('zhongshan latitude', -69.37, zhongshan.latitude);
+  equal('zhongshan longitude', 76.38, zhongshan.longitude);
+  equal('murmansk zone is utc+3', 3 * 3600,
+    ZoneTable.offsetSeconds(murmansk.countryCode, murmansk.longitude, 0));
+  equal('zhongshan zone is utc+8', 8 * 3600,
+    ZoneTable.offsetSeconds(zhongshan.countryCode, zhongshan.longitude, 0));
+  const murmanskName = CityIndex.nearest(murmansk.latitude, murmansk.longitude, 'zh');
+  equal('murmansk name', '摩尔曼斯克', murmanskName === null ? 'null' : murmanskName.name);
+  const zhongshanName = CityIndex.nearest(zhongshan.latitude, zhongshan.longitude, 'zh');
+  equal('zhongshan name', '中山站', zhongshanName === null ? 'null' : zhongshanName.name);
+
+  // 极昼／极夜：卡片上「日出 / 日落」两格没有时刻，显示 "--:--"，下方另行提示极昼／极夜。
+  const december = Date.UTC(2026, 11, 21, 12, 0, 0);
+  const murmanskWinter: SolarSnapshot = SolarTimeSnapshot.compute(
+    december, murmansk.latitude, murmansk.longitude, 'zh-CN', 3 * 3600, murmansk.countryCode);
+  equal('murmansk december is polar night', PolarState.POLAR_NIGHT, murmanskWinter.polar);
+  equal('murmansk sunrise shows dash', '--:--', TimeFormat.clock(murmanskWinter.sunriseLocalSeconds));
+  equal('murmansk sunset shows dash', '--:--', TimeFormat.clock(murmanskWinter.sunsetLocalSeconds));
+  const zhongshanSummer: SolarSnapshot = SolarTimeSnapshot.compute(
+    december, zhongshan.latitude, zhongshan.longitude, 'zh-CN', 8 * 3600, zhongshan.countryCode);
+  equal('zhongshan december is midnight sun', PolarState.MIDNIGHT_SUN, zhongshanSummer.polar);
+  equal('zhongshan sunrise shows dash', '--:--', TimeFormat.clock(zhongshanSummer.sunriseLocalSeconds));
+  equal('zhongshan sunset shows dash', '--:--', TimeFormat.clock(zhongshanSummer.sunsetLocalSeconds));
 }
 
 // ---- 「是不是中国境内」：国家码优先，没有国家码才退回包围盒 ----
@@ -828,6 +861,41 @@ for (const item of equationCases) {
   equal('delhi preset carries country code in', 'in', delhiPreset.countryCode);
   equal('delhi preset resolves utc+5:30', 19800,
     zoneOf(delhiPreset.latitude, delhiPreset.longitude, delhiPreset.countryCode));
+}
+
+// ---- 国家标准时间（core/CivicTime）：中国 +8、南极中国站 +8、其它国家用国家标准 ----
+{
+  equal('urumqi uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(43.8256, 87.6168, 'cn'));
+  equal('beijing uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(39.9042, 116.4074, 'cn'));
+  equal('zhongshan uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(-69.37, 76.38, 'aq'));
+  equal('great wall station uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(-62.22, -58.96, 'aq'));
+  equal('kunlun station uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(-80.42, 77.12, 'aq'));
+  equal('murmansk uses russia standard time', 180,
+    CivicTimeLogic.standardOffsetMinutes(68.97, 33.08, 'ru'));
+  // 鸿蒙这边没有城市级 tzdata，纽约按国家标准 −300（与 Android 的 ZoneTable 口径一致）。
+  equal('new york uses us eastern standard time', -300,
+    CivicTimeLogic.standardOffsetMinutes(40.71, -74.01, 'us'));
+  equal('kathmandu keeps its 45 minute offset', 345,
+    CivicTimeLogic.standardOffsetMinutes(27.7, 85.3, 'np'));
+  equal('civic time also returns seconds', 28800,
+    CivicTimeLogic.standardOffsetSeconds(43.8256, 87.6168, 'cn'));
+
+  // 南极的非中国站不能套用 +8：挪威 Troll（72.0°S 2.5°E）按本国/经度是 UTC+0。
+  check('non-chinese antarctic station is not +8',
+    !CivicTimeLogic.isChineseAntarcticStation(-72.01, 2.53));
+  equal('troll keeps its own zone', 0,
+    CivicTimeLogic.standardOffsetMinutes(-72.01, 2.53, 'aq'));
+
+  // 端到端：乌鲁木齐快照拿到的当地偏移就是 +8，真太阳时与标准时间相差约 2 小时 10 分。
+  const urumqiSnapshot: SolarSnapshot = SolarTimeSnapshot.compute(
+    Date.UTC(2026, 10, 14, 4, 0, 0), 43.8256, 87.6168, 'zh-Hans',
+    CivicTimeLogic.standardOffsetSeconds(43.8256, 87.6168, 'cn'), 'cn');
+  equal('urumqi snapshot local offset is utc+8', 28800, urumqiSnapshot.localOffsetSeconds);
 }
 
 // ---- 位置地图瓦片 ----
@@ -913,6 +981,288 @@ for (const item of equationCases) {
   check('auto layer still follows place',
     MapTilesLogic.layerForStyle(MapStyle.AUTO, 31.2304, 121.4737).name === 'amap-vector'
     && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
+}
+
+// ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----
+{
+  const width: number = 400;
+  const height: number = 400;
+  const radius: number = SunPathGeometry.RADIUS_RATIO * Math.min(width, height);
+  const centerX: number = width / 2;
+  const centerY: number = height / 2;
+
+  // 1. 赤道春分：日出 06:00、日落 18:00 → 地平线过圆心。
+  const equinox: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 12.0, false, false);
+  near('equinox horizon through center', centerY, equinox.horizonY, 0.5);
+  check('equinox is neither whole day nor whole night',
+    !equinox.isWholeCircleDay() && !equinox.isWholeCircleNight());
+
+  // 2. 上海夏至：昼长 14h → 地平线在圆心下方（≈ 0.263R）。
+  const summer: SunPath = SunPathGeometry.compute(width, height, 4.99, 19.01, 12.0, false, false);
+  check('midsummer horizon below center', summer.horizonY > centerY, `${summer.horizonY}`);
+  near('midsummer horizon offset', centerY + radius * 0.263, summer.horizonY, 1.5);
+  check('midsummer noon sun above horizon', summer.sunY < summer.horizonY);
+
+  // 3. 中纬度冬至：昼长 < 12h → 地平线在圆心上方，正午太阳仍在地平线以上。
+  const winter: SunPath = SunPathGeometry.compute(width, height, 7.01, 16.99, 12.0, false, false);
+  check('midwinter horizon above center', winter.horizonY < centerY, `${winter.horizonY}`);
+  check('midwinter noon sun above horizon', winter.sunY < winter.horizonY);
+
+  // 4. 极昼：地平线沉到圆下方，整圆白天，半夜太阳也在地平线上；没有白天弧可切。
+  const polarDay: SunPath = SunPathGeometry.compute(width, height, null, null, 0.5, true, false);
+  check('polar day horizon below circle', polarDay.horizonY > centerY + radius, `${polarDay.horizonY}`);
+  check('polar day whole circle is day', polarDay.isWholeCircleDay() && !polarDay.isWholeCircleNight());
+  check('polar day midnight sun is up', polarDay.isSunUp());
+  check('polar day has no day arc span', SunPathGeometry.dayArcSpan(null, null) === null);
+
+  // 5. 极夜：地平线升到圆上方，整圆夜晚，正午太阳也在地平线以下；极夜没有上中天标签。
+  const polarNight: SunPath = SunPathGeometry.compute(width, height, null, null, 12.0, false, true);
+  check('polar night horizon above circle', polarNight.horizonY < centerY - radius, `${polarNight.horizonY}`);
+  check('polar night whole circle is night',
+    polarNight.isWholeCircleNight() && !polarNight.isWholeCircleDay());
+  check('polar night noon sun is down', !polarNight.isSunUp());
+  check('polar day keeps transit label', polarDay.hasTransitLabel());
+  check('polar night drops transit label', !polarNight.hasTransitLabel());
+
+  // 6. 12:00 圆顶、00:00 圆底、06:00 最左、18:00 最右；角度定义 θ(12)=0、θ(18)=+π/2、θ(6)=−π/2。
+  const atNoon: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 12.0, false, false);
+  near('12:00 sun x', centerX, atNoon.sunX, 0.5);
+  near('12:00 sun y at top', centerY - radius, atNoon.sunY, 0.5);
+  const atMidnight: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 0.0, false, false);
+  near('00:00 sun x', centerX, atMidnight.sunX, 0.5);
+  near('00:00 sun y at bottom', centerY + radius, atMidnight.sunY, 0.5);
+  const atSix: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 6.0, false, false);
+  near('06:00 sun x at left', centerX - radius, atSix.sunX, 0.5);
+  near('06:00 sun y', centerY, atSix.sunY, 0.5);
+  const atEighteen: SunPath = SunPathGeometry.compute(width, height, 6.0, 18.0, 18.0, false, false);
+  near('18:00 sun x at right', centerX + radius, atEighteen.sunX, 0.5);
+  near('18:00 sun y', centerY, atEighteen.sunY, 0.5);
+  near('angle at 12:00', 0, SunPathGeometry.angleOfDayHour(12.0), 1e-9);
+  near('angle at 18:00', Math.PI / 2, SunPathGeometry.angleOfDayHour(18.0), 1e-9);
+  near('angle at 06:00', -Math.PI / 2, SunPathGeometry.angleOfDayHour(6.0), 1e-9);
+  near('angle at 00:00', Math.PI, Math.abs(SunPathGeometry.angleOfDayHour(0.0)), 1e-9);
+
+  // 7. 圆心在画布中央、半径 = 0.38 × min(w, h)，与宽高比无关。
+  const sizes: number[][] = [[400, 300], [300, 400], [1080, 1080], [100, 800], [720, 1280]];
+  let geometryOk: boolean = true;
+  for (const size of sizes) {
+    const p: SunPath = SunPathGeometry.compute(size[0], size[1], 6.0, 18.0, 12.0, false, false);
+    if (Math.abs(p.centerX - size[0] / 2) > 0.5 || Math.abs(p.centerY - size[1] / 2) > 0.5 ||
+      Math.abs(p.radius - 0.38 * Math.min(size[0], size[1])) > 0.5) {
+      geometryOk = false;
+    }
+  }
+  check('radius and center follow canvas size', geometryOk);
+
+  // 8. 地平线弦端正好落在日出 / 日落刻度上。
+  const chordPath: SunPath = SunPathGeometry.compute(width, height, 4.99, 19.01, 12.0, false, false);
+  const halfChord: number = SunPathGeometry.horizonHalfChord(chordPath);
+  check('horizon chord exists', halfChord > 0);
+  near('chord left end = sunrise x',
+    SunPathGeometry.hourX(chordPath.centerX, chordPath.radius, 4.99), chordPath.centerX - halfChord, 0.5);
+  near('chord right end = sunset x',
+    SunPathGeometry.hourX(chordPath.centerX, chordPath.radius, 19.01), chordPath.centerX + halfChord, 0.5);
+  near('chord y = sunrise y',
+    SunPathGeometry.hourY(chordPath.centerY, chordPath.radius, 4.99), chordPath.horizonY, 0.5);
+
+  // 9. 白天弧扫角 = 昼长比例；跨 24:00 时补 2π，扫角仍为正。
+  const twelveHourArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(6.0, 18.0);
+  check('twelve hour arc exists', twelveHourArc !== null);
+  near('twelve hour arc starts at -180', -180,
+    twelveHourArc === null ? -999 : twelveHourArc.startDegrees, 1e-3);
+  near('twelve hour arc sweeps 180', 180,
+    twelveHourArc === null ? -999 : twelveHourArc.sweepDegrees, 1e-3);
+  const summerArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(4.99, 19.01);
+  near('summer arc sweep', 14.02 / 24 * 360,
+    summerArc === null ? -999 : summerArc.sweepDegrees, 0.1);
+  const wrappedArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(3.0, 0.5);
+  near('wrapped arc sweep', 21.5 / 24 * 360,
+    wrappedArc === null ? -999 : wrappedArc.sweepDegrees, 0.1);
+
+  // ---- 标签锚点：画布比例取卡片真实值 294×194，间距按 UI 的 dp（1dp = 1 单位）----
+  const dialWidth: number = 294;
+  const dialHeight: number = 194;
+  const sideGap: number = 10;
+  const noonGap: number = 8;
+  const labelDrop: number = 18;
+  const labelRise: number = 10;
+  const sideInset: number = 8;
+  const labelWidth: number = 30;
+  const labelHeight: number = 16;
+  const dial = (sunriseHour: number | null, sunsetHour: number | null, trueSolarHour: number = 12,
+    isPolarDay: boolean = false, isPolarNight: boolean = false): SunPath =>
+    SunPathGeometry.compute(dialWidth, dialHeight, sunriseHour, sunsetHour, trueSolarHour,
+      isPolarDay, isPolarNight);
+  const anchors = (path: SunPath, sunriseHour: number | null, sunsetHour: number | null): SunLabelAnchors =>
+    SunPathGeometry.labelAnchors(path, sunriseHour, sunsetHour, sideGap, noonGap, labelDrop, labelRise);
+  const boundaryAt = (path: SunPath, y: number): number[] => {
+    const dy: number = y - path.centerY;
+    const half: number = Math.sqrt(Math.max(0, path.radius * path.radius - dy * dy));
+    return [path.centerX - half, path.centerX + half];
+  };
+
+  // 10. 赤道春分：标签在交点外侧、抬高 labelRise；上中天在圆顶上方；文案锚在圆心。
+  const equinoxPath: SunPath = dial(6.0, 18.0);
+  const equinoxAnchors: SunLabelAnchors = anchors(equinoxPath, 6.0, 18.0);
+  near('equinox sunrise label y', equinoxPath.centerY - labelRise, equinoxAnchors.sunriseY, 0.5);
+  near('equinox sunset label y', equinoxPath.centerY - labelRise, equinoxAnchors.sunsetY, 0.5);
+  const equinoxBounds: number[] = boundaryAt(equinoxPath, equinoxAnchors.sunriseY);
+  near('equinox sunrise label outside left', equinoxBounds[0] - sideGap, equinoxAnchors.sunriseX, 0.5);
+  near('equinox sunset label outside right', equinoxBounds[1] + sideGap, equinoxAnchors.sunsetX, 0.5);
+  near('noon label x', equinoxPath.centerX, equinoxAnchors.noonX, 0.5);
+  near('noon label y above top', equinoxPath.centerY - equinoxPath.radius - noonGap,
+    equinoxAnchors.noonY, 0.5);
+  near('polar label x at center', equinoxPath.centerX, equinoxAnchors.polarX, 0.5);
+  near('polar label y at center', equinoxPath.centerY, equinoxAnchors.polarY, 0.5);
+  check('equinox labels clear of horizon',
+    equinoxAnchors.sunriseY + labelHeight / 2 <= equinoxPath.horizonY - 1);
+
+  // 11. 上海夏至：地平线下移，标签跟着下去（仍比地平线高 labelRise）。
+  const summerPath: SunPath = dial(4.99, 19.01);
+  const summerAnchors: SunLabelAnchors = anchors(summerPath, 4.99, 19.01);
+  check('summer sunrise label below center', summerAnchors.sunriseY > summerPath.centerY,
+    `${summerAnchors.sunriseY}`);
+  near('summer sunrise label clears horizon', summerPath.horizonY - labelRise,
+    summerAnchors.sunriseY, 0.5);
+  near('summer sunset label clears horizon', summerPath.horizonY - labelRise,
+    summerAnchors.sunsetY, 0.5);
+  check('summer labels clear of horizon',
+    summerAnchors.sunriseY + labelHeight / 2 <= summerPath.horizonY - 1);
+
+  // 12. 极昼：保留上中天；没有交点时日出/日落锚点退到圆的最左/最右。
+  const polarDayPath: SunPath = dial(null, null, 12, true, false);
+  const polarDayAnchors: SunLabelAnchors = anchors(polarDayPath, null, null);
+  check('polar day transit label', polarDayPath.hasTransitLabel());
+  near('polar day sunrise anchor left', polarDayPath.centerX - polarDayPath.radius - sideGap,
+    polarDayAnchors.sunriseX, 0.5);
+  near('polar day sunrise anchor y', polarDayPath.centerY, polarDayAnchors.sunriseY, 0.5);
+  near('polar day sunset anchor right', polarDayPath.centerX + polarDayPath.radius + sideGap,
+    polarDayAnchors.sunsetX, 0.5);
+  near('polar day noon label y', polarDayPath.centerY - polarDayPath.radius - noonGap,
+    polarDayAnchors.noonY, 0.5);
+
+  // 13. 极夜：没有上中天，只留圆心那行「极夜」。
+  const polarNightPath: SunPath = dial(null, null, 12, false, true);
+  const polarNightAnchors: SunLabelAnchors = anchors(polarNightPath, null, null);
+  check('polar night no transit label', !polarNightPath.hasTransitLabel());
+  near('polar night label x', polarNightPath.centerX, polarNightAnchors.polarX, 0.5);
+  near('polar night label y', polarNightPath.centerY, polarNightAnchors.polarY, 0.5);
+
+  // 14. 日出 0:00（日落 24:00）：地平线与圆相切于最下方，两个标签贴在底点两侧。
+  const tangentPath: SunPath = dial(0.0, 24.0, 0.0);
+  const tangentAnchors: SunLabelAnchors = anchors(tangentPath, 0.0, 24.0);
+  near('tangent horizon at bottom', tangentPath.centerY + tangentPath.radius, tangentPath.horizonY, 0.5);
+  check('tangent whole circle is day', tangentPath.isWholeCircleDay());
+  near('tangent chord degenerates', 0, SunPathGeometry.horizonHalfChord(tangentPath), 0.5);
+  near('tangent sunrise label y', tangentPath.centerY + tangentPath.radius - labelRise,
+    tangentAnchors.sunriseY, 0.5);
+  near('tangent sunset label y', tangentPath.centerY + tangentPath.radius - labelRise,
+    tangentAnchors.sunsetY, 0.5);
+  const tangentBounds: number[] = boundaryAt(tangentPath, tangentAnchors.sunriseY);
+  near('tangent sunrise label outside bottom-left', tangentBounds[0] - sideGap,
+    tangentAnchors.sunriseX, 0.5);
+  near('tangent sunset label outside bottom-right', tangentBounds[1] + sideGap,
+    tangentAnchors.sunsetX, 0.5);
+  check('tangent sunrise label in left half',
+    tangentAnchors.sunriseX < tangentPath.centerX - tangentPath.radius * 0.3);
+  check('tangent sunset label in right half',
+    tangentAnchors.sunsetX > tangentPath.centerX + tangentPath.radius * 0.3);
+  const tangentDistance: number = Math.sqrt(
+    Math.pow(tangentAnchors.sunriseX - tangentPath.centerX, 2) +
+    Math.pow(tangentAnchors.sunriseY - tangentPath.bottomY(), 2));
+  check('tangent label near bottom point', tangentDistance <= tangentPath.radius * 0.7,
+    `${tangentDistance}`);
+
+  // 15. 高纬度昼长 1 小时：两交点只隔约 15°，标签分列左右交点外侧、彼此不重叠。
+  const shortPath: SunPath = dial(11.5, 12.5);
+  const shortAnchors: SunLabelAnchors = anchors(shortPath, 11.5, 12.5);
+  const leftIntersectionX: number = SunPathGeometry.hourX(shortPath.centerX, shortPath.radius, 11.5);
+  const rightIntersectionX: number = SunPathGeometry.hourX(shortPath.centerX, shortPath.radius, 12.5);
+  check('short day left intersection left of center', leftIntersectionX < shortPath.centerX);
+  check('short day right intersection right of center', rightIntersectionX > shortPath.centerX);
+  check('short day sunrise label left of left intersection',
+    shortAnchors.sunriseX < leftIntersectionX, `${shortAnchors.sunriseX} vs ${leftIntersectionX}`);
+  check('short day sunset label right of right intersection',
+    shortAnchors.sunsetX > rightIntersectionX, `${shortAnchors.sunsetX} vs ${rightIntersectionX}`);
+  check('short day labels apart', shortAnchors.sunsetX - shortAnchors.sunriseX > sideGap * 2);
+  near('short day label drops below top', shortPath.centerY - shortPath.radius + labelDrop,
+    shortAnchors.sunriseY, 0.5);
+  const shortHalfAtLabel: number = Math.sqrt(Math.max(0, shortPath.radius * shortPath.radius -
+    Math.pow(shortAnchors.sunriseY - shortPath.centerY, 2)));
+  near('short day label outside circle', shortPath.centerX - shortHalfAtLabel - sideGap,
+    shortAnchors.sunriseX, 0.5);
+  check('short day label below noon label',
+    shortAnchors.sunriseY - labelHeight / 2 >= shortAnchors.noonY - labelHeight);
+
+  // 16. 五个场景（含极昼/极夜）的标签都不越出 280×194 的小卡片（左右各留 ≥8）。
+  const smallWidth: number = 280;
+  const smallCases: number[][] = [[6.0, 18.0], [4.99, 19.01], [11.5, 12.5], [0.0, 24.0]];
+  let labelsInside: boolean = true;
+  for (const one of smallCases) {
+    const p: SunPath = SunPathGeometry.compute(smallWidth, dialHeight, one[0], one[1], 12, false, false);
+    const a: SunLabelAnchors = SunPathGeometry.labelAnchors(p, one[0], one[1], sideGap, noonGap,
+      labelDrop, labelRise);
+    if (a.sunriseX - labelWidth < sideInset || a.sunsetX + labelWidth > smallWidth - sideInset ||
+      a.noonX - labelWidth / 2 < sideInset || a.noonX + labelWidth / 2 > smallWidth - sideInset ||
+      a.noonY - labelHeight < -1 || a.sunriseY + labelHeight / 2 > dialHeight + 1 ||
+      a.sunsetY + labelHeight / 2 > dialHeight + 1) {
+      labelsInside = false;
+    }
+  }
+  for (const polar of [[true, false], [false, true]]) {
+    const p: SunPath = SunPathGeometry.compute(smallWidth, dialHeight, null, null, 12, polar[0], polar[1]);
+    const a: SunLabelAnchors = SunPathGeometry.labelAnchors(p, null, null, sideGap, noonGap,
+      labelDrop, labelRise);
+    if (a.polarX - labelWidth / 2 < sideInset || a.polarX + labelWidth / 2 > smallWidth - sideInset ||
+      a.polarY - labelHeight / 2 < 0 || a.polarY + labelHeight / 2 > dialHeight) {
+      labelsInside = false;
+    }
+    if (polar[0] && a.noonX - labelWidth / 2 < sideInset) {
+      labelsInside = false;
+    }
+  }
+  check('dial labels stay inside the canvas', labelsInside);
+
+  // 17. 地平线：固定为画布左右各内缩 4（vp），普通日/短昼/冬至/极昼/极夜/相切长度完全相同。
+  const horizonInset: number = 4;
+  const expectedHorizonLength: number = dialWidth - horizonInset * 2;
+  const horizonScenarios: number[][] = [[6.0, 18.0], [4.99, 19.01], [7.01, 16.99], [11.5, 12.5], [0.0, 24.0]];
+  const horizonLengths: number[] = [];
+  let horizonOk: boolean = true;
+  for (const one of horizonScenarios) {
+    const p: SunPath = dial(one[0], one[1]);
+    if (p.radius <= 0) {
+      horizonOk = false;
+    }
+    const s: HorizonSpan = SunPathGeometry.horizonSpan(dialWidth, horizonInset);
+    horizonLengths.push(s.length());
+    if (Math.abs(s.startX - horizonInset) > 0.5 ||
+      Math.abs(s.endX - (dialWidth - horizonInset)) > 0.5 ||
+      Math.abs(s.length() - expectedHorizonLength) > 0.5) {
+      horizonOk = false;
+    }
+  }
+  for (const polar of [[true, false], [false, true]]) {
+    const p: SunPath = dial(null, null, 12, polar[0], polar[1]);
+    if (p.radius <= 0) {
+      horizonOk = false;
+    }
+    const s: HorizonSpan = SunPathGeometry.horizonSpan(dialWidth, horizonInset);
+    horizonLengths.push(s.length());
+    if (Math.abs(s.startX - horizonInset) > 0.5 ||
+      Math.abs(s.endX - (dialWidth - horizonInset)) > 0.5 ||
+      Math.abs(s.length() - expectedHorizonLength) > 0.5) {
+      horizonOk = false;
+    }
+  }
+  check('horizon starts/ends at canvas inset', horizonOk, `${horizonLengths.join(',')}`);
+  check('horizon length identical across all scenarios',
+    Math.max(...horizonLengths) - Math.min(...horizonLengths) < 0.001);
+  near('horizon fixed length', dialWidth - horizonInset * 2, horizonLengths[0], 0.5);
+
+  const narrowSpan: HorizonSpan = SunPathGeometry.horizonSpan(160, horizonInset);
+  near('narrow horizon starts at inset', horizonInset, narrowSpan.startX, 0.5);
+  near('narrow horizon ends at width - inset', 160 - horizonInset, narrowSpan.endX, 0.5);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

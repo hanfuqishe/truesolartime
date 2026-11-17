@@ -469,6 +469,7 @@ let labelCases: [(name: String, path: SunPath, dayLength: Double?)] = [
 
 // 每个场景：算标签锚点，断「锚点不越界 / 不压圆 / 互不重叠 / 地平线贯穿」。
 var labelReports: [String] = []
+var horizonSpans: [CGFloat] = []
 for (name, path, dayLength) in labelCases {
     let labels = SunPathGeometry.labels(path: path, size: dialCanvas, dayLengthHours: dayLength)
     let chord = SunPathGeometry.horizonChord(path: path)
@@ -648,33 +649,24 @@ for (name, path, dayLength) in labelCases {
         )
     }
 
-    // 6) 地平线：正常日 = 弦 + 两侧各 0.2R；极昼 / 极夜 / 相切 = 画满画布。
-    let startX = SunPathGeometry.horizonStartX(path: path, size: dialCanvas)
-    let endX = SunPathGeometry.horizonEndX(path: path, size: dialCanvas)
-    let chordLength = chord.map { $0.end.x - $0.start.x } ?? 0
-    if chordLength > 1 {
-        expect(
-            "\(name)：地平线 = 弦 + 左右各 0.2R（延伸到圆外）",
-            endX - startX >= chordLength + 2 * path.radius * SunPathGeometry.horizonOverhangRatio - 0.5,
-            String(format: "length=%.1f chord=%.1f", endX - startX, chordLength)
-        )
-    } else {
-        expect(
-            "\(name)：没有有效的弦（极昼 / 极夜 / 相切）时地平线画满画布",
-            abs((endX - startX) - (dialCanvas.width - 2 * SunPathGeometry.horizonInset)) < 0.5,
-            String(format: "length=%.1f", endX - startX)
-        )
-    }
-    if name == "赤道春分" {
-        expect(
-            "赤道春分：地平线长度 > 直径（默认情形，需求原文那条）",
-            endX - startX > 2 * path.radius,
-            String(format: "length=%.1f 2R=%.1f", endX - startX, 2 * path.radius)
-        )
-    }
+    // 6) 地平线：固定长度 = 画布宽 − 左右各 4pt；所有场景一样长，不再按弦长延伸。
+    let startX = SunPathGeometry.horizonStartX(size: dialCanvas)
+    let endX = SunPathGeometry.horizonEndX(size: dialCanvas)
+    horizonSpans.append(endX - startX)
     expect(
-        "\(name)：地平线两端不越出画布（左右各留 4pt）",
-        startX >= 0 && endX <= dialCanvas.width && startX <= endX
+        "\(name)：地平线起点 = 4pt",
+        abs(startX - SunPathGeometry.horizonInset) < 0.5,
+        String(format: "start=%.2f", startX)
+    )
+    expect(
+        "\(name)：地平线终点 = 画布宽 − 4pt",
+        abs(endX - (dialCanvas.width - SunPathGeometry.horizonInset)) < 0.5,
+        String(format: "end=%.2f", endX)
+    )
+    expect(
+        "\(name)：地平线长度 = 画布宽 − 8pt",
+        abs((endX - startX) - (dialCanvas.width - 2 * SunPathGeometry.horizonInset)) < 0.5,
+        String(format: "length=%.2f 期望=%.2f", endX - startX, dialCanvas.width - 2 * SunPathGeometry.horizonInset)
     )
 
     // 7) 报告用：锚点坐标。
@@ -682,7 +674,26 @@ for (name, path, dayLength) in labelCases {
         "\(name)：日出 \(labelText(labels.sunrise)) / 日落 \(labelText(labels.sunset)) / 上中天 \(labelText(labels.noon))"
     )
 }
-print("标签锚点（画布 313×194，半径 \(String(format: "%.2f", canvasRadius))）：")
+expect(
+    "六种场景的地平线长度完全相同（普通日 / 短昼 / 极昼 / 极夜 / 相切）",
+    (horizonSpans.max() ?? 0) - (horizonSpans.min() ?? 0) < 0.001,
+    horizonSpans.map { String(format: "%.2f", $0) }.joined(separator: " / ")
+)
+expectClose(
+    "地平线长度 = 313 − 8（画布左右各留 4pt）",
+    horizonSpans.first ?? 0,
+    dialCanvas.width - 2 * SunPathGeometry.horizonInset,
+    tolerance: 0.5,
+    unit: " pt"
+)
+expect(
+    "地平线两端固定为 4 … 画布宽−4",
+    abs(SunPathGeometry.horizonStartX(size: dialCanvas) - 4) < 0.5
+        && abs(SunPathGeometry.horizonEndX(size: dialCanvas) - (dialCanvas.width - 4)) < 0.5
+)
+print("标签锚点（画布 313×194，半径 \(String(format: "%.2f", canvasRadius))，地平线 x = "
+      + String(format: "%.0f…%.0f", SunPathGeometry.horizonStartX(size: dialCanvas), SunPathGeometry.horizonEndX(size: dialCanvas))
+      + "）：")
 for report in labelReports {
     print("  · \(report)")
 }

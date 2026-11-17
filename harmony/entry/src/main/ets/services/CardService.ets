@@ -18,7 +18,7 @@ import { AxisSegment, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { TimeFormat } from '../core/TimeFormat';
-import { ZoneTable } from '../core/ZoneTable';
+import { CivicTimeLogic } from '../core/CivicTime';
 import { NearbyCity, CityIndex } from '../core/CityIndex';
 import { HourPoint, WeatherLogic, WeatherSlot, WeatherSnapshot } from '../core/Weather';
 import { ThemeMode } from '../core/ThemeMode';
@@ -115,8 +115,7 @@ export class CardService {
       ? place.countryCode
       : AppStore.district().countryCode;
     const snapshot: SolarSnapshot = SolarTimeSnapshot.compute(now, place.latitude, place.longitude, language,
-      ZoneTable.offsetSeconds(countryCode, place.longitude,
-        SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude, countryCode)), countryCode);
+      CivicTimeLogic.standardOffsetSeconds(place.latitude, place.longitude, countryCode), countryCode);
     const data: CardData = new CardData();
 
     data.city = CardService.cityName(place.latitude, place.longitude, language);
@@ -130,11 +129,8 @@ export class CardService {
     data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
     // 左栏标签要和 Android 一致显示 UTC 偏移：这里必须用**法定时区**的偏移，
     // 不是下面那个 trueSolarOffset（那是真太阳时相对当地标准时的差，北京会算出 +8:01）。
-    const zoneSeconds: number = ZoneTable.offsetSeconds(
-      countryCode,
-      place.longitude,
-      SolarTimeMath.standardZoneOffsetSeconds(place.latitude, place.longitude, countryCode)
-    );
+    const zoneSeconds: number = CivicTimeLogic.standardOffsetSeconds(
+      place.latitude, place.longitude, countryCode);
     data.utcLabel = TimeFormat.utcOffsetLabel(zoneSeconds);
     data.offsetText = TimeFormat.signedDuration(snapshot.offsetSeconds, language);
     data.nowMinute = snapshot.trueSolarSeconds / 60;

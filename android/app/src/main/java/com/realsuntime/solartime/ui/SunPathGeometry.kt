@@ -99,8 +99,11 @@ data class SunLabelAnchors(
 )
 
 /**
- * 地平线要画的范围（x 起止，像素）。弦只是它的中段，两侧还会各伸出一截（见
- * [SunPathGeometry.horizonSpan]），这样它读起来才是「地平线」而不是一段圆弧的弦。
+ * 地平线要画的范围（x 起止，像素）。
+ *
+ * 长度是**固定**的：画布左右各内缩 [SunPathGeometry.horizonSpan] 的 `sideInset`（4dp），
+ * 与圆心 / 半径 / 昼长都无关 —— 五种场景（普通日、短昼、极昼、极夜、0:00 相切）画出来一样长，
+ * 这样它读起来才是「地平线」，而不是某一段圆弧的弦。
  */
 data class HorizonSpan(val startX: Float, val endX: Float) {
     val length: Float get() = endX - startX
@@ -124,12 +127,6 @@ object SunPathGeometry {
      * 极夜时 `horizonY < centerY − radius`（整圆在夜晚），渲染时整圆不会被切成两段弧。
      */
     const val POLAR_HORIZON_RATIO = 1.25f
-
-    /**
-     * 地平线向圆外伸出多少（半径的倍数）：0.2R 就是**直径的 10%**（每侧）。
-     * 弦 + 两侧延伸 = 2.4R 长，肉眼能看出「一条贯穿的线」，又不会跑到卡片边缘去撞时间标签。
-     */
-    const val HORIZON_EXTENSION_RATIO = 0.2f
 
     private const val HOURS_PER_DAY = 24.0
 
@@ -294,21 +291,15 @@ object SunPathGeometry {
     }
 
     /**
-     * 地平线的绘制范围：以弦 [horizonHalfChord] 为中段，左右各伸出 `0.2R`
-     * （[HORIZON_EXTENSION_RATIO]），两端都夹在画布内（各留 [sideInset]）。
+     * 地平线的绘制范围：**固定为画布左右各内缩 [sideInset]**，与圆心、半径、昼长全都无关。
      *
-     * 极昼 / 极夜（以及日出 0:00 的相切）时没有弦，直接画满画布 —— 那时候地平线整个在圆外，
-     * 短一截反而看不懂它在哪一侧。
+     * 长度恒等于 `canvasWidth − 2 × sideInset`（卡片里 sideInset = 4dp），所以普通日、短昼、
+     * 极昼、极夜、0:00 相切五种场景画出来一样长 —— 它是一条贯穿整个画面的地平线，
+     * 不是「圆的那条弦」。极昼极夜时地平线在圆外，同样画满这一条。
      */
-    fun horizonSpan(path: SunPath, canvasWidth: Float, sideInset: Float): HorizonSpan {
+    fun horizonSpan(canvasWidth: Float, sideInset: Float): HorizonSpan {
         val inset = sideInset.coerceIn(0f, canvasWidth / 2f)
-        val chordHalf = horizonHalfChord(path)
-        if (chordHalf <= 0f) return HorizonSpan(inset, canvasWidth - inset)
-        val extension = path.radius * HORIZON_EXTENSION_RATIO
-        return HorizonSpan(
-            startX = (path.centerX - chordHalf - extension).coerceAtLeast(inset),
-            endX = (path.centerX + chordHalf + extension).coerceAtMost(canvasWidth - inset),
-        )
+        return HorizonSpan(startX = inset, endX = canvasWidth - inset)
     }
 
     /**

@@ -307,42 +307,35 @@ private struct SunDialCanvas: View {
 
     // MARK: 地平线
 
-    /// 地平线：正常日是「弦 + 左右各伸 0.2R」，圆外那段压到 0.55 不透明度；
-    /// 极昼 / 极夜 / 相切时没有有效的弦，就画满整条画布（左右各留 4pt）。
+    /// 地平线：**一条贯穿画布的横线**，长度固定为「画布宽 − 左右各 4pt」（与安卓一致）。
+    ///
+    /// 所有场景（普通日 / 短昼 / 极昼 / 极夜 / 相切）一样长、一样颜色、一样不透明度，
+    /// 不再按弦长延伸、也不分圆内 / 圆外两段；日出 / 日落交点仍画两个刻度点（相切时只有一个）。
     private func drawHorizon(_ context: inout GraphicsContext, size: CGSize) {
-        let startX = SunPathGeometry.horizonStartX(path: path, size: size)
-        let endX = SunPathGeometry.horizonEndX(path: path, size: size)
-        let color = palette.onSurfaceVariant
-        let chord = SunPathGeometry.horizonChord(path: path)
+        let startX = SunPathGeometry.horizonStartX(size: size)
+        let endX = SunPathGeometry.horizonEndX(size: size)
 
-        func strokeLine(from: CGFloat, to: CGFloat, opacity: Double) {
-            guard to > from + 0.5 else { return }
-            var line = Path()
-            line.move(to: CGPoint(x: from, y: path.horizonY))
-            line.addLine(to: CGPoint(x: to, y: path.horizonY))
-            // 比白天弧细：1pt。
-            context.stroke(line, with: .color(color.opacity(opacity)), lineWidth: 1)
+        var line = Path()
+        line.move(to: CGPoint(x: startX, y: path.horizonY))
+        line.addLine(to: CGPoint(x: endX, y: path.horizonY))
+        // 比白天弧（2.5pt）细：1pt；单色单不透明度。
+        // 用 `onSurfaceVariant` 而不是 `outlineVariant`：后者在夜间主题是 #24304F，对卡片只有 1.26:1，
+        // 等于看不见（夜间可见性是硬要求）；这一档白天 2.6:1、夜间 3.6:1，两套都读得出来。
+        context.stroke(
+            line,
+            with: .color(palette.onSurfaceVariant.opacity(0.7)),
+            lineWidth: 1
+        )
+
+        // 交点就是日出 / 日落（各画一个小刻度点）；弦长为 0（相切）时只留一个点。
+        guard let chord = SunPathGeometry.horizonChord(path: path) else { return }
+        var dotCenters = [chord.start]
+        if chord.end.x - chord.start.x > 1 {
+            dotCenters.append(chord.end)
         }
-
-        if let chord, chord.end.x > chord.start.x + 1 {
-            strokeLine(from: startX, to: chord.start.x, opacity: 0.55)
-            strokeLine(from: chord.start.x, to: chord.end.x, opacity: 1.0)
-            strokeLine(from: chord.end.x, to: endX, opacity: 0.55)
-
-            // 交点就是日出 / 日落（各画一个小刻度点）。
-            let dayColor = palette.primary
-            for point in [chord.start, chord.end] {
-                let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
-                context.fill(Path(ellipseIn: dot), with: .color(dayColor))
-            }
-        } else {
-            // 极昼 / 极夜 / 相切：一条贯穿画布的线；相切时那一点正好落在圆底，补一个刻度点。
-            strokeLine(from: startX, to: endX, opacity: 1.0)
-            if let chord {
-                let dayColor = palette.primary
-                let dot = CGRect(x: chord.start.x - 2.5, y: chord.start.y - 2.5, width: 5, height: 5)
-                context.fill(Path(ellipseIn: dot), with: .color(dayColor))
-            }
+        for point in dotCenters {
+            let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
+            context.fill(Path(ellipseIn: dot), with: .color(palette.primary))
         }
     }
 

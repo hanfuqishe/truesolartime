@@ -9,7 +9,8 @@ import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
-import { ZoneTable } from '../core/ZoneTable';
+import { CivicTimeLogic } from '../core/CivicTime';
+import { HorizonSpan, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSlot, WeatherSource, WeatherSnapshot } from '../core/Weather';
 import { ThemeMode } from '../core/ThemeMode';
@@ -61,14 +62,30 @@ const GPS_INTERVAL_MILLIS: number = 60 * 1000;
  */
 const WIDE_LAYOUT_BREAKPOINT: number = 560;
 /**
- * 宽屏并排时两张卡片的最小高度（vp）。
+ * 太阳卡圆盘画布的高度（vp，对应 Android 的 `SUN_DIAL_HEIGHT = 194.dp`）。
  *
- * ArkUI 的 Row 没有 Stretch 对齐，两卡自然高度不同就会一高一矮。实测（MatePad Pro 13，
- * 宽 916px/458vp 每栏）：大卡片自然高约 193vp、太阳卡片约 226vp（其中太阳弧线 110vp）。
- * 所以宽屏时把弧线压到 90vp，再给两卡同一个 210vp 的 minHeight —— 两者底边对齐，
- * 大卡片只多一点留白。窄屏传 0，等于不加约束。
+ * 画布**满卡片内容宽 + 定高**：几何层取 `radius = 0.38 × min(w, h)`，定高后半径只跟高度走，
+ * 手机 294×194 与平板放大后是同一套版式。
  */
-const WIDE_CARD_MIN_HEIGHT: number = 252;
+const SUN_DIAL_HEIGHT: number = 194;
+/**
+ * 太阳卡的自然高度（vp，Android ≈282 = 上下内边距 20×2 + 标题行 + 8 + 194 + 4 + 白昼行）。
+ *
+ * 宽屏并排时 ArkUI 的 Row 没有 Stretch，给两张卡同一个 minHeight 才能底边对齐；
+ * 这个值也正好是太阳卡的自然高度，手机上不会多出留白。
+ */
+const SUN_CARD_HEIGHT: number = 282;
+/** 圆盘外侧标签的间距（vp，与 Android 的 SUN_LABEL_* 常量一一对应）。 */
+const SUN_LABEL_GAP: number = 10;
+const SUN_NOON_LABEL_GAP: number = 8;
+const SUN_LABEL_TOP_INSET: number = 18;
+const SUN_LABEL_RISE: number = 10;
+/** 地平线在画布左右各内缩多少（vp）：与 Android 的 `SUN_HORIZON_INSET = 4.dp` 一致。 */
+const SUN_HORIZON_INSET: number = 4;
+/** 一天的秒数：极昼时白昼时长按整天算。 */
+const DAY_SECONDS: number = 86_400;
+/** 真太阳时秒数 → 小时数（0–24，含小数）。 */
+const SECONDS_PER_HOUR: number = 3600;
 /**
  * 首页大卡片的时间字号规则（与安卓版一致）：
  *   1. 秒恒为主字号的 1/2（半高）；
@@ -194,8 +211,9 @@ struct Index {
   private sunSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private sunCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.sunSettings);
   private sunCtxReady: boolean = false;
-  private sunW: number = 0;
-  private sunH: number = 0;
+  /** 圆盘画布的实测尺寸（vp）：标签锚点靠它算，Canvas 也按它重绘。 */
+  @State sunDialW: number = 0;
+  @State sunDialH: number = 0;
   /** 地图视口尺寸（像素）与双指缩放前的级别。 */
   private mapWpx: number = 0;
   private mapHpx: number = 0;
@@ -294,15 +312,14 @@ struct Index {
   }
 
   /**
-   * 观测点的标准时区偏移（秒）：有国家码按国家码查表，表里没有才兜底。
+   * 观测点的标准时区偏移（秒）——「所在国的标准时间」，不是坐标所在的 tzdata 时区。
    *
-   * 兜底交给 `SolarTimeMath.standardZoneOffsetSeconds`：它按「国家码优先、没有国家码才看
-   * 经纬度包围盒」判是不是中国境内（境内恒 +8，境外按经度近似）。
+   * 判定统一在 `core/CivicTime`：中国（含港澳台）与中国南极考察站恒 +8，其余按国家表 +
+   * 多时区大国经度分段。界面上的 UTC 标签、标准时钟、日出日落与真太阳时基准都用这一个值。
    */
   private zoneOffsetSeconds(): number {
-    const countryCode: string = this.countryCodeOfPlace();
-    return ZoneTable.offsetSeconds(countryCode, this.place.longitude,
-      SolarTimeMath.standardZoneOffsetSeconds(this.place.latitude, this.place.longitude, countryCode));
+    return CivicTimeLogic.standardOffsetSeconds(this.place.latitude, this.place.longitude,
+      this.countryCodeOfPlace());
   }
 
   private tick(): void {
@@ -329,8 +346,8 @@ struct Index {
       this.lastGpsMillis = now;
       this.syncGpsSilently();
     }
-    // 太阳弧线上的圆点跟着真太阳时走，每秒重画一次。
-    this.drawSunArc();
+    // 圆盘上的太阳点跟着真太阳时走，每秒重画一次。
+    this.drawSunDial();
     // 天气／区划名刚一更新（例如刚在设置页换了城市）就立刻反映到界面上，不等 30 秒的节流。
     const weatherRevision: number = WeatherService.revision();
     const districtRevision: number = DistrictService.revision();
@@ -741,16 +758,6 @@ struct Index {
     return this.inKeyTime ? this.bandColor() : '#FFFFFF';
   }
 
-  private sunSummary(): string {
-    if (this.snapshot.polar === PolarState.MIDNIGHT_SUN) {
-      return '极昼：太阳整日不落';
-    }
-    if (this.snapshot.polar === PolarState.POLAR_NIGHT) {
-      return '极夜：太阳整日不升';
-    }
-    return this.snapshot.hasSunrise() ? '' : '当天没有日出日落';
-  }
-
   // ---- 视图 ----
 
   @Styles
@@ -1044,112 +1051,120 @@ struct Index {
     .constraintSize({ minHeight: this.wideCardMinHeight() })
   }
 
-  /** 太阳弧线：与 Android 的 SunArc 同款——虚线弧 + 地平线 + 柔光圆点标出当前太阳位置。 */
+  /**
+   * 太阳卡（v2 版式，对齐 Android 的 SunCard / SunDial）：
+   * 标题行 + 满宽定高 194vp 的圆盘 + 画布下方居中的白昼行；
+   * 圆盘上只画弧线/地平线/刻度/太阳点，日出·上中天·日落是**真正的 Text** 叠在画布上，
+   * 多语言不会被 Canvas 截断。右栏四行已删除，卡片高度 ≈282vp。
+   */
   @Builder
   sunCard() {
     Column() {
       Row() {
-        Text('太阳')
-          .fontSize(this.cs(13))
-          .fontFamily(this.cardFont(FontWeight.Normal))
-          .lineHeight(this.cardLineHeight(this.cs(13)))
+        Text('太阳位置 · 当地时间')
+          .fontSize(this.cs(14))
+          .fontFamily(this.cardFont(FontWeight.Medium))
+          .lineHeight(this.cardLineHeight(this.cs(14)))
           .fontColor(this.palette.subtle)
           .layoutWeight(1)
         Text(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`)
-          .fontSize(this.cs(11))
-          .fontFamily(this.cardFont(FontWeight.Normal))
-          .lineHeight(this.cardLineHeight(this.cs(11)))
+          .fontSize(this.cs(12))
+          .fontFamily(this.cardFont(FontWeight.Medium))
+          .lineHeight(this.cardLineHeight(this.cs(12)))
           .fontColor(this.palette.accent)
       }
       .width('100%')
 
-      Canvas(this.sunCtx)
-        .width('100%')
-        // 宽屏缩放后取 84×1.35 ≈ 113vp，正好让太阳卡的自然高度与左侧大卡片齐平；窄屏仍 110vp。
-        .height(this.isWideLayout() ? this.cs(84) : 110)
-        .margin({ top: 6 })
-        .onReady(() => {
-          this.sunCtxReady = true;
-          this.drawSunArc();
-        })
-        .onAreaChange((oldValue: Area, newValue: Area) => {
-          this.sunW = Number(newValue.width);
-          this.sunH = Number(newValue.height);
-          this.drawSunArc();
-        })
+      Stack() {
+        Canvas(this.sunCtx)
+          .width('100%')
+          .height(this.cs(SUN_DIAL_HEIGHT))
+          .onReady(() => {
+            this.sunCtxReady = true;
+            this.drawSunDial();
+          })
+          .onAreaChange((oldValue: Area, newValue: Area) => {
+            const width: number = Number(newValue.width);
+            const height: number = Number(newValue.height);
+            if (Math.abs(width - this.sunDialW) > 0.5 || Math.abs(height - this.sunDialH) > 0.5) {
+              this.sunDialW = width;
+              this.sunDialH = height;
+              this.drawSunDial();
+            }
+          })
+        // 标签层：等画布量到尺寸再摆；坐标全部来自 core/SunPath 的纯几何。
+        this.sunDialLabelLayer()
+      }
+      .width('100%')
+      .height(this.cs(SUN_DIAL_HEIGHT))
+      .margin({ top: this.cs(8) })
 
-      if (this.snapshot.polar === PolarState.NORMAL) {
-        Row() {
-          Column() {
-            Text('日出')
-              .fontSize(this.cs(10))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(10)))
-              .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
-              .fontSize(this.cs(17))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(17)))
-              .fontColor(this.palette.text)
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Center)
-          Column() {
-            Text('上中天')
-              .fontSize(this.cs(10))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(10)))
-              .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
-              .fontSize(this.cs(17))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(17)))
-              .fontColor(this.palette.text)
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Center)
-          Column() {
-            Text('日落')
-              .fontSize(this.cs(10))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(10)))
-              .fontColor(this.palette.subtle)
-            Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
-              .fontSize(this.cs(17))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(17)))
-              .fontColor(this.palette.text)
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Center)
-        }
+      Text(`白昼 ${this.daylightLine()}`)
+        .fontSize(this.cs(12))
+        .fontFamily(this.cardFont(FontWeight.Normal))
+        .lineHeight(this.cardLineHeight(this.cs(12)))
+        .fontColor(this.palette.subtle)
+        .textAlign(TextAlign.Center)
+        .margin({ top: this.cs(4) })
         .width('100%')
-        .margin({ top: 10 })
-        Text(`白昼 ${this.snapshot.daylightSeconds >= 0
-          ? TimeFormat.duration(this.snapshot.daylightSeconds, this.language)
-          : '--'} · 真太阳时 ${TimeFormat.clock(this.snapshot.sunriseTrueSolarSeconds)} / ` +
-          `${TimeFormat.clock(this.snapshot.sunsetTrueSolarSeconds)}`)
-          .fontSize(this.cs(10))
-          .fontColor(this.palette.subtle)
-          .margin({ top: 8 })
-          .width('100%')
-      } else {
-        Text(this.sunSummary())
+    }
+    .width('100%')
+    .borderRadius(18)
+    .padding(this.cs(20))
+    .backgroundColor(this.palette.card)
+    // 圆盘定高后卡片自然高度 ≈282vp；宽屏并排时两卡取同一个最小高度，底边对齐。
+    .constraintSize({ minHeight: this.cs(SUN_CARD_HEIGHT) })
+  }
+
+  /**
+   * 圆盘上的文字标签层：日出（右对齐）、日落（左对齐）、上中天（居中）、极昼／极夜（圆心）。
+   *
+   * 锚点由 `SunPathGeometry.labelAnchors` 算出，用 `position` + `markAnchor` 定位：
+   * 日出锚点是文字右边缘+竖直中心、日落是左边缘+竖直中心、上中天是水平中心+底边、
+   * 极昼极夜是文字中心 —— 与 Android 的 `DialLabel` 摆位一致。
+   */
+  @Builder
+  sunDialLabelLayer() {
+    if (this.sunDialW > 0 && this.sunDialH > 0) {
+      if (this.snapshot.polar === PolarState.NORMAL) {
+        Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
           .fontSize(this.cs(11))
-          .fontFamily(this.cardFont(FontWeight.Normal))
+          .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
-          .fontColor(this.palette.subtle)
-          .margin({ top: 8 })
-          .width('100%')
+          .fontColor(this.palette.text)
+          .maxLines(1)
+          .position({ x: this.sunAnchors().sunriseX, y: this.sunAnchors().sunriseY })
+          .markAnchor({ x: '100%', y: '50%' })
+        Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
+          .fontSize(this.cs(11))
+          .fontFamily(this.cardFont(FontWeight.Medium))
+          .lineHeight(this.cardLineHeight(this.cs(11)))
+          .fontColor(this.palette.text)
+          .maxLines(1)
+          .position({ x: this.sunAnchors().sunsetX, y: this.sunAnchors().sunsetY })
+          .markAnchor({ x: 0, y: '50%' })
+      } else {
+        Text(this.snapshot.polar === PolarState.MIDNIGHT_SUN ? '极昼' : '极夜')
+          .fontSize(this.cs(11))
+          .fontFamily(this.cardFont(FontWeight.Medium))
+          .lineHeight(this.cardLineHeight(this.cs(11)))
+          .fontColor(this.palette.accent)
+          .maxLines(1)
+          .position({ x: this.sunAnchors().polarX, y: this.sunAnchors().polarY })
+          .markAnchor({ x: '50%', y: '50%' })
+      }
+      // 极夜没有上中天（太阳整日不升），极昼保留。
+      if (this.snapshot.polar !== PolarState.POLAR_NIGHT) {
+        Text(TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
+          .fontSize(this.cs(11))
+          .fontFamily(this.cardFont(FontWeight.Medium))
+          .lineHeight(this.cardLineHeight(this.cs(11)))
+          .fontColor(this.palette.text)
+          .maxLines(1)
+          .position({ x: this.sunAnchors().noonX, y: this.sunAnchors().noonY })
+          .markAnchor({ x: '50%', y: '100%' })
       }
     }
-    .cardStyle()
-    .backgroundColor(this.palette.card)
-    // 与左侧大卡片同一个最小高度：宽屏并排时底边对齐（窄屏传 0，等于不约束）
-    .constraintSize({ minHeight: this.wideCardMinHeight() })
   }
 
   /**
@@ -1240,92 +1255,178 @@ struct Index {
     .backgroundColor(this.palette.card)
   }
 
-  /** 白昼进度：真太阳时在日出与日落之间的比例；没有日出日落时取 0.5。 */
-  private daylightProgress(): number {
-    const sunrise: number = this.snapshot.sunriseTrueSolarSeconds;
-    const sunset: number = this.snapshot.sunsetTrueSolarSeconds;
-    if (sunrise < 0 || sunset < 0) {
-      return 0.5;
+  /** 白昼读数：极昼按整天算、极夜按 0，其余用日出日落算出来的秒数。 */
+  private daylightLine(): string {
+    if (this.snapshot.polar === PolarState.MIDNIGHT_SUN) {
+      return TimeFormat.duration(DAY_SECONDS, this.language);
     }
-    const start: number = sunrise;
-    let end: number = sunset;
-    if (end <= start) {
-      end += 86400;
+    if (this.snapshot.polar === PolarState.POLAR_NIGHT) {
+      return TimeFormat.duration(0, this.language);
     }
-    let current: number = this.solarSecond;
-    if (current < start) {
-      current += 86400;
-    }
-    const span: number = end - start;
-    if (span <= 0) {
-      return 0.5;
-    }
-    return Math.min(1, Math.max(0, (current - start) / span));
+    return this.snapshot.daylightSeconds >= 0
+      ? TimeFormat.duration(this.snapshot.daylightSeconds, this.language)
+      : '--';
+  }
+
+  /** 圆盘几何的入口：画布尺寸 + 日出/日落/当前真太阳时（小时数）。 */
+  private sunDialPath(): SunPath {
+    const width: number = this.sunDialW > 0 ? this.sunDialW : this.cs(294);
+    const height: number = this.sunDialH > 0 ? this.sunDialH : this.cs(SUN_DIAL_HEIGHT);
+    return SunPathGeometry.compute(width, height, this.sunriseDialHour(), this.sunsetDialHour(),
+      this.snapshot.trueSolarSeconds / SECONDS_PER_HOUR,
+      this.snapshot.polar === PolarState.MIDNIGHT_SUN,
+      this.snapshot.polar === PolarState.POLAR_NIGHT);
+  }
+
+  /** 三个时间标签 + 极昼极夜文案的锚点。 */
+  private sunAnchors(): SunLabelAnchors {
+    return SunPathGeometry.labelAnchors(this.sunDialPath(), this.sunriseDialHour(), this.sunsetDialHour(),
+      this.cs(SUN_LABEL_GAP), this.cs(SUN_NOON_LABEL_GAP), this.cs(SUN_LABEL_TOP_INSET),
+      this.cs(SUN_LABEL_RISE));
+  }
+
+  /** 日出对应的**当地真太阳时**（小时数）；极昼/极夜没有日出，返回 null。 */
+  private sunriseDialHour(): number | null {
+    return this.snapshot.polar === PolarState.NORMAL
+      ? this.snapshot.sunriseTrueSolarSeconds / SECONDS_PER_HOUR
+      : null;
+  }
+
+  /** 日落对应的**当地真太阳时**（小时数）；极昼/极夜没有日落，返回 null。 */
+  private sunsetDialHour(): number | null {
+    return this.snapshot.polar === PolarState.NORMAL
+      ? this.snapshot.sunsetTrueSolarSeconds / SECONDS_PER_HOUR
+      : null;
   }
 
   /**
-   * 画弧：起点 (6%, 88%)、终点 (94%, 88%)、控制点 (50%, -42%) 的二次曲线，
-   * 与 Android 的 SunArc 参数一致；太阳位置按白昼进度取曲线上的点。
+   * 画圆盘（Canvas 只画图形，文字标签在 `sunDialLabelLayer` 里用真正的 Text 叠上去）：
+   * 外圈淡描边、白天实线弧 / 夜晚虚线弧、地平线（弦 + 两侧 0.2R）、日出日落刻度、当前太阳点。
+   * 颜色全部取 `palette`（白天/夜间两套），坐标全部来自 `core/SunPath.ets`。
    */
-  private drawSunArc(): void {
-    if (!this.sunCtxReady) {
+  private drawSunDial(): void {
+    if (!this.sunCtxReady || this.sunDialW <= 0 || this.sunDialH <= 0) {
       return;
     }
-    const width: number = this.sunW;
-    const height: number = this.sunH;
-    if (width <= 0 || height <= 0) {
-      return;
-    }
+    const path: SunPath = this.sunDialPath();
     const ctx: CanvasRenderingContext2D = this.sunCtx;
-    // Android 的 SunArc 画在 Compose Canvas 上，线宽与虚线间隔都是**像素**；
-    // 这里的 Canvas 用 vp，所以统一按屏幕密度换算，两边看起来才是同一套虚线。
-    const density: number = vp2px(1);
-    const horizonY: number = height * 0.88;
-    const startX: number = width * 0.06;
-    const endX: number = width * 0.94;
-    const controlX: number = width / 2;
-    const controlY: number = -height * 0.42;
-    const trackColor: string = this.palette.divider;
-
+    const width: number = this.sunDialW;
+    const height: number = this.sunDialH;
+    const accent: string = this.palette.accent;
+    const outline: string = this.palette.subtle;
+    const rim: string = this.palette.divider;
+    const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
 
+    // 外圆淡描边：比弧线再外扩 3vp 当「表圈」，否则会被整圈的弧线盖掉。
     ctx.beginPath();
-    ctx.moveTo(startX, horizonY);
-    ctx.quadraticCurveTo(controlX, controlY, endX, horizonY);
-    ctx.setLineDash([10 / density, 10 / density]);
-    ctx.lineWidth = 2.5 / density;
-    ctx.strokeStyle = trackColor;
-    ctx.stroke();
-
-    ctx.beginPath();
+    ctx.arc(path.centerX, path.centerY, path.radius + 3, 0, full);
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 1;
     ctx.setLineDash([]);
-    ctx.moveTo(0, horizonY);
-    ctx.lineTo(width, horizonY);
-    ctx.lineWidth = 2 / density;
-    ctx.strokeStyle = trackColor;
     ctx.stroke();
 
-    const t: number = this.daylightProgress();
-    const u: number = 1 - t;
-    const sunX: number = u * u * startX + 2 * u * t * controlX + t * t * endX;
-    const sunY: number = u * u * horizonY + 2 * u * t * controlY + t * t * horizonY;
-    const isDay: boolean = this.snapshot.isDay();
-    const sunColor: string = isDay ? '#FFB300' : '#9AA7BF';
-    if (isDay) {
+    // 白天弧 / 夜晚弧；极昼极夜没有「日出→日落」那一段，整圆一种性质。
+    const span: SunArcSpan | null = SunPathGeometry.dayArcSpan(this.sunriseDialHour(), this.sunsetDialHour());
+    if (span === null) {
       ctx.beginPath();
-      ctx.fillStyle = '#2EFFB300';
-      ctx.arc(sunX, sunY, 20 / density, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(path.centerX, path.centerY, path.radius, 0, full);
+      if (path.isWholeCircleDay()) {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 6]);
+      }
+      ctx.stroke();
+    } else {
+      const start: number = span.startDegrees * Math.PI / 180;
+      const sweep: number = span.sweepDegrees * Math.PI / 180;
+      ctx.beginPath();
+      ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, start + full);
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'butt';
+      ctx.setLineDash([6, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
+
+    // 地平线：固定长度的一条横线（画布左右各内缩 4vp），高度由日出时刻决定。
+    // 普通日 / 短昼 / 极昼 / 极夜 / 0:00 相切全部画满这一条，一路贯穿、同色同宽 ——
+    // 圆内那一段就是「弦」，但不再单独加强，否则短昼时会看起来断成两截。
+    // 颜色用 subtle（相当于 Android 的 onSurfaceVariant）：divider 在夜间太暗，几乎看不见。
+    const horizon: HorizonSpan = SunPathGeometry.horizonSpan(width, this.cs(SUN_HORIZON_INSET));
     ctx.beginPath();
-    ctx.fillStyle = sunColor;
-    ctx.arc(sunX, sunY, 7 / density, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = outline;
+    ctx.lineWidth = 1;
+    ctx.moveTo(horizon.startX, path.horizonY);
+    ctx.lineTo(horizon.endX, path.horizonY);
+    ctx.stroke();
+
+    // 日出 / 日落刻度：正好落在地平线与圆的交点上。
+    const sunriseHour: number | null = this.sunriseDialHour();
+    const sunsetHour: number | null = this.sunsetDialHour();
+    if (span !== null && sunriseHour !== null && sunsetHour !== null) {
+      for (const hour of [sunriseHour, sunsetHour]) {
+        ctx.beginPath();
+        ctx.fillStyle = accent;
+        ctx.arc(SunPathGeometry.hourX(path.centerX, path.radius, hour),
+          SunPathGeometry.hourY(path.centerY, path.radius, hour), 2.5, 0, full);
+        ctx.fill();
+      }
+    }
+
+    // 当前太阳点：地平线以上是亮色实心点 + 柔光，以下是空心暗色点。
+    if (path.isSunUp()) {
+      ctx.beginPath();
+      ctx.fillStyle = this.alphaColor(accent, 0.18);
+      ctx.arc(path.sunX, path.sunY, 6.75, 0, full);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = accent;
+      ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
+      ctx.fill();
+    } else {
+      // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫会与虚线糊在一起。
+      ctx.beginPath();
+      ctx.fillStyle = this.palette.card;
+      ctx.arc(path.sunX, path.sunY, 6, 0, full);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 1.5;
+      ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
+      ctx.stroke();
+    }
   }
+
+  /** 给 `#RRGGBB` 叠一层 alpha（`#AARRGGBB`）：Canvas 的 fillStyle/strokeStyle 只吃字符串颜色。 */
+  private alphaColor(color: string, alpha: number): string {
+    if (color.length === 7) {
+      const value: number = Math.round(alpha * 255);
+      const hex: string = value < 16 ? `0${value.toString(16)}` : value.toString(16);
+      return `#${hex}${color.substring(1)}`.toUpperCase();
+    }
+    return color;
+  }
+
   /**
-   * 宽屏并排时两张卡片的最小高度（vp）：两者取同一个值，底边自然对齐。
+   * 宽屏并排时两张卡片的最小高度（vp）：都取太阳卡的自然高度，底边自然对齐。
    * 窄屏返回 0 —— `constraintSize({ minHeight: 0 })` 等于不加约束。
    */
+  private wideCardMinHeight(): number {
+    return this.isWideLayout() ? this.cs(SUN_CARD_HEIGHT) : 0;
+  }
   /**
    * 地图视口的宽高比：手机 4:3、平板（并排两栏时）16:9 —— 与安卓版同一套规则。
    * 用比例而不是固定高度，不同尺寸的屏幕/分屏下都不会变形或过矮。
@@ -1436,10 +1537,6 @@ struct Index {
   /** 卡片文本的字族：按请求字重选自带字面，避免系统在缺字重时合成粗体。 */
   private cardFont(weight: FontWeight): string {
     return weight === FontWeight.Medium ? CARD_FONT_MEDIUM : CARD_FONT_REGULAR;
-  }
-
-  private wideCardMinHeight(): number {
-    return this.contentWidth >= WIDE_LAYOUT_BREAKPOINT ? WIDE_CARD_MIN_HEIGHT : 0;
   }
 
   build() {

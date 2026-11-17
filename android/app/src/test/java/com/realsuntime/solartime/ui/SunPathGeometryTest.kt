@@ -494,33 +494,49 @@ class SunPathGeometryTest {
         }
     }
 
-    /** 地平线要比圆宽（弦 + 两侧各 0.2R = 2.4R），两端留在画布内；极昼极夜没有弦就画满画布。 */
+    /**
+     * 地平线是**固定长度**的：画布左右各内缩 [sideInset]（4dp），长度恒为 `canvasWidth − 8`。
+     *
+     * 五种场景（普通日 / 上海夏至 / 昼长 1 小时 / 0:00 相切 / 极昼 / 极夜）地平线的**高度**各不相同，
+     * 但**长度和起止 x 必须完全一样** —— 它是一条贯穿画面的地平线，不再是「圆的弦 + 延伸」。
+     */
     @Test
-    fun horizonSpansWiderThanTheCircle() {
-        val path = dial(6.0, 18.0)
-        val span = SunPathGeometry.horizonSpan(path, dialWidth, sideInset)
-        assertTrue(
-            "地平线要比圆宽：${span.length} vs ${2 * path.radius}",
-            span.length > 2 * path.radius,
+    fun horizonSpansTheCanvasAtFixedLength() {
+        val normalCases = listOf(
+            Triple("赤道春分", 6.0, 18.0),
+            Triple("上海夏至", 4.99, 19.01),
+            Triple("昼长 1 小时", 11.5, 12.5),
+            Triple("日出 0:00（相切）", 0.0, 24.0),
         )
-        assertEquals(path.centerX - path.radius * (1f + SunPathGeometry.HORIZON_EXTENSION_RATIO), span.startX, 0.5f)
-        assertEquals(path.centerX + path.radius * (1f + SunPathGeometry.HORIZON_EXTENSION_RATIO), span.endX, 0.5f)
-        assertTrue("左端要在画布内", span.startX >= sideInset - 0.5f)
-        assertTrue("右端要在画布内", span.endX <= dialWidth - sideInset + 0.5f)
-
-        // 窄画布：延伸被夹到边距以内，不会画出卡片。
-        val narrow = SunPathGeometry.compute(160f, 194f, 6.0, 18.0, 12.0, false, false)
-        val narrowSpan = SunPathGeometry.horizonSpan(narrow, 160f, sideInset)
-        assertTrue(narrowSpan.startX >= sideInset - 0.5f)
-        assertTrue(narrowSpan.endX <= 160f - sideInset + 0.5f)
-
-        // 极昼 / 极夜：地平线整个在圆外，没有弦，直接画满画布（左右各留 sideInset）。
-        for ((name, polarDay, polarNight) in listOf(Triple("极昼", true, false), Triple("极夜", false, true))) {
-            val polarPath = dial(null, null, isPolarDay = polarDay, isPolarNight = polarNight)
-            val polarSpan = SunPathGeometry.horizonSpan(polarPath, dialWidth, sideInset)
-            assertEquals("$name 地平线应从画布左边起画", sideInset, polarSpan.startX, 0.5f)
-            assertEquals("$name 地平线应画到画布右边", dialWidth - sideInset, polarSpan.endX, 0.5f)
-            assertTrue("$name 地平线仍在画布内", polarSpan.endX <= dialWidth - sideInset + 0.5f)
+        val paths = normalCases.map { (_, sunrise, sunset) ->
+            SunPathGeometry.compute(dialWidth, dialHeight, sunrise, sunset, 12.0, false, false)
+        } + listOf(true to false, false to true).map { (polarDay, polarNight) ->
+            SunPathGeometry.compute(dialWidth, dialHeight, null, null, 12.0, polarDay, polarNight)
         }
+        // 六个场景的地平线高度互不相同 —— 说明「固定长度」不是靠数值恰好相等蒙过去的。
+        assertEquals("六种场景的地平线高度应各不相同", 6, paths.map { it.horizonY }.toSet().size)
+
+        val spans = paths.map { SunPathGeometry.horizonSpan(dialWidth, sideInset) }
+        spans.forEach { span ->
+            assertEquals("左端 = 画布内缩 $sideInset", sideInset, span.startX, 0.5f)
+            assertEquals("右端 = 画布宽 − 内缩", dialWidth - sideInset, span.endX, 0.5f)
+            assertEquals(
+                "长度 = 画布宽 − 2×内缩",
+                dialWidth - 2 * sideInset,
+                span.length,
+                0.5f,
+            )
+        }
+        spans.drop(1).forEach { span ->
+            assertEquals("所有场景的地平线必须一样长", spans.first().length, span.length, 0.5f)
+            assertEquals("所有场景的起点必须一样", spans.first().startX, span.startX, 0.5f)
+            assertEquals("所有场景的终点必须一样", spans.first().endX, span.endX, 0.5f)
+        }
+
+        // 窄画布同理：只有左右内缩，跟圆的尺寸无关。
+        val narrowSpan = SunPathGeometry.horizonSpan(160f, sideInset)
+        assertEquals(sideInset, narrowSpan.startX, 0.5f)
+        assertEquals(160f - sideInset, narrowSpan.endX, 0.5f)
+        assertEquals(160f - 2 * sideInset, narrowSpan.length, 0.5f)
     }
 }

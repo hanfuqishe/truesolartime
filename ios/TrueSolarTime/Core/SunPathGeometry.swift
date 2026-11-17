@@ -97,9 +97,8 @@ enum SunPathGeometry {
     static let noonLabelBudget = CGSize(width: 84, height: 14)
     static let polarLabelBudget = CGSize(width: 90, height: 16)
 
-    /// 地平线向左右延伸：正常日按「弦 + 两侧各 0.2R」画，画布边缘留 `horizonInset`。
+    /// 地平线在画布左右各留的边距：所有场景都画成 `画布宽 − 2 × 这个值` 的一条横线。
     static let horizonInset: CGFloat = 4
-    static let horizonOverhangRatio: CGFloat = 0.2
 
     // MARK: - 角度与坐标
 
@@ -213,27 +212,19 @@ enum SunPathGeometry {
         return path.sunPoint.y <= path.horizonY
     }
 
-    // MARK: - 地平线（向圆外延伸）
+    // MARK: - 地平线（固定长度，贯穿画布）
 
-    /// 地平线画在画布上的起点 x。
+    /// 地平线画在画布上的起点 x：**画布内缩 `horizonInset`（4pt）**。
     ///
-    /// 正常日：从弦的左端再往外伸 `0.2R`（不超过画布左边距）；
-    /// 极昼 / 极夜 / 相切（没有有效的弦）：直接画满整条画布，左右各留 `horizonInset`。
-    static func horizonStartX(path: SunPath, size: CGSize) -> CGFloat {
-        let fullStart = min(horizonInset, size.width / 2.0)
-        guard let chord = horizonChord(path: path), chord.end.x > chord.start.x + 1 else {
-            return fullStart
-        }
-        return max(chord.start.x - path.radius * horizonOverhangRatio, fullStart)
+    /// 所有场景（普通日 / 短昼 / 极昼 / 极夜 / 相切）都画成同一条贯穿画布的横线，
+    /// 长度恒为 `画布宽 − 2 × horizonInset`；不再按「弦 + 0.2R」延伸，也不再分圆内 / 圆外两段。
+    static func horizonStartX(size: CGSize) -> CGFloat {
+        min(horizonInset, max(size.width / 2.0, 0))
     }
 
-    /// 地平线画在画布上的终点 x。
-    static func horizonEndX(path: SunPath, size: CGSize) -> CGFloat {
-        let fullEnd = max(size.width - horizonInset, horizonStartX(path: path, size: size))
-        guard let chord = horizonChord(path: path), chord.end.x > chord.start.x + 1 else {
-            return fullEnd
-        }
-        return min(chord.end.x + path.radius * horizonOverhangRatio, fullEnd)
+    /// 地平线画在画布上的终点 x：`画布宽 − horizonInset`。
+    static func horizonEndX(size: CGSize) -> CGFloat {
+        max(size.width - horizonInset, horizonStartX(size: size))
     }
 
     // MARK: - 标签锚点
