@@ -3,6 +3,9 @@ package com.realsuntime.solartime.data
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import com.realsuntime.solartime.map.MapFallback
+import com.realsuntime.solartime.map.MapFallbackDiagnostics
+import com.realsuntime.solartime.map.MapFallbackSession
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.WidgetUpdater
 import java.text.SimpleDateFormat
@@ -35,6 +38,8 @@ internal object DiagReport {
         add(DiagStore.lastRefresh(context))
         add("")
         addAll(weatherSection(context))
+        add("")
+        addAll(mapSection(context))
         add("")
         add("===== 地点 =====")
         addAll(placeSection(context))
@@ -165,6 +170,31 @@ internal object DiagReport {
             add(DiagStore.lastWeather(context))
         }
     }.getOrElse { listOf("===== ⑥ 天气数据源 =====", "读取失败: ${DiagStore.describe(it)}") }
+
+    // ---------------------------------------------------------------- ⑦ 地图底图
+
+    /**
+     * 地图这一块：现在用哪个底图源、是不是回退来的、缩放有没有降级、OSM 失败几次、下次什么时候探测。
+     *
+     * 对应报障「境外出差 / 大陆网络下地图是空白」：一眼能看出是 OSM 被墙后回退到高德，
+     * 还是连高德都没有瓦片（真没网），不用再猜。
+     */
+    private fun mapSection(context: Context): List<String> = runCatching {
+        val settings = AppSettings(context)
+        val place = settings.place
+        val tracker = MapFallbackSession.tracker
+        val state = tracker.snapshot()
+        val plan = MapFallback.plan(settings.mapStyle, place.latitude, place.longitude, state)
+        val zoomPlan = MapFallback.zoomPlan(
+            plan,
+            tracker.appliedZoom() ?: MapFallback.DEFAULT_ZOOM,
+            state,
+        )
+        buildList {
+            add("===== ⑦ 地图底图 =====")
+            addAll(MapFallbackDiagnostics.lines(plan, zoomPlan, state, System.currentTimeMillis()))
+        }
+    }.getOrElse { listOf("===== ⑦ 地图底图 =====", "读取失败: ${DiagStore.describe(it)}") }
 
     // ---------------------------------------------------------------- 地点
 

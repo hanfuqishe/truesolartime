@@ -14,12 +14,15 @@ import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.ThemeMode
 import com.realsuntime.solartime.data.WeatherRepository
+import com.realsuntime.solartime.map.MapFallbackSession
+import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.TimeText
 import com.realsuntime.solartime.widget.KeyTimeChime
 import com.realsuntime.solartime.widget.WidgetUpdater
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +60,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _mapStyle = MutableStateFlow(settings.mapStyle)
     val mapStyle: StateFlow<MapStyle> = _mapStyle.asStateFlow()
+
+    /**
+     * 底图回退状态（会话级，见 [MapFallbackSession]）。
+     *
+     * 地图卡片只读它推导「实际用哪个源、缩放要不要降级、要不要显示底图不可用」，
+     * 计数与探测都写在这个状态机里，不散落在 Composable 里。
+     */
+    private val mapFallback = MapFallbackSession.tracker
+    val mapFallbackState: StateFlow<MapFallbackState> = mapFallback.state
 
     private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
@@ -103,6 +115,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         // 没加小组件时也要能反查出区划；换了界面语言会重查（见 DistrictResolver.needsRefresh）。
         DistrictResolver.requestRefresh(application, settings.place)
+        // 底图回退后的 OSM 探测：回退到高德之后每 5 分钟试一次 OSM（只取一块最低级别的小瓦片）。
+        // 放在 IO 线程上，绝不挡 UI；成功即刻切回 OSM 并清零失败计数（见 MapFallbackTracker.probeIfDue）。
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                runCatching { mapFallback.probeIfDue() }
+                delay(MAP_PROBE_TICK_MILLIS)
+            }
+        }
         // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
         // 小组件也会被系统屏蔽（桌面显示「加载失败」），打开一次就恢复。
         // 这条路径本来就在主线程跑（广播接收器），这里保持一致，避免踩线程限制。
@@ -209,8 +229,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setMapStyle(style: MapStyle) {
+        val previous = _mapStyle.value
         settings.mapStyle = style
         _mapStyle.value = style
+        // 「自动 / 手动」是一整套不同的规则：换过就清掉会话里学到的回退记忆，
+        // 否则刚在手动高德下看过的失败计数会被带进自动模式（反之亦然）。
+        if (style != previous) mapFallback.reset()
+    }
+
+    /**
+     * 地图瓦片加载结果（自动模式才有意义，手动选择时状态机内部直接忽略）。
+     *
+     * 失败/回退全程静默：不弹 toast，只写进 [mapFallbackState] 供诊断页展示。
+     */
+    fun onMapTileEvent(success: Boolean, zoom: Int) {
+        val place = _place.value
+        val style = _mapStyle.value
+        // 瓦片事件里的级别就是地图当下的真实级别：顺便记进诊断，省一次监听。
+        mapFallback.onZoomApplied(zoom)
+        if (success) {
+            mapFallback.onTileLoaded(style, place.latitude, place.longitude, zoom)
+        } else {
+            mapFallback.onTileFailed(style, place.latitude, place.longitude, zoom)
+        }
+    }
+
+    /** 地图上真正生效的缩放级别（被降级链改过时也要如实记下来）。 */
+    fun onMapZoomApplied(zoom: Int) {
+        mapFallback.onZoomApplied(zoom)
     }
 
     fun setKeepScreenOn(enabled: Boolean) {
@@ -256,6 +302,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val previous = _place.value
         settings.place = place
         _place.value = place
+        // 用户重新选了地点：自动模式下的回退记忆跟着地点走 —— 换城市就重新给 OSM 一次机会。
+        // GPS 漂移（不是用户选择）不算，否则每分钟的定位刷新都会把回退清掉、白折腾一遍瓦片。
+        if (userChosen && _mapStyle.value == MapStyle.AUTO) {
+            mapFallback.reset()
+        }
         // 换地点后旧区划名立即失效：查不到新名字之前，卡片上不显示城市
         _districtName.value = DistrictResolver.cachedNameFor(getApplication(), place)
         // 换地点后时区可能整个变掉（例如从上海切到纽约），当拍就跟上，不必等下一秒的 tick。
@@ -293,5 +344,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         /** 位置变化超过该幅度才重排提醒，避免每分钟都重设闹钟。 */
         const val REMINDER_RESCHEDULE_DEGREES = 0.01
+
+        /**
+         * OSM 探测的心跳间隔。
+         *
+         * 「该不该探测」由 [MapFallbackTracker.probeIfDue] 按 5 分钟冷却判断，
+         * 这里只是每 30 秒问一次，保证冷却一到就有人去发请求（不多不少）。
+         */
+        const val MAP_PROBE_TICK_MILLIS = 30_000L
     }
 }

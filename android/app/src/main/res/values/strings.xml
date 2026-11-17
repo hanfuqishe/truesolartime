@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">True Solar Clock</string>
     <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
@@ -27,7 +27,7 @@
     <string name="action_apply">Apply coordinates</string>
     <string name="section_cities">Common cities</string>
     <string name="section_map">Map tiles</string>
-    <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
+    <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere; falls back to AMap when OSM is unreachable</string>
     <string name="section_widget">Home screen card</string>
     <string name="widget_add_waiting">Request sent. Waiting for the launcher…</string>
     <string name="widget_add_desc">Puts the true solar time card on your home screen.</string>
@@ -75,6 +75,8 @@
     <string name="map_style_amap_satellite">AMap satellite</string>
     <string name="map_attribution_osm">Map data © OpenStreetMap contributors</string>
     <string name="map_attribution_amap">Tiles © AMap</string>
+    <string name="map_auto_fallback">OSM unreachable, fell back to AMap</string>
+    <string name="map_unavailable">Base map unavailable</string>
     <string name="widget_label">True Solar Time</string>
     <string name="widget_label_civil">Standard time</string>
     <string name="widget_waiting_gps">Waiting for GPS fix…</string>

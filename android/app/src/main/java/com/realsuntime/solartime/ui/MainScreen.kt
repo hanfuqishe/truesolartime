@@ -175,6 +175,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     val zoneOffsetSeconds by viewModel.zoneOffsetSeconds.collectAsStateWithLifecycle()
     val mapStyle by viewModel.mapStyle.collectAsStateWithLifecycle()
+    val mapFallback by viewModel.mapFallbackState.collectAsStateWithLifecycle()
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -375,6 +376,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         MapCard(
                             place = place,
                             mapStyle = mapStyle,
+                            fallback = mapFallback,
+                            onTileEvent = viewModel::onMapTileEvent,
+                            onZoomApplied = viewModel::onMapZoomApplied,
                             mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
                         )
                     }
