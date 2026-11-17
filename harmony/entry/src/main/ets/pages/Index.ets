@@ -11,6 +11,7 @@ import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/
 import { TimeFormat } from '../core/TimeFormat';
 import { CivicTimeLogic } from '../core/CivicTime';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
+import { SunDialColors } from '../core/SunDialColors';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
 import { HourPoint, WeatherLogic, WeatherSlot, WeatherSource, WeatherSnapshot } from '../core/Weather';
 import { ThemeMode } from '../core/ThemeMode';
@@ -1334,7 +1335,7 @@ struct Index {
     // 白天弧专用色：白天是淡金色（仅作路径示意），夜间仍是金色实色。
     // 地平线 / 运动箭头 / 刻度点都不用它，保持原来的 subtle / accent。
     const arcColor: string = this.palette.sunArc;
-    // 当前太阳点：白天深金色（实心、比弧明显），夜间保持原来的金色。
+    // 当前太阳点：径向渐变的中段金（白天 #D9A520，夜间 #F5D68A）。
     const sunDot: string = this.palette.sunDot;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
@@ -1349,12 +1350,12 @@ struct Index {
       ctx.arc(path.centerX, path.centerY, path.radius, 0, full, southern);
       if (path.isWholeCircleDay()) {
         ctx.strokeStyle = arcColor;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = SunDialColors.DAY_ARC_WIDTH;
         ctx.setLineDash([]);
       } else {
         ctx.strokeStyle = outline;
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = SunDialColors.NIGHT_ARC_WIDTH;
+        ctx.setLineDash([SunDialColors.NIGHT_DASH_LENGTH, SunDialColors.NIGHT_DASH_LENGTH]);
       }
       ctx.stroke();
     } else {
@@ -1366,16 +1367,17 @@ struct Index {
       ctx.beginPath();
       ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep, anticlockwise);
       ctx.strokeStyle = arcColor;
-      ctx.lineWidth = 2.5;
+      // 轨迹线要细：白天弧 1.6vp、夜晚虚线 1.5vp（虚线 4/4vp），极昼极夜同样细线。
+      ctx.lineWidth = SunDialColors.DAY_ARC_WIDTH;
       ctx.lineCap = 'round';
       ctx.setLineDash([]);
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, nightEnd, anticlockwise);
       ctx.strokeStyle = outline;
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = SunDialColors.NIGHT_ARC_WIDTH;
       ctx.lineCap = 'butt';
-      ctx.setLineDash([6, 6]);
+      ctx.setLineDash([SunDialColors.NIGHT_DASH_LENGTH, SunDialColors.NIGHT_DASH_LENGTH]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -1444,23 +1446,18 @@ struct Index {
       }
     }
 
-    // 当前太阳点：地平线以上是金色实心点（白天亮金 + 深金细描边）+ 柔光，以下是空心暗色点。
+    // 当前太阳点：柔和边缘的径向渐变（中心亮金 → 中段金 → 外沿透明），
+    // 核心约 4vp、柔光到 9vp；不再画硬描边（DOT_RING_ALPHA = 0）。
     if (path.isSunUp()) {
+      const dotGradient = ctx.createRadialGradient(
+        path.sunX, path.sunY, 0, path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS);
+      dotGradient.addColorStop(0, this.palette.sunDotCenter);
+      dotGradient.addColorStop(SunDialColors.DOT_CORE_STOP, sunDot);
+      dotGradient.addColorStop(1, this.alphaColor(sunDot, 0));
       ctx.beginPath();
-      ctx.fillStyle = this.alphaColor(sunDot, 0.18);
-      ctx.arc(path.sunX, path.sunY, 6.75, 0, full);
+      ctx.fillStyle = dotGradient;
+      ctx.arc(path.sunX, path.sunY, SunDialColors.DOT_GLOW_RADIUS, 0, full);
       ctx.fill();
-      ctx.beginPath();
-      ctx.fillStyle = sunDot;
-      ctx.arc(path.sunX, path.sunY, 4.5, 0, full);
-      ctx.fill();
-      // 点外再描一圈（1vp、0.5 不透明度）：白天把亮金点从淡金弧上「抠」出来；
-      // 夜间 palette.sunDotRing 是全透明色，画了也看不见（视觉与改版前一致）。
-      ctx.beginPath();
-      ctx.strokeStyle = this.alphaColor(this.palette.sunDotRing, 0.5);
-      ctx.lineWidth = 1;
-      ctx.arc(path.sunX, path.sunY, 5, 0, full);
-      ctx.stroke();
     } else {
       // 空心点先垫一圈卡片底色：极夜时太阳点正落在圆上，不垫会与虚线糊在一起。
       ctx.beginPath();

@@ -1111,23 +1111,64 @@ expect(
     arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
     String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-// 太阳点：**亮金**填充 + 深金细描边。亮金与淡金弧只有 ~1.5，所以「可辨识」这件事交给描边。
-let dayDotRing = ThemeColors.day.sunDotRing
+print("== 太阳点：径向渐变（中心 → 中段 → 外沿透明），没有硬描边 ==")
+// 弧已经淡到 1.47，点改用「中心更亮 + 边缘柔和淡出」来立住，而不是加一圈描边（用户否掉了硬边）。
+let dayStops = ThemeColors.day.sunDotGradient
+expect("渐变三档：中心 → 中段 → 外沿", dayStops.count == 3, "actual=\(dayStops.count)")
+expect(
+    "渐变中心是 #F5C842、不透明、位置 0",
+    dayStops[0].color.hexText == "#F5C842" && dayStops[0].alpha == 1 && dayStops[0].location == 0,
+    "actual=\(dayStops[0].color.hexText) alpha=\(dayStops[0].alpha) loc=\(dayStops[0].location)"
+)
+expect(
+    "渐变中段是 #D9A520、不透明、位置 = 核心半径 / 柔光半径（≈0.45）",
+    dayStops[1].color.hexText == "#D9A520"
+        && dayStops[1].alpha == 1
+        && abs(dayStops[1].location - 0.45) < 0.02,
+    "actual=\(dayStops[1].color.hexText) loc=\(dayStops[1].location)"
+)
+expect(
+    "渐变外沿完全透明（不再有硬描边那一圈）",
+    dayStops[2].alpha == 0 && dayStops[2].location == 1 && dayStops[2].color == dayStops[1].color,
+    "actual=alpha \(dayStops[2].alpha) loc=\(dayStops[2].location)"
+)
+expect(
+    "夜间渐变同结构，色值换成夜间金 #F5D68A",
+    ThemeColors.night.sunDotGradient.map(\.color.hexText) == ["#F5D68A", "#F5D68A", "#F5D68A"]
+        && ThemeColors.night.sunDotGradient[2].alpha == 0,
+    "actual=\(ThemeColors.night.sunDotGradient.map(\.color.hexText))"
+)
+// 硬描边已经删掉：token 表里不该再有 sunDotRing。
+expect(
+    "描边 token 已删除（tokens 里没有 sunDotRing）",
+    !ThemeColors.day.tokens.contains { $0.name == "sunDotRing" }
+        && !ThemeColors.night.tokens.contains { $0.name == "sunDotRing" }
+)
+// 半径：核心实心 4pt，柔光 2.0…2.2 倍（8.8pt）。
+expect(
+    "太阳点核心半径 4pt、柔光 2.0…2.2 倍",
+    SunPathGeometry.sunRadius == 4
+        && SunPathGeometry.sunGlowRadius >= 2.0 * SunPathGeometry.sunRadius
+        && SunPathGeometry.sunGlowRadius <= 2.2 * SunPathGeometry.sunRadius,
+    "core=\(SunPathGeometry.sunRadius) glow=\(SunPathGeometry.sunGlowRadius)"
+)
+expect(
+    "轨迹线线宽：白天 1.6pt、夜晚 1.5pt、虚线 4/4pt",
+    SunPathGeometry.dayArcLineWidth == 1.6
+        && SunPathGeometry.nightArcLineWidth == 1.5
+        && SunPathGeometry.nightArcDash == [4, 4],
+    "day=\(SunPathGeometry.dayArcLineWidth) night=\(SunPathGeometry.nightArcLineWidth) dash=\(SunPathGeometry.nightArcDash)"
+)
 expect(
     "太阳点（亮金）与白天弧对比度 ≥ 1.3（放宽：亮金压不住淡金弧）",
     dayDot.contrast(with: dayArc) >= 1.3,
     String(format: "dot %@ / arc %@ = %.2f", dayDot.hexText, dayArc.hexText, dayDot.contrast(with: dayArc))
 )
 expect(
-    "太阳点描边（深金）与白天弧对比度 ≥ 2.5（靠它保证可辨识）",
-    dayDotRing.contrast(with: dayArc) >= 2.5,
-    String(format: "ring %@ / arc %@ = %.2f",
-           dayDotRing.hexText, dayArc.hexText, dayDotRing.contrast(with: dayArc))
-)
-expect(
-    "描边比填充深（对比 ≥ 2），点才有「边」不会糊",
-    dayDotRing.contrast(with: dayDot) >= 2 && dayDotRing.relativeLuminance < dayDot.relativeLuminance,
-    String(format: "ring=%.2f dot=%.2f", dayDotRing.contrast(with: dayDot), dayDot.relativeLuminance)
+    "渐变中心色比中段亮（中心有亮点感）",
+    ThemeColors.day.sunDotCore.relativeLuminance > ThemeColors.day.sunDot.relativeLuminance,
+    String(format: "core=%.3f mid=%.3f",
+           ThemeColors.day.sunDotCore.relativeLuminance, ThemeColors.day.sunDot.relativeLuminance)
 )
 expect(
     "太阳点比弧实：与卡片的对比度高于弧",
@@ -1136,18 +1177,12 @@ expect(
            dayDot.contrast(with: ThemeColors.day.surface), dayArcContrast)
 )
 expect(
-    "太阳点与弧、描边与填充都是不同色（各自独立 token，也都不是主色）",
+    "太阳点、弧、中心色互不相同（各自独立 token，也都不是主色）",
     dayDot != dayArc
-        && dayDot != dayDotRing
+        && dayDot != ThemeColors.day.sunDotCore
         && dayDot != ThemeColors.day.primary
         && dayArc != ThemeColors.day.primary,
-    "dot=\(dayDot.hexText) ring=\(dayDotRing.hexText) arc=\(dayArc.hexText)"
-)
-expect(
-    "夜间不画可见描边：sunDotRing == sunDot == primary",
-    ThemeColors.night.sunDotRing == ThemeColors.night.sunDot
-        && ThemeColors.night.sunDotRing == ThemeColors.night.primary,
-    "ring=\(ThemeColors.night.sunDotRing.hexText)"
+    "dot=\(dayDot.hexText) core=\(ThemeColors.day.sunDotCore.hexText) arc=\(dayArc.hexText)"
 )
 
 print("== 十二时辰 ==")

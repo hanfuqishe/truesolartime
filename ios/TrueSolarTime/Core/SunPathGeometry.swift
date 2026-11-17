@@ -81,12 +81,23 @@ enum SunPathGeometry {
     /// 同时 1.12R 仍落在方框内（0.38 × 1.12 = 0.4256 < 0.5），不会被画布裁掉。
     static let polarHorizonRatio: CGFloat = 1.12
 
+    // MARK: - 轨迹线线宽（UI 与自检共用同一组常量）
+
+    /// 白天弧线宽：**1.6pt**（4.3 版是 2.5pt，用户反馈「轨迹线太粗」）。
+    static let dayArcLineWidth: CGFloat = 1.6
+    /// 夜晚虚线线宽：**1.5pt**。
+    static let nightArcLineWidth: CGFloat = 1.5
+    /// 夜晚虚线的间隔（与线宽同量级：原来 2.5pt 线配 5/5pt，1.5pt 配 **4/4pt**）。
+    static let nightArcDash: [CGFloat] = [4, 4]
+
     // MARK: - 标签参数（UI 与自检共用同一组常量）
 
-    /// 太阳点（实心圆）的半径。
-    static let sunRadius: CGFloat = 5.5
-    /// 太阳点柔光半径 = 1.5 × 太阳点半径（上中天标签就在它上方，柔光大了会糊到字上）。
-    static var sunGlowRadius: CGFloat { sunRadius * 1.5 }
+    /// 太阳点**核心实心**部分的半径（径向渐变的「实心到哪」）。
+    static let sunRadius: CGFloat = 4
+    /// 太阳点柔光半径 = **2.2 ×** 核心半径（8.8pt）：再大就会糊到上中天标签。
+    static var sunGlowRadius: CGFloat { sunRadius * 2.2 }
+    /// 地平线以下那个**空心点**的半径：与径向渐变无关，保持原来的 5.5pt。
+    static let sunHollowRadius: CGFloat = 5.5
     /// 日出 / 日落标签：锚点离交点 10pt、比交点抬高 10pt（让延伸的地平线从字下面过去）。
     static let labelOffsetX: CGFloat = 10
     static let labelOffsetY: CGFloat = 10

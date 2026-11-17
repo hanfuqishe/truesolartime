@@ -242,10 +242,10 @@ struct SunCard: View {
 /// 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
 /// 文字不在这里画（`SunCard` 用真 `Text` 叠在上面），所以这里不需要任何标签尺寸假设。
 ///
-/// 颜色一律取主题 token（`palette.sunArc` / `palette.sunDot` / `palette.primary` /
+/// 颜色一律取主题 token（`palette.sunArc` / `palette.sunDotGradient` / `palette.primary` /
 /// `palette.onSurfaceVariant` / `palette.surface`），两套主题各用自己的一档，**不碰系统色**
 /// （系统 `.orange` / `.secondary` 在强制主题下会串色）。
-/// 弧与点各单独一档：白天弧淡金（只作路径示意）、太阳点金色（实心、最实的一笔）；
+/// 弧与点各单独一档：白天弧淡金细线（只作路径示意）、太阳点是径向渐变的金色点（柔和边缘，无硬描边）；
 /// 地平线 / 箭头 / 刻度点仍是灰或主色，不跟着变。
 private struct SunDialCanvas: View {
 
@@ -278,13 +278,20 @@ private struct SunDialCanvas: View {
             height: path.radius * 2
         ))
 
-        // 两套主题各自的「白天 / 夜晚」两档：白天用**白天弧专用色**（白天主题比主色浅一档，
-        // 白卡片上不显沉；夜间主题等于主色，保持原样），夜晚用次要文字色压暗压淡。
-        // 太阳点 / 地平线 / 箭头 / 刻度点仍用主色，比弧更实，形成层次。
+        // 两套主题各自的「白天 / 夜晚」两档：白天用**白天弧专用色**（淡金，只是路径示意），
+        // 夜晚用次要文字色压暗压淡。线宽都很细：白天 1.6pt、夜晚 1.5pt（虚线 4/4），
+        // 地平线与箭头保持原样（1pt / 1.5pt）。
         let dayColor = palette.sunArc
         let nightColor = palette.onSurfaceVariant.opacity(0.5)
-        let dayStyle = StrokeStyle(lineWidth: 2.5, lineCap: .round)
-        let nightStyle = StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [5, 5])
+        let dayStyle = StrokeStyle(
+            lineWidth: SunPathGeometry.dayArcLineWidth,
+            lineCap: .round
+        )
+        let nightStyle = StrokeStyle(
+            lineWidth: SunPathGeometry.nightArcLineWidth,
+            lineCap: .round,
+            dash: SunPathGeometry.nightArcDash
+        )
 
         // 圆的分段：地平线以上 = 白天（实线、`sunArc`），以下 = 夜晚（虚线、低对比度）。
         // 圆盘边界只由这两段弧构成 —— 不再额外描一圈「表圈」。
@@ -412,34 +419,32 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        // 太阳点单独一档（`sunDot`）：白天**亮金**，柔和光晕同色 18%。
-        // 亮金与淡金弧只有 1.48:1，所以白天再加一圈**深金细描边**（0.5 不透明度 / 1pt，
-        // 与弧 3.51:1）—— 点既亮又不糊进弧里。夜间不描边（保持原样）。
+        // 地平线以上：**柔和边缘的金色点**（与逐时时间轴上「现在」圆点同一套思路：
+        // 实心 + 柔光，只是这里用径向渐变一次画完，没有硬边）。
+        // 渐变三档来自 `ThemeColors.sunDotGradient`：中心亮金 → 中段金（实心到 4pt）→ 外沿透明；
+        // 半径 = `sunGlowRadius` = 2.2 × 4 = 8.8pt，所以边缘是淡出的，不再有描边。
+        // 夜间同一套渐变，只是色值换成夜间金（`#F5D68A`）。
         // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
-        let dayColor = palette.sunDot
         let glow = SunPathGeometry.sunGlowRadius
-        let dot = SunPathGeometry.sunRadius
+        let dot = SunPathGeometry.sunHollowRadius
         let dotRect = CGRect(x: sun.x - dot, y: sun.y - dot, width: dot * 2, height: dot * 2)
 
         if SunPathGeometry.isSunAboveHorizon(path: path) {
-            // 地平线以上：实心 + 柔光（1.5 × 半径，避免糊到上中天标签）。
-            context.fill(
-                Path(ellipseIn: CGRect(
-                    x: sun.x - glow,
-                    y: sun.y - glow,
-                    width: glow * 2,
-                    height: glow * 2
-                )),
-                with: .color(dayColor.opacity(0.18))
+            let glowRect = CGRect(
+                x: sun.x - glow,
+                y: sun.y - glow,
+                width: glow * 2,
+                height: glow * 2
             )
-            context.fill(Path(ellipseIn: dotRect), with: .color(dayColor))
-            if palette.isDay {
-                context.stroke(
-                    Path(ellipseIn: dotRect),
-                    with: .color(palette.sunDotRing.opacity(0.5)),
-                    lineWidth: 1
+            context.fill(
+                Path(ellipseIn: glowRect),
+                with: .radialGradient(
+                    palette.sunDotGradient,
+                    center: sun,
+                    startRadius: 0,
+                    endRadius: glow
                 )
-            }
+            )
         } else {
             // 地平线以下：暗色空心（先用卡片底色挖空，虚线和外圆才不会穿过那个空心点）。
             context.fill(Path(ellipseIn: dotRect), with: .color(palette.surface))

@@ -33,10 +33,8 @@ struct ThemePalette {
     let onPrimary: Color
     /// 圆盘白天弧（地平线以上的实线）：白天淡金色，只作路径示意
     let sunArc: Color
-    /// 圆盘当前的太阳点（实心 + 柔光）：白天亮金
-    let sunDot: Color
-    /// 太阳点外那圈细描边（白天深金；夜间与填充同色，等于不画）
-    let sunDotRing: Color
+    /// 圆盘当前的太阳点：径向渐变（中心亮金 → 中段金 → 外沿透明），**没有硬描边**
+    let sunDotGradient: Gradient
     /// 错误文字
     let danger: Color
     /// 输入框底色
@@ -58,8 +56,13 @@ struct ThemePalette {
         primary = Color(hex: colors.primary.hex)
         onPrimary = Color(hex: colors.onPrimary.hex)
         sunArc = Color(hex: colors.sunArc.hex)
-        sunDot = Color(hex: colors.sunDot.hex)
-        sunDotRing = Color(hex: colors.sunDotRing.hex)
+        // 太阳点：Core 只给「中心色 / 中段色 / 外沿透明」三档，这里翻成 SwiftUI 的 Gradient。
+        sunDotGradient = Gradient(stops: colors.sunDotGradient.map { stop in
+            Gradient.Stop(
+                color: Color(hex: stop.color.hex, opacity: stop.alpha),
+                location: CGFloat(stop.location)
+            )
+        })
         danger = Color(hex: colors.danger.hex)
         fieldBackground = Color(hex: colors.fieldBackground.hex)
         fieldBorder = Color(hex: colors.fieldBorder.hex)
