@@ -8,16 +8,13 @@ class AppSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("solar_time_settings", Context.MODE_PRIVATE)
 
     var place: Place
-        get() = Place(
-            latitude = prefs.getString(KEY_LATITUDE, null)?.toDoubleOrNull() ?: Place.DEFAULT.latitude,
-            longitude = prefs.getString(KEY_LONGITUDE, null)?.toDoubleOrNull() ?: Place.DEFAULT.longitude,
-            source = prefs.getString(KEY_SOURCE, null)
-                ?.let { runCatching { PlaceSource.valueOf(it) }.getOrNull() }
-                ?: PlaceSource.DEFAULT,
-            label = prefs.getString(KEY_LABEL, null) ?: Place.DEFAULT.label,
-            labelResName = prefs.getString(KEY_LABEL_RES, null) ?: Place.DEFAULT.labelResName,
-            // 空串表示「不知道」（GPS / 手动坐标），按 null 读出来让调用方回退逆地理编码。
-            countryCode = prefs.getString(KEY_PLACE_COUNTRY, null)?.takeIf { it.isNotEmpty() },
+        get() = placeFromStored(
+            latitudeRaw = prefs.getString(KEY_LATITUDE, null),
+            longitudeRaw = prefs.getString(KEY_LONGITUDE, null),
+            sourceRaw = prefs.getString(KEY_SOURCE, null),
+            labelRaw = prefs.getString(KEY_LABEL, null),
+            labelResNameRaw = prefs.getString(KEY_LABEL_RES, null),
+            countryCodeRaw = prefs.getString(KEY_PLACE_COUNTRY, null),
         )
         set(value) {
             prefs.edit()
@@ -83,4 +80,37 @@ class AppSettings(context: Context) {
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_WIDGET_FIX = "last_widget_fix"
     }
+}
+
+/**
+ * 从 SharedPreferences 的原始值还原观测点（纯函数，便于单测）。
+ *
+ * **`labelResName` 只在「全新安装、一个地点都没存过」时才回落到默认城市（北京）**：
+ * 手动坐标 / GPS 的 `labelResName` 本来就是 null，`putString(key, null)` 会把键删掉，
+ * 旧实现于是又读到默认值 `city_beijing` —— 这就是「刚输入埃及坐标、地名却还是北京」的根因。
+ * 存过地点（source != DEFAULT）却没名字时，必须老老实实返回 null，让界面等逆地理编码，
+ * 失败就显示占位符 `-`。
+ */
+internal fun placeFromStored(
+    latitudeRaw: String?,
+    longitudeRaw: String?,
+    sourceRaw: String?,
+    labelRaw: String?,
+    labelResNameRaw: String?,
+    countryCodeRaw: String?,
+): Place {
+    val source = sourceRaw
+        ?.let { runCatching { PlaceSource.valueOf(it) }.getOrNull() }
+        ?: PlaceSource.DEFAULT
+    val isFreshInstall = source == PlaceSource.DEFAULT
+    return Place(
+        latitude = latitudeRaw?.toDoubleOrNull() ?: Place.DEFAULT.latitude,
+        longitude = longitudeRaw?.toDoubleOrNull() ?: Place.DEFAULT.longitude,
+        source = source,
+        label = labelRaw ?: Place.DEFAULT.label,
+        labelResName = labelResNameRaw
+            ?: if (isFreshInstall) Place.DEFAULT.labelResName else null,
+        // 空串表示「不知道」（GPS / 手动坐标），按 null 读出来让调用方回退逆地理编码。
+        countryCode = countryCodeRaw?.takeIf { it.isNotEmpty() },
+    )
 }

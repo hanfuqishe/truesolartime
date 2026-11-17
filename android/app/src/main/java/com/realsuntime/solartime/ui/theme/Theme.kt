@@ -81,15 +81,15 @@ fun TrueSolarTimeTheme(
 /**
  * 太阳卡圆盘的配色（派生自色板 / 新增的 `SunColors`，见 [SunColors]）。
  *
- * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#E6CB9C`，白卡上对比度 ≈1.52，只做「路径示意」）；
- *   太阳点 = **纯色实心核心 2.75dp**（太阳金 [SunColors.DAY_SUN] `#D9A520`，alpha 1.0）
+ * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#EAD095`，白卡上对比度 ≈1.46，只做「路径示意」）；
+ *   太阳点 = **纯色实心核心 2.75dp**（太阳金 [SunColors.DAY_SUN] `#D9AC1C`，alpha 1.0）
  *   \+ 外圈光晕（同色 alpha 0.35 → 0，2.75→5.5dp）；核心画在光晕之上，弧线不会透出来；
  *   日出 / 日落刻度 = 同样的金、70% 透明（比点淡一档）。
  * - **暗色主题**：白天弧仍是实色主色（深蓝底上那档金色正好，调淡反而糊）；太阳点结构相同，
  *   颜色换成夜金 [SunColors.NIGHT_SUN]（`#F5D68A`，与 `DarkColors.primary` 同色）。
  *
  * 亮色主题里「白天弧 vs 夜晚虚线」不再靠深浅区分（弧故意更淡），而是靠色相：
- * 暖金的 `r − b` 比中性灰大 0.17 左右（`SunColorsTest` 里有断言）。
+ * 暖金的 `r − b` 比中性灰大 0.22 左右（`SunColorsTest` 里有断言）。
  *
  * 判断依据是当前 `surface` 的亮度（主题函数只换 colorScheme，没有额外的暗色标志）；
  * `#FFFBF6` 与 `#16203A` 亮度差距极大，不会误判。
@@ -98,7 +98,7 @@ fun TrueSolarTimeTheme(
 fun sunDayArcColor(): Color = if (isLightSunPalette()) Color(SunColors.DAY_ARC) else MaterialTheme.colorScheme.primary
 
 /**
- * 太阳点核心（实心、不透明）的颜色：亮色主题 `#D9A520`、暗色主题 `#F5D68A`。
+ * 太阳点核心（实心、不透明）的颜色：亮色主题 `#D9AC1C`、暗色主题 `#F5D68A`。
  *
  * 调用方把它**直接**传给 `drawCircle(color = ...)`：不套 Brush、不 `copy(alpha = ...)`，
  * 保证核心 alpha 恒为 1.0（真机上曾经因为整颗点走渐变而变成半透明，弧线透出来）。

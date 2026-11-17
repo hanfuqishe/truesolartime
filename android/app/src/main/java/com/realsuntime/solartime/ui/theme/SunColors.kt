@@ -12,10 +12,10 @@ package com.realsuntime.solartime.ui.theme
  *
  * | 用途 | hex | 对白卡对比度 | 说明 |
  * |---|---|---|---|
- * | 白天弧 [DAY_ARC] | `#E6CB9C` | ≈1.52 | 淡金，只做「路径示意」；比最初的 `#D09464`（≈2.52）轻得多 |
- * | 白天太阳点 [DAY_SUN] | `#D9A520` | ≈2.18 | **纯色实心核心** 2.75dp（alpha 1.0），外圈光晕同色 0.35→0 到 5.5dp |
+ * | 白天弧 [DAY_ARC] | `#EAD095` | ≈1.46 | 淡金，只做「路径示意」；比最初的 `#D09464`（≈2.52）轻得多 |
+ * | 白天太阳点 [DAY_SUN] | `#D9AC1C` | ≈2.07 | **纯色实心核心** 2.75dp（alpha 1.0），外圈光晕同色 0.35→0 到 5.5dp |
  * | 夜晚太阳点 [NIGHT_SUN] | `#F5D68A` | — | 与 `DarkColors.primary` 同一档夜金，核心同样纯色不透明 |
- * | 日出/日落刻度 [DAY_SUN] @ 70% | `#D9A520` | ≈1.7（合成） | 与太阳点同色系、更淡更小 |
+ * | 日出/日落刻度 [DAY_SUN] @ 70% | `#D9AC1C` | ≈1.7（合成） | 与太阳点同色系、更淡更小 |
  * | 夜晚虚线（`LightColors.outline`） | `#857468` | ≈4.34 | 中性灰，靠**色相**与暖金弧区分，不再靠「更深」 |
  *
  * 太阳点曾经照搬时间轴「现在」圆点的单个渐变圆，但真机截图放大后 alpha 阶梯没有生效：
@@ -27,7 +27,7 @@ package com.realsuntime.solartime.ui.theme
  * 硬描边没有回来：[SUN_DOT_RING_ALPHA] = 0 钉住这件事。
  *
  * 弧与虚线不再比「谁更深」：用户明确要求弧更淡，所以区分方式改成色相 ——
- * 金的 `r − b` 比灰大 0.17 左右（见 [warmthGap]）。夜间主题的配色不走这里，仍用主题主色。
+ * 金的 `r − b` 比灰大 0.22 左右（见 [warmthGap]）。夜间主题的配色不走这里，仍用主题主色。
  */
 internal object SunColors {
 
@@ -37,11 +37,11 @@ internal object SunColors {
     /** 浅色主题里的夜晚虚线（`LightColors.outline`）：中性灰，用来做色相区分的参照。 */
     const val NIGHT_DASH_LIGHT = 0xFF857468.toInt()
 
-    /** 白天弧：淡金，白卡上对比度 ≈1.52（要求 ≥1.4，只是「路径示意」）。 */
-    const val DAY_ARC = 0xFFE6CB9C.toInt()
+    /** 白天弧：淡金（比上一版 `#E6CB9C` 更黄、更少褐），白卡上对比度 ≈1.46（要求 1.4~1.9，只是「路径示意」）。 */
+    const val DAY_ARC = 0xFFEAD095.toInt()
 
-    /** 白天太阳点的颜色（也是日出 / 日落刻度的颜色）：`#D9A520`，白卡上对比度 ≈2.18。 */
-    const val DAY_SUN = 0xFFD9A520.toInt()
+    /** 白天太阳点的颜色（也是日出 / 日落刻度的颜色）：`#D9AC1C`，白卡上对比度 ≈2.07，色相 H46° / S87%。 */
+    const val DAY_SUN = 0xFFD9AC1C.toInt()
 
     /** 夜间太阳点的颜色：夜金 `#F5D68A`（= `DarkColors.primary`，深蓝底上对比度 ≈11.4）。 */
     const val NIGHT_SUN = 0xFFF5D68A.toInt()
@@ -150,7 +150,7 @@ internal object SunColors {
     /** 光晕内沿在 0–1 渐变里的位置：核心半径 / 光晕半径 = 2.75 / 5.5 = 0.5。 */
     val SUN_DOT_GLOW_INNER_STOP: Float get() = SUN_DOT_CORE_RADIUS_DP / SUN_DOT_GLOW_RADIUS_DP
 
-    /** 太阳点核心的颜色：白天纯金 `#D9A520`、夜间 `#F5D68A`，都是 alpha 0xFF。 */
+    /** 太阳点核心的颜色：白天纯金 `#D9AC1C`、夜间 `#F5D68A`，都是 alpha 0xFF。 */
     fun sunDotCoreColor(night: Boolean): Int = if (night) NIGHT_SUN else DAY_SUN
 
     /** 光晕色标的位置（相对光晕半径 5.5dp）：内沿 0.5、外沿 1。 */

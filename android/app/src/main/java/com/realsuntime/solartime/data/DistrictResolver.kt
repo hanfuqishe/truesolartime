@@ -128,8 +128,17 @@ object DistrictResolver {
         val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
         if (lat.isNaN() || lon.isNaN()) return null
         val moved = CityIndex.distanceKm(lat, lon, place.latitude, place.longitude)
-        return if (moved >= 0 && moved <= MOVE_THRESHOLD_KM) names else null
+        return if (trustsNameAt(moved)) names else null
     }
+
+    /**
+     * 缓存里的名字最多还能信多远：与当前位置相距不超过 [MOVE_THRESHOLD_KM] 才算同一个地方。
+     *
+     * 纯判定，便于单测。手动坐标从北京跳到埃及（≈7400 km）时这里必须是 false ——
+     * 否则新名字还没查回来、或反查失败时，界面会继续显示「北京」。
+     */
+    internal fun trustsNameAt(movedKm: Double): Boolean =
+        movedKm >= 0 && movedKm <= MOVE_THRESHOLD_KM
 
     /**
      * 缓存下来的国家码，但**只在与 [place] 还算同一个地方时才认**。

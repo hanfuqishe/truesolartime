@@ -472,14 +472,8 @@ object WidgetUpdater {
         val solarDayMillis = Math.floorMod(wallNowMillis + solarOffset, DAY_MILLIS)
         val solarSeconds = solarSecondOf(solarDayMillis)
         val date = dateText(context, civil, place, location.hasFix)
-        // 天气来源署名（Open-Meteo / 7Timer!）：只有真的在显示天气时才署名 —— 还没定位、
-        // 或两个源都失败且没有可显示的旧数据时，凭空写一个源名等于谎报数据出处。
-        val weatherSource = WeatherRepository.source(context)
-        val attribution = if (location.hasFix && WeatherRepository.cached(context, place) != null) {
-            TimeText.weatherSourceShort(context, weatherSource)
-        } else {
-            ""
-        }
+        // 天气来源署名不再画在卡片上（用户要求去掉，日期行只留日期 / 天气 / 经纬度）；
+        // CC BY 4.0 的完整署名保留在 App 页脚与设置页「关于」，由 `TimeText.weatherAttribution` 负责。
         // 桌面回报的高度比实际单元格小，先折算成近似可用高度。
         val effectiveHeightDp = if (heightDp > 0) heightDp * HEIGHT_SCALE else 0f
         // 折算后不足两行的高度就算「一行卡片」。桌面一律按「一格 70dp」上报（实测 1 行报 46~52dp、
@@ -560,7 +554,6 @@ object WidgetUpdater {
                 widthDp = widthDp,
                 date = date,
                 coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
-                attribution = attribution,
                 compact = compact,
                 views = this,
                 clockRowBudgetDp = clockRowBudgetDp,
@@ -574,9 +567,7 @@ object WidgetUpdater {
                 add("压缩内边距" to compressPadding.toString())
                 add("格子宽度预算 cellDp" to cellWidthDpValue.toString())
                 add("时钟行预算(dp)" to clockRowBudgetDp.toString())
-                add("天气来源" to weatherSource.id)
                 add("逐时步长(小时)" to WeatherRepository.stepHours(context).toString())
-                add("来源署名" to attribution.ifBlank { "（不显示）" })
                 add("主题模式" to themeMode.name.lowercase(Locale.ROOT))
                 add("昼夜(经主题修正)" to if (isDay) "白天" else "夜间")
             }
@@ -1233,7 +1224,6 @@ object WidgetUpdater {
         widthDp: Int,
         date: String,
         coordinates: String,
-        attribution: String,
         compact: Boolean,
         views: RemoteViews,
         clockRowBudgetDp: Float = 0f,
@@ -1331,21 +1321,12 @@ object WidgetUpdater {
         val coordNaturalDp = COORD_TEXT_DP
         val dateNaturalWidth = measureTextWidth(date, dateNaturalDp, metrics)
         val coordNaturalWidth = if (coordinates.isEmpty()) 0f else measureTextWidth(coordinates, coordNaturalDp, metrics)
-        val attrNaturalWidth =
-            if (attribution.isEmpty()) 0f else measureTextWidth(attribution, coordNaturalDp, metrics)
-        val dateGapPx = if (coordinates.isEmpty() && attribution.isEmpty()) 0f else COORD_GAP_DP * density
-        val attrGapPx = if (attribution.isEmpty()) 0f else COORD_GAP_DP * density
+        val dateGapPx = if (coordinates.isEmpty()) 0f else COORD_GAP_DP * density
         val rowAvailablePx = totalWidthPx - chromeDp * density
-        // 空间不够时，优先保住「日期/天气」，其次保署名（CC BY 4.0 要求注明出处），最后才保经纬度。
+        // 空间不够时先保「日期/天气」，其次才保经纬度；不再有第三个（来源署名）要权衡。
         // 宁可少一个次要信息，也不要让日期被压缩成省略号。
-        val showAttribution = SmallRowLayout.shouldShowTrailing(
-            leadingWidthPx = dateNaturalWidth,
-            trailingWidthPx = attrNaturalWidth,
-            gapPx = dateGapPx,
-            availablePx = rowAvailablePx,
-        )
         val showCoordinates = SmallRowLayout.shouldShowTrailing(
-            leadingWidthPx = dateNaturalWidth + if (showAttribution) attrNaturalWidth + attrGapPx else 0f,
+            leadingWidthPx = dateNaturalWidth,
             trailingWidthPx = coordNaturalWidth,
             gapPx = dateGapPx,
             availablePx = rowAvailablePx,
@@ -1363,21 +1344,11 @@ object WidgetUpdater {
         if (showCoordinates) {
             views.setTextViewTextSize(R.id.widget_coordinates, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp)
         }
-        // 署名与经纬度同一档小字：字号必须一起下发，否则窄卡片上这一行会一大一小。
-        views.setTextViewText(R.id.widget_attribution, attribution)
-        views.setViewVisibility(
-            R.id.widget_attribution,
-            if (showAttribution) View.VISIBLE else View.GONE,
-        )
-        if (showAttribution) {
-            views.setTextViewTextSize(R.id.widget_attribution, TypedValue.COMPLEX_UNIT_DIP, coordNaturalDp)
-        }
         Log.d(
             TAG,
             "smallText date=${"%.2f".format(Locale.ROOT, dateNaturalDp * dateScale)}dp " +
                 "coord=${if (showCoordinates) "%.2f".format(Locale.ROOT, coordNaturalDp) else "hidden"} " +
                 "scale=${"%.3f".format(Locale.ROOT, dateScale)} " +
-                "attr=${if (showAttribution) attribution else "hidden"} " +
                 "dateW=${dateNaturalWidth.toInt()} coordW=${coordNaturalWidth.toInt()} avail=${rowAvailablePx.toInt()}",
         )
         return mainPx

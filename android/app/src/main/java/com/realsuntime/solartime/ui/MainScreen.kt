@@ -186,9 +186,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     // ② 反查还没回来/失败时，只有「预设城市」才回退到城市名；
     // ③ 手工坐标与 GPS 定位没有城市名可用（标签是「手动设置」这类占位词，不该显示），
     //    一律显示减号，等反查结果到了再换成区划名。
-    val cityText = districtName?.takeIf { it.isNotBlank() }
-        ?: place.labelResName?.let { TimeText.placeLabel(context, place) }?.takeIf { it.isNotBlank() }
-        ?: stringResource(R.string.city_unknown)
+    val cityText = cityLabel(
+        districtName = districtName,
+        presetLabel = place.labelResName?.let { TimeText.placeLabel(context, place) },
+        unknown = stringResource(R.string.city_unknown),
+    )
     val snackbarHostState = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 

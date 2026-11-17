@@ -175,7 +175,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyManualPlace(latitude: Double, longitude: Double, label: String) {
         stopGpsTracking()
-        // 用户明确指定了新地点：天气与区划名不等 30 分钟窗口，立刻重取。
+        // 手动坐标与上一个地点毫无关系：先把旧地名清掉，别让上一个城市（预设或上一次反查结果）
+        // 在新坐标反查回来之前继续挂在卡片上。反查成功会写入新名字，失败就一直是 null → 显示「-」。
+        _districtName.value = null
+        // 用户明确指定了新地点：天气与区划名不等 30 分钟窗口，立刻按**新坐标**重取。
         updatePlace(Place(latitude, longitude, PlaceSource.MANUAL, label), userChosen = true)
     }
 

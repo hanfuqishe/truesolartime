@@ -1,7 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">True Solar Clock</string>
-
     <string name="screen_subtitle">Noon is when the sun crosses your local meridian</string>
     <string name="action_settings">Settings</string>
     <string name="sun_section_title">Sun position · local time</string>
@@ -15,7 +14,6 @@
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
     <string name="map_auto_selected">auto-selected by region</string>
-
     <string name="settings_title">Location &amp; alerts</string>
     <string name="settings_current_location">Current location</string>
     <string name="action_use_gps">Follow GPS</string>
@@ -32,7 +30,6 @@
     <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere</string>
     <string name="section_widget">Home screen card</string>
     <string name="widget_add_waiting">Request sent. Waiting for the launcher…</string>
-    <string name="widget_add_action">Add to home screen</string>
     <string name="widget_add_desc">Puts the true solar time card on your home screen.</string>
     <string name="widget_add_done">Added to the home screen.</string>
     <string name="widget_add_manual">Could not add it: this home screen may be full, or the launcher does not support adding widgets from inside an app. Free a slot and try again, or long-press an empty spot and choose Widgets, then True Solar Time.</string>
@@ -49,9 +46,7 @@
     <string name="theme_dark">Dark</string>
     <string name="keep_screen_on_desc">Don\'t let the screen sleep while the app is open (uses more battery)</string>
     <string name="chime_exact_alarm_hint">Chimes may be a few minutes late — tap to allow “Alarms &amp; reminders”</string>
-    <string name="section_about">About the calculation</string>
     <string name="about_body">True solar time follows the actual position of the sun: first correct for the longitude offset from 120°E (4 minutes per degree), then add the equation of time caused by Earth orbital eccentricity and obliquity. The twelve shichen follow true solar time, starting with Zi at 23:00, two hours each.</string>
-
     <string name="city_beijing">Beijing</string>
     <string name="city_shanghai">Shanghai</string>
     <string name="city_guangzhou">Guangzhou</string>
@@ -74,62 +69,30 @@
     <string name="city_sydney">Sydney</string>
     <string name="city_murmansk">Murmansk</string>
     <string name="city_zhongshan">Zhongshan Station</string>
-
     <string name="map_style_auto">Auto</string>
     <string name="map_style_osm">OpenStreetMap</string>
     <string name="map_style_amap_vector">AMap</string>
     <string name="map_style_amap_satellite">AMap satellite</string>
     <string name="map_attribution_osm">Map data © OpenStreetMap contributors</string>
     <string name="map_attribution_amap">Tiles © AMap</string>
-
     <string name="widget_label">True Solar Time</string>
     <string name="widget_label_civil">Standard time</string>
     <string name="widget_waiting_gps">Waiting for GPS fix…</string>
-    <string name="widget_label_solar">True solar</string>
     <string name="widget_description">Left: local standard time and date. Right: true solar time and coordinates.</string>
-
     <string name="msg_location_permission">No location permission. Allow it in system settings, or enter coordinates manually.</string>
     <string name="msg_gps_timeout">No GPS fix yet. Try open sky, or set coordinates manually.</string>
     <string name="msg_following_gps">Following GPS (%1$s), updated every minute</string>
     <string name="gps_label">GPS</string>
     <string name="gps_label_accuracy">Accuracy %1$d m</string>
-
     <string name="duration_hours_minutes">%1$d h %2$02d min</string>
     <string name="duration_minutes_seconds">%1$d min %2$02d s</string>
     <string name="duration_seconds">%1$d s</string>
     <string name="coordinates">%1$.4f°%2$s  %3$.4f°%4$s</string>
     <string name="date_weekday">%1$d/%2$d · %3$s</string>
-
     <string name="shichen_name_format">%1$s hour</string>
     <string name="shichen_half_first">early</string>
     <string name="shichen_half_second">late</string>
     <string name="shichen_quarter_format">%1$s</string>
-
-    <string-array name="weekdays">
-        <item>Sunday</item>
-        <item>Monday</item>
-        <item>Tuesday</item>
-        <item>Wednesday</item>
-        <item>Thursday</item>
-        <item>Friday</item>
-        <item>Saturday</item>
-    </string-array>
-
-    <string-array name="shichen_names">
-        <item>Zi</item>
-        <item>Chou</item>
-        <item>Yin</item>
-        <item>Mao</item>
-        <item>Chen</item>
-        <item>Si</item>
-        <item>Wu</item>
-        <item>Wei</item>
-        <item>Shen</item>
-        <item>You</item>
-        <item>Xu</item>
-        <item>Hai</item>
-    </string-array>
-
     <string name="date_weekday_short">%1$d/%2$d %3$s</string>
     <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>
     <string name="weather_clear">Clear</string>
@@ -153,14 +116,26 @@
     <string name="weather_now">Now</string>
     <string name="weather_attribution">Weather data © Open-Meteo.com (CC BY 4.0)</string>
     <string name="weather_attribution_7timer">Weather data © 7Timer!</string>
-    <!-- 小组件底部小字用的短名（品牌名不翻译，只切源） -->
-    <string name="weather_source_openmeteo">Open-Meteo</string>
-    <string name="weather_source_7timer">7Timer!</string>
     <string name="section_diagnostics">Diagnostics</string>
     <string name="diagnostics_desc">Read-only snapshot of system font/density settings and the last widget build. Send it to the developer when the home-screen widget looks wrong.</string>
     <string name="diagnostics_open">View diagnostics</string>
+
+    <string name="widget_label_solar">True solar</string>
+    <string name="widget_add_action">Add to home screen</string>
+    <string name="section_about">About the calculation</string>
+
+    <string-array name="weekdays">
+<item>Sunday</item>
+        <item>Monday</item>
+        <item>Tuesday</item>
+        <item>Wednesday</item>
+        <item>Thursday</item>
+        <item>Friday</item>
+        <item>Saturday</item>
+    </string-array>
+
     <string-array name="weekdays_short">
-        <item>Sun</item>
+<item>Sun</item>
         <item>Mon</item>
         <item>Tue</item>
         <item>Wed</item>
@@ -168,4 +143,20 @@
         <item>Fri</item>
         <item>Sat</item>
     </string-array>
+
+    <string-array name="shichen_names">
+<item>Zi</item>
+        <item>Chou</item>
+        <item>Yin</item>
+        <item>Mao</item>
+        <item>Chen</item>
+        <item>Si</item>
+        <item>Wu</item>
+        <item>Wei</item>
+        <item>Shen</item>
+        <item>You</item>
+        <item>Xu</item>
+        <item>Hai</item>
+    </string-array>
+
 </resources>

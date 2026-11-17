@@ -16,13 +16,14 @@ class SunColorsTest {
     private val cardSurface = SunColors.CARD_SURFACE_LIGHT
     private val nightDash = SunColors.NIGHT_DASH_LIGHT
 
-    /** 弧再淡也要看得见：白卡上对比度 ≥ 1.4（用户下限），同时不能再回到「太沉」。 */
+    /** 弧再淡也要看得见：白卡上对比度落在 1.4~1.9 之间；本版实测 ≈1.46。 */
     @Test
     fun dayArcStaysVisibleOnTheWhiteCard() {
         val contrast = SunColors.contrastRatio(SunColors.DAY_ARC, cardSurface)
         assertTrue("白天弧对比度太低，看不见了：$contrast", contrast >= 1.4)
-        // 上一版是 #D09464（≈2.52），这版必须明显更轻，但也不能淡到只剩一层白。
-        assertTrue("白天弧还是偏重：$contrast", contrast <= 2.2)
+        assertTrue("白天弧太抢眼，不该超过 1.9：$contrast", contrast <= 1.9)
+        // 这一版（#EAD095）实测值钉死，防止被随手调深/调浅。
+        assertEquals("弧对白卡应≈1.46", 1.46, contrast, 0.01)
     }
 
     /** 白天弧现在比夜晚虚线**更淡**（有意为之），两者靠色相区分：暖金的 r−b 比灰大 ≥ 0.15。 */
@@ -38,12 +39,15 @@ class SunColorsTest {
         assertTrue("暖度差太小，色相上分不开：$gap", gap >= SunColors.MIN_WARMTH_GAP)
     }
 
-    /** 太阳金点要比淡金弧明显：与弧的对比度 ≥1.3，且在白卡上比弧更显眼。 */
+    /** 太阳金点要比淡金弧明显：对白卡 ≈2.07、与弧 ≈1.41，且在白卡上比弧更显眼。 */
     @Test
     fun sunDotStandsOutFromThePaleArc() {
         val sunVsArc = SunColors.contrastRatio(SunColors.DAY_SUN, SunColors.DAY_ARC)
         assertTrue("亮金点与弧的对比度太低：$sunVsArc", sunVsArc >= 1.3)
+        assertEquals("核心与弧应≈1.41", 1.41, sunVsArc, 0.01)
         val sunVsCard = SunColors.contrastRatio(SunColors.DAY_SUN, cardSurface)
+        assertTrue("核心对白卡必须 ≥2.0：$sunVsCard", sunVsCard >= 2.0)
+        assertEquals("核心对白卡应≈2.07", 2.07, sunVsCard, 0.01)
         val arcVsCard = SunColors.contrastRatio(SunColors.DAY_ARC, cardSurface)
         assertTrue("太阳点应比弧更明显：$sunVsCard vs $arcVsCard", sunVsCard > arcVsCard)
     }
@@ -111,8 +115,8 @@ class SunColorsTest {
     /** 常量钉死：hex 与透明度别再被随手改掉（改配色要连注释与测试一起改）。 */
     @Test
     fun paletteConstantsArePinned() {
-        assertEquals(0xFFE6CB9C.toInt(), SunColors.DAY_ARC)
-        assertEquals(0xFFD9A520.toInt(), SunColors.DAY_SUN)
+        assertEquals(0xFFEAD095.toInt(), SunColors.DAY_ARC)
+        assertEquals(0xFFD9AC1C.toInt(), SunColors.DAY_SUN)
         assertEquals(0xFFF5D68A.toInt(), SunColors.NIGHT_SUN)
         assertEquals(0xFFFFFBF6.toInt(), SunColors.CARD_SURFACE_LIGHT)
         assertEquals(0xFF857468.toInt(), SunColors.NIGHT_DASH_LIGHT)

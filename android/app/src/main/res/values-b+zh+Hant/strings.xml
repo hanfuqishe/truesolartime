@@ -1,7 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">真太陽時時鐘</string>
-
     <string name="screen_subtitle">以太陽經過當地子午線的時刻為正午</string>
     <string name="action_settings">設定</string>
     <string name="sun_section_title">太陽位置 · 當地時間</string>
@@ -15,7 +14,6 @@
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地圖</string>
     <string name="map_auto_selected">依所在地區自動選擇</string>
-
     <string name="settings_title">位置與提醒</string>
     <string name="settings_current_location">目前位置</string>
     <string name="action_use_gps">實時跟隨GPS</string>
@@ -32,7 +30,6 @@
     <string name="map_auto_hint">自動：境內用高德，境外用 OpenStreetMap</string>
     <string name="section_widget">桌面卡片</string>
     <string name="widget_add_waiting">已發出請求，等桌面確認…</string>
-    <string name="widget_add_action">新增到桌面</string>
     <string name="widget_add_desc">把真太陽時卡片直接放到桌面上。</string>
     <string name="widget_add_done">已新增到桌面。</string>
     <string name="widget_add_manual">沒加上：桌面這一屏可能已經滿了，或這個桌面不支援從應用內新增。騰出一格再試，也可以長按桌面空白處 → 視窗小工具 → 真太陽時。</string>
@@ -40,18 +37,16 @@
     <string name="reminder_desc">進入下一個時辰時蜂鳴一聲</string>
     <string name="chime_title">進入關鍵時間報時</string>
     <string name="chime_desc">進入關鍵時間時蜂鳴一聲（按真太陽時）</string>
+    <string name="chime_background_hint">報時沒響？點此允許本應用後台執行</string>
     <string name="keep_screen_on_title">螢幕恆亮</string>
-    <string name="keep_screen_on_desc">應用程式開啟期間不自動螢幕逾時（會更耗電）</string>
     <string name="theme_title">主題</string>
     <string name="theme_desc">「自動」依日出日落切換：白天亮色、夜晚暗色；「亮色 / 暗色」強制，首頁與桌面小工具一起跟隨。</string>
     <string name="theme_auto">自動</string>
     <string name="theme_light">亮色</string>
     <string name="theme_dark">暗色</string>
-    <string name="chime_background_hint">報時沒響？點此允許本應用後台執行</string>
+    <string name="keep_screen_on_desc">應用程式開啟期間不自動螢幕逾時（會更耗電）</string>
     <string name="chime_exact_alarm_hint">報時可能晚幾分鐘，點此允許「鬧鐘和提醒」</string>
-    <string name="section_about">關於計算</string>
     <string name="about_body">真太陽時依太陽的真實位置計時：先由當地經度相對東經 120° 的偏差修正時差（每 1° 相差 4 分鐘），再加上因地球軌道離心率與黃赤交角產生的均時差。十二時辰依真太陽時劃分，子時自 23:00 起，每兩小時一個時辰。</string>
-
     <string name="city_beijing">北京</string>
     <string name="city_shanghai">上海</string>
     <string name="city_guangzhou">廣州</string>
@@ -74,62 +69,30 @@
     <string name="city_sydney">雪梨</string>
     <string name="city_murmansk">莫曼斯克</string>
     <string name="city_zhongshan">中山站</string>
-
     <string name="map_style_auto">自動</string>
     <string name="map_style_osm">OpenStreetMap</string>
     <string name="map_style_amap_vector">高德向量</string>
     <string name="map_style_amap_satellite">高德衛星</string>
     <string name="map_attribution_osm">地圖資料 © OpenStreetMap 貢獻者</string>
     <string name="map_attribution_amap">底圖 © 高德地圖</string>
-
     <string name="widget_label">真太陽時</string>
     <string name="widget_label_civil">標準時間</string>
     <string name="widget_waiting_gps">等待 GPS 定位…</string>
-    <string name="widget_label_solar">真太陽時</string>
     <string name="widget_description">左側顯示所在國標準時間與日期，右側顯示當地真太陽時與經緯度</string>
-
     <string name="msg_location_permission">沒有定位權限，請在系統設定中允許，或手動輸入經緯度</string>
     <string name="msg_gps_timeout">尚未收到定位結果，可能需要在空曠處等待；也可手動設定經緯度</string>
     <string name="msg_following_gps">已跟隨 GPS 定位（%1$s），每分鐘更新</string>
     <string name="gps_label">GPS</string>
     <string name="gps_label_accuracy">精度 %1$d 公尺</string>
-
     <string name="duration_hours_minutes">%1$d 小時 %2$02d 分</string>
     <string name="duration_minutes_seconds">%1$d 分 %2$02d 秒</string>
     <string name="duration_seconds">%1$d 秒</string>
     <string name="coordinates">%1$.4f°%2$s  %3$.4f°%4$s</string>
     <string name="date_weekday">%1$d 月 %2$d 日 · %3$s</string>
-
     <string name="shichen_name_format">%1$s時</string>
     <string name="shichen_half_first">初</string>
     <string name="shichen_half_second">正</string>
     <string name="shichen_quarter_format">%1$s</string>
-
-    <string-array name="weekdays">
-        <item>星期日</item>
-        <item>星期一</item>
-        <item>星期二</item>
-        <item>星期三</item>
-        <item>星期四</item>
-        <item>星期五</item>
-        <item>星期六</item>
-    </string-array>
-
-    <string-array name="shichen_names">
-        <item>子</item>
-        <item>丑</item>
-        <item>寅</item>
-        <item>卯</item>
-        <item>辰</item>
-        <item>巳</item>
-        <item>午</item>
-        <item>未</item>
-        <item>申</item>
-        <item>酉</item>
-        <item>戌</item>
-        <item>亥</item>
-    </string-array>
-
     <string name="date_weekday_short">%1$d月%2$d日 %3$s</string>
     <string name="date_high_low">%1$s · %2$d° ~ %3$d°</string>
     <string name="weather_clear">晴</string>
@@ -153,14 +116,25 @@
     <string name="weather_now">現在</string>
     <string name="weather_attribution">天氣資料 © Open-Meteo.com（CC BY 4.0）</string>
     <string name="weather_attribution_7timer">天氣資料 © 7Timer!</string>
-    <!-- 小工具底部小字用的短名（品牌名不翻譯，只切來源） -->
-    <string name="weather_source_openmeteo">Open-Meteo</string>
-    <string name="weather_source_7timer">7Timer!</string>
     <string name="section_diagnostics">診斷</string>
     <string name="diagnostics_desc">系統字型/密度設定與最近一次小工具建構的唯讀快照。桌面小工具顯示不正常時，把它整段傳給開發者。</string>
     <string name="diagnostics_open">查看診斷資訊</string>
+    <string name="section_about">關於計算</string>
+    <string name="widget_add_action">新增到桌面</string>
+    <string name="widget_label_solar">真太陽時</string>
+
+    <string-array name="weekdays">
+<item>星期日</item>
+        <item>星期一</item>
+        <item>星期二</item>
+        <item>星期三</item>
+        <item>星期四</item>
+        <item>星期五</item>
+        <item>星期六</item>
+    </string-array>
+
     <string-array name="weekdays_short">
-        <item>週日</item>
+<item>週日</item>
         <item>週一</item>
         <item>週二</item>
         <item>週三</item>
@@ -168,4 +142,20 @@
         <item>週五</item>
         <item>週六</item>
     </string-array>
+
+    <string-array name="shichen_names">
+<item>子</item>
+        <item>丑</item>
+        <item>寅</item>
+        <item>卯</item>
+        <item>辰</item>
+        <item>巳</item>
+        <item>午</item>
+        <item>未</item>
+        <item>申</item>
+        <item>酉</item>
+        <item>戌</item>
+        <item>亥</item>
+    </string-array>
+
 </resources>
