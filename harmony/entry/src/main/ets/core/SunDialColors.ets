@@ -6,8 +6,8 @@
  * 全工程唯一来源，不在绘制代码里散落 hex 或魔法数字。
  *
  * **太阳点不再自创画法**：逐项照搬首页 0–24 时时间轴「现在」圆点——
- * 单个径向渐变圆、半径 [DOT_RADIUS]（5.5vp）、色标 [DOT_STOPS]（0 / 0.45 / 1）、
- * alpha [DOT_ALPHAS]（1 / 0.45 / 0，即中间就开始软化，边缘完全透明），渐变**从圆心 0 开始**。
+ * 单个径向渐变圆、半径 [DOT_RADIUS]（5.5vp）、色标 [DOT_STOPS]（0 / 0.55 / 1）、
+ * alpha [DOT_ALPHAS]（1 / 1 / 0，即内圈 55% 完全不透明、之后才渐隐），渐变**从圆心 0 开始**。
  * 只有颜色不同：白天 `#D9A520`、夜间 `#F5D68A`。
  * 地平线以下用同尺寸、同渐变结构的柔化点（透明度减半），不画硬边描边圈。
  *
@@ -40,10 +40,15 @@ export class SunDialColors {
    * 时间轴那颗点就是 11×11vp 的盒子 + `radialGradient(radius: 5.5)`；太阳点照搬。
    */
   static readonly DOT_RADIUS: number = 5.5;
-  /** 渐变色标位置（与时间轴圆点一致）：0 / 0.45 / 1。 */
-  static readonly DOT_STOPS: number[] = [0, 0.45, 1];
-  /** 渐变色标 alpha（与时间轴圆点一致）：1 / 0.45 / 0 —— 从圆心开始柔和过渡。 */
-  static readonly DOT_ALPHAS: number[] = [1, 0.45, 0];
+  /**
+   * 渐变色标位置（时间轴圆点与太阳点共用）：0 / 0.55 / 1。
+   *
+   * 0→0.55 完全不透明（实心内圈），0.55→1 渐隐到透明；这样「点」有足够的实心部分，
+   * 不会只剩薄薄一层光。
+   */
+  static readonly DOT_STOPS: number[] = [0, 0.55, 1];
+  /** 渐变色标 alpha（与时间轴圆点一致）：1 / 1 / 0 —— 内圈 55% 完全实心，之后渐隐。 */
+  static readonly DOT_ALPHAS: number[] = [1, 1, 0];
   /** 地平线以下柔化点的 alpha 缩放（同尺寸同画法，只是更淡）。 */
   static readonly DOT_BELOW_HORIZON_SCALE: number = 0.5;
 
@@ -58,7 +63,7 @@ export class SunDialColors {
   }
 
   /**
-   * 按时间轴圆点的 alpha 序列生成三档颜色（0 / 0.45 / 1）。
+   * 按时间轴圆点的 alpha 序列生成三档颜色（0 / 0.55 / 1）。
    *
    * @param base 基础色（白天 `#D9A520` / 夜间 `#F5D68A`）
    * @param alphaScale 整体透明度缩放：1 = 地平线以上；0.5 = 地平线以下的柔化点。
@@ -69,6 +74,27 @@ export class SunDialColors {
       colors.push(SunDialColors.withAlpha(base, alpha * alphaScale));
     }
     return colors;
+  }
+
+  /**
+   * 渐变在某个半径比例处的 alpha（线性插值），用来断言「内圈仍然实心」。
+   *
+   * @param radiusFraction 0 = 圆心，1 = 外沿
+   */
+  static alphaAt(radiusFraction: number): number {
+    const stops: number[] = SunDialColors.DOT_STOPS;
+    const alphas: number[] = SunDialColors.DOT_ALPHAS;
+    if (radiusFraction <= stops[0]) {
+      return alphas[0];
+    }
+    for (let index = 1; index < stops.length; index++) {
+      if (radiusFraction <= stops[index]) {
+        const span: number = stops[index] - stops[index - 1];
+        const t: number = span <= 0 ? 1 : (radiusFraction - stops[index - 1]) / span;
+        return alphas[index - 1] + (alphas[index] - alphas[index - 1]) * t;
+      }
+    }
+    return alphas[alphas.length - 1];
   }
 
   /** `#RRGGBB` / `#AARRGGBB` → `[r, g, b]`（0–255，忽略 alpha）。 */

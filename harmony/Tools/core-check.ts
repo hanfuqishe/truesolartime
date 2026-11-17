@@ -1433,16 +1433,20 @@ for (const item of equationCases) {
 
   // 太阳点 = 时间轴「现在」圆点：同半径、同色标位置、同 alpha 序列，只有颜色不同。
   near('sun dot radius matches the timeline dot', 5.5, SunDialColors.DOT_RADIUS, 0.001);
-  equal('sun dot colour stops match the timeline dot', '0,0.45,1',
+  equal('sun dot colour stops match the timeline dot', '0,0.55,1',
     SunDialColors.DOT_STOPS.join(','));
-  equal('sun dot alpha stops match the timeline dot', '1,0.45,0',
+  equal('sun dot alpha stops match the timeline dot', '1,1,0',
     SunDialColors.DOT_ALPHAS.join(','));
   equal('sun dot gradient starts at the centre', 0, SunDialColors.DOT_STOPS[0]);
+  // 内圈 55% 完全实心：半径 0.5 处 alpha 仍是 1，0.55 也是 1，之后才线性渐隐。
+  equal('radius 0.5 is still fully opaque', 1, SunDialColors.alphaAt(0.5));
+  equal('radius 0.55 is still fully opaque', 1, SunDialColors.alphaAt(0.55));
+  near('radius 0.775 is half faded', 0.5, SunDialColors.alphaAt(0.775), 0.001);
   equal('sun dot is gold by day', '#D9A520', SunDialColors.DAY_SUN_DOT);
   equal('sun dot is gold by night', '#F5D68A', SunDialColors.NIGHT_SUN_DOT);
-  equal('day gradient colours follow the alpha stops', '#FFD9A520,#73D9A520,#00D9A520',
+  equal('day gradient colours follow the alpha stops', '#FFD9A520,#FFD9A520,#00D9A520',
     SunDialColors.dotGradientColors(SunDialColors.DAY_SUN_DOT).join(','));
-  equal('night gradient colours follow the alpha stops', '#FFF5D68A,#73F5D68A,#00F5D68A',
+  equal('night gradient colours follow the alpha stops', '#FFF5D68A,#FFF5D68A,#00F5D68A',
     SunDialColors.dotGradientColors(SunDialColors.NIGHT_SUN_DOT).join(','));
   check('below-horizon dot keeps the same radius and softer alpha',
     SunDialColors.DOT_BELOW_HORIZON_SCALE === 0.5

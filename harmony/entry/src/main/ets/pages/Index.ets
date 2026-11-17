@@ -1002,7 +1002,7 @@ struct Index {
             .height(this.cs(11))
             .borderRadius(this.cs(5.5))
             // 时间轴「现在」圆点：太阳点逐项照搬的就是这一套 ——
-            // 半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0（从圆心开始柔和过渡）。
+            // 半径 5.5vp，色标 0 / 0.55 / 1，alpha 1 / 1 / 0（内圈 55% 完全实心，之后渐隐）。
             .radialGradient({
               center: ['50%', '50%'],
               radius: SunDialColors.DOT_RADIUS,
@@ -1451,7 +1451,7 @@ struct Index {
     }
 
     // 当前太阳点：**逐项照搬**首页时间轴「现在」圆点的画法 ——
-    // 单个径向渐变圆（渐变从圆心 0 开始）：半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0。
+    // 单个径向渐变圆（渐变从圆心 0 开始）：半径 5.5vp，色标 0 / 0.55 / 1，alpha 1 / 1 / 0。
     // 只有颜色不同（白天 #D9A520、夜间 #F5D68A）；地平线以下用同尺寸同画法、整体更淡的柔化点。
     const dotBaseColor: string = path.isSunUp() ? this.palette.sunDot : this.palette.subtle;
     const dotAlphaScale: number = path.isSunUp() ? 1 : SunDialColors.DOT_BELOW_HORIZON_SCALE;
