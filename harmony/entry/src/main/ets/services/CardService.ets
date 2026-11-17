@@ -27,6 +27,7 @@ import { DistrictService } from './DistrictService';
 import { KeyTimeService } from './KeyTimeService';
 import { LocationService, GeoPoint } from './LocationService';
 import { Place, PlaceSource } from '../core/Place';
+import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { WeatherService } from './WeatherService';
 
 /**
@@ -119,7 +120,7 @@ export class CardService {
       CivicTimeLogic.standardOffsetSeconds(place.latitude, place.longitude, countryCode), countryCode);
     const data: CardData = new CardData();
 
-    data.city = CardService.cityName(place.latitude, place.longitude, language);
+    data.city = CardService.cityName(place, language);
     // 时辰只显示时辰名（如「亥时」）；时初／时正仍由 snapshot 算着，只是不再显示，
     // 免得和 Android 桌面小组件、首页大卡片出现两种写法。
     data.shichen = snapshot.shichenName;
@@ -167,16 +168,21 @@ export class CardService {
   }
 
   /**
-   * 地名：优先用逆地理得到的**完整名**（如「上海市黄浦区」），与 Android 卡片的做法一致；
-   * 没有逆地理结果时退回最近的城市名，绝不显示占位符。
+   * 地名：优先用逆地理得到的**完整名**（如「上海市黄浦区」），且必须属于当前坐标（≤ 5 km）；
+   * 没有结果时只有预设城市回退到城市名，手动坐标 / GPS 显示半角 `-`，绝不回填上一个城市的名字。
    */
-  private static cityName(latitude: number, longitude: number, language: string): string {
-    const full: string = DistrictService.cachedName();
-    if (full.length > 0) {
-      return full;
+  private static cityName(place: Place, language: string): string {
+    const names: DistrictNames | null = DistrictService.cachedNamesFor(place);
+    const preset: Place | null = Place.presetOf(place);
+    let presetName: string = '';
+    if (preset !== null) {
+      presetName = preset.label;
+      if (presetName.length === 0) {
+        const city: NearbyCity | null = CityIndex.nearest(preset.latitude, preset.longitude, language);
+        presetName = city === null ? '' : city.name;
+      }
     }
-    const nearest: NearbyCity | null = CityIndex.nearest(latitude, longitude, language);
-    return nearest === null ? '' : nearest.name;
+    return DistrictNameLogic.labelFor(names, presetName);
   }
 
   /** 当地「今天 00:00」对应的 UTC 毫秒（用观测点自己的时区偏移，不是北京时间）。 */

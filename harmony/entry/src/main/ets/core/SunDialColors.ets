@@ -6,17 +6,18 @@
  *   ① 实心核心：半径 [SUN_DOT_CORE_RADIUS]（2.5vp ≈ 5.5 × 0.45）、纯色、alpha 1.0，不用渐变；
  *   ② 外圈光晕：从 [SUN_DOT_GLOW_START_RADIUS]（= 核心半径）到 [SUN_DOT_GLOW_RADIUS]（5.5vp）
  *      的独立径向渐变，alpha 0.35 → 0，画在核心之前。
- * 颜色白天 `#D9A520`、夜间 `#F5D68A`；地平线以下同尺寸同两层，只换成低对比色。
+ * 颜色白天弧 `#EAD095`、核心 `#D9AC1C`（与安卓定稿一致）；夜间保持 `#F5D68A` 那一套不动。
+ * 地平线以下同尺寸同两层，只换成低对比色。
  *
- * 白天弧 `#E8CFA0`（线宽 1.6vp，只作路径示意）；夜间弧/虚线保持原样（1.5vp、4/4vp）。
+ * 白天弧线宽 1.6vp，只作路径示意；夜间弧/虚线保持原样（1.5vp、4/4vp）。
  */
 export class SunDialColors {
   /** 白天卡片的底色（对比度计算的基准）。 */
   static readonly DAY_CARD: string = '#FFFDFA';
-  /** 白天弧：淡金色，仅作路径示意。 */
-  static readonly DAY_ARC: string = '#E8CFA0';
-  /** 白天太阳点：金色（与时间轴圆点同结构、同尺寸）。 */
-  static readonly DAY_SUN_DOT: string = '#D9A520';
+  /** 白天弧：淡金色，仅作路径示意（与安卓 `#EAD095` 一致；白卡对比约 1.48）。 */
+  static readonly DAY_ARC: string = '#EAD095';
+  /** 白天太阳点核心：金色（与安卓 `#D9AC1C` 一致；对白卡约 2.10，对弧约 1.41）。 */
+  static readonly DAY_SUN_DOT: string = '#D9AC1C';
   /** 夜间弧：保持原来的金色。 */
   static readonly NIGHT_ARC: string = '#F5D68A';
   /** 夜间太阳点：保持原来的金色。 */

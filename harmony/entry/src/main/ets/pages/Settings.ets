@@ -9,6 +9,7 @@ import { promptAction, router } from '@kit.ArkUI';
 import { formInfo, formProvider } from '@kit.FormKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
+import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { MAP_STYLE_OPTIONS, MapStyleOption } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
@@ -26,9 +27,6 @@ import { LocationService, LocationAttempt } from '../services/LocationService';
 import { ReminderService } from '../services/ReminderService';
 import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
-
-/** 没有名字可用时的占位符：半角减号（与首页卡片、Android 的 `city_unknown` 一致）。 */
-const CITY_UNKNOWN: string = '-';
 
 @Entry
 @Component
@@ -158,29 +156,27 @@ struct Settings {
 
   /**
    * 当前位置的名字，三段式（与首页卡片、Android `MainScreen.cityText` 一致）：
-   * ① 反查到的区划名；② 反查未回/失败时只有预设城市才回退到城市名；③ 都没有就显示半角减号。
+   * ① 反查到的区划名（必须经 `cachedNamesFor(place)` 按坐标过滤，≤ 5 km）；
+   * ② 反查未回/失败时只有预设城市才回退到城市名；③ 都没有就显示半角减号。
    */
   private labelOf(place: Place): string {
-    const district: string = place.sameLocation(AppStore.place()) ? DistrictService.cachedShortNameFor(place) : '';
-    if (district.length > 0) {
-      return district;
-    }
-    return this.cityLabel(place);
+    const district: DistrictNames | null = place.sameLocation(AppStore.place())
+      ? DistrictService.cachedNamesFor(place)
+      : null;
+    return DistrictNameLogic.labelFor(district, this.cityLabel(place));
   }
 
   /**
    * 常用城市按钮上的名字：固定用城市名，不跟随逆地理结果（否则「上海」会变成「黄浦区」）。
    *
-   * 非预设点（手工坐标 / GPS）没有名字可用，返回半角减号 —— 与首页卡片一致，
-   * 不再拿「最近的城市名」冒充当前位置。
+   * 非预设点（手工坐标 / GPS）没有名字可用，返回空串 —— 由 `DistrictNameLogic.labelFor` 统一落成 `-`。
    */
   private cityLabel(place: Place): string {
     const preset: Place | null = Place.presetOf(place);
     if (preset === null) {
-      return CITY_UNKNOWN;
+      return '';
     }
-    const name: string = this.cityNameOf(preset);
-    return name.length > 0 ? name : CITY_UNKNOWN;
+    return this.cityNameOf(preset);
   }
 
   /** 预设城市的名字：内置城市先看 label，境外城市按坐标查离线城市表（随界面语言变化）。 */
@@ -193,6 +189,10 @@ struct Settings {
   }
 
   private applyPlace(place: Place, leave: boolean = false): void {
+    // 换地点（含手动坐标）：先把旧区划名清掉，反查回来前显示 `-`，绝不残留上一个城市。
+    if (!place.sameLocation(this.place)) {
+      DistrictService.clearCached();
+    }
     AppStore.setPlace(place);
     this.place = place;
     this.placeName = this.labelOf(place);
@@ -328,6 +328,8 @@ struct Settings {
       this.error = '经度需在 -180 到 180 之间';
       return;
     }
+    // 手动坐标：立刻清掉上一个城市的区划名，反查成功才显示结果，失败保持 `-`。
+    DistrictService.clearCached();
     this.applyPlace(new Place(latitude, longitude, PlaceSource.MANUAL, '', ''));
   }
 

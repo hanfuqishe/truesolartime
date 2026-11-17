@@ -29,6 +29,9 @@ const PLACEHOLDER_REGIONS: string[] = ['市辖区', '县', '省直辖县级行�
 const MAX_LEVELS: number = 3;
 
 export class DistrictNameLogic {
+  /** 没有任何可显示名字时的占位符：半角减号（与 Android 的 `city_unknown` 一致）。 */
+  static readonly CITY_UNKNOWN: string = '-';
+
   static cleanName(value: string): string {
     const trimmed: string = value.trim();
     if (trimmed.length === 0 || trimmed === '[]') {
@@ -211,5 +214,24 @@ export class DistrictNameLogic {
       return true;
     }
     return movedKm > 5.0;
+  }
+
+  /**
+   * 卡片 / 设置页要显示的地名：区划全名 → 短名 → 预设城市名 → 半角减号。
+   *
+   * [district] 必须是**已经按当前坐标过滤过**的缓存（见 services/DistrictService.cachedNamesFor）：
+   * 拿旧城市的缓存来显示，正是「手动坐标还显示北京」的根因。反查失败时调用方传 null，
+   * 从而得到 `-`，绝不回填旧值；手动坐标没有预设名，也只会得到 `-`。
+   */
+  static labelFor(district: DistrictNames | null, presetName: string): string {
+    if (district !== null) {
+      if (district.full.length > 0) {
+        return district.full;
+      }
+      if (district.short.length > 0) {
+        return district.short;
+      }
+    }
+    return presetName.length > 0 ? presetName : DistrictNameLogic.CITY_UNKNOWN;
   }
 }

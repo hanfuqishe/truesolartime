@@ -459,4 +459,21 @@ export class AppStore {
     store.putSync('time', Date.now());
     store.flush();
   }
+
+  /**
+   * 清空区划名缓存：换到手动坐标 / 新地点时立刻清，界面马上回到半角 `-`，
+   * 不会在反查回来前继续显示上一个城市（如「北京」）。
+   */
+  static clearDistrict(): void {
+    const store: preferences.Preferences = AppStore.districtStore();
+    store.putSync('name', '');
+    store.putSync('short', '');
+    store.putSync('lang', '');
+    store.putSync('lat', Number.NaN);
+    store.putSync('lon', Number.NaN);
+    store.putSync('schema', 0);
+    store.putSync('countryCode', '');
+    store.putSync('time', 0);
+    store.flush();
+  }
 }

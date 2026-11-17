@@ -13,7 +13,7 @@ import { SolarSnapshot, SolarTimeSnapshot } from './core/SolarSnapshot';
 import { CityIndex } from './core/CityIndex';
 import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint, WeatherSlot, WeatherSource, WeatherFallback } from './core/Weather';
 import { ThemeMode } from './core/ThemeMode';
-import { DistrictNameLogic } from './core/DistrictName';
+import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -759,6 +759,17 @@ for (const item of equationCases) {
   check('city token skipped', DistrictNameLogic.pickDistrictFromDisplay('上海市, 上海市, 中国', '上海市') === '');
   check('no district in display', DistrictNameLogic.pickDistrictFromDisplay('Huangpu, Shanghai, China', 'Shanghai') === '');
   check('county suffix recognised', DistrictNameLogic.pickDistrictFromDisplay('某镇, 某县, 某市', '某市') === '某县');
+
+  // 地名显示：手动坐标 + 反查失败 → 半角减号；成功 → 区划名；从预设城市切来不残留旧名
+  // （旧缓存按坐标过滤为 null，见 DistrictService.cachedNamesFor）。
+  equal('manual coordinate with failed lookup shows a dash', '-',
+    DistrictNameLogic.labelFor(null, ''));
+  const cairo = new DistrictNames('开罗省', '开罗', 'eg');
+  equal('successful lookup shows the district', '开罗省', DistrictNameLogic.labelFor(cairo, ''));
+  equal('district wins over a preset fallback', '开罗省', DistrictNameLogic.labelFor(cairo, '北京'));
+  equal('preset city falls back to its own name', '北京', DistrictNameLogic.labelFor(null, '北京'));
+  check('old beijing cache is too far from cairo coordinates',
+    CityIndex.distanceKm(39.9042, 116.4074, 25.2048, 30.2708) > 5);
 }
 
 // ---- 报时窗口 ----
@@ -1411,9 +1422,15 @@ for (const item of equationCases) {
 
 // ---- 太阳卡：轨迹线宽 / 太阳点（= 时间轴圆点）逐项一致 / 配色对比 ----
 {
+  equal('day arc uses the android gold', '#EAD095', SunDialColors.DAY_ARC);
+  equal('day sun dot uses the android gold', '#D9AC1C', SunDialColors.DAY_SUN_DOT);
   const arcContrast: number = SunDialColors.contrastRatio(
     SunDialColors.DAY_ARC, SunDialColors.DAY_CARD);
-  check('day arc is still visible on the white card', arcContrast >= 1.4, `${arcContrast}`);
+  check('day arc contrast stays in the 1.4-1.5 band',
+    arcContrast >= 1.4 && arcContrast <= 1.55, `${arcContrast}`);
+  const coreOnCard: number = SunDialColors.contrastRatio(
+    SunDialColors.DAY_SUN_DOT, SunDialColors.DAY_CARD);
+  check('sun dot core contrast is at least 2.0', coreOnCard >= 2.0, `${coreOnCard}`);
   const warmthGap: number = SunDialColors.warmth(SunDialColors.DAY_ARC) -
     SunDialColors.warmth(SunDialColors.NIGHT_DASH);
   check('day arc differs from the night dash in hue', warmthGap >= 0.15, `${warmthGap}`);
@@ -1450,10 +1467,12 @@ for (const item of equationCases) {
   check('sun dot core radius equals timeline radius x 0.45',
     Math.abs(SunDialColors.SUN_DOT_CORE_RADIUS - SunDialColors.DOT_RADIUS * 0.45) <= 0.05,
     `${SunDialColors.SUN_DOT_CORE_RADIUS}`);
-  equal('sun dot core is gold by day', '#D9A520', SunDialColors.DAY_SUN_DOT);
+  equal('sun dot core is gold by day', '#D9AC1C', SunDialColors.DAY_SUN_DOT);
   equal('sun dot core is gold by night', '#F5D68A', SunDialColors.NIGHT_SUN_DOT);
-  equal('sun glow colours fade from 0.35 to 0', '#59D9A520,#00D9A520',
+  equal('sun glow colours fade from 0.35 to 0', '#59D9AC1C,#00D9AC1C',
     SunDialColors.sunGlowColors(SunDialColors.DAY_SUN_DOT).join(','));
+  equal('night sun glow stays gold', '#59F5D68A,#00F5D68A',
+    SunDialColors.sunGlowColors(SunDialColors.NIGHT_SUN_DOT).join(','));
   equal('night arc stays gold', '#F5D68A', SunDialColors.NIGHT_ARC);
 }
 

@@ -83,6 +83,12 @@ export class DistrictService {
     return names === null ? '' : names.short;
   }
 
+  /** 清空区划名缓存并通知界面重读：换到手动坐标 / 新地点时立刻回到半角 `-`。 */
+  static clearCached(): void {
+    AppStore.clearDistrict();
+    DistrictService.revisionCount++;
+  }
+
   /** 坐标超过 5 km 才重查。 */
   static needsRefresh(place: Place): boolean {
     const cached: CachedDistrict = AppStore.district();

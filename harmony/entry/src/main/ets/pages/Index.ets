@@ -13,7 +13,7 @@ import { CivicTimeLogic } from '../core/CivicTime';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { SunDialColors } from '../core/SunDialColors';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
-import { HourPoint, WeatherLogic, WeatherSlot, WeatherSource, WeatherSnapshot } from '../core/Weather';
+import { HourPoint, WeatherLogic, WeatherSlot, WeatherSnapshot } from '../core/Weather';
 import { ThemeMode } from '../core/ThemeMode';
 import { font, MeasureUtils, router } from '@kit.ArkUI';
 import { CARD_FONT_MEDIUM, CARD_FONT_REGULAR } from '../common/CardFont';
@@ -176,8 +176,6 @@ struct Index {
   @State weatherRange: string = '';
   /** 当前地点还没有缓存、正在取数：天气位显示「更新中…」而不是干等占位符。 */
   @State weatherPending: boolean = false;
-  /** 当前缓存来自哪个源（open-meteo / 7timer）：底部那段署名跟着它切换。 */
-  @State weatherSource: string = WeatherSource.OPEN_METEO;
   @State hourLabels: string[] = [];
   @State hourTemps: string[] = [];
   @State hourIcons: string[] = [];
@@ -412,10 +410,7 @@ struct Index {
       this.weatherTemperature = WeatherLogic.PLACEHOLDER;
       this.weatherText = '';
     }
-    // 缓存里的来源（主源 / 备用源）——底部署名与逐时步长都跟着它走；
-    // 当前地点没有任何可用缓存时按主源署名（备用源只在真实降级后出现）。
-    this.weatherSource = weather === null ? WeatherSource.OPEN_METEO : WeatherService.source();
-
+    // 缓存里的来源（主源 / 备用源）只影响逐时步长与诊断；首页页脚不再显示来源文字。
     // 日期与逐时格按**当地标准时**算（与左栏那个时钟同一口径），不是北京时间。
     const zoneSeconds: number = this.zoneOffsetSeconds();
     const date: Date = new Date(now + zoneSeconds * 1000);
@@ -1615,8 +1610,8 @@ struct Index {
             this.sunCard()
           }
           this.mapCard()
-          // 数据来源署名跟着实际取到的源切换（主源 CC BY 4.0 是它的许可要求）。
-          Text(`v${AppInfo.versionName()} · 数据来源 ${WeatherSource.attribution(this.weatherSource)}`)
+          // 首页只在页脚留版本号；天气数据来源署名放在设置页「关于」里（许可要求，不在这里重复）。
+          Text(`v${AppInfo.versionName()}`)
             .fontSize(10)
             .fontColor(this.palette.subtle)
             .margin({ top: 4, bottom: 8 })
