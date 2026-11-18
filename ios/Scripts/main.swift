@@ -1699,83 +1699,160 @@ expect(
         && BasemapProbe.osmZoom == 3,
     "levels=\(BasemapProbe.amapZoomLevels)"
 )
-// decide：OSM 通就用 OSM + z12；否则高德里有内容的最高精度；全无 → 不可用。
-let osmWins = BasemapProbe.decide(osmReachable: true, amap: [12: true, 10: true, 3: true])
+// decide：**先换源、再降级**（偏好源只决定同精度时选谁）。
 expect(
-    "OSM z3 通 → OSM + z12（哪怕高德也有内容）",
-    osmWins == BasemapProbe.Decision(source: .osm, zoom: 12),
-    "actual=\(osmWins)"
+    "境内（偏好高德）+ 高德 z12 空白 + OSM z12 有内容 → 换源 OSM z12（不是降级到 z10/z3）",
+    BasemapProbe.decide(osm: [12: true, 3: true], amap: [12: false, 10: false, 3: false], preferred: .amapVector)
+        == BasemapProbe.Decision(source: .osm, zoom: 12)
 )
-let amapBest = BasemapProbe.decide(osmReachable: false, amap: [12: true, 10: true, 3: true])
 expect(
-    "OSM 不通 → 高德 z12（有内容的最高精度）",
-    amapBest == BasemapProbe.Decision(source: .amapVector, zoom: 12)
+    "境内 + 两源 z12 都有内容 → 偏好源高德 z12",
+    BasemapProbe.decide(osm: [12: true], amap: [12: true], preferred: .amapVector)
+        == BasemapProbe.Decision(source: .amapVector, zoom: 12)
 )
-let amapMid = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: true, 3: true])
-expect("z12 空白、z10 有内容 → 高德 z10", amapMid == BasemapProbe.Decision(source: .amapVector, zoom: 10))
-let amapWorld = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: false, 3: true])
-expect("只有 z3 有内容 → 高德 z3", amapWorld == BasemapProbe.Decision(source: .amapVector, zoom: 3))
-let allBlank = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: false, 3: false])
-expect("全失败 / 全空白 → 不可用（zoom 为 nil）", allBlank.zoom == nil && allBlank.source == .amapVector)
-let missing = BasemapProbe.decide(osmReachable: false, amap: [:])
+expect(
+    "境外（偏好 OSM）+ OSM z12 空白 + 高德 z12 有内容 → 换源高德 z12",
+    BasemapProbe.decide(osm: [12: false, 3: false], amap: [12: true, 10: true, 3: true], preferred: .osm)
+        == BasemapProbe.Decision(source: .amapVector, zoom: 12)
+)
+let bothBlankZ12 = BasemapProbe.decide(
+    osm: [12: false, 3: true],
+    amap: [12: false, 10: true, 3: true],
+    preferred: .osm
+)
+expect(
+    "两源 z12 都空白 → 看 z10：高德 z10 有内容（z3 也有，但精度优先）→ 高德 z10",
+    bothBlankZ12 == BasemapProbe.Decision(source: .amapVector, zoom: 10)
+)
+let worldOnly = BasemapProbe.decide(osm: [3: true], amap: [3: false], preferred: .amapVector)
+expect("z12/z10 全空、只有 OSM z3 有内容 → OSM z3", worldOnly == BasemapProbe.Decision(source: .osm, zoom: 3))
+let allBlank = BasemapProbe.decide(osm: [12: false, 3: false], amap: [12: false, 10: false, 3: false], preferred: .osm)
+expect(
+    "两源 / 各级全空白 → 不可用（zoom 为 nil）",
+    allBlank.zoom == nil && allBlank.source == .osm
+)
+let missing = BasemapProbe.decide(osm: [:], amap: [:], preferred: .amapVector)
 expect("探测没回来（空表）也当不可用", missing.zoom == nil)
-
-expect(
-    "zoomsAbove：选中精度之上的档位（12 → 无、10 → [12]、3 → [12,10]）",
-    BasemapProbe.zoomsAbove(12).isEmpty
-        && BasemapProbe.zoomsAbove(10) == [12]
-        && BasemapProbe.zoomsAbove(3) == [12, 10]
-)
-// 一步落位的 zoomStep：选中 z10 直接 2（不是逐级 1 再 2）。
-expect(
-    "zoomStep 一步落位：12→0、10→2、3→3、nil→4",
-    BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .osm, zoom: 12)) == 0
-        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: 10)) == 2
-        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: 3)) == 3
-        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: nil)) == 4
-)
-// 缓存：~100 m 指纹 + 5 分钟。
-let egyptProbeKey = BasemapProbe.cacheKey(latitude: 25.2048, longitude: 30.2708)
-expect(
-    "同一格（约 100 m 内）指纹相同、跨格不同",
-    BasemapProbe.cacheKey(latitude: 25.2048, longitude: 30.2708) == egyptProbeKey
-        && BasemapProbe.cacheKey(latitude: 25.20480, longitude: 30.27080) == egyptProbeKey
-        && BasemapProbe.cacheKey(latitude: 25.2100, longitude: 30.2708) != egyptProbeKey
-)
-let freshProbeCache = BasemapProbeCache(key: egyptProbeKey, source: .osm, zoom: 12, decidedAt: 1_000)
-expect(
-    "缓存判定：无缓存 / 换地点 / 超 5 分钟 → 需要探测；新鲜 → 复用",
-    BasemapProbe.needsProbe(cached: nil, key: egyptProbeKey, now: 1_000)
-        && !BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_000 + 299)
-        && BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_000 + 300)
-        && BasemapProbe.needsProbe(cached: freshProbeCache, key: "other", now: 1_001)
-        && BasemapProbe.shouldProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_002)
-            == BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_002)
+// 南极中山站端到端：标 cn（偏好高德）但高德在南极全是空白瓦片 → 应该换源 OSM z12，而不是降级到 z3。
+let zhongshanPreset = Place.presets.first { $0.presetKey == "city.zhongshan" }
+let zhongshanPreferred = MapStyle.auto.effective(
+    countryCode: zhongshanPreset?.countryCode,
+    latitude: zhongshanPreset?.latitude ?? 0,
+    longitude: zhongshanPreset?.longitude ?? 0
+).basemapSource ?? .osm
+let zhongshanDecision = BasemapProbe.decide(
+    osm: [12: true, 3: true],
+    amap: [12: false, 10: false, 3: false],
+    preferred: zhongshanPreferred
 )
 expect(
-    "tileOf：探测用的那一块瓦片坐标（开罗 z3）",
-    BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)?.x == 4
-        && BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)?.y == 3,
-    "actual=\(String(describing: BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)))"
-)
-// 结论直接定级的副作用：5 分钟恢复冷却（防止 z3 出图又弹回 z12）。
-var probeDecisionState = autoOverseas()
-probeDecisionState.applyProbeDecision(source: .amapVector, zoom: 3, at: 500)
-expect(
-    "探测定级后：一步到 z3（zoomStep 3）、并且 5 分钟内不许回弹",
-    probeDecisionState.effectiveZoom(requested: 12) == 3
-        && probeDecisionState.zoomStep == 3
-        && !probeDecisionState.canRecoverChain(now: 500 + 299)
-        && probeDecisionState.canRecoverChain(now: 500 + 301),
-    "step=\(probeDecisionState.zoomStep)"
+    "南极中山站端到端：高德全空白 + OSM 有内容 → 源 OSM、级别 z12（不降级到 z3）",
+    zhongshanDecision.source == .osm && zhongshanDecision.zoom == 12,
+    "preferred=\(zhongshanPreferred) decision=\(zhongshanDecision)"
 )
 expect(
-    "探测定级后 uiState.ready 为 true（有结论才建地图）",
-    probeDecisionState.uiState(requestedZoom: 12).ready
-        && !probeDecisionState.pendingUiState(requestedZoom: 12).ready
+    "南极中山站若标 cn（偏好高德）：仍是 OSM z12（换源优先于降级）",
+    BasemapProbe.decide(osm: [12: true, 3: true], amap: [12: false, 10: false, 3: false], preferred: .amapVector)
+        == zhongshanDecision,
+    "decision=\(zhongshanDecision)"
 )
 
+print("== 首屏地图：逐个返回、渐进升级 ==")
+let z3Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 3)
+let z10Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 10)
+let z12Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 12)
+let osm12Candidate = BasemapUpgrade.Candidate(source: .osm, zoom: 12)
+let osm3Candidate = BasemapUpgrade.Candidate(source: .osm, zoom: 3)
 
+expect(
+    "第一块有内容 → 立刻出图（先到先用）",
+    BasemapUpgrade.shouldAdopt(
+        candidate: z3Candidate, current: nil, preferred: .osm,
+        firstImageAt: nil, userInteracted: false, now: 0.3
+    )
+)
+expect(
+    "z3 先回、z12 后回 → 会用 z12 升级",
+    BasemapUpgrade.shouldAdopt(
+        candidate: z12Candidate, current: z3Candidate, preferred: .osm,
+        firstImageAt: 0.3, userInteracted: false, now: 1.9
+    )
+)
+expect(
+    "z12 先回、z3 后回 → 忽略（永不降级）",
+    !BasemapUpgrade.shouldAdopt(
+        candidate: z3Candidate, current: z12Candidate, preferred: .osm,
+        firstImageAt: 0.3, userInteracted: false, now: 1.0
+    )
+)
+expect(
+    "先比级别、同级别才比偏好源：偏好 OSM 时同 z12 切 OSM；OSM z3 不能为源而降精度",
+    BasemapUpgrade.isBetter(osm12Candidate, than: z12Candidate, preferred: .osm)
+        && BasemapUpgrade.shouldAdopt(
+            candidate: osm12Candidate, current: z12Candidate, preferred: .osm,
+            firstImageAt: 0.3, userInteracted: false, now: 1.5
+        )
+        && !BasemapUpgrade.isBetter(osm12Candidate, than: z12Candidate, preferred: .amapVector)
+        && !BasemapUpgrade.shouldAdopt(
+            candidate: osm3Candidate, current: z12Candidate, preferred: .osm,
+            firstImageAt: 0.3, userInteracted: false, now: 1.5
+        )
+)
+expect(
+    "当前已是「偏好源 + z12」→ 冻结，后续一律忽略",
+    !BasemapUpgrade.shouldAdopt(
+        candidate: osm12Candidate, current: osm12Candidate, preferred: .osm,
+        firstImageAt: 0.3, userInteracted: false, now: 1.0
+    )
+        && !BasemapUpgrade.shouldAdopt(
+            candidate: z12Candidate, current: osm12Candidate, preferred: .osm,
+            firstImageAt: 0.3, userInteracted: false, now: 20
+        )
+)
+expect(
+    "用户手动平移 / 缩放后 → 晚到的更高精度不再升级",
+    !BasemapUpgrade.shouldAdopt(
+        candidate: z12Candidate, current: z10Candidate, preferred: .osm,
+        firstImageAt: 0.3, userInteracted: true, now: 2.0
+    )
+)
+expect(
+    "首图 10 秒之后才到的更高精度 → 不升级（窗口冻结）",
+    !BasemapUpgrade.shouldAdopt(
+        candidate: z12Candidate, current: z10Candidate, preferred: .osm,
+        firstImageAt: 0.3, userInteracted: false, now: 10.4
+    )
+        && BasemapUpgrade.shouldAdopt(
+            candidate: z12Candidate, current: z10Candidate, preferred: .osm,
+            firstImageAt: 0.3, userInteracted: false, now: 9.9
+        )
+)
+expect(
+    "什么都没回 → 4 秒后不可用；出过图 → 永远不是不可用",
+    BasemapUpgrade.isUnavailable(current: nil, startedAt: 0, now: 4.0)
+        && !BasemapUpgrade.isUnavailable(current: nil, startedAt: 0, now: 3.9)
+        && !BasemapUpgrade.isUnavailable(current: z3Candidate, startedAt: 0, now: 100)
+)
+expect(
+    "诊断时间线：z3 @312ms → z12 @1830ms；无升级只有首图",
+    BasemapUpgrade.timeline(first: (3, 312), upgrades: [(12, 1_830)]) == "z3 @312ms → z12 @1830ms"
+        && BasemapUpgrade.timeline(first: (3, 312), upgrades: []) == "z3 @312ms"
+        && BasemapUpgrade.timeline(first: nil, upgrades: []).isEmpty
+)
+expect(
+    "渐进升级：先高德 z10 出图、OSM z12 后到 → 升级到 OSM z12（精度优先）",
+    BasemapUpgrade.shouldAdopt(
+        candidate: osm12Candidate, current: z10Candidate, preferred: .osm,
+        firstImageAt: 0.6, userInteracted: false, now: 1.8
+    )
+)
+expect(
+    "渐进升级：先 OSM z12 出图、偏好高德且高德 z12 后到 → 换回偏好源高德 z12",
+    BasemapUpgrade.shouldAdopt(
+        candidate: z12Candidate, current: osm12Candidate, preferred: .amapVector,
+        firstImageAt: 0.6, userInteracted: false, now: 1.8
+    )
+)
 print("== 定位不可用（未知态）==")
 // 判定：跟随意图 + 没有有效定位（未授权 / 看门狗超时）。
 expect(
@@ -1807,8 +1884,8 @@ expect(
     "neg=\(negativeZone.standardTime.clock) pos=\(positiveZone.standardTime.clock)"
 )
 expect(
-    "负偏移不会被当成「没传」（UTC 标签仍是 -05:00）",
-    negativeZone.utcLabel.contains("−5") || negativeZone.utcLabel.contains("-5") || negativeZone.utcLabel.contains("5"),
+    "负偏移不会被当成「没传」（UTC 标签仍带 5）",
+    negativeZone.utcLabel.contains("5"),
     "actual=\(negativeZone.utcLabel)"
 )
 // 占位符常量：只含半角连字符 / 冒号 / 度，不含各种破折号。
@@ -1904,86 +1981,6 @@ expect(
         && unknownMapState.osmFailures == 0,
     "active=\(unknownMapState.active) step=\(unknownMapState.zoomStep)"
 )
-
-
-
-print("== 首屏地图：逐个返回、渐进升级 ==")
-let z3Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 3)
-let z10Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 10)
-let z12Candidate = BasemapUpgrade.Candidate(source: .amapVector, zoom: 12)
-let osm12Candidate = BasemapUpgrade.Candidate(source: .osm, zoom: 12)
-let osm3Candidate = BasemapUpgrade.Candidate(source: .osm, zoom: 3)
-
-expect(
-    "第一块有内容 → 立刻出图（先到先用）",
-    BasemapUpgrade.shouldAdopt(
-        candidate: z3Candidate, current: nil, firstImageAt: nil, userInteracted: false, now: 0.3
-    )
-)
-expect(
-    "z3 先回、z12 后回 → 会用 z12 升级",
-    BasemapUpgrade.shouldAdopt(
-        candidate: z12Candidate, current: z3Candidate, firstImageAt: 0.3, userInteracted: false, now: 1.9
-    )
-)
-expect(
-    "z12 先回、z3 后回 → 忽略（永不降级）",
-    !BasemapUpgrade.shouldAdopt(
-        candidate: z3Candidate, current: z12Candidate, firstImageAt: 0.3, userInteracted: false, now: 1.0
-    )
-)
-expect(
-    "「更好」先比源：当前高德 z12，OSM z12 回来 → 切 OSM",
-    BasemapUpgrade.isBetter(osm12Candidate, than: z12Candidate)
-        && BasemapUpgrade.shouldAdopt(
-            candidate: osm12Candidate, current: z12Candidate, firstImageAt: 0.3, userInteracted: false, now: 1.5
-        )
-        && BasemapUpgrade.shouldAdopt(
-            candidate: osm3Candidate, current: z12Candidate, firstImageAt: 0.3, userInteracted: false, now: 1.5
-        ),
-    "OSM 优先于高德（哪怕级别更低）"
-)
-expect(
-    "当前已是 OSM z12 → 冻结，后续一律忽略",
-    !BasemapUpgrade.shouldAdopt(
-        candidate: osm12Candidate,
-        current: osm12Candidate,
-        firstImageAt: 0.3,
-        userInteracted: false,
-        now: 1.0
-    )
-        && !BasemapUpgrade.shouldAdopt(
-            candidate: z12Candidate, current: osm12Candidate, firstImageAt: 0.3, userInteracted: false, now: 20
-        )
-)
-expect(
-    "用户手动平移 / 缩放后 → 晚到的更高精度不再升级",
-    !BasemapUpgrade.shouldAdopt(
-        candidate: z12Candidate, current: z10Candidate, firstImageAt: 0.3, userInteracted: true, now: 2.0
-    )
-)
-expect(
-    "首图 10 秒之后才到的更高精度 → 不升级（窗口冻结）",
-    !BasemapUpgrade.shouldAdopt(
-        candidate: z12Candidate, current: z10Candidate, firstImageAt: 0.3, userInteracted: false, now: 10.4
-    )
-        && BasemapUpgrade.shouldAdopt(
-            candidate: z12Candidate, current: z10Candidate, firstImageAt: 0.3, userInteracted: false, now: 9.9
-        )
-)
-expect(
-    "什么都没回 → 4 秒后不可用；出过图 → 永远不是不可用",
-    BasemapUpgrade.isUnavailable(current: nil, startedAt: 0, now: 4.0)
-        && !BasemapUpgrade.isUnavailable(current: nil, startedAt: 0, now: 3.9)
-        && !BasemapUpgrade.isUnavailable(current: z3Candidate, startedAt: 0, now: 100)
-)
-expect(
-    "诊断时间线：z3 @312ms → z12 @1830ms；无升级只有首图",
-    BasemapUpgrade.timeline(first: (3, 312), upgrades: [(12, 1_830)]) == "z3 @312ms → z12 @1830ms"
-        && BasemapUpgrade.timeline(first: (3, 312), upgrades: []) == "z3 @312ms"
-        && BasemapUpgrade.timeline(first: nil, upgrades: []).isEmpty
-)
-
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

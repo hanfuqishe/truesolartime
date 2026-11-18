@@ -5,7 +5,8 @@ import Foundation
 /// 规则：
 /// 1. **先到先用**：第一块有内容的瓦片（任何源 / 级别）立刻出图 —— 通常 z3 几百毫秒就有东西；
 /// 2. **只有更好才升级**：后续结果比当前正在用的更好才更新，否则忽略（**永不降级**）；
-/// 3. 「更好」= 先比**源**（OSM 优于高德），同源再比**级别**（z12 > z10 > z3）；
+/// 3. 「更好」= 先比**级别**（z12 > z10 > z3，精度优先），**同级别**才比源
+///    （用区域偏好源；偏好源没有内容时才用另一源 —— 与 `BasemapProbe.decide` 同一套顺序）；
 /// 4. **冻结**（任一满足就不再升级）：当前已是 `OSM z12`、用户已经手动平移/缩放过地图、
 ///    距首次出图超过 **10 秒**；
 /// 5. 4 秒硬超时**只**用于「一块都没回来 → 不可用」；只要出过图，
@@ -23,17 +24,24 @@ struct BasemapUpgrade: Equatable {
     /// 「一块都没回来 → 不可用」的硬超时。
     static let unavailableTimeoutSeconds: TimeInterval = BasemapProbe.hardTimeoutSeconds
 
-    /// 是否比当前更好：**先比源**（OSM 优先），**同源再比级别**。
-    static func isBetter(_ candidate: Candidate, than current: Candidate) -> Bool {
-        let candidateSourceRank = candidate.source == .osm ? 1 : 0
-        let currentSourceRank = current.source == .osm ? 1 : 0
-        if candidateSourceRank != currentSourceRank { return candidateSourceRank > currentSourceRank }
-        return candidate.zoom > current.zoom
+    /// 是否比当前更好：**先比级别**（精度优先，z12 > z10 > z3），**同级别**再比源
+    /// （偏好源胜出；同一源则不算更好）。
+    static func isBetter(_ candidate: Candidate, than current: Candidate, preferred: BasemapSource) -> Bool {
+        if candidate.zoom != current.zoom { return candidate.zoom > current.zoom }
+        return candidate.source == preferred && current.source != preferred
     }
 
-    /// 已经冻结了吗（不再接受更高精度）。
-    static func isFrozen(current: Candidate, firstImageAt: TimeInterval, userInteracted: Bool, now: TimeInterval) -> Bool {
-        if current.source == .osm, current.zoom == BasemapProbe.displayZoom { return true }
+    /// 已经冻结了吗（不再接受任何变化）。
+    ///
+    /// 「已经是偏好源 + 最高精度」时没有更好的候选了（同级只有偏好源能赢），所以直接冻结。
+    static func isFrozen(
+        current: Candidate,
+        preferred: BasemapSource,
+        firstImageAt: TimeInterval,
+        userInteracted: Bool,
+        now: TimeInterval
+    ) -> Bool {
+        if current.zoom == BasemapProbe.displayZoom, current.source == preferred { return true }
         if userInteracted { return true }
         return now - firstImageAt >= freezeSeconds
     }
@@ -46,15 +54,22 @@ struct BasemapUpgrade: Equatable {
     static func shouldAdopt(
         candidate: Candidate,
         current: Candidate?,
+        preferred: BasemapSource,
         firstImageAt: TimeInterval?,
         userInteracted: Bool,
         now: TimeInterval
     ) -> Bool {
         guard let current, let firstImageAt else { return true }
-        if isFrozen(current: current, firstImageAt: firstImageAt, userInteracted: userInteracted, now: now) {
+        if isFrozen(
+            current: current,
+            preferred: preferred,
+            firstImageAt: firstImageAt,
+            userInteracted: userInteracted,
+            now: now
+        ) {
             return false
         }
-        return isBetter(candidate, than: current)
+        return isBetter(candidate, than: current, preferred: preferred)
     }
 
     /// 4 秒硬超时到了，而且**一块都没回来** → 不可用；出过图就永远不是不可用。

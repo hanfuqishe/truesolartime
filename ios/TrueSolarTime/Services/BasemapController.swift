@@ -31,7 +31,7 @@ final class BasemapController: ObservableObject {
         let place: Place
         let startedAt: TimeInterval
         var pending: Int
-        var osmReachable = false
+        var osmResults: [Int: Bool] = [:]
         var amapResults: [Int: Bool] = [:]
         var done = false
 
@@ -286,7 +286,7 @@ final class BasemapController: ObservableObject {
             token: probeToken,
             key: key,
             place: place,
-            pending: 1 + BasemapProbe.amapZoomLevels.count,
+            pending: BasemapProbe.osmZoomLevels.count + BasemapProbe.amapZoomLevels.count,
             startedAt: Date().timeIntervalSince1970
         )
         probeSession = session
@@ -297,8 +297,11 @@ final class BasemapController: ObservableObject {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + BasemapProbe.hardTimeoutSeconds, execute: hard)
 
-        probeTile(source: .osm, zoom: BasemapProbe.osmZoom, place: place) { [weak self] ok in
-            self?.recordProbe(session, source: .osm, zoom: BasemapProbe.osmZoom, ok: ok)
+        // **两个源都探**：OSM z3 / z12 + 高德 z12 / z10 / z3（共 5 块，仍都是单块几 KB）。
+        for zoom in BasemapProbe.osmZoomLevels {
+            probeTile(source: .osm, zoom: zoom, place: place) { [weak self] ok in
+                self?.recordProbe(session, source: .osm, zoom: zoom, ok: ok)
+            }
         }
         for zoom in BasemapProbe.amapZoomLevels {
             probeTile(source: .amapVector, zoom: zoom, place: place) { [weak self] ok in
@@ -348,7 +351,7 @@ final class BasemapController: ObservableObject {
             let now = Date().timeIntervalSince1970
             let elapsed = Int((now - session.startedAt) * 1000)
             if source == .osm {
-                session.osmReachable = ok
+                session.osmResults[zoom] = ok
             } else {
                 session.amapResults[zoom] = ok
             }
@@ -359,6 +362,7 @@ final class BasemapController: ObservableObject {
                 let adopt = BasemapUpgrade.shouldAdopt(
                     candidate: candidate,
                     current: session.current,
+                    preferred: state.preferred,
                     firstImageAt: session.firstImageAt,
                     userInteracted: session.userInteracted,
                     now: now
@@ -386,9 +390,38 @@ final class BasemapController: ObservableObject {
 
             if session.pending <= 0 {
                 session.done = true
-                // 全部回来但一块有内容的都没有 → 不可用（出过图就保持现状）。
-                if session.current == nil {
-                    self.applyUnavailable(at: now)
+                // 全部回来：用 `decide` 的完整顺序再校验一次（同精度偏好源、换源优先于降级）。
+                let decision = BasemapProbe.decide(
+                    osm: session.osmResults,
+                    amap: session.amapResults,
+                    preferred: self.state.preferred
+                )
+                if let zoom = decision.zoom {
+                    let best = BasemapUpgrade.Candidate(source: decision.source, zoom: zoom)
+                    let adoptFinal = BasemapUpgrade.shouldAdopt(
+                        candidate: best,
+                        current: session.current,
+                        preferred: self.state.preferred,
+                        firstImageAt: session.firstImageAt,
+                        userInteracted: session.userInteracted,
+                        now: now
+                    )
+                    if adoptFinal {
+                        session.current = best
+                        session.upgrades.append((zoom, Int((now - session.startedAt) * 1000)))
+                        self.state.applyProbeDecision(source: best.source, zoom: zoom, at: now)
+                        self.saveProbe(BasemapProbeCache(
+                            key: session.key,
+                            source: best.source,
+                            zoom: zoom,
+                            decidedAt: now
+                        ))
+                        self.updateUpgradeTimeline(session)
+                        self.publishIfChanged()
+                    }
+                } else {
+                    // 两源 / 各级都无内容 → 不可用（出过图就保持现状）。
+                    if session.current == nil { self.applyUnavailable(at: now) }
                 }
             }
         }
@@ -398,8 +431,19 @@ final class BasemapController: ObservableObject {
     private func handleProbeTimeout(_ session: ProbeSession) {
         guard probeSession === session, !session.done else { return }
         session.done = true
-        if session.current == nil {
-            applyUnavailable(at: Date().timeIntervalSince1970)
+        guard session.current == nil else { return }
+        // 没出过图：拿已回来的部分结果按同一套顺序定一次；全无内容才判不可用。
+        let now = Date().timeIntervalSince1970
+        let decision = BasemapProbe.decide(
+            osm: session.osmResults,
+            amap: session.amapResults,
+            preferred: state.preferred
+        )
+        if let zoom = decision.zoom {
+            state.applyProbeDecision(source: decision.source, zoom: zoom, at: now)
+            publishIfChanged()
+        } else {
+            applyUnavailable(at: now)
         }
     }
 
