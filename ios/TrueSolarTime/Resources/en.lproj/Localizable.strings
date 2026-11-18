@@ -43,6 +43,7 @@
 "map.diagSummary" = "source %@ · %@ · z%d%@";
 "map.diagDetail" = "preferred %@ · OSM failures %d · blank tiles %d · next probe %@";
 "map.probeIn" = "in %d s";
+"map.loading" = "Loading basemap…";
 
 /* Settings */
 "settings.title" = "Location & reminders";

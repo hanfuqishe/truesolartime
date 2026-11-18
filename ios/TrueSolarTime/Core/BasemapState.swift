@@ -141,7 +141,21 @@ struct BasemapState: Equatable {
             zoom: effectiveZoom(requested: requestedZoom),
             degraded: isDegraded,
             unavailable: status == .unavailable,
-            fellBack: didFallBackToAmap
+            fellBack: didFallBackToAmap,
+            ready: true
+        )
+    }
+
+    /// 首屏探测还没结论时的快照（界面显示加载态）。
+    func pendingUiState(requestedZoom: Int) -> BasemapUiState {
+        BasemapUiState(
+            requestedZoom: requestedZoom,
+            source: active,
+            zoom: effectiveZoom(requested: requestedZoom),
+            degraded: false,
+            unavailable: false,
+            fellBack: false,
+            ready: false
         )
     }
 
@@ -299,6 +313,29 @@ struct BasemapState: Equatable {
     mutating func probeFailed(at now: TimeInterval) {
         lastProbeAt = now
     }
+
+    /// 并行探测给出的结论**一步落位**：直接定源 + 定级，并打上 5 分钟恢复冷却。
+    ///
+    /// 为什么不是「先按 z12 出生、再一屏一屏降」：那样地图还没出图就先建一次 overlay、
+    /// 失败、再重建 —— MapKit 会取消在飞请求、旧缓存清掉后不重发，表现就是一直转圈。
+    /// 这里一次定到位，overlay 是「按结论出生」的。
+    mutating func applyProbeDecision(
+        source: BasemapSource,
+        zoom: Int?,
+        requestedZoom: Int = BasemapProbe.displayZoom,
+        at now: TimeInterval
+    ) {
+        let decision = BasemapProbe.Decision(source: source, zoom: zoom)
+        active = source
+        zoomStep = BasemapProbe.zoomStep(for: decision, requestedZoom: requestedZoom)
+        osmFailures = 0
+        screenTiles = 0
+        screenBlankTiles = 0
+        lastSwitchAt = now
+        // 冷却：5 分钟内不许因为「这一档出图了」把级别弹回去（z3 一出图就弹 z12 = 猛跳）。
+        lastRecoveryAt = now
+        if zoom == nil { lastFailureAt = now }
+    }
 }
 
 /// UI 只订阅这个快照。**计数（failures / blankCount / zoomFailures）不在里面** ——
@@ -316,6 +353,9 @@ struct BasemapUiState: Equatable {
     let unavailable: Bool
     /// 是否因为 OSM 不可达回退到了高德。
     let fellBack: Bool
+    /// 首屏探测是否已经有结论：`false` 时界面显示加载态（骨架 + 「正在载入底图…」），
+    /// **不要**先用默认源把地图建出来再切 —— 那会让 MapKit 取消在飞请求、一直转圈。
+    let ready: Bool
 }
 
 /// 瓦片几何 / URL / 魔数校验（纯函数，自检覆盖）。

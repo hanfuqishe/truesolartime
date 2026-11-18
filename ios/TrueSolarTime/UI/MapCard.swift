@@ -17,6 +17,11 @@ struct MapCard: View {
 
     @ObservedObject private var basemap = BasemapController.shared
 
+    /// 加载态是否已经显示（120ms 防闪：探测很快命中缓存时不该闪一下骨架）。
+    @State private var skeletonVisible = false
+    /// 6 秒兜底：探测万一卡住，也不能一直停在骨架 —— 到点就直接把地图建出来。
+    @State private var forceShowMap = false
+
     private var resolvedStyle: MapStyle {
         // 带上国家码：境内/境外以国家码为准，没有国家码（GPS 刚定位）才退回包围盒。
         mapStyle.effective(
@@ -39,19 +44,25 @@ struct MapCard: View {
             }
 
             ZStack {
-                MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState)
-                    .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                if showsMap {
+                    // **地图按探测结论出生**：只有 `uiState.ready`（或 6 秒兜底）之后才创建 MKMapView。
+                    // 先按默认源建好再切源会让 MapKit 取消在飞请求、旧缓存清掉后不重发 → 一直转圈。
+                    MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState)
+                        .aspectRatio(4.0 / 3.0, contentMode: .fit)
 
-                // 连 z3 全球底图都空白：原地显示一行小字，不要空着。
-                if basemap.uiState.unavailable {
-                    Text(L("map.unavailable"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.onSurfaceVariant)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(palette.surface.opacity(0.85), in: Capsule())
+                    if basemap.uiState.unavailable {
+                        Text(L("map.unavailable"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.onSurfaceVariant)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(palette.surface.opacity(0.85), in: Capsule())
+                    }
+                } else if skeletonVisible {
+                    skeleton
                 }
             }
+            .aspectRatio(4.0 / 3.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.top, 10)
 
@@ -65,6 +76,41 @@ struct MapCard: View {
         .onAppear { configure() }
         .onChange(of: place) { _ in configure() }
         .onChange(of: mapStyle) { _ in configure() }
+        .task(id: basemap.uiState.ready) { await runLoadingState() }
+    }
+
+    private var showsMap: Bool {
+        basemap.uiState.ready || forceShowMap
+    }
+
+    /// 加载态：骨架 + 「正在载入底图…」。120ms 防闪、6 秒兜底收起。
+    private var skeleton: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(palette.outlineVariant.opacity(0.25))
+            VStack(spacing: 6) {
+                ProgressView()
+                Text(L("map.loading"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.onSurfaceVariant)
+            }
+        }
+    }
+
+    private func runLoadingState() async {
+        forceShowMap = false
+        skeletonVisible = false
+        guard !basemap.uiState.ready else { return }
+
+        // 120ms 内就出结论的话，骨架根本不出现（不闪）。
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        guard !Task.isCancelled, !basemap.uiState.ready else { return }
+        skeletonVisible = true
+
+        // 6 秒兜底：探测卡住也不再等，直接把地图按当前结论建出来。
+        try? await Task.sleep(nanoseconds: 6_000_000_000)
+        guard !Task.isCancelled else { return }
+        forceShowMap = true
     }
 
     private func configure() {
@@ -274,51 +320,5 @@ private final class BasemapTileOverlay: MKTileOverlay {
             }
             result(data, nil)
         }.resume()
-    }
-}
-
-/// 瓦片解码 + 32×32 采样（步长 8、最近邻），交给 Core 的 `BlankTileAnalysis` 判定。
-private enum BasemapTileSampler {
-
-    static let side = BlankTileAnalysis.sampleSide
-
-    static func blankAnalysis(data: Data) -> BlankTileAnalysis? {
-        guard let image = UIImage(data: data)?.cgImage else { return nil }
-        return analyze(image: image)
-    }
-
-    private static func analyze(image: CGImage) -> BlankTileAnalysis? {
-        let dimension = side
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-              // 让 CoreGraphics 自己分配缓冲区（`data: nil`）：指针归 context 所有，
-              // 比把 Swift 数组的指针借出去再在外面用要安全。
-              let context = CGContext(
-                data: nil,
-                width: dimension,
-                height: dimension,
-                bitsPerComponent: 8,
-                bytesPerRow: dimension * 4,
-                space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              )
-        else { return nil }
-
-        // 最近邻：不要插值 —— 与 Android 的「256×256 步长 8 取点」等价。
-        context.interpolationQuality = .none
-        context.draw(image, in: CGRect(x: 0, y: 0, width: dimension, height: dimension))
-
-        guard let base = context.data else { return nil }
-        let buffer = base.bindMemory(to: UInt8.self, capacity: dimension * dimension * 4)
-
-        let count = dimension * dimension
-        var reds = [UInt8](repeating: 0, count: count)
-        var greens = [UInt8](repeating: 0, count: count)
-        var blues = [UInt8](repeating: 0, count: count)
-        for index in 0..<count {
-            reds[index] = buffer[index * 4]
-            greens[index] = buffer[index * 4 + 1]
-            blues[index] = buffer[index * 4 + 2]
-        }
-        return BlankTileAnalysis.analyze(reds: reds, greens: greens, blues: blues)
     }
 }

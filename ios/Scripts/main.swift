@@ -1583,6 +1583,94 @@ expect(
     "osm=\(String(describing: BasemapTiles.tileURL(source: .osm, x: 1, y: 2, z: 3)))"
 )
 
+// MARK: 首屏并行探测（安卓「120 秒 → 2.2 秒」策略的纯函数部分）
+
+expect(
+    "探测预算：4.0 秒硬超时、2.0 秒提前收工、缓存 5 分钟、指纹 ≈100 m",
+    BasemapProbe.hardTimeoutSeconds == 4.0
+        && BasemapProbe.earlyExitSeconds == 2.0
+        && BasemapProbe.cacheTTLSeconds == 300
+        && abs(BasemapProbe.cacheGridDegrees - 0.001) < 1e-9
+        && BasemapProbe.amapZoomLevels == [12, 10, 3]
+        && BasemapProbe.osmZoom == 3,
+    "levels=\(BasemapProbe.amapZoomLevels)"
+)
+// decide：OSM 通就用 OSM + z12；否则高德里有内容的最高精度；全无 → 不可用。
+let osmWins = BasemapProbe.decide(osmReachable: true, amap: [12: true, 10: true, 3: true])
+expect(
+    "OSM z3 通 → OSM + z12（哪怕高德也有内容）",
+    osmWins == BasemapProbe.Decision(source: .osm, zoom: 12),
+    "actual=\(osmWins)"
+)
+let amapBest = BasemapProbe.decide(osmReachable: false, amap: [12: true, 10: true, 3: true])
+expect(
+    "OSM 不通 → 高德 z12（有内容的最高精度）",
+    amapBest == BasemapProbe.Decision(source: .amapVector, zoom: 12)
+)
+let amapMid = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: true, 3: true])
+expect("z12 空白、z10 有内容 → 高德 z10", amapMid == BasemapProbe.Decision(source: .amapVector, zoom: 10))
+let amapWorld = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: false, 3: true])
+expect("只有 z3 有内容 → 高德 z3", amapWorld == BasemapProbe.Decision(source: .amapVector, zoom: 3))
+let allBlank = BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: false, 3: false])
+expect("全失败 / 全空白 → 不可用（zoom 为 nil）", allBlank.zoom == nil && allBlank.source == .amapVector)
+let missing = BasemapProbe.decide(osmReachable: false, amap: [:])
+expect("探测没回来（空表）也当不可用", missing.zoom == nil)
+
+expect(
+    "zoomsAbove：选中精度之上的档位（12 → 无、10 → [12]、3 → [12,10]）",
+    BasemapProbe.zoomsAbove(12).isEmpty
+        && BasemapProbe.zoomsAbove(10) == [12]
+        && BasemapProbe.zoomsAbove(3) == [12, 10]
+)
+// 一步落位的 zoomStep：选中 z10 直接 2（不是逐级 1 再 2）。
+expect(
+    "zoomStep 一步落位：12→0、10→2、3→3、nil→4",
+    BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .osm, zoom: 12)) == 0
+        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: 10)) == 2
+        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: 3)) == 3
+        && BasemapProbe.zoomStep(for: BasemapProbe.Decision(source: .amapVector, zoom: nil)) == 4
+)
+// 缓存：~100 m 指纹 + 5 分钟。
+let egyptProbeKey = BasemapProbe.cacheKey(latitude: 25.2048, longitude: 30.2708)
+expect(
+    "同一格（约 100 m 内）指纹相同、跨格不同",
+    BasemapProbe.cacheKey(latitude: 25.2048, longitude: 30.2708) == egyptProbeKey
+        && BasemapProbe.cacheKey(latitude: 25.20480, longitude: 30.27080) == egyptProbeKey
+        && BasemapProbe.cacheKey(latitude: 25.2100, longitude: 30.2708) != egyptProbeKey
+)
+let freshProbeCache = BasemapProbeCache(key: egyptProbeKey, source: .osm, zoom: 12, decidedAt: 1_000)
+expect(
+    "缓存判定：无缓存 / 换地点 / 超 5 分钟 → 需要探测；新鲜 → 复用",
+    BasemapProbe.needsProbe(cached: nil, key: egyptProbeKey, now: 1_000)
+        && !BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_000 + 299)
+        && BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_000 + 300)
+        && BasemapProbe.needsProbe(cached: freshProbeCache, key: "other", now: 1_001)
+        && BasemapProbe.shouldProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_002)
+            == BasemapProbe.needsProbe(cached: freshProbeCache, key: egyptProbeKey, now: 1_002)
+)
+expect(
+    "tileOf：探测用的那一块瓦片坐标（开罗 z3）",
+    BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)?.x == 4
+        && BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)?.y == 3,
+    "actual=\(String(describing: BasemapProbe.tileOf(latitude: 30.0444, longitude: 31.2357, zoom: 3)))"
+)
+// 结论直接定级的副作用：5 分钟恢复冷却（防止 z3 出图又弹回 z12）。
+var probeDecisionState = autoOverseas()
+probeDecisionState.applyProbeDecision(source: .amapVector, zoom: 3, at: 500)
+expect(
+    "探测定级后：一步到 z3（zoomStep 3）、并且 5 分钟内不许回弹",
+    probeDecisionState.effectiveZoom(requested: 12) == 3
+        && probeDecisionState.zoomStep == 3
+        && !probeDecisionState.canRecoverChain(now: 500 + 299)
+        && probeDecisionState.canRecoverChain(now: 500 + 301),
+    "step=\(probeDecisionState.zoomStep)"
+)
+expect(
+    "探测定级后 uiState.ready 为 true（有结论才建地图）",
+    probeDecisionState.uiState(requestedZoom: 12).ready
+        && !probeDecisionState.pendingUiState(requestedZoom: 12).ready
+)
+
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

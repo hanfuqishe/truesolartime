@@ -3,26 +3,56 @@ import UIKit
 
 /// 地图底图的运行时：持有 `BasemapState`（纯逻辑在 Core），负责
 ///
-/// - 按「样式 + 地点」建立 / 重建状态（自动 → 可回退；手动 → 一切兜底关掉）；
+/// - 切城市 / 换地点时先做**并行多精度探测**（`BasemapProbe`：4 个单块请求、4 秒硬超时、
+///   已知高德有内容就 2 秒提前收工），再用结论**一步定级**；
 /// - 每块瓦片的加载结果喂回状态机（OSM 成败、高德空白）；
 /// - 回退后每 5 分钟探测一次 OSM（z3 小瓦片 + 图片魔数校验），成功即切回；
-/// - **只把「有效 plan 快照」（`BasemapUiState`）发布给界面**：计数变化不发通知，
-///   所以不会出现安卓那种「2 秒 441 次状态发布 + 缩放来回弹 → 狂闪」；
-/// - 给界面与诊断页提供一行行文字。
+/// - **只把「有效 plan 快照」（`BasemapUiState`）发布给界面**：计数变化不发通知。
 final class BasemapController: ObservableObject {
 
     static let shared = BasemapController()
 
-    /// 界面**唯一**订阅的东西：有效 plan 的快照。等值时不赋值，SwiftUI 就不会重组。
+    /// 界面**唯一**订阅的东西：有效 plan 的快照（含「首屏是否已有结论」的 `ready`）。
     @Published private(set) var uiState: BasemapUiState
 
     private(set) var state: BasemapState
     private var configuredStyle: MapStyle?
     private var configuredSiteKey: String?
     private var place: Place?
-    /// 最近一次 MapKit 请求的缩放（不算「计数」，但也只有它变化才需要重算快照）。
+    /// 最近一次 MapKit 请求的缩放。
     private var lastRequestedZoom = 12
 
+    // MARK: 首屏探测
+
+    /// 当前这次探测（旧的一律作废）。
+    private final class ProbeSession {
+        let token: Int
+        let key: String
+        let place: Place
+        var pending: Int
+        var osmReachable = false
+        var amapResults: [Int: Bool] = [:]
+        var done = false
+
+        init(token: Int, key: String, place: Place, pending: Int) {
+            self.token = token
+            self.key = key
+            self.place = place
+            self.pending = pending
+        }
+    }
+
+    private var probeSession: ProbeSession?
+    private var probeToken = 0
+
+    private enum CacheKey {
+        static let key = "basemap.probe.key"
+        static let source = "basemap.probe.source"
+        static let zoom = "basemap.probe.zoom"
+        static let at = "basemap.probe.at"
+    }
+
+    private let defaults = UserDefaults.standard
     /// 一屏瓦片的「静默」计时：最后一块瓦片回来 1.2 秒后判整屏。
     private var settleWorkItem: DispatchWorkItem?
     private let session: URLSession = {
@@ -42,13 +72,16 @@ final class BasemapController: ObservableObject {
 
     // MARK: 配置
 
-    /// 样式或地点变了就重建状态机。
+    /// 样式或地点变了就重建状态机（自动模式还要做一次首屏探测）。
     ///
     /// - 位置只按 4 位小数比较（≈11 m）：GPS 抖动不该把「已回退」「已降级」重置掉；
-    /// - 手动选底图 → `mode = .manual`（不回退、不探测、不降级）。
+    /// - 手动选底图 → `mode = .manual`（**不探测**、不回退、不降级）；
+    /// - 从手动切回「自动」→ 缓存失效，重新探测。
     func configure(style: MapStyle, place: Place, now: Date = Date()) {
         let siteKey = String(format: "%.4f,%.4f", place.latitude, place.longitude)
         guard style != configuredStyle || siteKey != configuredSiteKey else { return }
+        let previousStyle = configuredStyle
+
         let preferred: BasemapSource = style.basemapSource ?? MapStyle.auto.effective(
             countryCode: place.countryCode,
             latitude: place.latitude,
@@ -62,7 +95,33 @@ final class BasemapController: ObservableObject {
         configuredStyle = style
         configuredSiteKey = siteKey
         self.place = place
-        publishIfChanged()
+
+        guard style == .auto else {
+            // 手动选底图：不探测，直接按选择出生。
+            state.applyProbeDecision(
+                source: preferred,
+                zoom: BasemapProbe.displayZoom,
+                at: now.timeIntervalSince1970
+            )
+            publishIfChanged()
+            return
+        }
+
+        // 自动模式：有新鲜缓存就直接用，否则先发「加载态」再并行探测。
+        let key = BasemapProbe.cacheKey(latitude: place.latitude, longitude: place.longitude)
+        let cameBackToAuto = previousStyle != nil && previousStyle != .auto
+        let cached = cameBackToAuto ? nil : cachedProbe()
+        if !BasemapProbe.needsProbe(cached: cached, key: key, now: now.timeIntervalSince1970),
+           let cached {
+            state.applyProbeDecision(source: cached.source, zoom: cached.zoom, at: now.timeIntervalSince1970)
+            publishIfChanged()
+            return
+        }
+
+        // 加载态：地图**先不建**（按结论出生），避免「先建默认源再切源 → 一直转圈」。
+        let pending = state.pendingUiState(requestedZoom: lastRequestedZoom)
+        if pending != uiState { uiState = pending }
+        startProbe(place: place, key: key)
     }
 
     /// 诊断用：当前是不是「自动」。
@@ -103,7 +162,6 @@ final class BasemapController: ObservableObject {
     /// 程序化改了视口：接下来 2 秒内回来的失败不算（那是被我们自己取消掉的请求）。
     func noteViewportChanged(now: Date = Date()) {
         state.noteViewportChanged(at: now.timeIntervalSince1970)
-        // 静默期只影响内部计数，不改变有效 plan，故不发布。
     }
 
     /// 每请求一块瓦片就调一次：1.2 秒没有新瓦片 = 这一屏画完了 → 判整屏空白。
@@ -116,6 +174,140 @@ final class BasemapController: ObservableObject {
         }
         settleWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
+    }
+
+    // MARK: 首屏并行探测
+
+    /// 并行发 4 个单块请求，谁的结论先到算谁；**不挂在调用方的结构化并发上**。
+    ///
+    /// 组织方式：
+    /// - 4 个 `URLSession.dataTask` 各自独立跑，`pending` 计数归零即收工；
+    /// - 一个 **4.0 秒硬超时**（到点不论凑没凑齐都出结论，缺的按「无内容」算）；
+    /// - 一个 **2.0 秒提前收工**：只要已确认「高德有内容」，就不去死等被墙的 OSM；
+    /// - 每次探测带 `token`，旧结果直接丢弃（换城市时不会串）。
+    private func startProbe(place: Place, key: String) {
+        probeToken += 1
+        let session = ProbeSession(
+            token: probeToken,
+            key: key,
+            place: place,
+            pending: 1 + BasemapProbe.amapZoomLevels.count
+        )
+        probeSession = session
+
+        let hard = DispatchWorkItem { [weak self] in
+            self?.finishProbe(session)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + BasemapProbe.hardTimeoutSeconds, execute: hard)
+        let early = DispatchWorkItem { [weak self] in
+            self?.earlyExitIfAmapContent(session)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + BasemapProbe.earlyExitSeconds, execute: early)
+
+        probeTile(source: .osm, zoom: BasemapProbe.osmZoom, place: place) { [weak self] ok in
+            self?.recordProbe(session, source: .osm, zoom: BasemapProbe.osmZoom, ok: ok)
+        }
+        for zoom in BasemapProbe.amapZoomLevels {
+            probeTile(source: .amapVector, zoom: zoom, place: place) { [weak self] ok in
+                self?.recordProbe(session, source: .amapVector, zoom: zoom, ok: ok)
+            }
+        }
+    }
+
+    /// 取一块瓦片并判定「有没有内容」：OSM 看魔数即可；高德还要过空白像素判定。
+    private func probeTile(
+        source: BasemapSource,
+        zoom: Int,
+        place: Place,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let coords = BasemapProbe.tileOf(latitude: place.latitude, longitude: place.longitude, zoom: zoom),
+              let url = BasemapTiles.tileURL(source: source, x: coords.x, y: coords.y, z: zoom)
+        else {
+            completion(false)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = BasemapProbe.hardTimeoutSeconds
+        request.setValue("TrueSolarTime-iOS", forHTTPHeaderField: "User-Agent")
+
+        session.dataTask(with: request) { data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            var ok = (200..<300).contains(status) && BasemapTiles.looksLikeImage(data: data)
+            if ok, source.isAmap, let data {
+                // 高德的「有内容」= 非空白瓦片。
+                if let analysis = BasemapTileSampler.blankAnalysis(data: data), analysis.isBlank {
+                    ok = false
+                }
+            }
+            completion(ok)
+        }.resume()
+    }
+
+    private func recordProbe(_ session: ProbeSession, source: BasemapSource, zoom: Int, ok: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.probeSession === session, !session.done else { return }
+            if source == .osm {
+                session.osmReachable = ok
+            } else {
+                session.amapResults[zoom] = ok
+            }
+            session.pending -= 1
+            if session.pending <= 0 {
+                self.finishProbe(session)
+            }
+        }
+    }
+
+    /// 2 秒到点：高德已经有一档有内容 → 立刻收工（不等 OSM）；否则继续等硬超时。
+    private func earlyExitIfAmapContent(_ session: ProbeSession) {
+        guard probeSession === session, !session.done else { return }
+        guard session.amapResults.values.contains(true) else { return }
+        finishProbe(session)
+    }
+
+    /// 出结论：`decide` → 缓存 → 一步定级 → 发布（界面的地图在这之后才出生）。
+    private func finishProbe(_ session: ProbeSession) {
+        guard probeSession === session, !session.done else { return }
+        session.done = true
+
+        let decision = BasemapProbe.decide(osmReachable: session.osmReachable, amap: session.amapResults)
+        saveProbe(BasemapProbeCache(
+            key: session.key,
+            source: decision.source,
+            zoom: decision.zoom,
+            decidedAt: Date().timeIntervalSince1970
+        ))
+        state.applyProbeDecision(
+            source: decision.source,
+            zoom: decision.zoom,
+            at: Date().timeIntervalSince1970
+        )
+        publishIfChanged()
+    }
+
+    private func cachedProbe() -> BasemapProbeCache? {
+        guard let key = defaults.string(forKey: CacheKey.key),
+              let source = BasemapSource(rawValue: defaults.string(forKey: CacheKey.source) ?? "")
+        else { return nil }
+        let zoom = defaults.object(forKey: CacheKey.zoom) == nil ? nil : defaults.integer(forKey: CacheKey.zoom)
+        return BasemapProbeCache(
+            key: key,
+            source: source,
+            zoom: zoom,
+            decidedAt: defaults.double(forKey: CacheKey.at)
+        )
+    }
+
+    private func saveProbe(_ cache: BasemapProbeCache) {
+        defaults.set(cache.key, forKey: CacheKey.key)
+        defaults.set(cache.source.rawValue, forKey: CacheKey.source)
+        if let zoom = cache.zoom {
+            defaults.set(zoom, forKey: CacheKey.zoom)
+        } else {
+            defaults.removeObject(forKey: CacheKey.zoom)
+        }
+        defaults.set(cache.decidedAt, forKey: CacheKey.at)
     }
 
     // MARK: OSM 恢复探测（每 5 分钟）
@@ -204,8 +396,7 @@ final class BasemapController: ObservableObject {
         )
     }
 
-    /// **只在有效 plan 变了才发布**。计数（OSM 失败次数 / 空白判定次数 / 内部屏幕计数）变化时
-    /// 这里什么都不做 —— 界面不会因为「又失败了一块瓦片」而整块重组。
+    /// **只在有效 plan 变了才发布**（计数变化不发）。
     private func publishIfChanged() {
         let next = state.uiState(requestedZoom: lastRequestedZoom)
         guard next != uiState else { return }

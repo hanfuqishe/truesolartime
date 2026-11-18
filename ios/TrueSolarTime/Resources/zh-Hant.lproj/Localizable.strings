@@ -44,6 +44,7 @@
 "map.diagSummary" = "實際源 %@ · %@ · z%d%@";
 "map.diagDetail" = "首選 %@ · OSM 失敗 %d 次 · 空白判定 %d 次 · 下次探測 %@";
 "map.probeIn" = "%d 秒後";
+"map.loading" = "正在載入底圖…";
 
 /* 設定頁 */
 "settings.title" = "位置與提醒";
