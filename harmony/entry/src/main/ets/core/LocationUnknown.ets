@@ -95,6 +95,22 @@ export class UnknownLocationLogic {
     return gpsIntent && !hasFix;
   }
 
+  /** 钟点判白天：6 ≤ 小时 < 18（与 Android `LocationAvailability.isDaytime` 同规则）。 */
+  static isDaytimeHour(hour: number): boolean {
+    return hour >= 6 && hour < 18;
+  }
+
+  /**
+   * 未知态的昼夜：按**系统时区的钟点**判断，不走日出日落 / 高度角。
+   *
+   * @param nowMillis 当前时刻
+   * @param offsetSeconds 系统时区偏移（秒，可为负；不要用负数当「没传」）
+   */
+  static isDaytimeAt(nowMillis: number, offsetSeconds: number): boolean {
+    const localMillis: number = nowMillis + offsetSeconds * 1000;
+    return UnknownLocationLogic.isDaytimeHour(new Date(localMillis).getUTCHours());
+  }
+
   /**
    * 系统时区偏移（秒）。
    *

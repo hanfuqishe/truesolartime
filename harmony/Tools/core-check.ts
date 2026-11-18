@@ -1444,6 +1444,17 @@ for (const item of equationCases) {
   check('follow tap with permission and a fix is known',
     grantedWithFix.gpsIntent && !grantedWithFix.locationUnknown);
 
+  // 未知态昼夜按系统时区钟点判：6 ≤ 小时 < 18 为白天。
+  const dayAt = (hour: number, minute: number = 0): number =>
+    Date.UTC(2026, 10, 16, hour, minute, 0);
+  check('08:00 is daytime', UnknownLocationLogic.isDaytimeAt(dayAt(8), 0));
+  check('17:59 is daytime', UnknownLocationLogic.isDaytimeAt(dayAt(17, 59), 0));
+  check('18:00 is nighttime', !UnknownLocationLogic.isDaytimeAt(dayAt(18), 0));
+  check('05:59 is nighttime', !UnknownLocationLogic.isDaytimeAt(dayAt(5, 59), 0));
+  // 跨时区两个方向：UTC 23:00 在 +8 是次日 07:00（白天）；UTC 10:00 在 −5 是 05:00（夜间）。
+  check('utc 23:00 at +8 is daytime', UnknownLocationLogic.isDaytimeAt(dayAt(23), 8 * 3600));
+  check('utc 10:00 at -5 is nighttime', !UnknownLocationLogic.isDaytimeAt(dayAt(10), -5 * 3600));
+
   // 西半球偏移（UTC−5 = −18000）必须原样保留，不能拿负数当「没传」。
   const nowMillis: number = 1_700_000_000_000;
   equal('negative offsets survive', -18000, UnknownLocationLogic.offsetSecondsOr(-18000, nowMillis));

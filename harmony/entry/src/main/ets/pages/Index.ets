@@ -290,13 +290,13 @@ struct Index {
    */
   private syncGpsSilently(): void {
     if (!this.gpsIntent) {
-      this.locationUnknown = false;
+      this.setLocationUnknown(false);
       return;
     }
     LocationService.hasPermission().then((granted: boolean) => {
       if (!granted) {
         // 未授权：意图仍在，直接进未知态（不用等 20 秒）。
-        this.locationUnknown = true;
+        this.setLocationUnknown(true);
         return;
       }
       LocationService.current().then((point: GeoPoint | null) => {
@@ -304,7 +304,7 @@ struct Index {
           this.startUnknownCountdown();
           return;
         }
-        this.locationUnknown = false;
+        this.setLocationUnknown(false);
         if (this.unknownTimer >= 0) {
           clearTimeout(this.unknownTimer);
           this.unknownTimer = -1;
@@ -315,6 +315,26 @@ struct Index {
     });
   }
 
+  /**
+   * 切换「定位不可用」未知态：进入时把地图视口切到 z3 全球；退出时复位到当前观测点。
+   * 只改状态不会重建地图 —— 必须在这里显式处理视口，否则会停在上一个地点。
+   */
+  private setLocationUnknown(value: boolean): void {
+    if (this.locationUnknown === value) {
+      return;
+    }
+    this.locationUnknown = value;
+    if (value) {
+      this.mapCenterLat = 0;
+      this.mapCenterLon = 0;
+      this.mapZoom = UnknownLocationLogic.MAP_ZOOM;
+      this.lastMapUi = new MapUiState();
+      this.refreshMap(true);
+    } else {
+      this.recenterMap();
+    }
+  }
+
   /** 授权后 20 秒仍没有 fix → 未知态。 */
   private startUnknownCountdown(): void {
     if (this.unknownTimer >= 0) {
@@ -322,7 +342,7 @@ struct Index {
     }
     this.unknownTimer = setTimeout(() => {
       if (this.gpsIntent && this.place.source !== PlaceSource.GPS) {
-        this.locationUnknown = true;
+        this.setLocationUnknown(true);
       }
     }, UnknownLocationLogic.FIX_TIMEOUT_MILLIS);
   }
@@ -567,7 +587,7 @@ struct Index {
     if (place.source === PlaceSource.GPS) {
       AppStore.setGpsIntent(true);
       this.gpsIntent = true;
-      this.locationUnknown = false;
+      this.setLocationUnknown(false);
     }
     this.refreshDerived();
     this.recenterMap();
@@ -877,6 +897,11 @@ struct Index {
    * 亮色/暗色＝强制，忽略日出日落。太阳弧上的圆点位置仍按真实太阳高度角算，不受这里影响。
    */
   private isDayTheme(): boolean {
+    if (this.locationUnknown) {
+      // 未知态没有日出日落：按系统时区的钟点判白天（6 ≤ 小时 < 18），否则会恒进夜间。
+      return ThemeMode.isLight(this.themeMode, UnknownLocationLogic.isDaytimeAt(Date.now(),
+        UnknownLocationLogic.systemOffsetSeconds(Date.now())));
+    }
     return ThemeMode.isLight(this.themeMode, this.snapshot.isDay());
   }
 
