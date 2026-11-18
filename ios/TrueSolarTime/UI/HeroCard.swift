@@ -86,7 +86,11 @@ struct HeroCard: View {
                 bandColor: bandColor,
                 // 只有「当前正落在关键时段内」时圆点才跟着色段变色，否则保持白色
                 dotColor: inKeyTime ? (bandColor ?? HeroPalette.dot) : HeroPalette.dot,
-                position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400
+                position: Double(snapshot.trueSolarTime.secondsOfDay) / 86_400,
+                // **未知态保留色段、只隐藏「现在」圆点**（用户已确认的 A 方案）：
+                // 色段是「关键时段标记」，与地点无关，没有数据时自然为空，不需要额外抑制逻辑；
+                // 但圆点表达的是「此刻真太阳时在轴上的位置」，未知态没有可信时间，所以要藏起来。
+                showsDot: !isLocationUnknown
             )
             .frame(height: 11)
             .padding(.top, 12)
@@ -473,6 +477,10 @@ struct FittingClock: View {
 }
 
 /// 首页 0–24 时时间轴：白线 + 关键时段色段 + 当前时刻的柔光圆点（与 Android 同款）。
+///
+/// **未知态（定位不可用）保留色段、只隐藏圆点** —— 这是用户确认过的决定，别「顺手」把色段也去掉：
+/// 色段是「关键时段」这一与地点无关的标记（没有数据时 `bands`/`bandColor` 自然是空，就什么都不画），
+/// 而圆点表示「此刻真太阳时落在轴上哪一格」，未知态没有可信时间，所以只藏它。
 struct HeroAxis: View {
 
     let bands: [TakeBand]
@@ -482,6 +490,8 @@ struct HeroAxis: View {
     let dotColor: Color
     /// 0…1
     let position: Double
+    /// 是否画「现在」圆点（未知态为 false；色段不受影响）。
+    let showsDot: Bool
 
     var body: some View {
         Canvas { context, size in
@@ -500,6 +510,9 @@ struct HeroAxis: View {
                     context.fill(Path(rect), with: .color(bandColor))
                 }
             }
+
+            // 未知态：只跳过圆点，**色段照画**（见类型注释里的决定说明）。
+            guard showsDot else { return }
 
             let clamped = min(max(position, 0), 1)
             // **两笔**：单层柔光圆（+2pt、alpha 0.28）+ 实心核心（5.5pt、完全不透明）。
