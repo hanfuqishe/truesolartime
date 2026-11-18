@@ -46,6 +46,7 @@
 "map.loading" = "Loading basemap…";
 "location.unavailable" = "Location unavailable";
 "map.diagMapTitle" = "Map";
+"map.diagMapPending" = "Not recorded yet";
 
 /* Settings */
 "settings.title" = "Location & reminders";

@@ -219,18 +219,39 @@ private struct MapViewRepresentable: UIViewRepresentable {
             overlay.maximumZ = style.maximumZ
             mapView.addOverlay(overlay, level: .aboveLabels)
 
-            let point = MKPointAnnotation()
             // 重建 overlay 不代表地点变了：把标记放回上次的坐标，别让它留在 (0,0)。
-            if let viewport = appliedViewport {
-                point.coordinate = viewport.mapCoordinate
-                point.title = viewport.label
+            if hidesMarker {
+                // 未知态：**显式清掉**已有标记（不是"不添加"就完事，旧标记会留在旧位置）。
+                mapView.removeAnnotations(mapView.annotations)
+                annotation = nil
+            } else {
+                let point = MKPointAnnotation()
+                if let viewport = appliedViewport {
+                    point.coordinate = viewport.mapCoordinate
+                    point.title = viewport.label
+                }
+                mapView.addAnnotation(point)
+                annotation = point
             }
-            mapView.addAnnotation(point)
 
             tileOverlay = overlay
-            annotation = point
             currentStyle = style
             self.plan = plan
+            // **无条件回灌一次诊断**：不能只靠 `regionDidChangeAnimated`（那条回调可能根本不触发，
+            // 诊断行就会一直是「尚未回灌」）。
+            recordDebugState(on: mapView)
+        }
+
+        /// 把 `MKMapView` 的**实际**中心 / 跨度 / 标记数回灌给控制器（诊断行用）。
+        func recordDebugState(on mapView: MKMapView) {
+            let region = mapView.region
+            BasemapController.shared.recordMapDebug(
+                centerLatitude: region.center.latitude,
+                centerLongitude: region.center.longitude,
+                latitudeDelta: region.span.latitudeDelta,
+                longitudeDelta: region.span.longitudeDelta,
+                markerCount: mapView.annotations.compactMap { $0 as? MKPointAnnotation }.count
+            )
         }
 
         /// 未知态：**z3 全球底图**（跨约 90°×120°）。不画标记、也不跟随地点。
@@ -253,7 +274,7 @@ private struct MapViewRepresentable: UIViewRepresentable {
                 appliedViewport = nil
                 BasemapController.shared.noteViewportChanged()
                 mapView.setRegion(Self.unknownRegion, animated: false)
-                return
+                recordDebugState(on: mapView)
             }
             appliedUnknownViewport = false
             applyViewportIfNeeded(to: place, style: style, on: mapView)
@@ -265,6 +286,9 @@ private struct MapViewRepresentable: UIViewRepresentable {
         /// （安卓那边就是这样停在半路、标记不居中的）。地点没变就直接返回，因此
         /// 底图状态变化（回退 / 降级）不会把用户的平移缩放顶回去。
         func applyViewportIfNeeded(to place: Place, style: MapStyle, on mapView: MKMapView) {
+            // 未知态只允许 `updateViewport` 改视口；这里直接早退，
+            // 否则「先 setRegion(全球) → 再按旧地点 setRegion」会把全球视口覆盖掉。
+            guard !appliedUnknownViewport else { return }
             let last = appliedViewport
             let sameSpot = last.map {
                 abs($0.latitude - place.latitude) < 1e-6
@@ -293,11 +317,13 @@ private struct MapViewRepresentable: UIViewRepresentable {
             )
             mapView.setRegion(region, animated: false)
             appliedViewport = (place.latitude, place.longitude, style, coordinate, place.displayLabel)
+            recordDebugState(on: mapView)
         }
 
         /// 视口变化回调：**程序化** `setRegion` 会在里面被过滤掉；剩下的都是用户手势
         /// （拖动 / 捏合 / 双击缩放，含惯性），用于冻结底图升级。
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            recordDebugState(on: mapView)
             if isApplyingProgrammaticRegion {
                 isApplyingProgrammaticRegion = false
                 return

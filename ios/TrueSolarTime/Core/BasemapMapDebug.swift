@@ -18,6 +18,22 @@ struct BasemapMapDebug: Equatable {
     let markerCount: Int
     let source: BasemapSource
 
+    /// 未知态的默认值（中心 20°/0°、跨度 90°×120°、z3、无标记）：
+    ///
+    /// `configureUnknown()` 之后**立刻**用它回灌一次，不必等地图回调 ——
+    /// 否则诊断行会一直停在「尚未回灌」。
+    static func unknownDefault(source: BasemapSource, zoom: Int) -> BasemapMapDebug {
+        BasemapMapDebug(
+            isUnknown: true,
+            centerLatitude: 20,
+            centerLongitude: 0,
+            latitudeDelta: 90,
+            longitudeDelta: 120,
+            zoom: zoom,
+            markerCount: 0,
+            source: source
+        )
+    }
     /// 一行文字：`未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 OSM`
     var text: String {
         let mode = isUnknown ? "未知态" : "正常态"

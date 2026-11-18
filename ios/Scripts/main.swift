@@ -1850,6 +1850,20 @@ expect(
     )
 )
 print("== 定位不可用（未知态）==")
+expect(
+    "未知态默认诊断：中心 20.0,0.0 / 跨度 90×120 / z3 / 标记 0 / 源 OSM（字段齐全，含「源」）",
+    BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text
+        == "未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 \(BasemapSource.osm.label)",
+    "actual=\(BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text)"
+)
+expect(
+    "尚无回灌时的文案不是「—」（可自证有意义的空态）",
+    L("map.diagMapPending") != "—"
+        && !L("map.diagMapPending").isEmpty
+        && L("map.diagMapPending") != BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text,
+    "actual=\(L("map.diagMapPending"))"
+)
+
 // 诊断自证行：未知态的中心 / 跨度 / 标记数必须能一眼看出「视口有没有动」「标记有没有清」。
 let unknownMapDebug = BasemapMapDebug(
     isUnknown: true,

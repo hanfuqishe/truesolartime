@@ -157,6 +157,8 @@ final class BasemapController: ObservableObject {
             applyUnknown(source: cached.source, at: stamp)
             return
         }
+        // 立刻回灌一次未知态的调试值（中心/跨度/标记数是确定的，不必等地图回调）。
+        mapDebug = BasemapMapDebug.unknownDefault(source: state.active, zoom: LocationUnknown.mapZoom)
         // 无缓存：只探 2 块 z3，谁先回来且有内容谁赢。
         state = BasemapState(mode: .manual, preferred: .amapVector, now: stamp)
         let pending = state.pendingUiState(requestedZoom: lastRequestedZoom)
@@ -247,7 +249,8 @@ final class BasemapController: ObservableObject {
 
     /// 诊断行：`未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 OSM`。
     var mapDiagnostics: String {
-        mapDebug?.text ?? "—"
+        // 还没有任何回灌时显示**有意义的**状态，而不是「—」（会被误看成占位符）。
+        mapDebug?.text ?? L("map.diagMapPending")
     }
 
     /// 诊断用：当前是不是「自动」。
