@@ -324,6 +324,9 @@ struct Index {
       return;
     }
     this.locationUnknown = value;
+    // 立刻重算所有「与地点相关」的显示（逐时温度、天气、日期行、时段色带、主题），
+    // 否则会继续显示上一个地点的真实温度 / 色带。
+    this.refreshDerived();
     if (value) {
       this.mapCenterLat = 0;
       this.mapCenterLon = 0;
@@ -466,10 +469,13 @@ struct Index {
     this.district = names === null ? '' : names.short;
     this.placeName = this.presetName();
 
-    // 天气缓存按地点区分：这两个读法都要求缓存坐标属于当前观测点（≤ 5 km），
-    // 所以换到新城市后这里立刻变空、只剩占位符，绝不会把上一个城市的读数安到新位置上。
-    const weather: WeatherSnapshot | null = WeatherService.cached(this.place);
-    if (weather !== null) {
+    // 未知态不读任何天气缓存：所有与地点相关的天气信息都用占位符。
+    const weather: WeatherSnapshot | null = this.locationUnknown ? null : WeatherService.cached(this.place);
+    if (this.locationUnknown) {
+      const placeholderWeather = UnknownLocationLogic.weatherPlaceholders();
+      this.weatherTemperature = placeholderWeather.temperature;
+      this.weatherText = placeholderWeather.text;
+    } else if (weather !== null) {
       this.weatherTemperature = `${weather.temperatureC}°`;
       this.weatherText = WeatherLogic.conditionLabel(weather.code, language);
     } else {
@@ -481,20 +487,21 @@ struct Index {
     const zoneSeconds: number = this.zoneOffsetSeconds();
     const date: Date = new Date(now + zoneSeconds * 1000);
     const dayStartUtc: number = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-    const range: number[] | null = WeatherLogic.temperatureRange(
+    const range: number[] | null = this.locationUnknown ? null : WeatherLogic.temperatureRange(
       WeatherService.hourly(this.place),
       dayStartUtc,
       dayStartUtc + 86400000,
       zoneSeconds * 1000
     );
-    this.weatherRange = range === null ? '' : `${range[0]}~${range[1]}°`;
+    this.weatherRange = this.locationUnknown ? UnknownLocationLogic.weatherPlaceholders().range
+      : (range === null ? '' : `${range[0]}~${range[1]}°`);
     // 六格逐时预报：**槽位数恒为 6**，槽位之间的步长跟着数据源走
     // （主源 1 小时 → 现在/22时/23时/0时/1时/2时；备用源 3 小时 → 现在/23时/2时/5时/8时/11时）。
     // 图标下方显示**温度**（与 Android / iOS 一致）；「现在」格用实时温度，其余用采样点温度。
     const hourLabelList: string[] = [];
     const icons: string[] = [];
-    const hourly: HourPoint[] = WeatherService.hourly(this.place);
-    const stepHours: number = WeatherService.stepHours();
+    const hourly: HourPoint[] = this.locationUnknown ? [] : WeatherService.hourly(this.place);
+    const stepHours: number = this.locationUnknown ? 1 : WeatherService.stepHours();
     const slotList: WeatherSlot[] = WeatherLogic.visibleSlots(
       hourly,
       Math.floor(now / 1000),
@@ -543,9 +550,10 @@ struct Index {
       this.weatherRange = '';
     }
     // 当前地点没有缓存、但正在取数：天气位显示「更新中…」，取完（成败都会落到这里）再改文案。
-    this.weatherPending = weather === null && WeatherService.isRefreshing();
+    this.weatherPending = !this.locationUnknown && weather === null && WeatherService.isRefreshing();
 
-    const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
+    // 未知态没有天气来源：关键时段（由天气温度算出）自然为空，不去读旧缓存。
+    const schedule: TakeTimeSchedule | null = this.locationUnknown ? null : KeyTimeService.schedule();
     if (schedule === null || schedule.bands.length === 0) {
       this.keyTimeText = '';
       this.segments = [];

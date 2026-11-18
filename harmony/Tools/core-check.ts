@@ -1483,6 +1483,12 @@ for (const item of equationCases) {
   check('unknown hourly temps are all -°',
     unknownTemps.every((temp: string): boolean => temp === LocationPlaceholders.TEMPERATURE));
 
+  // 未知态天气占位：不读任何缓存。
+  const unknownWeather = UnknownLocationLogic.weatherPlaceholders();
+  equal('unknown weather temperature is a dash', '--', unknownWeather.temperature);
+  equal('unknown weather text is empty', '', unknownWeather.text);
+  equal('unknown weather range is empty', '', unknownWeather.range);
+
   // 未知态圆盘：昼弧 180°、夜弧 180°。
   equal('unknown day arc starts at -180', -180, UnknownLocationLogic.dayArcStartDegrees());
   equal('unknown day arc sweeps 180', 180, UnknownLocationLogic.dayArcSweepDegrees());

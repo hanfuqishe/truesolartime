@@ -63,6 +63,13 @@ export class FollowTapState {
   locationUnknown: boolean = false;
 }
 
+/** 未知态的天气占位数据：不读任何缓存。 */
+export class UnknownWeather {
+  temperature: string = LocationPlaceholders.DASH;
+  text: string = '';
+  range: string = '';
+}
+
 export class UnknownLocationLogic {
   /** 未知态地图固定 z3，不逐级降级。 */
   static readonly MAP_ZOOM: number = 3;
@@ -146,10 +153,15 @@ export class UnknownLocationLogic {
   /** 未知态逐时温度：六格全是 `-°`。 */
   static hourlyTemperatures(count: number = 6): string[] {
     const temps: string[] = [];
-    for (let index = 0; index < count; index++) {
+    for (let index: number = 0; index < count; index++) {
       temps.push(LocationPlaceholders.TEMPERATURE);
     }
     return temps;
+  }
+
+  /** 未知态天气占位：温度 `--`、天气文案空、温度区间空（不读缓存）。 */
+  static weatherPlaceholders(): UnknownWeather {
+    return new UnknownWeather();
   }
 
   /** 未知态圆盘：昼弧 180°（-180°→0°），夜弧 180°，地平线过圆心。 */
