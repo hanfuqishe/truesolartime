@@ -1433,6 +1433,17 @@ for (const item of equationCases) {
   check('a fix ends the unknown state', !UnknownLocationLogic.isUnknown(true, true));
   check('no gps intent is never unknown', !UnknownLocationLogic.isUnknown(false, false));
 
+  // 点「实时跟随 GPS」：先落意图再看权限 —— 未授权也必须留下意图并立刻进入未知态。
+  const deniedTap = UnknownLocationLogic.applyFollowTap(false, false);
+  check('follow tap without permission still sets the intent', deniedTap.gpsIntent);
+  check('follow tap without permission enters the unknown state', deniedTap.locationUnknown);
+  const grantedNoFix = UnknownLocationLogic.applyFollowTap(true, false);
+  check('follow tap with permission but no fix is still unknown',
+    grantedNoFix.gpsIntent && grantedNoFix.locationUnknown);
+  const grantedWithFix = UnknownLocationLogic.applyFollowTap(true, true);
+  check('follow tap with permission and a fix is known',
+    grantedWithFix.gpsIntent && !grantedWithFix.locationUnknown);
+
   // 西半球偏移（UTC−5 = −18000）必须原样保留，不能拿负数当「没传」。
   const nowMillis: number = 1_700_000_000_000;
   equal('negative offsets survive', -18000, UnknownLocationLogic.offsetSecondsOr(-18000, nowMillis));

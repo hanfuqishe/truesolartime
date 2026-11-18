@@ -262,6 +262,9 @@ struct Index {
       return;
     }
     this.reloadSettings();
+    // 回到前台 / 从设置页返回：立刻复核定位权限。意图为真但未授权时马上进入未知态，
+    // 不依赖下一次定时器（否则「刚点跟随 GPS 却没权限」还会短暂显示旧地点）。
+    this.syncGpsSilently();
     this.weatherRevision = WeatherService.revision();
     this.districtRevision = DistrictService.revision();
     this.lastDerivedMillis = Date.now();

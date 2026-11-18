@@ -301,6 +301,9 @@ struct Settings {
       return;
     }
     this.locating = true;
+    // 用户明确要求「跟随 GPS」：**先把意图落地，再看权限**。
+    // 无权限时也必须留下意图，首页才能据此进入「定位不可用」未知态，而不是继续显示旧地点。
+    AppStore.setGpsIntent(true);
     try {
       const granted: boolean = await LocationService.ensurePermission(context);
       AppStore.setLocationAsked(true);

@@ -57,9 +57,29 @@ export class UnknownMapCache {
   longitude: number = 0;
 }
 
+/** 点「实时跟随 GPS」后的结果：意图与是否未知态。 */
+export class FollowTapState {
+  gpsIntent: boolean = true;
+  locationUnknown: boolean = false;
+}
+
 export class UnknownLocationLogic {
   /** 未知态地图固定 z3，不逐级降级。 */
   static readonly MAP_ZOOM: number = 3;
+
+  /**
+   * 用户点「实时跟随 GPS」后的状态转移（纯函数）。
+   *
+   * **先落意图，再看权限**：无论是否授权，gpsIntent 都为 true；没有权限或没有 fix 时
+   * locationUnknown 立即为 true —— 这样首页会马上进入「定位不可用」，而不是继续显示旧地点。
+   */
+  static applyFollowTap(granted: boolean, hasFix: boolean): FollowTapState {
+    const next: FollowTapState = new FollowTapState();
+    next.gpsIntent = true;
+    next.locationUnknown = !granted || !hasFix;
+    return next;
+  }
+
   /** 未知态只用东亚瓦片（x=6, y=2），不要 (0,0) —— 高德会把那里判成空白。 */
   static readonly PROBE_TILE_X: number = 6;
   static readonly PROBE_TILE_Y: number = 2;
