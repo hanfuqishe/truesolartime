@@ -2793,10 +2793,16 @@ expect(
         && L10n.t("city.murmansk", language: .english) == "Murmansk"
 )
 expect(
-    "中山站三语（中山站 / 中山站 / Zhongshan Station）",
-    L10n.t("city.zhongshan", language: .simplified) == "中山站"
-        && L10n.t("city.zhongshan", language: .traditional) == "中山站"
-        && L10n.t("city.zhongshan", language: .english) == "Zhongshan Station"
+    "中山站三语（南极中山站 / 南極中山站 / Zhongshan Station, Antarctica）",
+    L10n.t("city.zhongshan", language: .simplified) == "南极中山站"
+        && L10n.t("city.zhongshan", language: .traditional) == "南極中山站"
+        && L10n.t("city.zhongshan", language: .english) == "Zhongshan Station, Antarctica"
+)
+expect(
+    "显示名多一个字也不截断：320pt 宽屏幕城市 5 字（≈60pt）仍走「四档全显示」",
+    // 自检环境没有 UIKit/UIFont，按「CJK 每字 ≈ 字号」估：5 字 × 12pt = 60pt。
+    HeroRowTier.tier(utcWidth: 34, cityWidth: 60, labelWidth: 48, shichenWidth: 24, rowWidth: 244) == .allFour,
+    "tier=\(HeroRowTier.tier(utcWidth: 34, cityWidth: 60, labelWidth: 48, shichenWidth: 24, rowWidth: 244))"
 )
 // 极昼 / 极夜：`SolarSnapshot.polar` 只有这两种非 normal 状态，`SunCard` 据此改文案（不显示具体时刻）。
 let murmanskSummer = SolarTimeSnapshot.compute(

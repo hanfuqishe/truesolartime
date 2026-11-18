@@ -233,7 +233,7 @@
 "city.singapore" = "Singapore";
 "city.sydney" = "Sydney";
 "city.murmansk" = "Murmansk";
-"city.zhongshan" = "Zhongshan Station";
+"city.zhongshan" = "Zhongshan Station, Antarctica";
 
 /* Misc */
 "weather.title" = "Weather";
