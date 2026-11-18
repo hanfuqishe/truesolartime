@@ -314,40 +314,26 @@ def check_weatherkit_signing_setup(repo_root: str | None = None) -> list[str]:
             problems.append("project.yml 的 CODE_SIGN_ENTITLEMENTS 没指向 TrueSolarTime/TrueSolarTime.entitlements")
     return problems
 
-def list_bundle_id_capabilities(bid_id: str, token: str) -> list[dict]:
-    """查某个 Bundle ID 已开启的 capability（`/v1/bundleIdCapabilities`）。
-
-    响应结构（App Store Connect API 1.x）：
-        {"data": [{"type": "bundleIdCapabilities",
-                   "id": "<capability-id>",
-                   "attributes": {"capabilityType": "WEATHERKIT"}}],
-         "links": {...}, "meta": {"paging": {...}}}
-    `attributes.capabilityType` 是 `CapabilityType` 枚举值（大写，如 WEATHERKIT / PUSH_NOTIFICATIONS）。
-    """
-    items = list_all("/v1/bundleIdCapabilities", token, {"filter[bundleId]": bid_id})
-    return items
-
-
 def ensure_weatherkit_capability(bid_id: str, token: str) -> bool:
-    """确保 App ID 开启了 WeatherKit（**幂等**）。返回 True 表示这次新开了、False 表示本来就有。
+    """确保 App ID 开启了 WeatherKit（**幂等**，且**不发 GET**）。
 
-    为什么必须在**创建 profile 之前**做：描述文件是 App ID 能力 + 证书的快照，
-    capability 晚于 profile 开启的话，profile 里不会出现 `com.apple.developer.weatherkit`
-    entitlement，Archive 就会报「Provisioning profile doesn't include the ... entitlement」。
+    返回 True 表示这次新开成功；False 表示「已存在」（POST 返回 409/422）。
 
-    API：
-        GET  /v1/bundleIdCapabilities?filter[bundleId]=<bid>     列出已有能力
-        POST /v1/bundleIdCapabilities                           新增一条
+    为什么不做 GET 再判断：App Store Connect **不允许集合查询** `bundleIdCapabilities`
+    （CI 实测：GET /v1/bundleIdCapabilities?filter[bundleId]=… → HTTP 403，
+    "does not allow 'GET_COLLECTION'. Allowed operations are: CREATE, DELETE, UPDATE"）
+    所以「先查再建」这条路走不通。
+    改成**直接 POST**，幂等性交给服务端的冲突码：
+      - 201：新开成功；
+      - **409 / 422**：已经开过（重复创建）→ 视为成功，打印「已存在，跳过」。
+
+    为什么必须在**创建 profile 之前**做：描述文件是「App ID 能力 + 证书」的快照，
+    capability 晚于 profile 开启的话，profile 里不会有 `com.apple.developer.weatherkit`，
+    Archive 会报 `Provisioning profile ... doesn't include the ... entitlement`。
+
+    只允许 CREATE / DELETE / UPDATE，所以「查询」这件事在 API 层面就是不存在的；
+    需要核对现状时请到 https://developer.apple.com/account/resources/identifiers 看。
     """
-    existing = list_bundle_id_capabilities(bid_id, token)
-    kinds = {
-        (item.get("attributes") or {}).get("capabilityType")
-        for item in existing
-    }
-    if WEATHERKIT_CAPABILITY in kinds:
-        print(f"      WeatherKit capability 已开启（共 {len(kinds)} 项能力），跳过")
-        return False
-
     payload = {
         "data": {
             "type": "bundleIdCapabilities",
@@ -358,20 +344,30 @@ def ensure_weatherkit_capability(bid_id: str, token: str) -> bool:
         }
     }
     try:
-        created = unwrap(api("POST", "/v1/bundleIdCapabilities", token, payload=payload))
-    except Exception as exc:  # noqa: BLE001 - 这里要把原因翻译成可操作的话
+        # tolerate：把「已存在」当成正常返回（不抛异常），响应里带 __error__ 标记。
+        resp = api("POST", "/v1/bundleIdCapabilities", token, payload=payload, tolerate=(409, 422))
+    except Exception as exc:  # noqa: BLE001 - 把原因翻译成可操作的话
         raise AscError(
-            "开启 WeatherKit capability 失败：" f"{exc}\n"
+            f"开启 WeatherKit capability 失败：{exc}\n"
             "可能原因：\n"
             "  1) API Key 的角色不够（需要 App Manager 或 Admin）；\n"
-            "  2) 该 App ID 已手工开启过但 API 没同步 —— 去\n"
+            "  2) 该 App ID 已手工开启过、但服务端这次仍报错 —— 去\n"
             "     https://developer.apple.com/account/resources/identifiers 打开这个 App ID，\n"
             "     勾选 WeatherKit（若提示需要先关联 WeatherKit 服务，按提示同意）后保存；\n"
-            "  3) 账号本身没有 WeatherKit 资格（企业/教育账号可能没有）。\n"
+            "  3) 账号本身没有 WeatherKit 资格（企业/教育账号可能没有）；\n"
+            "  4) POST 也 403：这个 API Key 连 CREATE 都不允许，换一个有 App Manager/Admin 角色的 Key。\n"
             "处理完之后重跑本脚本即可（本函数是幂等的）。"
         ) from exc
+    error = (resp.get("__error__") if isinstance(resp, dict) else None) or {}
+    if error:
+        # 409/422（已存在）已被 tolerate 拦住，走到这里只可能是这两个码。
+        print(f"      WeatherKit capability 已存在（HTTP {error.get('status')}），跳过")
+        return False
+
+    created = unwrap(resp)
     print(f"      WeatherKit capability 已开启（新建 id={created.get('id')}）")
     return True
+
 
 def _create_cert(token: str, csr_pem: str) -> dict:
     payload = {
@@ -730,6 +726,14 @@ def cmd_selfcheck(args, token_unused=None) -> int:
     assert not weatherkit_capability_status([{"attributes": {"capabilityType": "PUSH_NOTIFICATIONS"}}])
     assert not weatherkit_capability_status([])
     print("[ok] capability 判定纯函数：已开 / 未开 / 空表 三种情况都正确")
+
+    # 签名流程**不允许**对 bundleIdCapabilities 发 GET（ASC 只允许 CREATE/DELETE/UPDATE，
+    # 集合查询会 403）。直接扫源码，防止以后有人「顺手」加回「先查再建」。
+    src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    needle = '"GET", "/v1/' + 'bundleIdCapabilities'
+    assert needle not in src, "签名流程不能再对 bundleIdCapabilities 发 GET"
+    assert 'tolerate=(409, 422)' in src, "创建 capability 必须容忍「已存在」（409/422）"
+    print("[ok] 签名流程只用 POST create-capability（无 GET），且容忍 409/422")
     print("selfcheck all passed")
     return 0
 
