@@ -118,11 +118,12 @@ swiftc -O ios/TrueSolarTime/Core/*.swift ios/Scripts/main.swift -o $env:TEMP\tst
 | 端 | 自动底图 | 说明 |
 |---|---|---|
 | **iOS** | **Apple 地图（MapKit 系统底图）** | `MKMapView` 默认底图、不挂任何 `MKTileOverlay`；`overrideUserInterfaceStyle` 跟随昼夜 |
-| Android | 高德（境内）/ OSM（境外） | osmdroid + 自绘瓦片，带「并行探测 + 先换源再降级 + 渐进升级」兜底 |
-| 鸿蒙 | 高德 / OSM | 同 Android 策略（`Image` + 自取瓦片） |
+| Android | 高德（境内）/ **ESRI 街图（境外）** | osmdroid + 自绘瓦片，带「并行探测 + 先换源再降级 + 渐进升级」兜底 |
+| 鸿蒙 | 高德（境内）/ **ESRI 街图（境外）** | 同 Android 策略（`Image` + 自取瓦片） |
 
-iOS 手动选项保留 OSM / 高德矢量 / 高德卫星，走原有探测链路。**Google 地图已评估并放弃**：
-需绑信用卡、GMS 依赖让 APK +3~5MB、国内 GMS 设备少，收益不足以抵消成本。
+三端手动选项：iOS `自动 / Apple 地图 / OSM / 高德矢量 / 高德卫星`；Android 与鸿蒙 `自动 / Esri 街道图 / OSM / 高德矢量 / 高德卫星`。
+手动模式统一语义：**不探测、不回退、不降级**，失败显示「底图不可用」，出图后自动恢复。
+**Google 地图已评估并放弃**：需绑信用卡、GMS 依赖让 APK +3~5MB、国内 GMS 设备少，收益不足以抵消成本。
 
 ### 关键机制（Android / 鸿蒙）
 
@@ -163,4 +164,26 @@ iOS 手动选项保留 OSM / 高德矢量 / 高德卫星，走原有探测链路
 - Apple 地图样式不可定制，署名必须显示（`MKMapView` 法律链接别遮挡）；
 - 高德在境外多为空白瓦片，最终会降到 z3 全球图（有大陆轮廓、无街道）；
 - OSM 域名（`tile.openstreetmap.org` / `nominatim.openstreetmap.org`）在国内网络被 **DNS 污染**（实测解析到 Facebook / Dropbox 的 IP）；
-  模拟器同样如此，因此**鸿蒙模拟器可用于验证兜底链**（open-meteo 仍直连可用）。
+  模拟器同样如此，因此**鸿蒙模拟器可用于验证兜底链**（open-meteo 仍直连可用）；
+- ESRI（`server.arcgisonline.com`）走 Akamai，国内可直连 —— 这是「境外底图」能用的关键；若哪天换 CDN 或被封，需要备用方案（自建 Workers 代理）。
+
+---
+
+## 7. 「是不是中国」有两套边界，绝不能混用（2026-11 踩过的坑）
+
+代码里存在**两个语义完全不同**的「中国」判断，名字都很像，混用会造成真实 bug：
+
+| 边界 | 常量 | 范围 | 唯一用途 |
+|---|---|---|---|
+| **GCJ-02 偏移边界** | `CoordinateTransform.isInChina` | 经度 72.004–137.8347、**纬度 0.83–55.83** | **只**用于「坐标要不要加 GCJ-02 偏移」 |
+| **时区 / 区域边界** | `SolarTimeMath.isInChinaRegion(lat, lon, countryCode)`（iOS `GeoRegion.isInChina`、鸿蒙 `SolarTimeMath.isInChina`） | 有国家码只看 `cn/hk/mo/tw`；无国家码退回 **73–135°E / 18–54°N** | 时区归属、**选哪个底图**、任何「境内/境外」判断 |
+
+**事故**：`MapStyle.effective` 图省事直接调了 `CoordinateTransform.isInChina`，而它的纬度下限是 0.83°，
+把整个东南亚都算成「境内」→ 新加坡 / 吉隆坡 / 雅加达 / 马尼拉全部走高德（境外空白）→ 一路降级到 z3 全球图。
+
+**规则**：
+
+1. 任何「境内/境外」判断**只准**用 `SolarTimeMath.isInChinaRegion(...)`（带 `countryCode`），**不准**用 GCJ 边界；
+2. 国家码要**一路带下去**：`Place.countryCode` → `MapFallbackState.countryCode` → `BasemapProbe` / `plan()` / 诊断文案，
+   否则无国家码时就退回包围盒（虽然能兜住，但会丢掉「新加坡属于境外」这类信息）；
+3. 新写边界判断时，**函数名里带上用途**（`needsGcj02Offset` / `isInChinaRegion`），别都叫 `isInChina`。
