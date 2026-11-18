@@ -9,8 +9,8 @@ import Foundation
 /// 2. 否则用**高德里有内容（非空白）的最高级别**：z12 > z10 > z3；
 /// 3. 全失败 / 全空白 → 底图不可用。
 ///
-/// 时间预算：**4.0 秒硬超时**；一旦已经知道「高德有内容」就 **2.0 秒提前收工**，
-/// 不去死等被墙的 OSM。
+/// 时间预算：**4.0 秒硬超时**（只用于「一块都没回来 → 不可用」）。
+/// 回来一块就**先到先用**出图，之后由 `BasemapUpgrade` 逐个比较、**渐进升级**（10 秒窗口）。
 ///
 /// 探测结果直接定级：选中级别**之上**的级别一律视为「无内容」，`zoomStep` 一步落位
 /// （不再一屏一屏地降），并打上 **5 分钟恢复冷却**（否则 z3 一出图又弹回 z12，就是猛跳）。
@@ -18,8 +18,7 @@ enum BasemapProbe {
 
     /// 硬超时：4 秒内没凑齐也必须给结论。
     static let hardTimeoutSeconds: TimeInterval = 4.0
-    /// 提前收工：已知「高德有内容」时等 2 秒就够，不再等 OSM。
-    static let earlyExitSeconds: TimeInterval = 2.0
+
     /// 探测结果缓存有效期：5 分钟。
     static let cacheTTLSeconds: TimeInterval = 300
     /// 缓存指纹的粒度（度）：0.001° ≈ 111 m，即「~100 米」。
@@ -53,24 +52,6 @@ enum BasemapProbe {
     /// 选中级别**之上**的精度档（这些档已经确定「没有内容」，不必再试）。
     static func zoomsAbove(_ zoom: Int) -> [Int] {
         amapZoomLevels.filter { $0 > zoom }
-    }
-
-    /// 什么时候可以**提前收工**（2 秒那一枪该不该开）。
-    ///
-    /// 条件：**不存在比当前最优精度更高、且还没有结论的档**。
-    /// 否则会出现「z3 先回来 → 2 秒一到就出结论 → 选了低精度」，而 z12 其实还在飞
-    /// （单块 2.5 秒超时、整体 4 秒硬顶，完全等得起）。
-    ///
-    /// 「有结论」= 已经出现在 `amap` 里：无论 `true`（有内容）还是 `false`（空白 / 失败）；
-    /// 只有**还在飞**（字典里没有这个键）才算没结论。
-    ///
-    /// - Parameters:
-    ///   - amap: 已回来的高德探测结果（精度 → 是否有内容）。
-    ///   - zooms: 参与探测的档位（默认 `[12, 10, 3]`）。
-    static func shouldEarlyExit(amap: [Int: Bool], zooms: [Int] = amapZoomLevels) -> Bool {
-        guard let best = amap.filter({ $0.value }).keys.max() else { return false }
-        // 还有更高的档没结论（还在飞）→ 不许早退，必须等它。
-        return !zooms.contains { $0 > best && amap[$0] == nil }
     }
 
     /// 由结论换算 `zoomStep`：0 正常、1 降一级、2 降两级、3 = z3 全球、4 = 不可用。
