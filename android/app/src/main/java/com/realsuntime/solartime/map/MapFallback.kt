@@ -491,9 +491,8 @@ data class MapUiState(
         /**
          * 未知态（定位不可用）用的「无坐标」锚点：赤道与本初子午线的交点。
          *
-         * 用 (0, 0) 而不是上一个地点的坐标：源的选择（[MapStyle.effective]）本来就要看境内/境外，
-         * 拿旧坐标去判断等于让旧地点继续决定底图；0°E/0°N 落在境外，于是走「OSM + 高德兜底」，
-         * 也就是现有的境外自动探测规则。
+         * 地图视口就落在这里（全球底图、不打标记）。用 (0, 0) 而不是上一个地点的坐标，
+         * 是为了不让旧地点继续影响这张全球图；源的选择由 [UnknownBasemap] 单独决定。
          */
         const val UNKNOWN_LATITUDE = 0.0
         const val UNKNOWN_LONGITUDE = 0.0
@@ -515,21 +514,24 @@ data class MapUiState(
         /**
          * **未知态**的地图状态：没有坐标，级别固定为最低的全球底图 [MapFallback.MIN_ZOOM]。
          *
-         * 源仍按现有规则挑（自动模式 = 境内高德 / 境外 OSM，无坐标按境外处理），
-         * 回退与「底图不可用」也照旧由会话状态机决定 —— 只是不再有具体地点的标记与经纬度。
+         * 源不再「按坐标猜」—— 未知态走 [UnknownBasemap] 的专用快路径：命中「上次成功出图的源」
+         * 缓存就直接用，没缓存就只探两块 z3 瓦片。这里只把结论翻译成 UI 状态：
+         * 探测还没结论（[source] 为 null）时挂个兜底源（此时界面显示骨架、不建 MapView）；
+         * 两块都失败 → [unavailable]，界面直接写「底图不可用」（未知态不做逐级降级）。
+         *
+         * @param source 快路径选定的源；null = 还没结论
+         * @param unavailable 两块探测瓦片都没有内容
          */
-        fun ofUnknown(style: MapStyle, state: MapFallbackState): MapUiState {
-            val plan = MapFallback.plan(style, UNKNOWN_LATITUDE, UNKNOWN_LONGITUDE, state)
-            return MapUiState(
-                requested = plan.requested,
-                source = plan.effective,
-                zoom = MapFallback.MIN_ZOOM,
-                // 固定 z3 是产品口径（看全球底图），不是「被降级」。
-                degraded = false,
-                unavailable = state.zoomUnavailable(plan.effective, MapFallback.MIN_ZOOM),
-                fellBack = plan.fellBack,
-            )
-        }
+        fun ofUnknown(style: MapStyle, source: MapStyle?, unavailable: Boolean): MapUiState = MapUiState(
+            requested = style,
+            // 还没结论时按「自动 + 无坐标（境外）」给一个占位源；真正建 MapView 之前源已经定了。
+            source = source ?: MapStyle.AUTO.effective(UNKNOWN_LATITUDE, UNKNOWN_LONGITUDE),
+            zoom = MapFallback.MIN_ZOOM,
+            // 固定 z3 是产品口径（看全球底图），不是「被降级」。
+            degraded = false,
+            unavailable = unavailable,
+            fellBack = false,
+        )
     }
 }
 

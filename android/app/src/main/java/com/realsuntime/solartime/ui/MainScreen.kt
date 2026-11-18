@@ -1002,7 +1002,7 @@ private fun HeroCard(
                 bandColor = bandTint,
                 dotColor = if (inKeyTime && bandTint != null) bandTint else HeroPalette.DOT,
             )
-            // 逐时行：未知态也照画（六格时间 + `--°` 占位、无图标），行高与正常态一致。
+            // 逐时行：未知态也照画（六格时间 + `-°` 占位、无图标），行高与正常态一致。
             if (extras.hourly.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 HeroHourly(extras.hourly)
@@ -1116,7 +1116,7 @@ private fun HeroAxis(
  * 与 iOS 对齐，也省得长名字（英文 "Partly cloudy"）在 22dp 的格子里被省略号砍掉。
  * 字号/配色/行距沿用原来那一格文字标签的样式（只换内容，不动版式），所以卡片高度不变。
  *
- * 未知态（定位不可用）同样画满六格：时间标签照常、温度是 `--°`、**图标不画但位子留着**
+ * 未知态（定位不可用）同样画满六格：时间标签照常、温度是 `-°`、**图标不画但位子留着**
  * （`iconRes == null` 时补一个同尺寸的空位），所以卡片高度与正常态逐像素一致，不会突然变矮。
  */
 @Composable

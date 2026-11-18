@@ -23,6 +23,8 @@ import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.map.MapUiState
 import com.realsuntime.solartime.map.TileEvent
 import com.realsuntime.solartime.map.TileResult
+import com.realsuntime.solartime.map.UnknownBasemap
+import com.realsuntime.solartime.map.UnknownBasemapProbeRunner
 import com.realsuntime.solartime.notify.ShiChenReminder
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.ui.TimeText
@@ -137,6 +139,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 首屏并行探测的任务（换城市就取消上一次，避免旧结论盖掉新地点）。 */
     private var probeJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * **未知态**全球底图快路径（见 [UnknownBasemap]）：选定的源；null = 还没结论。
+     *
+     * 与正常态的 [mapFallback] 状态机完全独立：这里只关心「一张 z3 全球图用哪个源」，
+     * 不参与「OSM 连续失败回退 / 逐级降级 / 5 分钟冷却回弹」那一整套。
+     */
+    private val _unknownMapSource = MutableStateFlow(
+        UnknownBasemap.cachedSource(
+            source = settings.unknownMapSource,
+            atMillis = settings.unknownMapSourceAtMillis,
+            nowMillis = System.currentTimeMillis(),
+        ),
+    )
+    val unknownMapSource: StateFlow<MapStyle?> = _unknownMapSource.asStateFlow()
+
+    /** 未知态两块探测瓦片都没内容 → 地图卡直接显示「底图不可用」（不降级）。 */
+    private val _unknownMapUnavailable = MutableStateFlow(false)
+    val unknownMapUnavailable: StateFlow<Boolean> = _unknownMapUnavailable.asStateFlow()
+
+    /** 未知态探测任务（同一时刻只跑一次）。 */
+    private var unknownProbeJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * 「进入未知态」的时刻（[android.os.SystemClock.elapsedRealtime]）：用来量**切到未知态 → 地图出图**
+     * 到底花了多久（目标 ≤5 秒）。只打一条 info 日志，排查「地图多久才出来」时直接看 logcat。
+     */
+    private var unknownMapEnteredAtMillis = 0L
+    private var unknownMapReadyLogged = false
+
     private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
@@ -214,20 +245,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         // 地图卡片的 UI 状态：把「会话状态 + 地点 + 设置」压成 MapUiState，只在其真的变化时才发。
-        // 未知态没有坐标：源仍按「自动＝境内高德 / 境外 OSM」的规则（无坐标按境外处理），
-        // 级别固定为 z3 全球底图（见 [MapUiState.ofUnknown]）。
+        // 未知态走自己的快路径（见 [UnknownBasemap]）：源由「上次成功出图的源」缓存或两块瓦片探测决定，
+        // 级别固定 z3；它**不读** [mapFallback] 的失败/回退/冷却状态，也不写它。
         viewModelScope.launch {
-            combine(mapFallback.state, _place, _mapStyle, _locationUnknown) { state, place, style, unknown ->
+            val unknownMap = combine(_unknownMapSource, _unknownMapUnavailable) { source, unavailable ->
+                source to unavailable
+            }
+            combine(mapFallback.state, _place, _mapStyle, _locationUnknown, unknownMap) { state, place, style, unknown, unknownState ->
                 if (unknown) {
-                    MapUiState.ofUnknown(style, state)
+                    MapUiState.ofUnknown(style, unknownState.first, unknownState.second)
                 } else {
                     MapUiState.of(style, place.latitude, place.longitude, state)
                 }
             }.distinctUntilChanged().collect {
                 _mapUi.value = it
                 if (it.unavailable) _mapLoading.value = false // 「底图不可用」也是一种结论，别一直转圈
-                // 未知态看的是全球底图，不需要等「首屏并行探测」（那是给具体地点定源/定级用的）。
-                if (_locationUnknown.value) _mapReady.value = true
+            }
+        }
+        // 未知态的全球底图快路径：进入未知态就立刻「有缓存直接用 / 没缓存探两块 z3（≤2 秒）」。
+        viewModelScope.launch {
+            _locationUnknown.collect { unknown ->
+                if (unknown) enterUnknownBasemap() else leaveUnknownBasemap()
             }
         }
         // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
@@ -260,6 +298,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun markLocationPermissionRequested() {
         settings.locationPermissionRequested = true
+    }
+
+    /**
+     * 进入未知态：给那张全球底图定源（专用快路径，见 [UnknownBasemap]）。
+     *
+     * 1. **有「上次成功出图的源」缓存**（10 分钟内）→ 直接用它 + z3，一次请求都不发；
+     * 2. **没有缓存** → 只并行探两块 z3 瓦片（OSM / 高德，各几 KB），2 秒封顶，先有内容者胜；
+     * 3. **两块都失败** → 「底图不可用」（未知态只在 z3，没有级别可降、也不进回退/冷却那套）。
+     *
+     * 探测期间不建 MapView（界面显示骨架），MapView 一出生就是选定的源 + z3。
+     */
+    private fun enterUnknownBasemap() {
+        unknownMapEnteredAtMillis = android.os.SystemClock.elapsedRealtime()
+        unknownMapReadyLogged = false
+        val cached = UnknownBasemap.cachedSource(
+            source = settings.unknownMapSource,
+            atMillis = settings.unknownMapSourceAtMillis,
+            nowMillis = System.currentTimeMillis(),
+        )
+        if (cached != null) {
+            _unknownMapSource.value = cached
+            _unknownMapUnavailable.value = false
+            _mapReady.value = true
+            return
+        }
+        if (unknownProbeJob?.isActive == true) return
+        _unknownMapSource.value = null
+        _unknownMapUnavailable.value = false
+        _mapReady.value = false
+        unknownProbeJob = viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { UnknownBasemapProbeRunner.probe() }.getOrNull()
+            val source = result?.source
+            if (source != null) {
+                // 记下「上次成功出图的源 + 时间」：下次进未知态直接命中，不再探测。
+                settings.unknownMapSource = source
+                settings.unknownMapSourceAtMillis = System.currentTimeMillis()
+                _unknownMapSource.value = source
+                _unknownMapUnavailable.value = false
+                _mapReady.value = true
+                android.util.Log.i(MAP_LOG_TAG, "unknown basemap probe: ${result.detail} → $source")
+            } else {
+                // 两块都没内容：直接显示「底图不可用」，不降级、也不去建 MapView。
+                _unknownMapUnavailable.value = true
+                _mapReady.value = false
+                android.util.Log.i(
+                    MAP_LOG_TAG,
+                    "unknown basemap probe: ${result?.detail ?: "探测异常"} → 底图不可用",
+                )
+            }
+        }
+    }
+
+    /** 离开未知态：只收掉还在飞的探测；缓存留着（下次进未知态直接用），正常态的判断照旧。 */
+    private fun leaveUnknownBasemap() {
+        unknownProbeJob?.cancel()
+        unknownProbeJob = null
     }
 
     @SuppressLint("MissingPermission")
@@ -367,6 +461,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!locationTracker.hasPermission()) {
             _hasFix.value = false
             refreshLocationUnknown()
+            // 还在未知态、而上次两块探测瓦片都没探到（源还是空的）：回前台时重试一次快路径。
+            if (_locationUnknown.value && _unknownMapSource.value == null) enterUnknownBasemap()
             return
         }
         if (!_hasFix.value) startGpsTracking(announce = false)
@@ -450,6 +546,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 失败/回退/降级全程静默：不弹 toast，只写进 [mapFallbackState] 供诊断页展示。
      */
     fun onMapTileEvent(event: TileEvent) {
+        // 未知态走专用快路径：源已经定好、级别固定 z3，瓦片成败不进正常态那套统计/降级/回弹。
+        if (_locationUnknown.value) {
+            if (event.result == TileResult.LOADED) {
+                _mapLoading.value = false
+                if (!unknownMapReadyLogged && unknownMapEnteredAtMillis > 0L) {
+                    unknownMapReadyLogged = true
+                    val cost = android.os.SystemClock.elapsedRealtime() - unknownMapEnteredAtMillis
+                    android.util.Log.i(MAP_LOG_TAG, "unknown basemap: 首块瓦片已画出（进入未知态后 ${cost}ms）")
+                }
+            }
+            return
+        }
         val style = _mapStyle.value
         val (latitude, longitude) = mapAnchor()
         // 有瓦片画出来了：收起「正在载入底图…」。
@@ -471,6 +579,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 地图卡片「程序化应用完视口」：记级别 + 打开残响窗口（见 [MapFallbackTracker.onZoomApplied]）。 */
     fun onMapZoomApplied(zoom: Int) {
+        // 未知态的视口（z3 全球图）不属于正常态的降级链，别去动那套「刚改过视口」的计时。
+        if (_locationUnknown.value) return
         mapFallback.onZoomApplied(zoom)
     }
 
@@ -513,11 +623,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun maybeProbeBasemap(force: Boolean = false) {
         val place = _place.value
         val style = _mapStyle.value
-        // 未知态没有坐标：直接看 z3 全球底图，不做「给具体地点定源定级」的并行探测。
-        if (_locationUnknown.value) {
-            _mapReady.value = true
-            return
-        }
+        // 未知态没有坐标：它有自己的快路径（[enterUnknownBasemap]），不走「给具体地点定源定级」的探测。
+        if (_locationUnknown.value) return
         if (!BasemapProbe.needsProbe(style, place.latitude, place.longitude)) return
         val key = BasemapProbe.cacheKey(place.latitude, place.longitude)
         if (!force && mapFallback.probeFresh(key)) return
@@ -622,6 +729,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
+        /** 未知态底图的时间日志（logcat 里 `adb logcat -s SolarMap` 就能看到）。 */
+        const val MAP_LOG_TAG = "SolarMap"
+
         /** GPS 采样间隔：每分钟一次。 */
         const val GPS_INTERVAL_MILLIS = 60_000L
         const val FIX_TIMEOUT_MILLIS = 20_000L

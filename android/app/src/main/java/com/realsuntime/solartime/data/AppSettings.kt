@@ -76,6 +76,23 @@ class AppSettings(context: Context) {
         get() = prefs.getLong(KEY_LAST_WIDGET_FIX, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_WIDGET_FIX, value).apply()
 
+    /**
+     * 未知态（定位不可用）全球底图**上次成功出图的源**（`MapStyle` 名；null = 还没成功过）。
+     *
+     * 只给未知态的快路径用（见 `map/UnknownBasemap`）：有它就直接用这个源 + z3 出图、一次探测都不发。
+     * **正常态的探测/回退完全不读它** —— 本机在未知态学到的结论不会影响正常地点该用哪个底图。
+     */
+    var unknownMapSource: MapStyle?
+        get() = prefs.getString(KEY_UNKNOWN_MAP_SOURCE, null)
+            ?.let { runCatching { MapStyle.valueOf(it) }.getOrNull() }
+            ?.takeIf { it != MapStyle.AUTO }
+        set(value) = prefs.edit().putString(KEY_UNKNOWN_MAP_SOURCE, value?.name).apply()
+
+    /** 上面那个源成功出图的时刻（毫秒）；0 = 没记过。 */
+    var unknownMapSourceAtMillis: Long
+        get() = prefs.getLong(KEY_UNKNOWN_MAP_SOURCE_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_UNKNOWN_MAP_SOURCE_AT, value).apply()
+
     private companion object {
         const val KEY_LATITUDE = "latitude"
         const val KEY_LONGITUDE = "longitude"
@@ -92,6 +109,10 @@ class AppSettings(context: Context) {
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_WIDGET_FIX = "last_widget_fix"
+
+        /** 未知态全球底图的「上次成功出图的源」缓存（只给未知态读）。 */
+        const val KEY_UNKNOWN_MAP_SOURCE = "unknown_map_source"
+        const val KEY_UNKNOWN_MAP_SOURCE_AT = "unknown_map_source_at"
     }
 }
 

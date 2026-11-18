@@ -48,13 +48,14 @@ class PlaceholderHourlyTest {
         assertEquals(listOf("23时", "0时", "1时", "2时", "3时"), list.drop(1).map { it.label })
     }
 
-    /** 每格温度都是 `--°`，且没有图标（`iconRes == null` 时 UI 只留图标位、不画图）。 */
+    /** 每格温度都是 `-°`，且没有图标（`iconRes == null` 时 UI 只留图标位、不画图）。 */
     @Test
     fun everyCellShowsTheTemperaturePlaceholderAndNoIcon() {
         for (hour in listOf(0, 7, 12, 22, 23)) {
             val list = cells(hour)
-            assertEquals("$hour 点起始：六格温度必须全是 --°", 6, list.count { it.temperature == "--°" })
-            assertTrue("温度占位符来自 Placeholders", list.all { it.temperature == Placeholders.TEMPERATURE })
+            assertEquals("$hour 点起始：六格温度必须全是 -°", 6, list.count { it.temperature == "-°" })
+            assertEquals("温度占位符来自 Placeholders", 6, list.count { it.temperature == Placeholders.TEMPERATURE })
+            assertEquals("温度不能再用两个连字符的写法", 0, list.count { it.temperature == "--°" })
             assertEquals(6, list.count { it.iconRes == null })
             assertNull(list.first().iconRes)
         }
