@@ -476,7 +476,7 @@ struct FittingClock: View {
     }
 }
 
-/// 首页 0–24 时时间轴：白线 + 关键时段色段 + 当前时刻的柔光圆点（与 Android 同款）。
+/// 首页 0–24 时时间轴：白线 + 关键时段色段 + 当前时刻的**径向渐变圆点**（与 Android 同款）。
 ///
 /// **未知态（定位不可用）保留色段、只隐藏圆点** —— 这是用户确认过的决定，别「顺手」把色段也去掉：
 /// 色段是「关键时段」这一与地点无关的标记（没有数据时 `bands`/`bandColor` 自然是空，就什么都不画），
@@ -515,8 +515,9 @@ struct HeroAxis: View {
             guard showsDot else { return }
 
             let clamped = min(max(position, 0), 1)
-            // **两笔**：单层柔光圆（+2pt、alpha 0.28）+ 实心核心（5.5pt、完全不透明）。
-            // 中间层 / 三层 alphaRamp 已按用户要求删掉，回到时间轴最初的样子。
+            // **一个径向渐变圆**（与 Android 完全一致）：半径 5.5pt，色标 0 / 0.5 / 1，
+            // alpha 1.0 / 0.45 / 0 —— 边缘快速淡出，视觉核心只有约 2.75pt，比原来那笔
+            // 「实心 + 外扩平铺柔光」更小更柔（用户反馈旧画法偏大）。
             let style = NowDotStyle.shared
             let radius = style.radius
             let center = CGPoint(x: CGFloat(clamped) * size.width, y: midY)
@@ -526,11 +527,13 @@ struct HeroAxis: View {
                 width: radius * 2,
                 height: radius * 2
             )
+            let stops = zip(style.stops, style.alphas).map { location, alpha in
+                Gradient.Stop(color: dotColor.opacity(alpha), location: CGFloat(location))
+            }
             context.fill(
-                Path(ellipseIn: dot.insetBy(dx: -style.glowInset, dy: -style.glowInset)),
-                with: .color(dotColor.opacity(style.glowAlpha))
+                Path(ellipseIn: dot),
+                with: .radialGradient(Gradient(stops: stops), center: center, startRadius: 0, endRadius: radius)
             )
-            context.fill(Path(ellipseIn: dot), with: .color(dotColor))
         }
     }
 }

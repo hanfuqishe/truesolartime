@@ -445,7 +445,7 @@ private struct SunDialCanvas: View {
         // **小实心核心 + 径向渐变柔光**（`SunHaloStyle`）：
         //   ① 光晕（先画，在核心后面）：从**核心半径** 2.75pt 到 5.5pt 的径向渐变，alpha 0.35 → 0；
         //   ② 核心（后画）：2.75pt 纯色实心，alpha 1.0 —— 不用渐变，边界干净。
-        // 时间轴那个「现在」圆点仍是 5.5pt 核心 + 外扩 2pt / 0.28 的平铺柔光（`NowDotStyle`），
+        // 时间轴那个「现在」圆点是一个 5.5pt 径向渐变圆（`NowDotStyle`：alpha 1 / 0.45 / 0），
         // 两者**故意不同**：那个点画在橙色卡片上，这里要的是白卡上的小点 + 柔光。
         // 地平线、箭头仍用次要色（灰），不跟着变。
         let halo = SunHaloStyle.shared

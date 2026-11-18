@@ -1215,23 +1215,22 @@ expect(
     arcChannelGap >= 0.4 && dayArc.contrast(with: ThemeColors.day.surface) >= 1.4,
     String(format: "gap=%.2f（夜晚虚线 %@）", arcChannelGap, dayNightArc.hexText)
 )
-print("== 时间轴圆点（两笔）与太阳点（纯色核心 + 独立光晕）==")
+print("== 时间轴圆点（单渐变圆）与太阳点（纯色核心 + 独立光晕）==")
 // 用户裁定：时间轴回到最初的两笔（5.5 实心 + 外扩 2pt/0.28），中间层与三层 alphaRamp 删掉；
 // 太阳点共用以**尺寸**（核心 5.5、外沿 7.5），光晕改成 5.5→7.5 的径向渐变 0.35→0。
 let axisDot = NowDotStyle.shared
 let halo = SunHaloStyle.shared
 let sunCoreRadius = SunPathGeometry.sunRadius
 let sunGlowRadius = SunPathGeometry.sunGlowRadius
-// 结构断言：NowDotStyle 只有三个存储属性（radius / glowInset / glowAlpha），
-// 一旦再有人塞进「中间层」，下面这个 memberwise 构造就编译不过 —— 等于钉死「只有两笔」。
+// 结构断言：NowDotStyle 只剩 `radius / alphas / stops` 三个存储属性 ——
+// memberwise 构造钉死「一个径向渐变圆」，再有人塞回「平铺柔光」层就编译不过。
 expect(
-    "时间轴：核心 5.5pt、柔光 7.5pt、alpha 0.28，且只有两笔（没有中间层）",
+    "时间轴圆点：一个渐变圆、半径 5.5、色标 [0, 0.5, 1]、alpha [1.0, 0.45, 0]",
     axisDot.radius == 5.5
-        && axisDot.glowInset == 2
-        && axisDot.glowRadius == 7.5
-        && axisDot.glowAlpha == 0.28
-        && axisDot == NowDotStyle(radius: 5.5, glowInset: 2, glowAlpha: 0.28),
-    "axis=\(axisDot.radius)/+\(axisDot.glowInset)/\(axisDot.glowAlpha)"
+        && axisDot.stops == [0, 0.5, 1]
+        && axisDot.alphas == [1.0, 0.45, 0]
+        && axisDot == NowDotStyle(radius: 5.5, alphas: [1.0, 0.45, 0.0], stops: [0, 0.5, 1]),
+    "axis=\(axisDot.radius) stops=\(axisDot.stops) alphas=\(axisDot.alphas)"
 )
 expect(
     "太阳核心半径 = 2.75pt（正好是时间轴核心 5.5 的一半）",
