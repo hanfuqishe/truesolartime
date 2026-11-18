@@ -38,7 +38,7 @@ struct MapCard: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(palette.onSurfaceVariant)
                 Spacer()
-                Text(TimeFormat.coordinates(latitude: place.latitude, longitude: place.longitude))
+                Text(isLocationUnknown ? Placeholders.dash : TimeFormat.coordinates(latitude: place.latitude, longitude: place.longitude))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.onSurfaceVariant)
             }
@@ -47,7 +47,7 @@ struct MapCard: View {
                 if showsMap {
                     // **地图按探测结论出生**：只有 `uiState.ready`（或 6 秒兜底）之后才创建 MKMapView。
                     // 先按默认源建好再切源会让 MapKit 取消在飞请求、旧缓存清掉后不重发 → 一直转圈。
-                    MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState)
+                    MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState, hidesMarker: isLocationUnknown)
                         .aspectRatio(4.0 / 3.0, contentMode: .fit)
 
                     if basemap.uiState.unavailable {
@@ -132,6 +132,8 @@ private struct MapViewRepresentable: UIViewRepresentable {
 
     let place: Place
     let style: MapStyle
+    /// 未知态：不画标记（只有全球底图）。
+    let hidesMarker: Bool
     /// 有效 plan 快照（源 / 缩放 / 不可用）：**只有它变了才重建 overlay**。
     /// 计数（OSM 失败次数 / 空白判定次数）不在里面，所以不会因为「又失败一块瓦片」而重组地图。
     let plan: BasemapUiState

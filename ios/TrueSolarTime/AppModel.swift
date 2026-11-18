@@ -10,6 +10,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var place: Place
     @Published private(set) var trackingGps = false
     @Published private(set) var waitingForFix = false
+    /// 「跟随 GPS」的**意图**（持久化，默认 true）。注意这不是「已经有定位」。
+    @Published private(set) var followGps: Bool
+    /// 本次会话是否拿到过**有效定位**（未授权 / 20 秒看门狗超时后为 false）。
+    @Published private(set) var hasValidFix: Bool
     @Published private(set) var remindersEnabled: Bool
     @Published private(set) var keyTimeChimeEnabled: Bool
     @Published private(set) var mapStyle: MapStyle
@@ -42,6 +46,8 @@ final class AppModel: ObservableObject {
 
     init() {
         place = settings.place
+        followGps = settings.followGps
+        hasValidFix = settings.place.source == .gps && settings.followGps
         remindersEnabled = settings.remindersEnabled
         keyTimeChimeEnabled = settings.keyTimeChimeEnabled
         mapStyle = settings.mapStyle
@@ -57,8 +63,17 @@ final class AppModel: ObservableObject {
         rescheduleReminders()
     }
 
+    /// 当前是否「定位不可用（未知态）」：跟随 GPS 的意图成立、但拿不到有效定位。
+    var isLocationUnknown: Bool {
+        LocationUnknown.isUnknown(followGps: followGps, hasValidFix: hasValidFix)
+    }
+
     var snapshot: SolarSnapshot {
-        SolarTimeSnapshot.compute(date: now, latitude: place.latitude, longitude: place.longitude, countryCode: place.countryCode)
+        // 未知态：标准时间按**系统时区**（偏移显式传入，负偏移照常生效），太阳量由界面隐藏。
+        if isLocationUnknown {
+            return LocationUnknown.snapshot(date: now, systemOffsetSeconds: TimeZone.current.secondsFromGMT(for: now))
+        }
+        return SolarTimeSnapshot.compute(date: now, latitude: place.latitude, longitude: place.longitude, countryCode: place.countryCode)
     }
 
     /// 配色用的「当前是不是白天」：自动模式按太阳高度角，亮色 / 暗色强制忽略日出日落。
@@ -125,7 +140,8 @@ final class AppModel: ObservableObject {
         }
 
         trackingGps = true
-        waitingForFix = place.source != .gps
+        setFollowGps(true)
+        waitingForFix = true
 
         location.startSampling { [weak self] fix in
             self?.applyFix(fix, announce: announce)
@@ -138,9 +154,18 @@ final class AppModel: ObservableObject {
             // 一直等不到定位时不要再拿「等定位」当遮罩：会把关键时段的颜色一起藏起来
             // （关键时段是地点无关的，只有「当前是否落在时段内」才依赖经度）。
             self.waitingForFix = false
+            // 看门狗超时 = 这次没拿到有效定位 → 若仍在「跟随 GPS」，界面进入未知态。
+            self.hasValidFix = false
         }
         RunLoop.main.add(watchdog, forMode: .common)
         fixWatchdog = watchdog
+    }
+
+    /// 设置「跟随 GPS 的意图」并落盘（预设城市 / 手工坐标会关掉它）。
+    private func setFollowGps(_ value: Bool) {
+        guard followGps != value else { return }
+        followGps = value
+        settings.followGps = value
     }
 
     func stopGpsTracking() {
@@ -156,6 +181,7 @@ final class AppModel: ObservableObject {
             ? Lf("gps.accuracy", Int(fix.horizontalAccuracy))
             : L("gps.accuracyUnknown")
         waitingForFix = false
+        hasValidFix = true
 
         updatePlace(Place(
             latitude: fix.coordinate.latitude,
@@ -185,6 +211,7 @@ final class AppModel: ObservableObject {
         countryCode: String? = nil
     ) {
         stopGpsTracking()
+        setFollowGps(false)
         updatePlace(
             Place(
                 latitude: latitude,
@@ -199,6 +226,7 @@ final class AppModel: ObservableObject {
 
     func usePreset(_ preset: Place) {
         stopGpsTracking()
+        setFollowGps(false)
         // 用 `presetKey` 记住「这是哪个预设城市」：显示名按界面语言取（北京 / 北京 / Beijing），
         // 数据也随语言切换，不需要把某个语言的城市名写进偏好设置。
         updatePlace(
@@ -395,6 +423,10 @@ final class AppModel: ObservableObject {
     /// 回到前台时刷新位置、数据与提醒。
     func handleBecameActive() {
         now = Date()
+        // 系统设置里改过定位权限 → 这里复核一次（撤销权限立刻进未知态，重新授权就继续定位）。
+        if followGps, !location.hasPermission {
+            hasValidFix = false
+        }
         if trackingGps {
             location.startSampling { [weak self] fix in
                 self?.applyFix(fix, announce: false)

@@ -44,6 +44,7 @@
 "map.diagDetail" = "preferred %@ · OSM failures %d · blank tiles %d · next probe %@";
 "map.probeIn" = "in %d s";
 "map.loading" = "Loading basemap…";
+"location.unavailable" = "Location unavailable";
 
 /* Settings */
 "settings.title" = "Location & reminders";

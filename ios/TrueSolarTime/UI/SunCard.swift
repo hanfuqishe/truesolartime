@@ -20,6 +20,8 @@ struct SunCard: View {
     @Environment(\.palette) private var palette
 
     let snapshot: SolarSnapshot
+    /// 定位不可用（未知态）：圆盘只画「昼/夜各 180°」，不画太阳点 / 箭头 / 日出日落标签。
+    let isLocationUnknown: Bool
 
     /// 卡片实测宽度：圆盘宽度 = 卡片内容宽（卡宽 − 左右内边距），只有量到真实卡宽才能定。
     /// 首帧先用「屏宽 − 页面左右内边距」兜底，避免第一帧按 0 算出极小的圆盘、下一帧再跳大。
@@ -61,7 +63,7 @@ struct SunCard: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(palette.onSurfaceVariant)
             Spacer(minLength: 8)
-            Text(Lf("sun.altitude", snapshot.altitudeDegrees))
+            Text(isLocationUnknown ? Placeholders.dash : Lf("sun.altitude", snapshot.altitudeDegrees))
                 .font(.system(size: 12))
                 // 与 Android 一致用主题 primary（系统 `.orange` 在浅色卡片上只有 2.2:1，读不清）。
                 .foregroundStyle(palette.primary)
@@ -77,9 +79,10 @@ struct SunCard: View {
     private var dialPath: SunPath {
         SunPathGeometry.compute(
             size: dialSize,
-            sunriseHour: sunriseTrueSolarHour,
-            sunsetHour: sunsetTrueSolarHour,
-            trueSolarHour: trueSolarHour,
+            // 未知态：日出 06:00 / 日落 18:00 → 地平线过圆心、昼夜各一半。
+            sunriseHour: isLocationUnknown ? 6 : sunriseTrueSolarHour,
+            sunsetHour: isLocationUnknown ? 18 : sunsetTrueSolarHour,
+            trueSolarHour: isLocationUnknown ? 12 : trueSolarHour,
             isPolarDay: snapshot.polar == .midnightSun,
             isPolarNight: snapshot.polar == .polarNight,
             // 南半球观察者面朝北：东在右、西在左，太阳从右往左走（逆时针），
@@ -100,13 +103,20 @@ struct SunCard: View {
         ZStack {
             SunDialCanvas(
                 path: dialPath,
-                sunriseHour: sunriseTrueSolarHour,
-                sunsetHour: sunsetTrueSolarHour,
-                trueSolarHour: trueSolarHour,
+                sunriseHour: isLocationUnknown ? 6 : sunriseTrueSolarHour,
+                sunsetHour: isLocationUnknown ? 18 : sunsetTrueSolarHour,
+                trueSolarHour: isLocationUnknown ? 12 : trueSolarHour,
                 isPolarDay: snapshot.polar == .midnightSun,
-                isPolarNight: snapshot.polar == .polarNight
+                isPolarNight: snapshot.polar == .polarNight,
+                isUnknown: isLocationUnknown
             )
-            labels
+            if isLocationUnknown {
+                Text(Placeholders.short)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(palette.onSurface)
+            } else {
+                labels
+            }
         }
         .frame(width: dialSize.width, height: dialSize.height)
         .accessibilityElement(children: .ignore)
@@ -183,7 +193,7 @@ struct SunCard: View {
             Text(L("sun.daylightLength"))
                 .font(.system(size: 9))
                 .foregroundColor(palette.onSurfaceVariant)
-                + Text(" " + footerValue)
+                + Text(" " + (isLocationUnknown ? Placeholders.short : footerValue))
                 .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                 .foregroundColor(palette.onSurface)
             Spacer(minLength: 0)
@@ -258,13 +268,17 @@ private struct SunDialCanvas: View {
     let trueSolarHour: Double
     let isPolarDay: Bool
     let isPolarNight: Bool
+    /// 未知态：画「昼/夜各 180°」的圆，不画太阳点、不画运动箭头。
+    let isUnknown: Bool
 
     var body: some View {
         Canvas { context, size in
             drawCircleAndArcs(&context)
             drawHorizon(&context, size: size)
-            drawMotionArrow(&context)
-            drawSun(&context)
+            if !isUnknown {
+                drawMotionArrow(&context)
+                drawSun(&context)
+            }
         }
     }
 
@@ -299,6 +313,19 @@ private struct SunDialCanvas: View {
             context.stroke(circle, with: .color(nightColor), style: nightStyle)
         } else if isPolarDay {
             context.stroke(circle, with: .color(dayColor), style: dayStyle)
+        } else if isUnknown {
+            // 未知态：昼弧 / 夜弧各 180°（地平线过圆心），不做 0.8° 外扩。
+            let arc = SunPathGeometry.unknownArcAngles()
+            context.stroke(
+                arcPath(center: path.center, radius: path.radius, from: arc.start, to: arc.end),
+                with: .color(dayColor),
+                style: dayStyle
+            )
+            context.stroke(
+                arcPath(center: path.center, radius: path.radius, from: arc.end, to: arc.start + 2.0 * Double.pi),
+                with: .color(nightColor),
+                style: nightStyle
+            )
         } else if let arc = SunPathGeometry.dayArcAngles(
             sunriseHour: sunriseHour,
             sunsetHour: sunsetHour,

@@ -124,6 +124,93 @@ final class BasemapController: ObservableObject {
         startProbe(place: place, key: key)
     }
 
+    /// 未知态（定位不可用）：固定 z3、不降级、不触发回退状态机。
+    private(set) var isUnknownMode = false
+
+    private enum UnknownCacheKey {
+        static let source = "basemap.unknown.source"
+        static let at = "basemap.unknown.at"
+    }
+
+    /// 进入未知态：先用「上次成功出图的源」缓存（10 分钟），没有缓存就只探 2 块 z3（2 秒封顶）。
+    ///
+    /// 关键：**不要**拿 (0,0) 走正常地点探测（那会退回串行等超时），也**不要**进回退/降级状态机。
+    func configureUnknown(now: Date = Date()) {
+        guard !isUnknownMode || configuredStyle != nil else { return }
+        isUnknownMode = true
+        configuredStyle = .auto
+        let stamp = now.timeIntervalSince1970
+        let cached = unknownCachedSource()
+        if !LocationUnknown.needsMapProbe(cached: cached, now: stamp), let cached {
+            // 有缓存：直接用该源 + z3，零探测。
+            applyUnknown(source: cached.source, at: stamp)
+            return
+        }
+        // 无缓存：只探 2 块 z3，谁先回来且有内容谁赢。
+        state = BasemapState(mode: .manual, preferred: .amapVector, now: stamp)
+        let pending = state.pendingUiState(requestedZoom: lastRequestedZoom)
+        if pending != uiState { uiState = pending }
+        probeUnknownMap(stamp: stamp)
+    }
+
+    private func applyUnknown(source: BasemapSource?, at now: TimeInterval) {
+        state.applyProbeDecision(source: source ?? .amapVector, zoom: source == nil ? nil : LocationUnknown.mapZoom, at: now)
+        publishIfChanged()
+    }
+
+    private func unknownCachedSource() -> BasemapUnknownCache? {
+        guard let raw = defaults.string(forKey: UnknownCacheKey.source),
+              let source = BasemapSource(rawValue: raw)
+        else { return nil }
+        return BasemapUnknownCache(source: source, at: defaults.double(forKey: UnknownCacheKey.at))
+    }
+
+    private func saveUnknownCache(source: BasemapSource) {
+        defaults.set(source.rawValue, forKey: UnknownCacheKey.source)
+        defaults.set(Date().timeIntervalSince1970, forKey: UnknownCacheKey.at)
+    }
+
+    /// 两块 z3 探测（东亚瓦片 x=6,y=2），2 秒封顶。
+    private func probeUnknownMap(stamp: TimeInterval) {
+        let tile = LocationUnknown.mapProbeTile
+        var arrivals: [(source: BasemapSource, hasContent: Bool)] = []
+        var finished = false
+        let deadline = DispatchWorkItem { [weak self] in
+            guard let self, !finished else { return }
+            finished = true
+            let winner = LocationUnknown.decideMap(arrivals: arrivals)
+            if let winner { self.saveUnknownCache(source: winner) }
+            self.applyUnknown(source: winner, at: Date().timeIntervalSince1970)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + LocationUnknown.mapProbeTimeoutSeconds, execute: deadline)
+
+        for source in [BasemapSource.osm, .amapVector] {
+            guard let url = BasemapTiles.tileURL(source: source, x: tile.x, y: tile.y, z: LocationUnknown.mapZoom) else {
+                continue
+            }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = LocationUnknown.mapProbeTimeoutSeconds
+            request.setValue("TrueSolarTime-iOS", forHTTPHeaderField: "User-Agent")
+            session.dataTask(with: request) { data, response, _ in
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                var ok = (200..<300).contains(status) && BasemapTiles.looksLikeImage(data: data)
+                if ok, source.isAmap, let data {
+                    if let analysis = BasemapTileSampler.blankAnalysis(data: data), analysis.isBlank { ok = false }
+                }
+                DispatchQueue.main.async {
+                    guard !finished else { return }
+                    arrivals.append((source, ok))
+                    // 先回来且有内容者胜：一有结果就收工，不必等另一块。
+                    if ok {
+                        finished = true
+                        self.saveUnknownCache(source: source)
+                        self.applyUnknown(source: source, at: Date().timeIntervalSince1970)
+                    }
+                }
+            }.resume()
+        }
+    }
+
     /// 诊断用：当前是不是「自动」。
     var isAuto: Bool { configuredStyle == .auto }
 

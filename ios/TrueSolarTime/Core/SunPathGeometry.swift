@@ -279,7 +279,7 @@ enum SunPathGeometry {
         return (day, max(2.0 * Double.pi - day, 0))
     }
 
-    /// 地平线与圆的交点（日出 / 日落刻度点）。地平线落到圆外（极昼 / 极夜）时返回 nil。
+    /// 地平线与圆的交点（日出 / 日落交点；标签锚点用）。地平线落到圆外（极昼 / 极夜）时返回 nil。
     ///
     /// 日出 0:00 时两端重合在圆底 `(C.x, C.y + R)`：`start == end`。
     static func horizonChord(path: SunPath) -> (start: CGPoint, end: CGPoint)? {
@@ -292,6 +292,18 @@ enum SunPathGeometry {
             CGPoint(x: path.center.x + CGFloat(half), y: path.horizonY)
         )
     }
+
+    /// **未知态**（定位不可用）的圆盘弧：昼弧 / 夜弧各 **180°**，地平线因此正好过圆心。
+    ///
+    /// 起点取 06:00 那个角度（圆左），扫 π 到 18:00（圆右）。未知态**不画**太阳点、运动箭头、
+    /// 日出/日落标签 —— 只留这个「对半」的圆。
+    static func unknownArcAngles() -> (start: Double, end: Double) {
+        let start = angleOfDayHour(6)
+        return (start, start + Double.pi)
+    }
+
+    /// 未知态的地平线高度：过圆心（昼 / 夜各一半）。
+    static func unknownHorizonY(center: CGPoint) -> CGFloat { center.y }
 
     /// 当前太阳点是否在地平线以上（极昼恒真、极夜恒假）。
     static func isSunAboveHorizon(path: SunPath) -> Bool {

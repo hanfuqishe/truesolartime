@@ -28,6 +28,7 @@ struct ContentView: View {
                     Group {
                         HeroCard(
                             snapshot: model.snapshot,
+                            isLocationUnknown: model.isLocationUnknown,
                             // 大卡片的渐变按**主题设置**决定（自动 = 日出日落，亮色 / 暗色 = 强制），
                             // 与页面背景同一口径；卡片里太阳弧仍按真实高度角画。
                             isDay: model.uiIsDay,
@@ -56,9 +57,9 @@ struct ContentView: View {
                         // 太阳卡、地图卡、设置页等仍按系统设置走（可读性优先）。
                         .cardLegibilityRegular()
 
-                        SunCard(snapshot: model.snapshot)
+                        SunCard(snapshot: model.snapshot, isLocationUnknown: model.isLocationUnknown)
 
-                        MapCard(place: model.place, mapStyle: model.mapStyle)
+                        MapCard(place: model.place, mapStyle: model.mapStyle, isLocationUnknown: model.isLocationUnknown)
                     }
 
                     // 版本号同时是「隐藏的诊断入口」：连续点 7 次（间隔 ≤2 秒）才在设置页
@@ -122,7 +123,9 @@ struct ContentView: View {
     /// ② 反查失败时，只有**预设城市**才回退显示预设城市名（如「纽约」）；
     /// ③ 手工坐标与 GPS 定位没有名字可用 → 半角「-」（失败**不回填**上一个城市的地名）。
     private var cityText: String {
-        DistrictNaming.cardCityText(district: model.districtName, place: model.place)
+        // 未知态（跟随 GPS 但拿不到定位）：地名位置显示「定位不可用」，可点击去系统设置。
+        if model.isLocationUnknown { return L("location.unavailable") }
+        return DistrictNaming.cardCityText(district: model.districtName, place: model.place)
     }
 
     /// 时间轴上关键时段的颜色。
@@ -161,7 +164,7 @@ struct ContentView: View {
 
             // 右侧：跟随 GPS 时先显示「GPS」，再是设置齿轮；整体与标题**上边缘**对齐。
             HStack(alignment: .center, spacing: 4) {
-                if model.trackingGps {
+                if model.trackingGps && !model.isLocationUnknown {
                     Text(L("gps.badge"))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(palette.onSurfaceVariant)

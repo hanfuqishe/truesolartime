@@ -17,9 +17,21 @@ struct AppSettings {
         static let keepScreenOn = "keep_screen_on"
         /// 主题三态（自动 / 亮色 / 暗色），存 `ThemeMode.rawValue`。
         static let themeMode = "theme_mode"
+        /// 「跟随 GPS」的**意图**（默认 true）。注意：这是「想跟随」，不是「已经有定位」——
+        /// 未知态 = 意图为 true 且拿不到有效定位。
+        static let followGps = "follow_gps"
     }
 
     private let defaults = UserDefaults.standard
+
+    /// 跟随 GPS 的意图（持久化）。预设城市 / 手动坐标会把它置 false。
+    var followGps: Bool {
+        get {
+            guard defaults.object(forKey: Key.followGps) != nil else { return true }
+            return defaults.bool(forKey: Key.followGps)
+        }
+        set { defaults.set(newValue, forKey: Key.followGps) }
+    }
 
     var place: Place {
         get {

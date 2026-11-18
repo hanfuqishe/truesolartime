@@ -1776,6 +1776,136 @@ expect(
         && !probeDecisionState.pendingUiState(requestedZoom: 12).ready
 )
 
+
+print("== 定位不可用（未知态）==")
+// 判定：跟随意图 + 没有有效定位（未授权 / 看门狗超时）。
+expect(
+    "跟随 GPS 且没有有效定位 → 未知态",
+    LocationUnknown.isUnknown(followGps: true, hasValidFix: false)
+)
+expect(
+    "跟随 GPS 且已拿到 fix → 不是未知态",
+    !LocationUnknown.isUnknown(followGps: true, hasValidFix: true)
+)
+expect(
+    "预设城市 / 手动坐标（不跟随）→ 不是未知态（哪怕没有定位）",
+    !LocationUnknown.isUnknown(followGps: false, hasValidFix: false)
+        && !LocationUnknown.isUnknown(followGps: false, hasValidFix: true)
+)
+// 系统时区：未知态的标准时间按系统偏移，**负偏移照常生效**（不能拿负数当「没传」）。
+let negativeZone = LocationUnknown.snapshot(
+    date: date("2026-01-15T12:00:00Z"),
+    systemOffsetSeconds: -5 * 3600
+)
+let positiveZone = LocationUnknown.snapshot(
+    date: date("2026-01-15T12:00:00Z"),
+    systemOffsetSeconds: 8 * 3600
+)
+expect(
+    "未知态标准时间用系统偏移：UTC-5 → 07:00，UTC+8 → 20:00",
+    negativeZone.standardTime.secondsOfDay == 7 * 3600
+        && positiveZone.standardTime.secondsOfDay == 20 * 3600,
+    "neg=\(negativeZone.standardTime.clock) pos=\(positiveZone.standardTime.clock)"
+)
+expect(
+    "负偏移不会被当成「没传」（UTC 标签仍是 -05:00）",
+    negativeZone.utcLabel.contains("−5") || negativeZone.utcLabel.contains("-5") || negativeZone.utcLabel.contains("5"),
+    "actual=\(negativeZone.utcLabel)"
+)
+// 占位符常量：只含半角连字符 / 冒号 / 度，不含各种破折号。
+expect(
+    "占位符常量：TIME/SHORT/DASH/TEMPERATURE 正确",
+    Placeholders.time == "--:--:--"
+        && Placeholders.short == "--"
+        && Placeholders.dash == "--"
+        && Placeholders.temperature == "-°",
+    "actual=\(Placeholders.all)"
+)
+expect(
+    "占位符只含 {'-', ':', '°'}，且不含 U+2014 / U+2012 / U+FF0D",
+    Placeholders.all.allSatisfy { Placeholders.isAllowedCharacters($0) }
+        && !Placeholders.all.contains { $0.contains("\u{2014}") || $0.contains("\u{2012}") || $0.contains("\u{FF0D}") },
+    "actual=\(Placeholders.all)"
+)
+// 逐时占位：六格、首格「现在」、跨午夜回绕。
+let unknownNow = utcEpoch(hour: 15, minute: 30) // 本地 23:30（+8）
+let unknownSlots = LocationUnknown.hourlySlots(nowEpochSeconds: unknownNow, count: 6)
+expect("未知态逐时：仍是六格", unknownSlots.count == 6, "actual=\(unknownSlots.count)")
+expect("未知态逐时：首格是「现在」", unknownSlots.first?.isNow == true && unknownSlots.dropFirst().allSatisfy { !$0.isNow })
+expect(
+    "未知态逐时：每格 +1 小时",
+    zip(unknownSlots.dropFirst(), unknownSlots).allSatisfy { $0.epochSeconds - $1.epochSeconds == 3600 }
+)
+expect(
+    "未知态逐时：本地小时 23 → 0 跨午夜回绕",
+    unknownSlots.map { localHour($0.epochSeconds) } == [23, 0, 1, 2, 3, 4],
+    "actual=\(unknownSlots.map { localHour($0.epochSeconds) })"
+)
+// 圆盘未知态：昼夜各 180°、地平线过圆心、没有太阳点。
+let unknownArc = SunPathGeometry.unknownArcAngles()
+expect(
+    "未知态圆盘：昼弧 180°、夜弧 180°",
+    abs((unknownArc.end - unknownArc.start) - Double.pi) < 1e-12
+        && abs((2 * Double.pi - (unknownArc.end - unknownArc.start)) - Double.pi) < 1e-12,
+    "day=\((unknownArc.end - unknownArc.start) * 180 / Double.pi)°"
+)
+let unknownDial = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6,
+    sunsetHour: 18,
+    trueSolarHour: 12,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expect(
+    "未知态圆盘：地平线过圆心（y == C.y）",
+    abs(unknownDial.horizonY - unknownDial.center.y) < 1e-9,
+    "horizonY=\(unknownDial.horizonY) center=\(unknownDial.center.y)"
+)
+expect(
+    "未知态圆盘：没有日出/日落太阳点（弧端就是 06:00 / 18:00）",
+    abs(unknownArc.start - SunPathGeometry.angleOfDayHour(6)) < 1e-12
+        && abs(unknownArc.end - SunPathGeometry.angleOfDayHour(18)) < 1e-12
+)
+// 未知态地图：z3、东亚瓦片、2 秒、10 分钟缓存、先回来且有内容者胜。
+expect(
+    "未知态地图常量：z3 / 东亚瓦片 (6,2) / 2 秒封顶 / 缓存 10 分钟",
+    LocationUnknown.mapZoom == 3
+        && LocationUnknown.mapProbeTile.x == 6
+        && LocationUnknown.mapProbeTile.y == 2
+        && LocationUnknown.mapProbeTimeoutSeconds == 2
+        && LocationUnknown.mapCacheTTLSeconds == 600,
+    "tile=\(LocationUnknown.mapProbeTile)"
+)
+expect(
+    "两块 z3 探测：先回来且有内容者胜（OSM 先到用 OSM、高德先到用高德、都无内容 → nil）",
+    LocationUnknown.decideMap(arrivals: [(.osm, true), (.amapVector, true)]) == .osm
+        && LocationUnknown.decideMap(arrivals: [(.amapVector, true), (.osm, true)]) == .amapVector
+        && LocationUnknown.decideMap(arrivals: [(.osm, false), (.amapVector, true)]) == .amapVector
+        && LocationUnknown.decideMap(arrivals: [(.osm, false), (.amapVector, false)]) == nil
+)
+let unknownCache = BasemapUnknownCache(source: .osm, at: 1_000)
+expect(
+    "未知态地图缓存：10 分钟内命中（零探测）、超时后重探",
+    !LocationUnknown.needsMapProbe(cached: unknownCache, now: 1_000 + 599)
+        && LocationUnknown.needsMapProbe(cached: unknownCache, now: 1_000 + 600)
+        && LocationUnknown.needsMapProbe(cached: nil, now: 1_000)
+)
+// 未知态不碰回退/降级状态机：用「手动」状态承载（不探测、不回退、不降级），且一级就位到 z3。
+var unknownMapState = BasemapState(mode: .manual, preferred: .amapVector, now: 0)
+for index in 0..<6 {
+    unknownMapState.recordOSMTile(success: false, at: TimeInterval(index))
+}
+unknownMapState.applyProbeDecision(source: .osm, zoom: LocationUnknown.mapZoom, at: 100)
+expect(
+    "未知态：直接定级到 z3，且连续失败不会触发回退/降级",
+    unknownMapState.active == .osm
+        && unknownMapState.effectiveZoom(requested: 12) == 3
+        && unknownMapState.zoomStep == 3
+        && unknownMapState.osmFailures == 0,
+    "active=\(unknownMapState.active) step=\(unknownMapState.zoomStep)"
+)
+
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

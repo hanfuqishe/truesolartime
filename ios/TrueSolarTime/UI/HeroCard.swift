@@ -12,6 +12,8 @@ import UIKit
 struct HeroCard: View {
 
     let snapshot: SolarSnapshot
+    /// 定位不可用（未知态）：真太阳时 / 时辰 / 高度角 / 经纬度 / 天气 / 逐时全部占位。
+    let isLocationUnknown: Bool
     /// 配色用的「当前是不是白天」：由主题设置决定（自动 = 日出日落，亮色 / 暗色 = 强制）。
     /// 只影响配色；卡片里的太阳弧、逐时图标的昼夜标记仍按真实时刻判断。
     let isDay: Bool
@@ -89,7 +91,7 @@ struct HeroCard: View {
             .frame(height: 11)
             .padding(.top, 12)
 
-            HourlyRow(weather: weather, weatherSource: weatherSource, isDay: isDay)
+            HourlyRow(weather: weather, weatherSource: weatherSource, isDay: isDay, isLocationUnknown: isLocationUnknown)
                 .padding(.top, 12)
         }
         .padding(cardPadding)
@@ -147,7 +149,7 @@ struct HeroCard: View {
     /// 不留悬空的点或多余空格）。`Shichen.halfLabel` 与 `snapshot.shichenHalf` 的底层计算
     /// 仍然保留（报时与自检还在用），只是不在这张卡片上显示。
     private var shichenText: String {
-        snapshot.shichenName
+        isLocationUnknown ? Placeholders.short : snapshot.shichenName
     }
 
     private func textWidth(_ text: String) -> CGFloat {
@@ -214,6 +216,13 @@ struct HeroCard: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: alignment)
+            // 未知态：地名就是「定位不可用」，点它去系统设置里开定位权限。
+            .onTapGesture {
+                guard isLocationUnknown,
+                      let url = URL(string: UIApplication.openSettingsURLString)
+                else { return }
+                UIApplication.shared.open(url)
+            }
     }
 
     private func shichenLabel(alignment: Alignment) -> some View {
@@ -270,14 +279,26 @@ struct HeroCard: View {
             Color.clear
                 .frame(width: dividerWidth + columnGap * 2, height: 0)
 
-            FittingClock(
-                main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
-                seconds: String(format: "%02d", snapshot.trueSolarTime.second),
-                // 落在关键时段内用「冻/热」对应的绿/红，否则用常规强调色（白天淡金、夜里金）
-                color: inkColor ?? HeroPalette.accent(isDay: isDay),
-                availableWidth: columnWidth
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if isLocationUnknown {
+                // 未知态：`--:--:--`（半角连字符、拉丁字体、0.06em 字距、60% alpha）。
+                // 用 .monospaced 保证宽度与真实时间接近，不会因为占位符而跳版。
+                Text(Placeholders.time)
+                    .font(.system(size: HeroClockMetrics.mainSize(availableWidth: columnWidth), design: .monospaced))
+                    .tracking(HeroClockMetrics.mainSize(availableWidth: columnWidth) * 0.06)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                FittingClock(
+                    main: String(format: "%02d:%02d", snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                    seconds: String(format: "%02d", snapshot.trueSolarTime.second),
+                    // 落在关键时段内用「冻/热」对应的绿/红，否则用常规强调色（白天淡金、夜里金）
+                    color: inkColor ?? HeroPalette.accent(isDay: isDay),
+                    availableWidth: columnWidth
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -285,7 +306,7 @@ struct HeroCard: View {
 
     private var dateAndWeatherRow: some View {
         HStack(spacing: 8) {
-            Text(dateWeatherText)
+            Text(isLocationUnknown ? Placeholders.dash : dateWeatherText)
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
@@ -294,7 +315,7 @@ struct HeroCard: View {
             // 空间不够同时显示「日期/天气」与经纬度时，隐藏经纬度（优先保住日期与天气）。
             // 与安卓 `SmallRowLayout.shouldShowTrailing`、鸿蒙 `coordinatesFit` 同一套规则。
             if showsCoordinates {
-                Text(coordinates)
+                Text(isLocationUnknown ? Placeholders.dash : coordinates)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
@@ -515,6 +536,8 @@ struct HourlyRow: View {
     let weatherSource: WeatherSource
     /// 配色用的白天/夜间（主题设置决定）。逐时图标自己的昼夜仍按该格的真实小时判断。
     let isDay: Bool
+    /// 定位不可用（未知态）：保留六格，首格「现在」+ 按系统时间逐小时，温度 `-°`、不画图标。
+    let isLocationUnknown: Bool
 
     /// 槽位数量：**永远 6 个**，不随数据源变化。
     private let slotCount = 6
@@ -562,7 +585,7 @@ struct HourlyRow: View {
                             .frame(height: iconSlotHeight)
                     }
 
-                    Text(cell.temperatureC.map { "\($0)°" } ?? "-")
+                    Text(cell.temperatureC.map { "\($0)°" } ?? (isLocationUnknown ? Placeholders.temperature : "-"))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(cell.temperatureC == nil ? 0.6 : 0.75))
                         .monospacedDigit()
@@ -581,6 +604,20 @@ struct HourlyRow: View {
     /// 3 小时源的采样点可能是几小时前的，不能拿它当「现在」。
     private var cells: [Cell] {
         let now = Date()
+        if isLocationUnknown {
+            // 未知态：六格占位（系统时间逐小时、跨午夜自然回绕），温度 `-°`，图标 nil（同尺寸占位）。
+            let slots = LocationUnknown.hourlySlots(nowEpochSeconds: Int(now.timeIntervalSince1970), count: slotCount)
+            return slots.map { slot in
+                let hour = Calendar.current.component(.hour, from: slot.date)
+                return Cell(
+                    slot: slot,
+                    label: slot.isNow ? L("weather.now") : Lf("weather.hour", hour),
+                    condition: nil,
+                    isDay: false,
+                    temperatureC: nil
+                )
+            }
+        }
         let readings = WeatherParsing.slotReadings(
             points: weather?.hourly ?? [],
             nowEpochSeconds: Int(now.timeIntervalSince1970),
