@@ -14,6 +14,7 @@ import { CityIndex } from './core/CityIndex';
 import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint, WeatherSlot, WeatherSource, WeatherFallback } from './core/Weather';
 import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
+import { DistrictLayoutTier } from './core/DistrictLayout';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -1972,6 +1973,27 @@ for (const item of equationCases) {
     SunPathGeometry.nightEndDegrees(start, false), 1e-6);
   near('night arc span from those endpoints', 178.4,
     SunPathGeometry.nightEndDegrees(start, false) - nightStart, 1e-6);
+}
+
+// ---- 大卡片顶部四档退化：地名优先保完整 ----
+{
+  const base: number = 12;
+  const utc: number = 5 * base;
+  const label: number = 4 * base;
+  const shichen: number = 2 * base;
+  equal('short district stays at tier 0', DistrictLayoutTier.FULL,
+    DistrictLayoutTier.of(utc, 6 * base, label, shichen, 300));
+  // 「新疆维吾尔自治区乌鲁木齐市水磨沟区」约 17 个汉字（12fp 时放不下档 0，9fp 时仍放不下档 1 的 17×9）。
+  equal('long district drops the label', DistrictLayoutTier.HIDE_LABEL,
+    DistrictLayoutTier.of(utc, 17 * base, label, shichen, 300));
+  // 缩到 9fp 仍不够：再隐藏 UTC。
+  equal('extreme district also drops the utc label', DistrictLayoutTier.HIDE_UTC,
+    DistrictLayoutTier.of(utc, 40 * 9, 9, shichen, 400));
+  // 更长：只能省略号。
+  equal('even longer district needs ellipsis', DistrictLayoutTier.ELLIPSIS,
+    DistrictLayoutTier.of(utc, 60 * 9, 9, shichen, 400));
+  equal('long english district drops the label', DistrictLayoutTier.HIDE_LABEL,
+    DistrictLayoutTier.of(utc, 22 * base, label, shichen, 380));
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

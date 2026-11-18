@@ -13,6 +13,7 @@ import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { CivicTimeLogic } from '../core/CivicTime';
+import { DistrictLayoutTier } from '../core/DistrictLayout';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { SunDialColors } from '../core/SunDialColors';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
@@ -829,6 +830,17 @@ struct Index {
     return this.locationUnknown ? LocationPlaceholders.SHORT : value;
   }
 
+  /** 顶部信息行的退化档位：先缩字号，再按档 0→1→2→3 退化。 */
+  private districtTier(): number {
+    const base: number = this.cs(12);
+    const rowWidth: number = this.contentWidth > 0 ? this.contentWidth - 80 : this.cs(320);
+    const utcWidth: number = TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds).length * base;
+    const placeWidth: number = this.districtLabel().length * this.cs(this.districtFontSize());
+    const labelWidth: number = 4 * base;
+    const shichenWidth: number = this.shortText(this.snapshot.shichenName).length * base;
+    return DistrictLayoutTier.of(utcWidth, placeWidth, labelWidth, shichenWidth, rowWidth);
+  }
+
   /**
    * 大卡片左栏「地区」的字号：名字太长时按这一栏的可用宽度逐档缩小（12 → 9fp，0.5 一档），
    * 避免「New York, Manhattan」这种长名字被直接截成「New …」。缩到下限仍放不下才交给省略号
@@ -1019,37 +1031,55 @@ struct Index {
   @Builder
   heroCard() {
     Column() {
+      // 顶部信息行（整卡宽）：UTC / 地名 / 真太阳时 / 时辰。地名优先保完整：
+      // 先缩字号，再按四档退化（隐藏标签 → 隐藏 UTC → 省略号）。
+      Row() {
+        if (this.districtTier() < DistrictLayoutTier.HIDE_UTC) {
+          Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
+            .fontSize(this.cs(12))
+            .fontFamily(this.cardFont(FontWeight.Normal))
+            .lineHeight(this.cardLineHeight(this.cs(12)))
+            .fontColor('#CCFFFFFF')
+        }
+        Text(this.districtLabel())
+          .fontSize(this.cs(this.districtFontSize()))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
+          .fontColor('#B3FFFFFF')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(this.districtTier() >= DistrictLayoutTier.HIDE_LABEL ? TextAlign.Start : TextAlign.End)
+          .layoutWeight(1)
+          .margin({ left: this.districtTier() >= DistrictLayoutTier.HIDE_UTC ? 0 : 8 })
+          .onClick(() => {
+            // 未知态：「定位不可用」可点，跳到系统应用详情/权限设置。
+            if (this.locationUnknown && this.context !== null) {
+              LocationService.openAppSettings(this.context).catch((error: BusinessError) => {
+                console.warn(`open settings failed: ${error.code} ${error.message}`);
+              });
+            }
+          })
+        if (this.districtTier() === DistrictLayoutTier.FULL) {
+          Text('真太阳时')
+            .fontSize(this.cs(12))
+            .fontFamily(this.cardFont(FontWeight.Normal))
+            .lineHeight(this.cardLineHeight(this.cs(12)))
+            .fontColor('#CCFFFFFF')
+            .margin({ left: 8 })
+        }
+        Text(this.shortText(this.snapshot.shichenName))
+          .fontSize(this.cs(12))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(12)))
+          .fontColor('#B3FFFFFF')
+          .maxLines(1)
+          .margin({ left: 8 })
+      }
+      .width('100%')
+
       Row() {
         // 左：标准时间
         Column() {
-          Row() {
-            Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
-              .fontSize(this.cs(12))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(12)))
-              .fontColor('#CCFFFFFF')
-            Text(this.districtLabel())
-              // 长地名（如「New York, Manhattan」）按栏宽自动缩小字号，别只留个「New …」；
-              // 缩到 9fp 仍放不下才交给省略号。短名字仍是 12fp。
-              .fontSize(this.cs(this.districtFontSize()))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
-              .fontColor('#B3FFFFFF')
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .textAlign(TextAlign.End)
-              .layoutWeight(1)
-              .margin({ left: 8 })
-              .onClick(() => {
-                // 未知态：「定位不可用」可点，跳到系统应用详情/权限设置。
-                if (this.locationUnknown && this.context !== null) {
-                  LocationService.openAppSettings(this.context).catch((error: BusinessError) => {
-                    console.warn(`open settings failed: ${error.code} ${error.message}`);
-                  });
-                }
-              })
-          }
-          .width('100%')
           Row() {
             Text(TimeFormat.clock(this.standardSecond))
               .fontSize(this.clockMainSize())
@@ -1096,23 +1126,6 @@ struct Index {
 
         // 右：真太阳时（逐秒刷新）
         Column() {
-          Row() {
-            Text('真太阳时时钟')
-              .fontSize(this.cs(12))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(12)))
-              .fontColor('#CCFFFFFF')
-            Text(this.shortText(this.snapshot.shichenName))
-              .fontSize(this.cs(12))
-              .fontFamily(this.cardFont(FontWeight.Normal))
-              .lineHeight(this.cardLineHeight(this.cs(12)))
-              .fontColor('#B3FFFFFF')
-              .maxLines(1)
-              .textAlign(TextAlign.End)
-              .layoutWeight(1)
-              .margin({ left: 8 })
-          }
-          .width('100%')
           Row() {
             if (this.locationUnknown) {
               Text(LocationPlaceholders.TIME)
