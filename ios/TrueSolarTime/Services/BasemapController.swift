@@ -29,16 +29,25 @@ final class BasemapController: ObservableObject {
         let token: Int
         let key: String
         let place: Place
+        let startedAt: TimeInterval
         var pending: Int
         var osmReachable = false
         var amapResults: [Int: Bool] = [:]
         var done = false
 
-        init(token: Int, key: String, place: Place, pending: Int) {
+        // 渐进升级的状态（规则在 `BasemapUpgrade`）
+        var current: BasemapUpgrade.Candidate?
+        var firstImageAt: TimeInterval?
+        var firstLog: (zoom: Int, ms: Int)?
+        var upgrades: [(zoom: Int, ms: Int)] = []
+        var userInteracted = false
+
+        init(token: Int, key: String, place: Place, pending: Int, startedAt: TimeInterval) {
             self.token = token
             self.key = key
             self.place = place
             self.pending = pending
+            self.startedAt = startedAt
         }
     }
 
@@ -278,18 +287,16 @@ final class BasemapController: ObservableObject {
             token: probeToken,
             key: key,
             place: place,
-            pending: 1 + BasemapProbe.amapZoomLevels.count
+            pending: 1 + BasemapProbe.amapZoomLevels.count,
+            startedAt: Date().timeIntervalSince1970
         )
         probeSession = session
 
+        // 4 秒硬超时**只**用于「一块都没回来 → 不可用」；没有「早退」这个概念了。
         let hard = DispatchWorkItem { [weak self] in
-            self?.finishProbe(session)
+            self?.handleProbeTimeout(session)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + BasemapProbe.hardTimeoutSeconds, execute: hard)
-        let early = DispatchWorkItem { [weak self] in
-            self?.earlyExitIfAmapContent(session)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + BasemapProbe.earlyExitSeconds, execute: early)
 
         probeTile(source: .osm, zoom: BasemapProbe.osmZoom, place: place) { [weak self] ok in
             self?.recordProbe(session, source: .osm, zoom: BasemapProbe.osmZoom, ok: ok)
@@ -331,50 +338,88 @@ final class BasemapController: ObservableObject {
         }.resume()
     }
 
+    /// 一块探测回来：**逐个返回、渐进升级**（规则都在 `BasemapUpgrade`）。
+    ///
+    /// - 第一块有内容的：立刻出图（先到先用，通常 z3 几百毫秒就有东西）；
+    /// - 之后只有「更好」才升级（先比源、同源比级别）；冻结条件满足就忽略；
+    /// - 空白 / 失败只记账，不触碰界面；出过图之后永远不会变「不可用」。
     private func recordProbe(_ session: ProbeSession, source: BasemapSource, zoom: Int, ok: Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.probeSession === session, !session.done else { return }
+            let now = Date().timeIntervalSince1970
+            let elapsed = Int((now - session.startedAt) * 1000)
             if source == .osm {
                 session.osmReachable = ok
             } else {
                 session.amapResults[zoom] = ok
             }
             session.pending -= 1
+
+            if ok {
+                let candidate = BasemapUpgrade.Candidate(source: source, zoom: zoom)
+                let adopt = BasemapUpgrade.shouldAdopt(
+                    candidate: candidate,
+                    current: session.current,
+                    firstImageAt: session.firstImageAt,
+                    userInteracted: session.userInteracted,
+                    now: now
+                )
+                if adopt {
+                    let wasFirst = session.current == nil
+                    session.current = candidate
+                    if wasFirst {
+                        session.firstImageAt = now
+                        session.firstLog = (zoom, elapsed)
+                    } else {
+                        session.upgrades.append((zoom, elapsed))
+                    }
+                    self.state.applyProbeDecision(source: candidate.source, zoom: candidate.zoom, at: now)
+                    self.saveProbe(BasemapProbeCache(
+                        key: session.key,
+                        source: candidate.source,
+                        zoom: candidate.zoom,
+                        decidedAt: now
+                    ))
+                    self.updateUpgradeTimeline(session)
+                    self.publishIfChanged()
+                }
+            }
+
             if session.pending <= 0 {
-                self.finishProbe(session)
+                session.done = true
+                // 全部回来但一块有内容的都没有 → 不可用（出过图就保持现状）。
+                if session.current == nil {
+                    self.applyUnavailable(at: now)
+                }
             }
         }
     }
 
-    /// 2 秒到点：只有「**不存在比当前最优精度更高、且还在飞**的档」时才收工（`BasemapProbe.shouldEarlyExit`）。
-    ///
-    /// 以前这里是「任意一档有内容就早退」，会把「z3 先回、z12 还在飞」判成结论 → 只能选到低精度。
-    /// 现在更高的档只要还没结论（`amap[zoom] == nil`）就继续等，直到它回来（空白 / 失败也算有结论）。
-    private func earlyExitIfAmapContent(_ session: ProbeSession) {
-        guard probeSession === session, !session.done else { return }
-        guard BasemapProbe.shouldEarlyExit(amap: session.amapResults) else { return }
-        finishProbe(session)
-    }
-
-    /// 出结论：`decide` → 缓存 → 一步定级 → 发布（界面的地图在这之后才出生）。
-    private func finishProbe(_ session: ProbeSession) {
+    /// 4 秒硬超时：只有「一块都没回来」才算不可用；出过图就什么都不做。
+    private func handleProbeTimeout(_ session: ProbeSession) {
         guard probeSession === session, !session.done else { return }
         session.done = true
+        if session.current == nil {
+            applyUnavailable(at: Date().timeIntervalSince1970)
+        }
+    }
 
-        let decision = BasemapProbe.decide(osmReachable: session.osmReachable, amap: session.amapResults)
-        saveProbe(BasemapProbeCache(
-            key: session.key,
-            source: decision.source,
-            zoom: decision.zoom,
-            decidedAt: Date().timeIntervalSince1970
-        ))
-        state.applyProbeDecision(
-            source: decision.source,
-            zoom: decision.zoom,
-            at: Date().timeIntervalSince1970
-        )
+    private func applyUnavailable(at now: TimeInterval) {
+        state.applyProbeDecision(source: .amapVector, zoom: nil, at: now)
         publishIfChanged()
     }
+
+    /// 用户在图上**手动平移 / 缩放**过：冻结升级（程序化改视口不算）。
+    func userDidInteractWithMap() {
+        probeSession?.userInteracted = true
+    }
+
+    private func updateUpgradeTimeline(_ session: ProbeSession) {
+        upgradeTimeline = BasemapUpgrade.timeline(first: session.firstLog, upgrades: session.upgrades)
+    }
+
+    /// 诊断那一行：`z3 @312ms → z12 @1830ms`；没有升级时只有首图。
+    private(set) var upgradeTimeline = ""
 
     private func cachedProbe() -> BasemapProbeCache? {
         guard let key = defaults.string(forKey: CacheKey.key),
@@ -477,13 +522,18 @@ final class BasemapController: ObservableObject {
         } else {
             probe = L("common.none")
         }
-        return Lf(
+        var detail = Lf(
             "map.diagDetail",
             state.preferred.label,
             state.osmFailures,
             state.blankDetections,
             probe
         )
+        // 首图 / 升级时间线：`z3 @312ms → z12 @1830ms`（没有升级就只有首图）。
+        if !upgradeTimeline.isEmpty {
+            detail += " · " + upgradeTimeline
+        }
+        return detail
     }
 
     /// **只在有效 plan 变了才发布**（计数变化不发）。

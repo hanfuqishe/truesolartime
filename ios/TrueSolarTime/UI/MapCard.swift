@@ -168,6 +168,8 @@ private struct MapViewRepresentable: UIViewRepresentable {
         var plan: BasemapUiState?
         private var tileOverlay: BasemapTileOverlay?
         private var annotation: MKPointAnnotation?
+        /// 正在程序化改视口（`setRegion`）。`regionDidChangeAnimated` 里用它区分「我们改的」与「用户手势」。
+        private var isApplyingProgrammaticRegion = false
         /// 上一次真正应用过的视口：WGS-84 坐标 + 底图样式 + 实际画到地图上的坐标（已按底图换算）。
         /// 只在「地点 / 样式」变化时才动地图；重建 overlay 时用它把标记放回原位。
         private var appliedViewport: (
@@ -240,6 +242,16 @@ private struct MapViewRepresentable: UIViewRepresentable {
             )
             mapView.setRegion(region, animated: false)
             appliedViewport = (place.latitude, place.longitude, style, coordinate, place.displayLabel)
+        }
+
+        /// 视口变化回调：**程序化** `setRegion` 会在里面被过滤掉；剩下的都是用户手势
+        /// （拖动 / 捏合 / 双击缩放，含惯性），用于冻结底图升级。
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            if isApplyingProgrammaticRegion {
+                isApplyingProgrammaticRegion = false
+                return
+            }
+            BasemapController.shared.userDidInteractWithMap()
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
