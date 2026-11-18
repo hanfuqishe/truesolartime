@@ -125,6 +125,7 @@ object MapText {
     fun label(context: Context, style: MapStyle): String = context.getString(
         when (style) {
             MapStyle.AUTO -> R.string.map_style_auto
+            MapStyle.ESRI -> R.string.map_style_esri
             MapStyle.OSM -> R.string.map_style_osm
             MapStyle.AMAP_VECTOR -> R.string.map_style_amap_vector
             MapStyle.AMAP_SATELLITE -> R.string.map_style_amap_satellite
@@ -133,6 +134,8 @@ object MapText {
 
     fun attribution(context: Context, style: MapStyle): String = context.getString(
         when (style) {
+            // Esri World Street Map 的官方署名要求写全（HERE / Garmin / OSM 贡献者）。
+            MapStyle.ESRI -> R.string.map_attribution_esri
             MapStyle.AMAP_VECTOR, MapStyle.AMAP_SATELLITE -> R.string.map_attribution_amap
             else -> R.string.map_attribution_osm
         },

@@ -145,6 +145,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var probeFirstPaintAtMillis: Long? = null
     @Volatile private var probeUserMoved = false
     @Volatile private var probeFirstPaintLabel: String? = null
+    @Volatile private var probeFirstChoice: BasemapProbe.AppliedChoice? = null
+    @Volatile private var probeLastApplied: BasemapProbe.AppliedChoice? = null
+    @Volatile private var probeLastAppliedAtMillis: Long = 0L
     @Volatile private var probeUpgradeLabel: String? = null
 
     /**
@@ -649,6 +652,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         probeFirstPaintAtMillis = null
         probeUserMoved = false
         probeFirstPaintLabel = null
+        probeFirstChoice = null
+        probeLastApplied = null
         probeUpgradeLabel = null
         mapFallback.setProbeChoice(null)
         // 区域偏好（境内高德 / 境外 OSM）：只决定「同级时选谁」，两个源都会探。
@@ -668,11 +673,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (!probeUserMoved) {
                 mapFallback.onProbeResult(style, place.latitude, place.longitude, key, result)
             }
-            // 诊断：首图耗时 / 是否升级。用户动过就不覆盖那句「用户移动后冻结」。
+            // 诊断：首图耗时 / 是否升级（以最终会显示的 choice 为准，而不是中途最后一次升级）。
+            // 用户动过就不覆盖那句「用户移动后冻结」。
             val first = probeFirstPaintLabel
             if (first != null && !probeUserMoved) {
-                val summary = first + (probeUpgradeLabel?.let { "，$it" } ?: "，无升级")
-                mapFallback.noteProbeSummary(summary)
+                val firstChoice = probeFirstChoice
+                val finalChoice = if (result.choice.unavailable) {
+                    null
+                } else {
+                    BasemapProbe.AppliedChoice(result.choice.source, result.choice.zoom)
+                }
+                val upgrade = when {
+                    finalChoice == null || finalChoice == firstChoice -> "，无升级"
+                    finalChoice == probeLastApplied ->
+                        "，升级 ${choiceLabel(finalChoice)} @${probeLastAppliedAtMillis}ms"
+                    else -> "，升级 ${choiceLabel(finalChoice)}"
+                }
+                mapFallback.noteProbeSummary(first + upgrade)
             }
             _mapReady.value = true
         }
@@ -706,12 +723,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (next == null || next == current) return
         if (current == null) {
             probeFirstPaintAtMillis = elapsedMillis
+            probeFirstChoice = next
             probeFirstPaintLabel = "首图 ${choiceLabel(next)} @${elapsedMillis}ms"
             _mapReady.value = true
             _mapLoading.value = false
         } else {
             probeUpgradeLabel = "升级 ${choiceLabel(next)} @${elapsedMillis}ms"
         }
+        probeLastApplied = next
+        probeLastAppliedAtMillis = elapsedMillis
         mapFallback.setProbeChoice(next)
         mapFallback.noteProbeSummary(
             probeFirstPaintLabel.orEmpty() + (probeUpgradeLabel?.let { "，$it" } ?: "，无升级"),
@@ -727,7 +747,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun choiceLabel(choice: BasemapProbe.AppliedChoice): String =
-        "${if (choice.source == MapStyle.OSM) "OSM" else "高德"} z${choice.zoom}"
+        "${BasemapProbe.sourceShort(choice.source)} z${choice.zoom}"
 
     fun setKeepScreenOn(enabled: Boolean) {
         settings.keepScreenOn = enabled

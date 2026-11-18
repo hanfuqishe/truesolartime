@@ -27,7 +27,7 @@
     <string name="action_apply">套用座標</string>
     <string name="section_cities">常用城市</string>
     <string name="section_map">地圖底圖</string>
-    <string name="map_auto_hint">自動：境內用高德，境外用 OpenStreetMap；OSM 連不上時自動回退高德</string>
+    <string name="map_auto_hint">自動：境內用高德，境外用 Esri 街道圖；連不上時依次回退 OSM、高德</string>
     <string name="section_widget">桌面卡片</string>
     <string name="widget_add_waiting">已發出請求，等桌面確認…</string>
     <string name="widget_add_desc">把真太陽時卡片直接放到桌面上。</string>
@@ -70,10 +70,12 @@
     <string name="city_murmansk">莫曼斯克</string>
     <string name="city_zhongshan">南極中山站</string>
     <string name="map_style_auto">自動</string>
+    <string name="map_style_esri">Esri 街道圖</string>
     <string name="map_style_osm">OpenStreetMap</string>
     <string name="map_style_amap_vector">高德向量</string>
     <string name="map_style_amap_satellite">高德衛星</string>
     <string name="map_attribution_osm">地圖資料 © OpenStreetMap 貢獻者</string>
+    <string name="map_attribution_esri">底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors</string>
     <string name="map_attribution_amap">底圖 © 高德地圖</string>
     <string name="map_auto_fallback">OSM 不可達，已回退高德</string>
     <string name="map_unavailable">底圖不可用</string>

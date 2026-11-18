@@ -126,6 +126,7 @@ object UnknownBasemapProbeRunner {
         }
 
     private fun styleName(style: MapStyle): String = when (style) {
+        MapStyle.ESRI -> "ESRI"
         MapStyle.OSM -> "OSM"
         MapStyle.AMAP_VECTOR -> "高德"
         MapStyle.AMAP_SATELLITE -> "高德卫星"

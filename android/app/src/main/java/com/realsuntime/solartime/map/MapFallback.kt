@@ -94,7 +94,8 @@ object MapFallback {
                 probeAtMillis = null,
             )
         }
-        val fellBack = preferred == MapStyle.OSM && state.fellBack
+        // 境外（首选 Esri / OSM 这些「外网源」）才有回退到高德这一说；境内本来就用高德。
+        val fellBack = preferred != MapStyle.AMAP_VECTOR && state.fellBack
         return MapTilePlan(
             requested = style,
             preferred = preferred,
@@ -171,7 +172,7 @@ object MapFallback {
                 )
             }
         }
-        if (plan.effective == MapStyle.OSM) {
+        if (plan.effective != MapStyle.AMAP_VECTOR) {
             next = next.recovered(nowMillis)
         }
         return next
@@ -197,10 +198,10 @@ object MapFallback {
         // 刚程序化改过视口（切城市 / 降级）：那是我们主动取消了在飞的请求，失败不算。
         //
         // **只对高德这一支生效**：降级链的自激循环发生在高德（改级别 → 取消 → 失败 → 再改级别），
-        // 需要这道闸；而 OSM 的失败正是「网络不通」的证据，吞掉只会让回退到高德变慢。
-        // （切源那一瞬间的旧 OSM 请求由上面的 SWITCH_SETTLE_MILLIS 负责丢掉。）
+        // 需要这道闸；而外网源（Esri / OSM）的失败正是「网络不通」的证据，吞掉只会让回退变慢。
+        // （切源那一瞬间的旧请求由上面的 SWITCH_SETTLE_MILLIS 负责丢掉。）
         if (state.isSettlingViewport(nowMillis) &&
-            plan(style, latitude, longitude, state).effective != MapStyle.OSM
+            plan(style, latitude, longitude, state).effective == MapStyle.AMAP_VECTOR
         ) {
             return state
         }
@@ -231,7 +232,8 @@ object MapFallback {
         nowMillis: Long,
     ): MapFallbackState {
         if (style != MapStyle.AUTO) return state
-        if (style.effective(latitude, longitude) != MapStyle.OSM) return state
+        // 境内（首选高德）不消费探测结果：本来就能 1 秒内出图，探测只会白等。
+        if (style.effective(latitude, longitude) == MapStyle.AMAP_VECTOR) return state
         val choice = result.choice
         val base = state.copy(
             probeKey = cacheKey,
@@ -243,8 +245,8 @@ object MapFallback {
             // （下面已经按最终 choice 种好了降级链与回退标记）。
             probeChoice = null,
         )
-        if (choice.source == MapStyle.OSM && !choice.unavailable) {
-            // OSM 通：清掉之前学到的降级记忆，直接回到默认级别。
+        if (choice.source != MapStyle.AMAP_VECTOR && !choice.unavailable) {
+            // 外网源（Esri / OSM）有内容：清掉之前学到的降级记忆，直接回到默认级别。
             return base.copy(
                 fellBack = false,
                 fallbackFailures = 0,
@@ -330,7 +332,8 @@ object MapFallback {
         blank: Boolean,
     ): MapFallbackState {
         val plan = plan(style, latitude, longitude, state)
-        if (plan.effective != MapStyle.OSM) {
+        // 高德这一支才做「降级」；外网源（Esri / OSM）失败是「连不上」，整源回退。
+        if (plan.effective == MapStyle.AMAP_VECTOR) {
             val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
             // 空白瓦片是**确定性**判据（有内容就是有内容，不会像网络失败那样抖），
             // 所以整屏判空白时 1 次就够降一级；网络失败仍要连续 3 次才判「这级别没瓦片」。
@@ -530,7 +533,7 @@ data class MapUiState(
                     zoom = applied.zoom,
                     degraded = applied.zoom != MapFallback.DEFAULT_ZOOM,
                     unavailable = false,
-                    fellBack = applied.source == MapStyle.AMAP_VECTOR && plan.preferred == MapStyle.OSM,
+                    fellBack = applied.source != plan.preferred,
                 )
             }
             val zoomPlan = MapFallback.zoomPlan(plan, MapFallback.DEFAULT_ZOOM, state)
@@ -794,6 +797,7 @@ internal object MapFallbackDiagnostics {
 
     fun lines(plan: MapTilePlan, zoom: MapZoomPlan, state: MapFallbackState, nowMillis: Long): List<String> = listOf(
         "地图底图 = ${sourceLine(plan)}",
+        "实际源 = ${styleName(state.probeChoice?.source ?: plan.effective)}",
         "地图底图样式 = ${styleName(plan.requested)}",
         "首选底图 = ${styleName(plan.preferred)}",
         "地图缩放 = ${zoom.zoom}" + if (zoom.degraded) "（已降级：请求 ${zoom.requested}）" else "",
@@ -820,8 +824,8 @@ internal object MapFallbackDiagnostics {
     private fun sourceLine(plan: MapTilePlan): String = when {
         // 手动选择：说清楚「不回退」，免得看日志的人以为兜底没生效。
         plan.requested != MapStyle.AUTO -> "${styleName(plan.effective)}（手动选择，不回退）"
-        plan.fellBack -> "高德（OSM 失败 ${plan.fallbackFailures} 次后回退）"
-        else -> "${styleName(plan.effective)}（自动：${if (plan.effective == MapStyle.OSM) "境外" else "境内"}）"
+        plan.fellBack -> "高德（外网源失败 ${plan.fallbackFailures} 次后回退）"
+        else -> "${styleName(plan.effective)}（自动：${if (plan.effective == MapStyle.AMAP_VECTOR) "境内" else "境外"}）"
     }
 
     private fun probeLine(plan: MapTilePlan, state: MapFallbackState, nowMillis: Long): String {
@@ -845,6 +849,7 @@ internal object MapFallbackDiagnostics {
 
     private fun styleName(style: MapStyle): String = when (style) {
         MapStyle.AUTO -> "自动"
+        MapStyle.ESRI -> "ESRI"
         MapStyle.OSM -> "OpenStreetMap"
         MapStyle.AMAP_VECTOR -> "高德矢量"
         MapStyle.AMAP_SATELLITE -> "高德卫星"

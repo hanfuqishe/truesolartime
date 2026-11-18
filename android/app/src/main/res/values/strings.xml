@@ -27,7 +27,7 @@
     <string name="action_apply">Apply coordinates</string>
     <string name="section_cities">Common cities</string>
     <string name="section_map">Map tiles</string>
-    <string name="map_auto_hint">Auto: AMap inside China, OpenStreetMap elsewhere; falls back to AMap when OSM is unreachable</string>
+    <string name="map_auto_hint">Auto: AMap inside China, Esri Street Map elsewhere; falls back to OSM, then AMap</string>
     <string name="section_widget">Home screen card</string>
     <string name="widget_add_waiting">Request sent. Waiting for the launcher…</string>
     <string name="widget_add_desc">Puts the true solar time card on your home screen.</string>
@@ -70,10 +70,12 @@
     <string name="city_murmansk">Murmansk</string>
     <string name="city_zhongshan">Zhongshan Station, Antarctica</string>
     <string name="map_style_auto">Auto</string>
+    <string name="map_style_esri">Esri Street Map</string>
     <string name="map_style_osm">OpenStreetMap</string>
     <string name="map_style_amap_vector">AMap</string>
     <string name="map_style_amap_satellite">AMap satellite</string>
     <string name="map_attribution_osm">Map data © OpenStreetMap contributors</string>
+    <string name="map_attribution_esri">Base map © Esri, HERE, Garmin, © OpenStreetMap contributors</string>
     <string name="map_attribution_amap">Tiles © AMap</string>
     <string name="map_auto_fallback">OSM unreachable, fell back to AMap</string>
     <string name="map_unavailable">Base map unavailable</string>

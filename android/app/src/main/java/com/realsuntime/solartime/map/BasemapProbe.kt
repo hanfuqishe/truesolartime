@@ -30,6 +30,9 @@ object BasemapProbe {
     /** OSM 侧要探的级别：全球底图（判可达）+ 默认级别（判高精度有没有内容）。 */
     val OSM_PROBE_ZOOMS = intArrayOf(MapFallback.MIN_ZOOM, MapFallback.DEFAULT_ZOOM)
 
+    /** Esri 侧要探的级别：全球底图 + 默认级别（境外首选源，见 [MapStyle.effective]）。 */
+    val ESRI_PROBE_ZOOMS = intArrayOf(MapFallback.MIN_ZOOM, MapFallback.DEFAULT_ZOOM)
+
     /** 同一个地点 + 同一个会话内，探测结果的保鲜期（与 OSM 重探间隔一致）。 */
     const val CACHE_MILLIS = 5 * 60_000L
 
@@ -69,15 +72,15 @@ object BasemapProbe {
      * 纯决策：给定所有探测瓦片的结论与「偏好源」，按**先换源、再降级**选出源与级别。
      *
      * 顺序：z12 → z10 → z3；同一级别优先 [preferred]（区域偏好只决定同精度时选谁），
-     * 偏好源在该级空白/失败、另一个源有内容 → 用另一个源。
+     * 偏好源在该级空白/失败、另一个源有内容 → 用另一个源（Esri → OSM → 高德）。
      *
-     * @param tiles 两个源各自的探测结论（OSM z3/z12、高德 z12/z10/z3）
+     * @param tiles 三家各自的探测结论（Esri z3/z12、OSM z3/z12、高德 z12/z10/z3）
      * @param preferred 区域偏好源（境内高德、境外 OSM；见 [MapStyle.effective]）
      */
     fun decide(tiles: List<ProbeTile>, preferred: MapStyle): Choice {
         val picked = choose(tiles, preferred)
         val detail = PROBE_ZOOMS_DESC.joinToString(" / ") { zoom ->
-            val parts = listOf(MapStyle.OSM, MapStyle.AMAP_VECTOR).mapNotNull { source ->
+            val parts = listOf(MapStyle.ESRI, MapStyle.OSM, MapStyle.AMAP_VECTOR).mapNotNull { source ->
                 val tile = tiles.firstOrNull { it.source == source && it.zoom == zoom } ?: return@mapNotNull null
                 val verdict = if (tile.hasContent) "有内容" else "空白"
                 "${sourceShort(source)} z$zoom $verdict"
@@ -111,14 +114,29 @@ object BasemapProbe {
         for (zoom in PROBE_ZOOMS_DESC) {
             val atZoom = content.filter { it.zoom == zoom }
             if (atZoom.isEmpty()) continue
-            return atZoom.firstOrNull { it.source == preferred } ?: atZoom.first()
+            return atZoom.maxByOrNull { sourcePriority(it.source, preferred) }
         }
         return null
     }
 
+    /**
+     * 同一级别里各源的优先级：偏好源最高，其余按 **Esri > OSM > 高德**。
+     *
+     * 境外偏好 Esri：ESRI 3 / OSM 1 / 高德 0；境内偏好高德：高德 3 / ESRI 2 / OSM 1。
+     */
+    fun sourcePriority(source: MapStyle, preferred: MapStyle): Int = when {
+        source == preferred -> 3
+        source == MapStyle.ESRI -> 2
+        source == MapStyle.OSM -> 1
+        else -> 0
+    }
+
     /** 诊断用的源简称。 */
-    fun sourceShort(source: MapStyle): String =
-        if (source == MapStyle.OSM) "OSM" else "高德"
+    fun sourceShort(source: MapStyle): String = when (source) {
+        MapStyle.ESRI -> "ESRI"
+        MapStyle.OSM -> "OSM"
+        else -> "高德"
+    }
 
     /**
      * 探测缓存键：同一地点（~100 m 粒度）+ 同一模式算「同一个」。换城市就变，因此缓存自动失效。
@@ -175,7 +193,7 @@ object BasemapProbe {
         if (current == null) return true
         if (zoom != current.zoom) return zoom > current.zoom
         if (source == current.source) return false
-        return source == preferred
+        return sourcePriority(source, preferred) > sourcePriority(current.source, preferred)
     }
 
     /** 已经是最优：偏好源的默认级别（z12）。 */
@@ -227,11 +245,11 @@ object BasemapProbe {
     /**
      * 该地点按「自动」应该首选哪个源（与 [MapStyle.effective] 一致）。
      *
-     * 只有首选 OSM（境外）才值得并行探测；境内用高德本来就能 1 秒内出图，
+     * 只有首选是「外网源」（境外：Esri / OSM）才值得并行探测；境内用高德本来就能 1 秒内出图，
      * 探测只会白等一个超时。
      */
     fun needsProbe(style: MapStyle, latitude: Double, longitude: Double): Boolean =
-        style == MapStyle.AUTO && style.effective(latitude, longitude) == MapStyle.OSM
+        style == MapStyle.AUTO && style.effective(latitude, longitude) != MapStyle.AMAP_VECTOR
 
     /**
      * 该级别之上的「肯定没内容」的级别（用于把降级链直接推到探测选中的级别）。

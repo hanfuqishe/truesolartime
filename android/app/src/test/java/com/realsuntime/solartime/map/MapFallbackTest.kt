@@ -15,7 +15,7 @@ import org.junit.Test
  */
 class MapFallbackTest {
 
-    /** 境外：首选 OpenStreetMap。 */
+    /** 境外：首选 Esri 街道图。 */
     private val paris = 48.8566 to 2.3522
 
     /** 境内：首选高德。 */
@@ -77,7 +77,7 @@ class MapFallbackTest {
     @Test
     fun autoModeKeepsTheOldPreferredSource() {
         val tracker = newTracker()
-        assertEquals(MapStyle.OSM, tracker.planAt(MapStyle.AUTO, paris).effective)
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
         assertEquals(MapStyle.AMAP_VECTOR, tracker.planAt(MapStyle.AUTO, beijing).effective)
         // 手动选的源永远按用户选的来（境内境外都不改）
         assertEquals(MapStyle.OSM, tracker.planAt(MapStyle.OSM, beijing).effective)
@@ -89,10 +89,10 @@ class MapFallbackTest {
         val tracker = newTracker()
         tracker.loadTiles(5)
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.OSM, plan.effective)
+        assertEquals(MapStyle.ESRI, plan.effective)
         assertFalse(plan.fellBack)
         // 署名跟随实际使用的瓦片源（MapText.attribution 就是按 MapStyle 取这两条资源）
-        assertEquals("地图数据 © OpenStreetMap 贡献者", plan.effective.attribution)
+        assertEquals("底图 © Esri, HERE, Garmin, © OpenStreetMap contributors", plan.effective.attribution)
     }
 
     // ------------------------------------------------------------ 回退与记忆
@@ -102,7 +102,7 @@ class MapFallbackTest {
         val tracker = newTracker()
         // 前两次失败还在试 OSM
         tracker.failTiles(threshold - 1)
-        assertEquals(MapStyle.OSM, tracker.planAt(MapStyle.AUTO, paris).effective)
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
         assertFalse(tracker.planAt(MapStyle.AUTO, paris).fellBack)
 
         // 第 3 次失败：达到阈值 → 回退
@@ -129,7 +129,7 @@ class MapFallbackTest {
         // 中途成功过 → 重新从 0 开始数，不该凑够阈值就回退
         tracker.failTiles(threshold - 1)
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.OSM, plan.effective)
+        assertEquals(MapStyle.ESRI, plan.effective)
         assertFalse(plan.fellBack)
     }
 
@@ -170,7 +170,7 @@ class MapFallbackTest {
         reachable = true
         assertTrue(tracker.probeIfDue())
         val restored = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.OSM, restored.effective)
+        assertEquals(MapStyle.ESRI, restored.effective)
         assertFalse(restored.fellBack)
         assertEquals(0, tracker.snapshot().osmFailures)
         assertNull(tracker.snapshot().probeAtMillis)
@@ -243,7 +243,7 @@ class MapFallbackTest {
         // MainViewModel 在「切到自动」或「用户重新选地点」时调 reset()
         tracker.reset()
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.OSM, plan.effective)
+        assertEquals(MapStyle.ESRI, plan.effective)
         assertFalse(plan.fellBack)
         assertEquals(0, tracker.snapshot().osmFailures)
 
@@ -420,7 +420,7 @@ class MapFallbackTest {
             ),
         )
         var plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.OSM, plan.effective)
+        assertEquals(MapStyle.ESRI, plan.effective)
         assertFalse(plan.fellBack)
         assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
 
@@ -745,9 +745,9 @@ class MapFallbackTest {
         val zoom = tracker.zoomPlan(plan, 12)
         val lines = MapFallbackDiagnostics.lines(plan, zoom, tracker.snapshot(), now)
 
-        assertEquals("地图底图 = 高德（OSM 失败 3 次后回退）", lines.first())
+        assertEquals("地图底图 = 高德（外网源失败 3 次后回退）", lines.first())
         assertTrue(lines.contains("地图底图样式 = 自动"))
-        assertTrue(lines.contains("首选底图 = OpenStreetMap"))
+        assertTrue(lines.contains("首选底图 = ESRI"))
         assertTrue(lines.contains("地图缩放 = 12"))
         assertTrue(lines.contains("瓦片状态 = 正常"))
         assertTrue(lines.contains("OSM 失败次数 = 3"))

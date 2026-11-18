@@ -178,7 +178,7 @@ class MapUnknownStateTest {
         assertFalse(BasemapProbe.needsProbe(MapStyle.AUTO, 31.23, 121.47))
 
         val abroad = MapUiState.of(MapStyle.AUTO, 35.68, 139.65, MapFallbackState())
-        assertEquals("境外 → OSM", MapStyle.OSM, abroad.source)
+        assertEquals("境外 → Esri", MapStyle.ESRI, abroad.source)
         assertEquals(MapFallback.DEFAULT_ZOOM, abroad.zoom)
         assertTrue("正常态境外仍要并行探测", BasemapProbe.needsProbe(MapStyle.AUTO, 35.68, 139.65))
         // 正常态的探测级别集合仍是 z12/z10/z3（没被未知态的两块快路径改掉）。

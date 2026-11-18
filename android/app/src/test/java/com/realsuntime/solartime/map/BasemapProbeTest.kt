@@ -18,6 +18,7 @@ class BasemapProbeTest {
 
     private fun osm(zoom: Int, hasContent: Boolean) = tile(MapStyle.OSM, zoom, hasContent)
     private fun amap(zoom: Int, hasContent: Boolean) = tile(MapStyle.AMAP_VECTOR, zoom, hasContent)
+    private fun esri(zoom: Int, hasContent: Boolean) = tile(MapStyle.ESRI, zoom, hasContent)
 
     /** 一次完整的五块探测：OSM z3/z12 + 高德 z12/z10/z3。 */
     private fun allTiles(
@@ -99,20 +100,83 @@ class BasemapProbeTest {
         assertTrue(BasemapProbe.decide(emptyList(), preferred = MapStyle.OSM).unavailable)
     }
 
-    /** 南极中山站端到端：偏好按坐标算（OSM），高德全空白、OSM z12 有内容 → OSM z12（不是 z3）。 */
+    /** 南极中山站端到端：偏好按坐标算是 Esri；三家瓦片里外网源有内容就选它，而不是降级到 z3。 */
     @Test
-    fun antarcticStationEndToEndPicksOsmAtDefaultZoom() {
+    fun antarcticStationEndToEndPicksTheOverseasSourceAtDefaultZoom() {
         val preferred = MapStyle.AUTO.effective(-69.37, 76.38)
-        assertEquals(MapStyle.OSM, preferred)
-        val choice = BasemapProbe.decide(
-            tiles = allTiles(osm3 = true, osm12 = true, amap12 = false, amap10 = false, amap3 = true),
+        assertEquals(MapStyle.ESRI, preferred)
+
+        // Esri z12 有内容 → Esri z12
+        val esriChoice = BasemapProbe.decide(
+            tiles = listOf(
+                esri(3, true), esri(12, true),
+                osm(3, true), osm(12, true),
+                amap(12, false), amap(10, false), amap(3, true),
+            ),
             preferred = preferred,
         )
-        assertEquals(MapStyle.OSM, choice.source)
-        assertEquals(MapFallback.DEFAULT_ZOOM, choice.zoom)
+        assertEquals(MapStyle.ESRI, esriChoice.source)
+        assertEquals(MapFallback.DEFAULT_ZOOM, esriChoice.zoom)
+
+        // Esri 空白、OSM z12 有内容 → OSM z12（不是 z10/z3）
+        val osmChoice = BasemapProbe.decide(
+            tiles = listOf(
+                esri(3, false), esri(12, false),
+                osm(3, true), osm(12, true),
+                amap(12, false), amap(10, false), amap(3, true),
+            ),
+            preferred = preferred,
+        )
+        assertEquals(MapStyle.OSM, osmChoice.source)
+        assertEquals(MapFallback.DEFAULT_ZOOM, osmChoice.zoom)
+        assertFalse(osmChoice.unavailable)
+    }
+
+    /** 三家 z12 都没内容时，先看 z10，再看 z3：z3 优先 Esri，其次高德。 */
+    @Test
+    fun globalFallbackPrefersEsriAtZoomThree() {
+        val choice = BasemapProbe.decide(
+            tiles = listOf(
+                esri(3, true), esri(12, false),
+                osm(3, false), osm(12, false),
+                amap(12, false), amap(10, false), amap(3, true),
+            ),
+            preferred = MapStyle.ESRI,
+        )
+        assertEquals(MapStyle.ESRI, choice.source)
+        assertEquals(MapFallback.MIN_ZOOM, choice.zoom)
         assertFalse(choice.unavailable)
-        // 结果与「偏好源同位」无关：换一个偏好也不会掉到 z3。
-        assertEquals(12, BasemapProbe.choose(allTiles(true, true, false, false, true), MapStyle.AMAP_VECTOR)?.zoom)
+    }
+
+    /** Esri / OSM 都失败、高德 z12 有内容 → 高德 z12（三家顺序：Esri → OSM → 高德）。 */
+    @Test
+    fun amapIsTheLastResortOverseas() {
+        val choice = BasemapProbe.decide(
+            tiles = listOf(
+                esri(3, false), esri(12, false),
+                osm(3, false), osm(12, false),
+                amap(12, true), amap(10, true), amap(3, true),
+            ),
+            preferred = MapStyle.ESRI,
+        )
+        assertEquals(MapStyle.AMAP_VECTOR, choice.source)
+        assertEquals(MapFallback.DEFAULT_ZOOM, choice.zoom)
+    }
+
+    /**
+     * Esri 瓦片地址顺序是 **z/y/x**（与 OSM 的 z/x/y 相反）：
+     * z12 的上海（x=3430, y=1673）→ `…/tile/12/1673/3430`。
+     */
+    @Test
+    fun esriTileUrlUsesZyxOrder() {
+        val (x, y) = BasemapProbe.tileOf(31.2304, 121.4737, 12)
+        assertEquals(3430 to 1673, x to y)
+        assertEquals(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/12/1673/3430",
+            MapTileSources.esriTileUrl("World_Street_Map", 12, x, y),
+        )
+        // 探针与运行期用的是同一个拼法（y 在前）。
+        assertTrue(MapTileSources.esriTileUrl("World_Street_Map", 12, 3430, 1673).endsWith("/12/1673/3430"))
     }
 
     // ------------------------------------------------------------ 渐进升级（先到先用，更好的才换）

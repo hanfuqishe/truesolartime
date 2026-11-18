@@ -70,8 +70,8 @@ class CoordinateTransformTest {
     @Test
     fun mapStyleResolvesByRegion() {
         assertEquals(MapStyle.AMAP_VECTOR, MapStyle.AUTO.effective(39.9042, 116.4074))
-        assertEquals(MapStyle.OSM, MapStyle.AUTO.effective(48.8566, 2.3522))
-        assertEquals(MapStyle.OSM, MapStyle.AUTO.effective(37.4220, -122.0840))
+        assertEquals(MapStyle.ESRI, MapStyle.AUTO.effective(48.8566, 2.3522))
+        assertEquals(MapStyle.ESRI, MapStyle.AUTO.effective(37.4220, -122.0840))
         assertEquals(MapStyle.AMAP_SATELLITE, MapStyle.AMAP_SATELLITE.effective(48.8566, 2.3522))
         assertEquals(MapStyle.OSM, MapStyle.OSM.effective(39.9042, 116.4074))
     }

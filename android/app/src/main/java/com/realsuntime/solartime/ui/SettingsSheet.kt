@@ -241,7 +241,8 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MapStyle.entries.forEach { style ->
+                // ESRI 只做「境外自动」的偏好源，不单独给手动选项（设置了也没意义：境外自动已经用它）。
+                MapStyle.manualOptions.forEach { style ->
                     FilterChip(
                         selected = style == mapStyle,
                         onClick = { onSelectMapStyle(style) },

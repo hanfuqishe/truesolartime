@@ -13,7 +13,7 @@ import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 并行探测的「跑腿」部分：**同时**取 5 块单瓦片（OSM z3/z12 + 高德 z12/z10/z3），
+ * 并行探测的「跑腿」部分：**同时**取 7 块单瓦片（Esri z3/z12 + OSM z3/z12 + 高德 z12/z10/z3），
  * 每块自己带短超时，整体再套一个硬封顶。
  *
  * 为什么两个源都探：「先换源、再降级」要求知道另一个源在同精度有没有内容
@@ -61,8 +61,9 @@ object BasemapProbeRunner {
         val preferred = MapStyle.AUTO.effective(latitude, longitude)
         val amapZooms = BasemapProbe.AMAP_PROBE_ZOOMS.toList()
         val osmZooms = BasemapProbe.OSM_PROBE_ZOOMS.toList()
+        val esriZooms = BasemapProbe.ESRI_PROBE_ZOOMS.toList()
         val tiles = java.util.Collections.synchronizedList(mutableListOf<BasemapProbe.ProbeTile>())
-        val pending = AtomicInteger(osmZooms.size + amapZooms.size)
+        val pending = AtomicInteger(esriZooms.size + osmZooms.size + amapZooms.size)
         fun elapsed(): Long = System.currentTimeMillis() - startedAt
         fun record(tile: BasemapProbe.ProbeTile) {
             tiles.add(tile)
@@ -71,6 +72,21 @@ object BasemapProbeRunner {
 
         // 独立 scope：阻塞请求不响应取消，不能挂在调用方的结构化并发树上。
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        esriZooms.forEach { zoom ->
+            scope.launch {
+                try {
+                    record(
+                        BasemapProbe.ProbeTile(
+                            source = MapStyle.ESRI,
+                            zoom = zoom,
+                            hasContent = probeEsriTile(latitude, longitude, zoom),
+                        ),
+                    )
+                } finally {
+                    pending.decrementAndGet()
+                }
+            }
+        }
         osmZooms.forEach { zoom ->
             scope.launch {
                 try {
@@ -122,6 +138,24 @@ object BasemapProbeRunner {
             timedOut = !finished,
         )
     }
+
+    /** Esri 单块瓦片：2xx + 真图片（PNG/JPEG 魔数）就算有内容；空白检测只对高德做。 */
+    private fun probeEsriTile(latitude: Double, longitude: Double, zoom: Int): Boolean = runCatching {
+        val (x, y) = BasemapProbe.tileOf(latitude, longitude, zoom)
+        val url = MapTileSources.esriTileUrl("World_Street_Map", zoom, x, y)
+        val connection = open(url)
+        try {
+            if (connection.responseCode !in 200..299) return false
+            val head = connection.inputStream.use { input ->
+                ByteArray(2).also { input.read(it) }
+            }
+            val png = head[0] == 0x89.toByte() && head[1] == 'P'.code.toByte()
+            val jpeg = head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte()
+            png || jpeg
+        } finally {
+            runCatching { connection.disconnect() }
+        }
+    }.getOrDefault(false)
 
     /** OSM 单块瓦片：2xx + 真图片（前两字节是 PNG/JPEG 魔数）就算有内容。 */
     private fun probeOsmTile(latitude: Double, longitude: Double, zoom: Int): Boolean = runCatching {
