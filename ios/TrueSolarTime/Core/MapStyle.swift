@@ -11,16 +11,20 @@ enum CoordinateTransform {
     private static let eccentricity = 0.00669342162296594323
 
     /// GCJ-02 的适用边界，境外不加偏移。
+    /// **GCJ-02 坐标偏移的适用边界**（72–137.8°E / 0.83–55.8°N，比行政区划大一圈）。
     ///
-    /// 注意：这是**坐标系**的边界（72–137.8°E / 0.83–55.8°N，比行政区划大一圈），
-    /// 不是「是不是中国境内」的判据 —— 印度、尼泊尔、东南亚都在里面。
-    /// 「是不是境内」一律看 `GeoRegion.isInChina`（国家码优先），选底图也用它。
-    static func isInChina(latitude: Double, longitude: Double) -> Bool {
+    /// 名字里带 `Gcj` 是刻意的：它**只**回答「这个坐标要不要加火星偏移」，
+    /// **不能**用来判断「是不是中国境内」—— 印度、尼泊尔、东南亚（新加坡 1.35°N、
+    /// 吉隆坡 3.1°N）全都在 0.83°N 以上。选源 / 时区 / 地名归属一律看
+    /// `GeoRegion.isInChina(countryCode:latitude:longitude:)`（国家码优先，包围盒 18–54°N）。
+    ///
+    /// 历史上这里叫 `isInChina` —— Android 端正是因为它把「选新加坡」判成境内才出的 bug。
+    static func isInGcjCoverage(latitude: Double, longitude: Double) -> Bool {
         longitude >= 72.004 && longitude <= 137.8347 && latitude >= 0.8293 && latitude <= 55.8271
     }
 
     static func wgs84ToGcj02(latitude: Double, longitude: Double) -> (latitude: Double, longitude: Double) {
-        guard isInChina(latitude: latitude, longitude: longitude) else {
+        guard isInGcjCoverage(latitude: latitude, longitude: longitude) else {
             return (latitude, longitude)
         }
 
@@ -39,7 +43,7 @@ enum CoordinateTransform {
 
     /// 迭代逼近求逆，往返误差可忽略。
     static func gcj02ToWgs84(latitude: Double, longitude: Double) -> (latitude: Double, longitude: Double) {
-        guard isInChina(latitude: latitude, longitude: longitude) else {
+        guard isInGcjCoverage(latitude: latitude, longitude: longitude) else {
             return (latitude, longitude)
         }
 
@@ -109,6 +113,14 @@ enum MapStyle: String, CaseIterable, Identifiable {
     }
 
     var isGcj02: Bool { self == .amapVector || self == .amapSatellite }
+
+    /// **「是不是中国境内」的统一入口**（选源 / 时区 / 地名归属都走这里）。
+    ///
+    /// 直接委托 `GeoRegion.isInChina`：**国家码优先**，没有国家码才退回 18–54°N 的包围盒。
+    /// 绝不要用 `CoordinateTransform.isInGcjCoverage`（那是坐标偏移的边界，会把新加坡算进境内）。
+    static func isInChina(countryCode: String? = nil, latitude: Double, longitude: Double) -> Bool {
+        GeoRegion.isInChina(countryCode: countryCode, latitude: latitude, longitude: longitude)
+    }
 
     /// 是不是 Apple 系统底图（不挂 overlay、不探测，`MKMapView` 默认瓦片）。
     var isSystemBasemap: Bool { self == .apple || self == .auto }

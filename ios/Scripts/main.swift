@@ -2216,6 +2216,33 @@ expect(
     MapViewIdentity.placeKey(latitude: 31.23041, longitude: 121.47371)
         == MapViewIdentity.placeKey(latitude: 31.23042, longitude: 121.47372)
 )
+expect(
+    "两个判据互不替代：新加坡在 GCJ 覆盖范围内（要做偏移），但「境内」判定为假",
+    CoordinateTransform.isInGcjCoverage(latitude: 1.3521, longitude: 103.8198)
+        && !MapStyle.isInChina(countryCode: "sg", latitude: 1.3521, longitude: 103.8198)
+        // 覆盖范围之外（悉尼）不加偏移：偏移函数仍按 GCJ 边界行事，与选源判定无关。
+        && !CoordinateTransform.isInGcjCoverage(latitude: -33.8688, longitude: 151.2093)
+        && CoordinateTransform.wgs84ToGcj02(latitude: -33.8688, longitude: 151.2093).longitude == 151.2093
+)
+expect(
+    "吉隆坡（3.139, 101.6869, my）→ 不是境内",
+    MapStyle.isInChina(countryCode: "my", latitude: 3.139, longitude: 101.6869) == false
+)
+expect(
+    "香港（22.32, 114.17, hk）→ 是境内；北京（39.9, 116.4, cn）→ 是境内",
+    MapStyle.isInChina(countryCode: "hk", latitude: 22.32, longitude: 114.17)
+        && MapStyle.isInChina(countryCode: "cn", latitude: 39.9, longitude: 116.4)
+)
+expect(
+    "无国家码时按包围盒（18–54°N）：新加坡坐标 → 不是境内；上海坐标 → 是境内",
+    MapStyle.isInChina(countryCode: nil, latitude: 1.3521, longitude: 103.8198) == false
+        && MapStyle.isInChina(countryCode: nil, latitude: 31.2304, longitude: 121.4737)
+)
+expect(
+    "北京在 GCJ 覆盖范围内 → 会加偏移（两者用途不同，互不干扰）",
+    CoordinateTransform.isInGcjCoverage(latitude: 39.9, longitude: 116.4)
+        && CoordinateTransform.wgs84ToGcj02(latitude: 39.9, longitude: 116.4).latitude != 39.9
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

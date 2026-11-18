@@ -263,6 +263,116 @@ def unwrap(resp: dict) -> dict:
     return resp
 
 
+WEATHERKIT_CAPABILITY = "WEATHERKIT"
+
+
+def capability_types(items: list[dict]) -> set[str]:
+    """从 `/v1/bundleIdCapabilities` 的 data 数组里抽出 capabilityType 集合（纯函数，便于自检）。"""
+    return {
+        (item.get("attributes") or {}).get("capabilityType")
+        for item in items
+        if isinstance(item, dict)
+    }
+
+
+def weatherkit_capability_status(items: list[dict]) -> bool:
+    """已开启 WeatherKit 吗（纯函数）。"""
+    return WEATHERKIT_CAPABILITY in capability_types(items)
+
+
+def check_weatherkit_signing_setup(repo_root: str | None = None) -> list[str]:
+    """**离线**检查 WeatherKit 签名链路的三处配置，返回问题列表（空 = 全部就绪）。
+
+    检查项：
+      1. `ios/TrueSolarTime/TrueSolarTime.entitlements` 存在且含 `com.apple.developer.weatherkit`；
+      2. `ios/project.yml` 里 target 的 `CODE_SIGN_ENTITLEMENTS` 指向这个文件；
+      3. 文件确实是合法 plist（能用 plistlib 解析）。
+    """
+    root = repo_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    problems: list[str] = []
+    ent = os.path.join(root, "TrueSolarTime", "TrueSolarTime.entitlements")
+    proj = os.path.join(root, "project.yml")
+    if not os.path.isfile(ent):
+        problems.append(f"缺少 entitlements 文件：{ent}")
+        return problems
+    import plistlib
+    try:
+        with open(ent, "rb") as fh:
+            data = plistlib.load(fh)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"entitlements 不是合法 plist：{exc}")
+        return problems
+    if data.get("com.apple.developer.weatherkit") is not True:
+        problems.append("entitlements 里没有 com.apple.developer.weatherkit = true")
+    if not os.path.isfile(proj):
+        problems.append(f"缺少 project.yml：{proj}")
+    else:
+        text = open(proj, encoding="utf-8").read()
+        if "CODE_SIGN_ENTITLEMENTS" not in text:
+            problems.append("project.yml 里没有 CODE_SIGN_ENTITLEMENTS")
+        elif "TrueSolarTime/TrueSolarTime.entitlements" not in text:
+            problems.append("project.yml 的 CODE_SIGN_ENTITLEMENTS 没指向 TrueSolarTime/TrueSolarTime.entitlements")
+    return problems
+
+def list_bundle_id_capabilities(bid_id: str, token: str) -> list[dict]:
+    """查某个 Bundle ID 已开启的 capability（`/v1/bundleIdCapabilities`）。
+
+    响应结构（App Store Connect API 1.x）：
+        {"data": [{"type": "bundleIdCapabilities",
+                   "id": "<capability-id>",
+                   "attributes": {"capabilityType": "WEATHERKIT"}}],
+         "links": {...}, "meta": {"paging": {...}}}
+    `attributes.capabilityType` 是 `CapabilityType` 枚举值（大写，如 WEATHERKIT / PUSH_NOTIFICATIONS）。
+    """
+    items = list_all("/v1/bundleIdCapabilities", token, {"filter[bundleId]": bid_id})
+    return items
+
+
+def ensure_weatherkit_capability(bid_id: str, token: str) -> bool:
+    """确保 App ID 开启了 WeatherKit（**幂等**）。返回 True 表示这次新开了、False 表示本来就有。
+
+    为什么必须在**创建 profile 之前**做：描述文件是 App ID 能力 + 证书的快照，
+    capability 晚于 profile 开启的话，profile 里不会出现 `com.apple.developer.weatherkit`
+    entitlement，Archive 就会报「Provisioning profile doesn't include the ... entitlement」。
+
+    API：
+        GET  /v1/bundleIdCapabilities?filter[bundleId]=<bid>     列出已有能力
+        POST /v1/bundleIdCapabilities                           新增一条
+    """
+    existing = list_bundle_id_capabilities(bid_id, token)
+    kinds = {
+        (item.get("attributes") or {}).get("capabilityType")
+        for item in existing
+    }
+    if WEATHERKIT_CAPABILITY in kinds:
+        print(f"      WeatherKit capability 已开启（共 {len(kinds)} 项能力），跳过")
+        return False
+
+    payload = {
+        "data": {
+            "type": "bundleIdCapabilities",
+            "attributes": {"capabilityType": WEATHERKIT_CAPABILITY},
+            "relationships": {
+                "bundleId": {"data": {"type": "bundleIds", "id": bid_id}},
+            },
+        }
+    }
+    try:
+        created = unwrap(api("POST", "/v1/bundleIdCapabilities", token, payload=payload))
+    except Exception as exc:  # noqa: BLE001 - 这里要把原因翻译成可操作的话
+        raise AscError(
+            "开启 WeatherKit capability 失败：" f"{exc}\n"
+            "可能原因：\n"
+            "  1) API Key 的角色不够（需要 App Manager 或 Admin）；\n"
+            "  2) 该 App ID 已手工开启过但 API 没同步 —— 去\n"
+            "     https://developer.apple.com/account/resources/identifiers 打开这个 App ID，\n"
+            "     勾选 WeatherKit（若提示需要先关联 WeatherKit 服务，按提示同意）后保存；\n"
+            "  3) 账号本身没有 WeatherKit 资格（企业/教育账号可能没有）。\n"
+            "处理完之后重跑本脚本即可（本函数是幂等的）。"
+        ) from exc
+    print(f"      WeatherKit capability 已开启（新建 id={created.get('id')}）")
+    return True
+
 def _create_cert(token: str, csr_pem: str) -> dict:
     payload = {
         "data": {
@@ -349,6 +459,16 @@ def cmd_signing(args, token: str) -> int:
         )
     bid_id = bids[0]["id"]
     print(f"[1/4] Bundle ID 就绪：{args.bundle_id}（id={bid_id}）")
+    # 1.5) **创建 profile 之前**确保 App ID 开着 WeatherKit：描述文件是「App ID 能力 + 证书」的快照，
+    #      capability 晚于 profile 开启的话，profile 里不会有 weatherkit entitlement，Archive 会失败。
+    #      幂等：已开启直接跳过。
+    try:
+        ensure_weatherkit_capability(bid_id, token)
+    except AscError as exc:
+        # 这里刻意**不**让整条签名流程失败：entitlements 只是「验证签名链路」用的，
+        # 真拿不到就打印清楚，让用户去后台手工开（错误信息里已经写了怎么开）。
+        print(f"      [warn] {exc}", file=sys.stderr)
+        print("      [warn] 继续创建描述文件（不带 WeatherKit entitlement）；若 Archive 报签名失败，按上面提示手工开启后重跑。")
 
     # 2) 优先复用仓库里长期保存的那张证书（secrets：CERT_PEM_BASE64 / KEY_PEM_BASE64）。
     #
@@ -597,7 +717,20 @@ def cmd_selfcheck(args, token_unused=None) -> int:
     print(f"[ok] CSR 自签名校验通过：{csr.subject.rfc4514_string()}")
     print(f"[ok] 私钥 PEM 长度 {len(key_pem)}")
     os.remove(tmp)
-    print("selfcheck 全部通过")
+
+    # WeatherKit 签名链路的**离线**检查（不需要密钥）：entitlements + project.yml。
+    problems = check_weatherkit_signing_setup()
+    if problems:
+        for problem in problems:
+            print(f"[fail] {problem}")
+        return 1
+    print("[ok] WeatherKit 签名链路：entitlements 与 project.yml 就位"
+          "（com.apple.developer.weatherkit + CODE_SIGN_ENTITLEMENTS）")
+    assert weatherkit_capability_status([{"attributes": {"capabilityType": "WEATHERKIT"}}])
+    assert not weatherkit_capability_status([{"attributes": {"capabilityType": "PUSH_NOTIFICATIONS"}}])
+    assert not weatherkit_capability_status([])
+    print("[ok] capability 判定纯函数：已开 / 未开 / 空表 三种情况都正确")
+    print("selfcheck all passed")
     return 0
 
 

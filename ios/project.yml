@@ -23,6 +23,10 @@ targets:
     platform: iOS
     sources:
       - path: TrueSolarTime
+        # entitlements 只作签名声明（CODE_SIGN_ENTITLEMENTS 引用它），
+        # 不要进 Resources 拷贝阶段（Xcode 会报「entitlements 不能被拷贝」）。
+        excludes:
+          - TrueSolarTime.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.realsuntime.solartime
@@ -45,6 +49,10 @@ targets:
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+        # WeatherKit 的 entitlement（app 侧的签名声明）。路径相对 SRCROOT（= ios/）。
+        # 需要在 App ID 上开启同名 capability，否则描述文件里没有这条、Archive 会失败：
+        #   ios/ci/asc.py 的 ensure_weatherkit_capability() 会幂等地补上。
+        CODE_SIGN_ENTITLEMENTS: TrueSolarTime/TrueSolarTime.entitlements
       configs:
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
