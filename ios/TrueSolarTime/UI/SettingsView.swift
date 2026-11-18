@@ -73,6 +73,19 @@ struct SettingsView: View {
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
                 
+            // 天气数据源：自动 / WeatherKit / Open-Meteo
+            Text(L("settings.weatherSource"))
+                .font(.system(size: 12))
+                .foregroundStyle(palette.onSurfaceVariant)
+            Text(L("weather.sourceHint"))
+                .font(.system(size: 11))
+                .foregroundStyle(palette.onSurfaceVariant)
+            HStack(spacing: 8) {
+                ForEach(WeatherSourceSetting.allCases) { setting in
+                    Button(setting.label) { model.setWeatherSource(setting) }
+                        .buttonStyle(ThemedChipButtonStyle(isSelected: setting == model.weatherSourceSetting))
+                }
+            }
             ForEach(MapStyle.selectable) { style in
                                 Button(style.label) { model.setMapStyle(style) }
                                     .buttonStyle(ThemedChipButtonStyle(isSelected: style == model.mapStyle))

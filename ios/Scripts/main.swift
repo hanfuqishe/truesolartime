@@ -2243,6 +2243,64 @@ expect(
     CoordinateTransform.isInGcjCoverage(latitude: 39.9, longitude: 116.4)
         && CoordinateTransform.wgs84ToGcj02(latitude: 39.9, longitude: 116.4).latitude != 39.9
 )
+print("== 天气数据源：WeatherKit → Open-Meteo → 7Timer ==")
+expect(
+    "自动链顺序：WeatherKit → Open-Meteo → 7Timer",
+    WeatherChain.order(setting: .auto) == [.weatherKit, .openMeteo, .sevenTimer]
+)
+expect(
+    "自动模式逐级回退：WK 失败 → Open-Meteo，再失败 → 7Timer，再没有 → nil",
+    WeatherChain.nextSource(after: .weatherKit, setting: .auto) == .openMeteo
+        && WeatherChain.nextSource(after: .openMeteo, setting: .auto) == .sevenTimer
+        && WeatherChain.nextSource(after: .sevenTimer, setting: .auto) == nil
+)
+expect(
+    "手动 WeatherKit **不回退**（失败就保留旧数据 / 显示 -）",
+    WeatherChain.order(setting: .weatherKit) == [.weatherKit]
+        && WeatherChain.nextSource(after: .weatherKit, setting: .weatherKit) == nil
+)
+expect(
+    "手动 Open-Meteo 只走 Open-Meteo（7Timer 只在自动链里）",
+    WeatherChain.order(setting: .openMeteo) == [.openMeteo]
+        && WeatherChain.nextSource(after: .openMeteo, setting: .openMeteo) == nil
+)
+expect(
+    "手动 Open-Meteo 不请求 WeatherKit；未知态一律不请求 WeatherKit",
+    !WeatherChain.shouldRequestWeatherKit(setting: .openMeteo, isLocationUnknown: false)
+        && !WeatherChain.shouldRequestWeatherKit(setting: .auto, isLocationUnknown: true)
+        && !WeatherChain.shouldRequestWeatherKit(setting: .weatherKit, isLocationUnknown: true)
+        && WeatherChain.shouldRequestWeatherKit(setting: .auto, isLocationUnknown: false)
+        && WeatherChain.shouldRequestWeatherKit(setting: .weatherKit, isLocationUnknown: false)
+)
+expect(
+    "手动 WeatherKit 时不请求 Open-Meteo；自动时才请求",
+    !WeatherChain.shouldRequestOpenMeteo(setting: .weatherKit, isLocationUnknown: false)
+        && WeatherChain.shouldRequestOpenMeteo(setting: .auto, isLocationUnknown: false)
+        && WeatherChain.shouldRequestOpenMeteo(setting: .openMeteo, isLocationUnknown: false)
+        && !WeatherChain.shouldRequestOpenMeteo(setting: .auto, isLocationUnknown: true)
+)
+expect(
+    "署名：WeatherKit → Apple 官方表述 + Apple 链接；Open-Meteo / 7Timer 沿用现有 CC BY 文案且无链接",
+    WeatherChain.attribution(for: .weatherKit).text == L("weather.attributionWeatherKit")
+        && WeatherChain.attribution(for: .weatherKit).link == "https://weatherkit.apple.com/legal-attribution.html"
+        && WeatherChain.attribution(for: .openMeteo).text == L("weather.attribution")
+        && WeatherChain.attribution(for: .openMeteo).link == nil
+        && WeatherChain.attribution(for: .sevenTimer).text == L("weather.attribution7Timer")
+)
+expect(
+    "WeatherKit 的步长是 1 小时（六格按 1 小时排）",
+    WeatherSource.weatherKit.stepHours == 1
+        && WeatherSource.weatherKit.isLowPrecision == false
+        && WeatherSource.weatherKit.displayName == L("weather.sourceWeatherKit")
+)
+expect(
+    "设置值解析：未知 / 空 → 自动；三个合法值各归各位",
+    WeatherSourceSetting.of(id: nil) == .auto
+        && WeatherSourceSetting.of(id: "") == .auto
+        && WeatherSourceSetting.of(id: "weatherkit") == .weatherKit
+        && WeatherSourceSetting.of(id: "openMeteo") == .openMeteo
+        && WeatherSourceSetting.of(id: "nonsense") == .auto
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

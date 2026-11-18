@@ -244,3 +244,14 @@
 "weather.waitingFix" = "定位中，稍后取天气";
 "weather.loading" = "正在获取天气…";
 "list.separator" = "、";
+
+"weather.sourceWeatherKit" = "Apple 天气";
+"weather.attributionWeatherKit" = " 天气";
+"weather.sourceAuto" = "自动";
+"weather.sourceOpenMeteoShort" = "Open-Meteo";
+"weather.sourceHint" = "自动：优先 Apple 天气，不可用时回退 Open-Meteo";
+"settings.weatherSource" = "天气数据源";
+"weather.diagActualSource" = "天气实际源";
+"weather.diagWeatherKitFailure" = "WeatherKit 失败";
+
+"weather.diagWeatherKitFailureFormat" = "WeatherKit 失败：%@";

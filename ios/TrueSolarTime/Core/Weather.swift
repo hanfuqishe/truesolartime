@@ -76,12 +76,15 @@ enum WeatherCondition: String, CaseIterable {
 enum WeatherSource: String, CaseIterable, Equatable {
     /// 主源：Open-Meteo，1 小时粒度。
     case openMeteo = "open-meteo"
+    /// 主源之一：**Apple WeatherKit**（原生 SDK，1 小时粒度；需要 App ID 的 WeatherKit capability）。
+    case weatherKit = "weatherkit"
     /// 备用源：7Timer!（civil 产品），3 小时粒度。
     case sevenTimer = "7timer"
 
     /// 这份数据的采样间隔（小时）。
     var stepHours: Int {
         switch self {
+        case .weatherKit: return 1
         case .openMeteo: return 1
         case .sevenTimer: return 3
         }
@@ -93,6 +96,7 @@ enum WeatherSource: String, CaseIterable, Equatable {
     /// 界面上的品牌名（三语同形，但仍走本地化表以免以后要改）。
     var displayName: String {
         switch self {
+        case .weatherKit: return L("weather.sourceWeatherKit")
         case .openMeteo: return L("weather.sourceOpenMeteo")
         case .sevenTimer: return L("weather.source7Timer")
         }
@@ -101,6 +105,7 @@ enum WeatherSource: String, CaseIterable, Equatable {
     /// 底部署名整句。主源是 CC BY 4.0，必须署名；降级到 7Timer! 后不能再写 Open-Meteo。
     var attribution: String {
         switch self {
+        case .weatherKit: return L("weather.attributionWeatherKit")
         case .openMeteo: return L("weather.attribution")
         case .sevenTimer: return L("weather.attribution7Timer")
         }

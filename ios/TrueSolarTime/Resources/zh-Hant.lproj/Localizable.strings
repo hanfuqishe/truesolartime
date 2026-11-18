@@ -245,3 +245,14 @@
 "weather.waitingFix" = "定位中，稍後取得天氣";
 "weather.loading" = "正在取得天氣…";
 "list.separator" = "、";
+
+"weather.sourceWeatherKit" = "Apple 天氣";
+"weather.attributionWeatherKit" = " 天氣";
+"weather.sourceAuto" = "自動";
+"weather.sourceOpenMeteoShort" = "Open-Meteo";
+"weather.sourceHint" = "自動：優先 Apple 天氣，不可用時回退 Open-Meteo";
+"settings.weatherSource" = "天氣資料來源";
+"weather.diagActualSource" = "天氣實際來源";
+"weather.diagWeatherKitFailure" = "WeatherKit 失敗";
+
+"weather.diagWeatherKitFailureFormat" = "WeatherKit 失敗：%@";

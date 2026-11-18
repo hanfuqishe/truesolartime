@@ -12,6 +12,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var waitingForFix = false
     /// 「跟随 GPS」的**意图**（持久化，默认 true）。注意这不是「已经有定位」。
     @Published private(set) var followGps: Bool
+    /// 天气数据源设置（自动 / WeatherKit / Open-Meteo）。
+    @Published private(set) var weatherSourceSetting: WeatherSourceSetting
     /// 本次会话是否拿到过**有效定位**（未授权 / 20 秒看门狗超时后为 false）。
     @Published private(set) var hasValidFix: Bool
     @Published private(set) var remindersEnabled: Bool
@@ -48,6 +50,7 @@ final class AppModel: ObservableObject {
     init() {
         place = settings.place
         followGps = settings.followGps
+        weatherSourceSetting = settings.weatherSource
         hasValidFix = settings.place.source == .gps && settings.followGps
         remindersEnabled = settings.remindersEnabled
         keyTimeChimeEnabled = settings.keyTimeChimeEnabled
@@ -80,6 +83,16 @@ final class AppModel: ObservableObject {
     /// 配色用的「当前是不是白天」：自动模式按太阳高度角，亮色 / 暗色强制忽略日出日落。
     ///
     /// 页面背景、卡片、大卡片渐变都读它；`SunCard` 里的太阳弧仍按真实高度角画（事实，不是配色）。
+    /// 底部署名（按**实际**天气源切换；WeatherKit 用 Apple 官方表述）。
+    var weatherAttributionText: String {
+        WeatherChain.attribution(for: weather?.source ?? .openMeteo).text
+    }
+
+    /// WeatherKit 署名必须带的链接；其它源为 nil。
+    var weatherAttributionLink: String? {
+        WeatherChain.attribution(for: weather?.source ?? .openMeteo).link
+    }
+
     var uiIsDay: Bool {
         // 未知态：没有可信坐标，太阳高度角没意义 → 按**系统时区的钟点**判昼夜
         // （06:00 ≤ 小时 < 18:00 → 白天），否则手机时间是白天也会被渲染成夜间。
@@ -100,7 +113,7 @@ final class AppModel: ObservableObject {
 
     /// 底部的数据来源署名（Open-Meteo CC BY 4.0 ↔ 7Timer!）。
     var weatherAttribution: String {
-        weatherSource.attribution
+        weatherAttributionText
     }
 
     // MARK: - 时钟
@@ -451,6 +464,12 @@ final class AppModel: ObservableObject {
     /// 把设置同步到系统的「自动熄屏」标志。
     private func applyKeepScreenOn() {
         UIApplication.shared.isIdleTimerDisabled = keepScreenOn
+    }
+
+    func setWeatherSource(_ setting: WeatherSourceSetting) {
+        weatherSourceSetting = setting
+        settings.weatherSource = setting
+        WeatherStore.shared.requestRefresh(place: place, force: true)
     }
 
     func setMapStyle(_ style: MapStyle) {

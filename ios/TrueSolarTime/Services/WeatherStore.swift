@@ -70,6 +70,10 @@ final class WeatherStore {
 
     /// 最近一次失败原因（成功时为 nil）。
     private(set) var lastErrorDescription: String?
+    /// 最近一次 WeatherKit 失败原因（诊断用；成功或未尝试时为 nil）。
+    private(set) var weatherKitFailure: String?
+    /// 本轮是否已经试过 WeatherKit（自动模式回退 Open-Meteo 时避免无限重入）。
+    private var weatherKitAttempted = false
     /// 最近一次取数的结果说明（诊断用：主源成功 / 沿用缓存 / 降到 7Timer! / 两个源都失败）。
     private(set) var lastResultDescription: String?
     /// 最近一次请求结束的时刻。
@@ -162,6 +166,34 @@ final class WeatherStore {
         }
 
         inFlight = true
+
+        // **WeatherKit 优先**（自动 / 手动 WeatherKit 且非未知态）：
+        // 成功就直接用它的快照；失败只记诊断、继续走下面的 Open-Meteo 链路（不弹错误）。
+        if WeatherChain.shouldRequestWeatherKit(
+            setting: AppSettings().weatherSource,
+            isLocationUnknown: false
+        ) {
+            weatherKitAttempted = true
+            let setting = AppSettings().weatherSource
+            WeatherKitProvider.fetch(latitude: place.latitude, longitude: place.longitude) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let snapshot):
+                    self.weatherKitFailure = nil
+                    self.finish(place: place, snapshot: snapshot, completion: completion)
+                case .failure(let failure):
+                    self.weatherKitFailure = failure.displayText
+                    self.lastErrorDescription = Lf("weather.diagWeatherKitFailureFormat", failure.displayText)
+                    // 手动 WeatherKit：不回退（保留旧数据），直接收工；自动模式下继续走 Open-Meteo。
+                    if WeatherChain.nextSource(after: .weatherKit, setting: setting) == nil {
+                        self.keepOldData(place: place, completion: completion)
+                        return
+                    }
+                    self.fetchOpenMeteoAfterWeatherKit(place: place, completion: completion)
+                }
+            }
+            return true
+        }
         attemptStartedAt = Date()
         markAttempt()
         // 当前拿的是低精度数据：记下这次「重试主源」的时刻，退避窗口（60/120/300 秒）从这里算。

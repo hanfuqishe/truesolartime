@@ -244,3 +244,14 @@
 "weather.waitingFix" = "Locating, weather will follow";
 "weather.loading" = "Fetching weather…";
 "list.separator" = ", ";
+
+"weather.sourceWeatherKit" = "Apple Weather";
+"weather.attributionWeatherKit" = " Weather";
+"weather.sourceAuto" = "Auto";
+"weather.sourceOpenMeteoShort" = "Open-Meteo";
+"weather.sourceHint" = "Auto: prefer Apple Weather, fall back to Open-Meteo";
+"settings.weatherSource" = "Weather source";
+"weather.diagActualSource" = "Actual weather source";
+"weather.diagWeatherKitFailure" = "WeatherKit failure";
+
+"weather.diagWeatherKitFailureFormat" = "WeatherKit failed: %@";
