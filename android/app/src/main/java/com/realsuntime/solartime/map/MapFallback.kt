@@ -212,6 +212,66 @@ object MapFallback {
         state.copy(viewportChangedAtMillis = nowMillis)
 
     /**
+     * 首屏并行探测的结果（见 [BasemapProbe]）：直接把「源 + 级别」定下来，
+     * 不再走 z12→z11→z10→z3 的串行降级（那套只留作运行期的兜底）。
+     *
+     * 做法：把选中级别**之上**的级别写进 [MapFallbackState.unavailableZooms]，
+     * 于是 [zoomPlan] 自然就落在探测选中的级别上，不必给 zoomPlan 加分支。
+     *
+     * 只有「自动 + 首选 OSM（境外）」才消费探测结果：境内高德本来 1 秒内出图（探测只会白等），
+     * 手动是用户的明确选择（不探测，也不改源）。
+     */
+    fun onProbeResult(
+        style: MapStyle,
+        latitude: Double,
+        longitude: Double,
+        cacheKey: String,
+        result: BasemapProbeResult,
+        state: MapFallbackState,
+        nowMillis: Long,
+    ): MapFallbackState {
+        if (style != MapStyle.AUTO) return state
+        if (style.effective(latitude, longitude) != MapStyle.OSM) return state
+        val choice = result.choice
+        val base = state.copy(
+            probeKey = cacheKey,
+            probeFinishedAtMillis = nowMillis,
+            probeSummary = choice.summary + "（${result.elapsedMillis}ms）",
+            lastFailedZoom = null,
+            zoomFailures = 0,
+        )
+        if (choice.source == MapStyle.OSM && !choice.unavailable) {
+            // OSM 通：清掉之前学到的降级记忆，直接回到默认级别。
+            return base.copy(
+                fellBack = false,
+                fallbackFailures = 0,
+                unavailableZooms = emptyMap(),
+                blankZooms = emptyMap(),
+                probeAtMillis = null,
+            )
+        }
+        // 高德：把选中级别之上的级别标成「没内容」，降级链一步落到选中的级别。
+        val seeded = base.unavailableZooms[MapStyle.AMAP_VECTOR].orEmpty() + BasemapProbe.zoomsAbove(choice)
+        return base.copy(
+            fellBack = true,
+            fallbackFailures = maxOf(base.fallbackFailures, 1),
+            probeAtMillis = nowMillis + PROBE_INTERVAL_MILLIS,
+            unavailableZooms = base.unavailableZooms + (MapStyle.AMAP_VECTOR to seeded),
+            // **必须同时打上恢复冷却**：否则选中 z3 后第一块瓦片一出图，就会触发
+            // 「最低级别出图 → 清掉降级记忆 → 弹回 z12」，接着又是空白→降级，
+            // 用户看到的是地图 3→12→11→10→3 猛跳一下（真机实测就是这样）。
+            lastRecoveryAtMillis = nowMillis,
+        )
+    }
+
+    /** 探测结果是否还在保鲜期内（同地点 + 5 分钟；换城市/切模式都会让 key 变）。 */
+    fun probeFresh(state: MapFallbackState, cacheKey: String, nowMillis: Long): Boolean {
+        val key = state.probeKey ?: return false
+        val at = state.probeFinishedAtMillis ?: return false
+        return key == cacheKey && nowMillis - at < BasemapProbe.CACHE_MILLIS
+    }
+
+    /**
      * 现在允许借「全球底图出图」把降级链弹回上一级吗（见 [RECOVERY_QUIET_MILLIS] / [RECOVERY_COOLDOWN_MILLIS]）。
      *
      * 纯函数，单测直接盯：网络一直坏时必须为 false，否则就是来回跳。
@@ -269,12 +329,15 @@ object MapFallback {
         val plan = plan(style, latitude, longitude, state)
         if (plan.effective != MapStyle.OSM) {
             val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
+            // 空白瓦片是**确定性**判据（有内容就是有内容，不会像网络失败那样抖），
+            // 所以整屏判空白时 1 次就够降一级；网络失败仍要连续 3 次才判「这级别没瓦片」。
+            val threshold = if (blank) 1 else FAILURE_THRESHOLD
             var next = state.copy(
                 lastFailedZoom = zoom,
                 zoomFailures = streak,
                 lastFailedAtMillis = nowMillis,
             )
-            if (streak >= FAILURE_THRESHOLD) {
+            if (streak >= threshold) {
                 next = next
                     .markZoom(plan.effective, zoom, available = false)
                     .copy(lastFailedZoom = null, zoomFailures = 0)
@@ -341,6 +404,12 @@ data class MapFallbackState(
     val lastFailedAtMillis: Long? = null,
     /** 最近一次借「全球底图出图」把降级链弹回去的时刻（冷却用，避免来回跳）。 */
     val lastRecoveryAtMillis: Long? = null,
+    /** 首屏并行探测用过的地点指纹（[BasemapProbe.cacheKey]）；null = 还没探过。 */
+    val probeKey: String? = null,
+    /** 首屏并行探测完成时刻（保鲜期判定用）。 */
+    val probeFinishedAtMillis: Long? = null,
+    /** 首屏并行探测的一句话结论（诊断页展示）。 */
+    val probeSummary: String? = null,
 ) {
     /** 该底图在这个级别上是否已被判定「没有瓦片」。 */
     fun zoomUnavailable(style: MapStyle, zoom: Int): Boolean = zoom in unavailableZooms[style].orEmpty()
@@ -527,6 +596,24 @@ class MapFallbackTracker(
         update { MapFallback.onTileBlank(style, latitude, longitude, zoom, it, now, colorKinds) }
     }
 
+    /** 首屏并行探测（[BasemapProbe]）有了结论：直接定源与级别。 */
+    fun onProbeResult(
+        style: MapStyle,
+        latitude: Double,
+        longitude: Double,
+        cacheKey: String,
+        result: BasemapProbeResult,
+    ) {
+        val now = clock()
+        update {
+            MapFallback.onProbeResult(style, latitude, longitude, cacheKey, result, it, now)
+        }
+    }
+
+    /** 该地点的探测结果是否还在保鲜期内（同地点 + 5 分钟）。 */
+    fun probeFresh(cacheKey: String): Boolean =
+        MapFallback.probeFresh(snapshot(), cacheKey, clock())
+
     /** 切到「自动」或重新选地点时清空记忆。 */
     fun reset() {
         zoomApplied = null
@@ -637,6 +724,7 @@ internal object MapFallbackDiagnostics {
         "首选底图 = ${styleName(plan.preferred)}",
         "地图缩放 = ${zoom.zoom}" + if (zoom.degraded) "（已降级：请求 ${zoom.requested}）" else "",
         "瓦片状态 = " + if (zoom.unavailable) "最低级别也没有瓦片（界面显示「底图不可用」）" else "正常",
+        "首屏并行探测 = ${state.probeSummary ?: "未使用"}",
         "空白瓦片判定 = ${blankLine(state)}",
         "OSM 失败次数 = ${if (plan.requested == MapStyle.AUTO) state.osmFailures else 0}",
         "下次探测 OSM = ${probeLine(plan, state, nowMillis)}",

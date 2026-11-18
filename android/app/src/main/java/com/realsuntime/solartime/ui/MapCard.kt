@@ -71,6 +71,9 @@ private const val BLANK_SCAN_RADIUS = 1
 /** 高德源定时重扫中心瓦片的间隔（覆盖「瓦片已在缓存、没有成功回调」的情况）。 */
 private const val BLANK_RESCAN_MILLIS = 2_000L
 
+/** 加载态最长盖住地图的时间：超过就收起，绝不能一直挡着（真出不来还有别的兜底）。 */
+private const val LOADING_SKELETON_TIMEOUT_MILLIS = 6_000L
+
 /**
  * 地图卡片。
  *
@@ -89,6 +92,8 @@ private const val BLANK_RESCAN_MILLIS = 2_000L
 fun MapCard(
     place: Place,
     ui: MapUiState,
+    loading: Boolean,
+    ready: Boolean,
     isZoomUnavailable: (Int) -> Boolean,
     onTileEvent: (TileEvent) -> Unit,
     onViewportApplied: (Int) -> Unit,
@@ -98,6 +103,19 @@ fun MapCard(
     val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
     val style = ui.source
+    // 加载态延迟 120ms 再显示：国内/缓存命中时瓦片 1 帧就出来，别闪一下骨架。
+    // 6 秒兜底：无论如何都不能让骨架长期盖住地图（真出不来还有「底图不可用」或地图本身兜底）。
+    var showSkeleton by remember { mutableStateOf(false) }
+    LaunchedEffect(loading) {
+        if (loading) {
+            delay(120L)
+            showSkeleton = true
+            delay(LOADING_SKELETON_TIMEOUT_MILLIS)
+            showSkeleton = false
+        } else {
+            showSkeleton = false
+        }
+    }
     // 瓦片回调挂在很久以前创建的 MapView 上，必须拿「最新一版」回调，不能记住 factory 那一刻的。
     val latestTileEvent = rememberUpdatedState(onTileEvent)
     // 空白检测也要看「最新一版」的源：factory 里记住的 style 在回退之后就是旧的了。
@@ -134,23 +152,28 @@ fun MapCard(
                     .aspectRatio(mapAspectRatio)
                     .clip(RoundedCornerShape(16.dp)),
             ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { context ->
-                        createMapView(
-                            context = context,
-                            place = place,
-                            style = style,
-                            zoom = ui.zoom,
-                            watcher = blankWatcher,
-                            onTileEvent = { event -> latestTileEvent.value(event) },
-                        ).also { mapView = it }
-                    },
-                    update = { view -> syncMap(view, place, style) },
-                )
+                if (ready) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { context ->
+                            createMapView(
+                                context = context,
+                                place = place,
+                                style = style,
+                                zoom = ui.zoom,
+                                watcher = blankWatcher,
+                                onTileEvent = { event -> latestTileEvent.value(event) },
+                            ).also { mapView = it }
+                        },
+                        update = { view -> syncMap(view, place, style) },
+                    )
+                }
                 if (ui.unavailable) {
                     // 真没网：地图区域给一行字，别让用户对着一块空白以为功能坏了。
                     MapUnavailableLabel()
+                } else if (!ready || showSkeleton) {
+                    // 还没出图（并行探测中 / 切城市后等第一块瓦片）：立刻给骨架 + 一行小字，别让用户干等。
+                    MapLoadingLabel()
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -177,6 +200,11 @@ fun MapCard(
             view.controller.setZoom(ui.zoom.toDouble())
         }
         view.controller.setCenter(target)
+        // **必须重绘一次**：切源（OSM→高德）和改级别都会把在飞的请求取消掉，
+        // osmdroid 只有在下一次 draw 时才会按新的 tile 队列重新发请求 ——
+        // 不主动 invalidate 的话，真机上会出现「探测已经定好级别、地图却一直不请求瓦片」
+        // （实测：不重绘就一直停在骨架，手指轻扫一下地图瓦片立刻全出来）。
+        view.invalidate()
         // 告诉状态机「视口刚被程序化改过」：这之后 2 秒内回来的瓦片失败是被取消的旧请求，不计入降级。
         onViewportApplied(ui.zoom)
     }
@@ -243,6 +271,42 @@ private fun MapUnavailableLabel() {
             style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 加载态：几块静态骨架 + 一行「正在载入底图…」。
+ *
+ * 刻意用**静态**骨架（不用转圈/呼吸动画）：这张卡片在滚动列表里，动画会一直请求下一帧，
+ * 反过来又容易和「停止刷新」的预期打架；静态块 + 小字已经足够表达「在等」。
+ */
+@Composable
+private fun MapLoadingLabel() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            val barColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f)
+            listOf(0.62f, 0.86f, 0.48f).forEach { widthFraction ->
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .fillMaxWidth(widthFraction)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(barColor),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.map_loading),
+                style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -479,6 +543,8 @@ private fun syncMap(view: MapView, place: Place, style: MapStyle) {
     val tileSource = MapTileSources.tileSourceOf(style)
     if (view.tileProvider.tileSource.name() != tileSource.name()) {
         view.setTileSource(tileSource)
+        // 切源会清空瓦片缓存：再推一次重绘，别让地图停在旧队列上等下一次手势。
+        view.invalidate()
     }
     val marker = view.overlays.filterIsInstance<Marker>().firstOrNull() ?: return
     val (latitude, longitude) = markerPointOf(place, style)

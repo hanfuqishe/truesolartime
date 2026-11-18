@@ -77,6 +77,7 @@
     <string name="map_attribution_amap">底图 © 高德地图</string>
     <string name="map_auto_fallback">OSM 不可达，已回退高德</string>
     <string name="map_unavailable">底图不可用</string>
+    <string name="map_loading">正在载入底图…</string>
     <string name="widget_label">真太阳时</string>
     <string name="widget_label_civil">标准时间</string>
     <string name="widget_waiting_gps">等待 GPS 定位…</string>

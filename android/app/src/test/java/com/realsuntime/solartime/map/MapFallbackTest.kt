@@ -382,6 +382,128 @@ class MapFallbackTest {
         assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
     }
 
+    // ------------------------------------------------------------ 空白瓦片：一次即降级
+
+    @Test
+    fun aSingleBlankViewportDegradesOneLevel() {
+        // 空白是确定性判据（有内容就是有内容），不像网络失败会抖 → 一次就降一级。
+        val tracker = newTracker()
+        tracker.failTiles(threshold) // 先回退到高德
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+
+        tracker.blankTiles(1, zoom = 12)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
+        assertEquals(1, tracker.snapshot().blankTileCount)
+    }
+
+    // ------------------------------------------------------------ 首屏并行探测：直接定源与级别
+
+    @Test
+    fun probeResultPicksTheSourceAndZoomDirectly() {
+        val tracker = newTracker()
+        val key = BasemapProbe.cacheKey(paris.first, paris.second)
+
+        // OSM 通 → OSM + 默认级别
+        tracker.onProbeResult(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            key,
+            BasemapProbeResult(
+                osmReachable = true,
+                amap = emptyList(),
+                elapsedMillis = 300,
+            ),
+        )
+        var plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.OSM, plan.effective)
+        assertFalse(plan.fellBack)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+
+        // OSM 不通 + 高德只有 z10 有内容 → 高德 + 直接落 z10（不再逐级降）
+        tracker.onProbeResult(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            key,
+            BasemapProbeResult(
+                osmReachable = false,
+                amap = listOf(
+                    BasemapProbe.AmapProbe(12, hasContent = false, colorKinds = 1, fetched = true),
+                    BasemapProbe.AmapProbe(10, hasContent = true, colorKinds = 42, fetched = true),
+                    BasemapProbe.AmapProbe(3, hasContent = true, colorKinds = 6, fetched = true),
+                ),
+                elapsedMillis = 900,
+            ),
+        )
+        plan = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+        assertTrue(plan.fellBack)
+        assertEquals(10, tracker.zoomPlan(plan, 12).zoom)
+        assertTrue(tracker.snapshot().probeSummary?.contains("z10 有内容") == true)
+
+        // 高德全空 → 底图不可用
+        tracker.onProbeResult(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            key,
+            BasemapProbeResult(
+                osmReachable = false,
+                amap = BasemapProbe.AMAP_PROBE_ZOOMS.map {
+                    BasemapProbe.AmapProbe(it, hasContent = false, colorKinds = 1, fetched = true)
+                },
+                elapsedMillis = 800,
+            ),
+        )
+        plan = tracker.planAt(MapStyle.AUTO, paris)
+        val offline = tracker.zoomPlan(plan, 12)
+        assertEquals(MapFallback.MIN_ZOOM, offline.zoom)
+        assertTrue(offline.unavailable)
+    }
+
+    @Test
+    fun probeResultIsIgnoredInsideChinaAndInManualMode() {
+        val key = BasemapProbe.cacheKey(beijing.first, beijing.second)
+        val choice = BasemapProbeResult(false, emptyList(), elapsedMillis = 100)
+
+        // 境内：首选就是高德，探测结论不该改任何东西（尤其不该把 z12 标成没内容）
+        val tracker = newTracker()
+        tracker.onProbeResult(MapStyle.AUTO, beijing.first, beijing.second, key, choice)
+        val plan = tracker.planAt(MapStyle.AUTO, beijing)
+        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+        assertFalse(plan.fellBack)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+        assertEquals(null, tracker.snapshot().probeKey)
+
+        // 手动选择：不探测、不改源
+        tracker.onProbeResult(MapStyle.AMAP_SATELLITE, paris.first, paris.second, key, choice)
+        assertEquals(MapStyle.AMAP_SATELLITE, tracker.planAt(MapStyle.AMAP_SATELLITE, paris).effective)
+        assertEquals(null, tracker.snapshot().probeKey)
+    }
+
+    @Test
+    fun probeCacheIsFreshForTheSamePlaceOnly() {
+        val tracker = newTracker()
+        val key = BasemapProbe.cacheKey(paris.first, paris.second)
+        assertFalse("没探过不算新鲜", tracker.probeFresh(key))
+
+        tracker.onProbeResult(
+            MapStyle.AUTO,
+            paris.first,
+            paris.second,
+            key,
+            BasemapProbeResult(osmReachable = true, amap = emptyList(), elapsedMillis = 200),
+        )
+        assertTrue("同地点刚探过 → 缓存命中", tracker.probeFresh(key))
+        assertFalse("换城市 → 必须重探", tracker.probeFresh(BasemapProbe.cacheKey(beijing.first, beijing.second)))
+
+        // 5 分钟后过期
+        now += BasemapProbe.CACHE_MILLIS + 1_000L
+        assertTrue("过期 → 重探", BasemapProbe.shouldProbe(key, key, now - BasemapProbe.CACHE_MILLIS - 1_000L, now))
+    }
+
     // ------------------------------------------------------------ 只有「有效 plan」变化才对外发状态
 
     @Test
@@ -587,19 +709,19 @@ class MapFallbackTest {
     }
 
     @Test
-    fun aRealTileBetweenBlanksResetsTheBlankStreak() {
+    fun aRealTileClearsTheBlankVerdict() {
         val tracker = newTracker()
         tracker.failTiles(threshold)
         val plan = tracker.planAt(MapStyle.AUTO, paris)
 
-        tracker.blankTiles(threshold - 1)
-        tracker.loadTiles(1) // 中间画出一块正常瓦片
-        tracker.blankTiles(threshold - 1)
+        // 整屏空白 → 该级别立刻判「没内容」（空白是确定性判据，不用连击）
+        tracker.blankTiles(1, zoom = 12)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
 
-        // 没凑够「同一级别连续 3 次」，不该降级
+        // 真画出一块有内容的瓦片（高德恢复了 / 换到有数据的地区）→ 该级别恢复可用
+        tracker.loadTiles(1, zoom = 12)
         assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
-        assertEquals(threshold - 1, tracker.snapshot().zoomFailures)
-        assertEquals((threshold - 1) * 2, tracker.snapshot().blankTileCount)
+        assertEquals(1, tracker.snapshot().blankTileCount)
     }
 
     // ------------------------------------------------------------ 诊断文案

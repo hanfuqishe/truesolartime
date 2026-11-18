@@ -14,6 +14,8 @@ import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
 import com.realsuntime.solartime.data.ThemeMode
 import com.realsuntime.solartime.data.WeatherRepository
+import com.realsuntime.solartime.map.BasemapProbe
+import com.realsuntime.solartime.map.BasemapProbeRunner
 import com.realsuntime.solartime.map.MapFallbackSession
 import com.realsuntime.solartime.map.MapFallbackState
 import com.realsuntime.solartime.map.MapStyle
@@ -88,6 +90,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val mapUi: StateFlow<MapUiState> = _mapUi.asStateFlow()
 
+    /**
+     * 地图还没出图（切城市 / 换源 / 首屏探测期间）：地图区域立刻显示「正在载入底图…」，
+     * 第一块瓦片画出来（或判定「底图不可用」）就收起来。
+     *
+     * 与 [mapUi] 分开是因为它的变化节奏不同：它只在「开始等」和「等到了」这两个时刻各变一次。
+     */
+    private val _mapLoading = MutableStateFlow(true)
+    val mapLoading: StateFlow<Boolean> = _mapLoading.asStateFlow()
+
+    /**
+     * 地图「可以出场了」：境外要等并行探测有结论再建 MapView。
+     *
+     * 为什么要等：MapView 一旦用错的源/级别建出来，随后切源 + 改级别会清空瓦片缓存、取消在飞请求，
+     * osmdroid 在新队列上不一定马上重发（真机实测：一直停在加载态，手指划一下地图才出图）。
+     * 让 MapView 一出生就是探测选定的源 + 级别，首屏既快又稳。
+     */
+    private val _mapReady = MutableStateFlow(true)
+    val mapReady: StateFlow<Boolean> = _mapReady.asStateFlow()
+
+    /** 首屏并行探测的任务（换城市就取消上一次，避免旧结论盖掉新地点）。 */
+    private var probeJob: kotlinx.coroutines.Job? = null
+
     private val _keepScreenOn = MutableStateFlow(settings.keepScreenOn)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
@@ -135,9 +159,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         DistrictResolver.requestRefresh(application, settings.place)
         // 底图回退后的 OSM 探测：回退到高德之后每 5 分钟试一次 OSM（只取一块最低级别的小瓦片）。
         // 放在 IO 线程上，绝不挡 UI；成功即刻切回 OSM 并清零失败计数（见 MapFallbackTracker.probeIfDue）。
+        // 顺带负责「首屏并行探测」的 5 分钟重探：结论过期（或上次判了「不可用」）就重新探一次。
         viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 runCatching { mapFallback.probeIfDue() }
+                runCatching { maybeProbeBasemap() }
                 delay(MAP_PROBE_TICK_MILLIS)
             }
         }
@@ -145,7 +171,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             combine(mapFallback.state, _place, _mapStyle) { state, place, style ->
                 MapUiState.of(style, place.latitude, place.longitude, state)
-            }.distinctUntilChanged().collect { _mapUi.value = it }
+            }.distinctUntilChanged().collect {
+                _mapUi.value = it
+                if (it.unavailable) _mapLoading.value = false // 「底图不可用」也是一种结论，别一直转圈
+            }
         }
         // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
         // 小组件也会被系统屏蔽（桌面显示「加载失败」），打开一次就恢复。
@@ -258,7 +287,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _mapStyle.value = style
         // 「自动 / 手动」是一整套不同的规则：换过就清掉会话里学到的回退记忆，
         // 否则刚在手动高德下看过的失败计数会被带进自动模式（反之亦然）。
-        if (style != previous) mapFallback.reset()
+        if (style != previous) {
+            mapFallback.reset()
+            startLoading()
+            _mapReady.value = !BasemapProbe.needsProbe(style, _place.value.latitude, _place.value.longitude)
+            // 切回自动 = 重新给探测一次机会（用户明确换了模式，别拿旧结论糊弄他）。
+            maybeProbeBasemap(force = true)
+        }
     }
 
     /**
@@ -271,6 +306,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onMapTileEvent(event: TileEvent) {
         val place = _place.value
         val style = _mapStyle.value
+        // 有瓦片画出来了：收起「正在载入底图…」。
+        if (event.result == TileResult.LOADED) _mapLoading.value = false
         // 只记诊断用的「当下级别」，**不**开「刚改过视口」的残响窗口：
         // 瓦片事件是结果不是原因，拿它当视口变化会把窗口无限续期，真失败就再也数不到了。
         mapFallback.noteTileZoom(event.zoom)
@@ -291,6 +328,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mapFallback.onZoomApplied(zoom)
     }
 
+
     /** 这一级是否已被判「没内容/没瓦片」（空白检测的定时重扫据此跳过已经判过的级别）。 */
     fun isMapZoomUnavailable(zoom: Int): Boolean {
         val place = _place.value
@@ -302,6 +340,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state,
         )
         return state.zoomUnavailable(plan.effective, zoom)
+    }
+
+    /** 地图「还没出图」：切城市/换源后立刻置 true，第一块瓦片出来（或判定不可用）后置 false。 */
+    private fun startLoading() {
+        _mapLoading.value = true
+    }
+
+    /**
+     * 首屏并行探测（见 [BasemapProbe]）：境外（自动 + 首选 OSM）时并发取 4 块单瓦片，
+     * 用「有内容的最高精度」直接定源与级别，避免串行等三次超时 + 逐级降级。
+     *
+     * 缓存：同地点 + 5 分钟内只探一次（[MapFallbackState.probeKey]）。
+     * 境内（首选高德）与手动选择都不探测。
+     */
+    private fun maybeProbeBasemap(force: Boolean = false) {
+        val place = _place.value
+        val style = _mapStyle.value
+        if (!BasemapProbe.needsProbe(style, place.latitude, place.longitude)) return
+        val key = BasemapProbe.cacheKey(place.latitude, place.longitude)
+        if (!force && mapFallback.probeFresh(key)) return
+        probeJob?.cancel()
+        if (!mapFallback.probeFresh(key)) {
+            // 要探测：先把地图藏起来等结论（骨架已经在显示），MapView 直接按选定的源/级别出生。
+            _mapReady.value = false
+        }
+        probeJob = viewModelScope.launch(Dispatchers.IO) {
+            // 探测自身出异常时不改状态：让运行期的失败统计兜底，别凭一次异常就判「不可用」。
+            val result = runCatching {
+                BasemapProbeRunner.probe(place.latitude, place.longitude)
+            }.getOrNull() ?: run {
+                _mapReady.value = true // 探测失败也要把地图放出来（走运行期兜底）
+                return@launch
+            }
+            mapFallback.onProbeResult(style, place.latitude, place.longitude, key, result)
+            _mapReady.value = true
+        }
     }
 
     fun setKeepScreenOn(enabled: Boolean) {
@@ -347,6 +421,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val previous = _place.value
         settings.place = place
         _place.value = place
+        // 立刻进入加载态，并（境外）并发探测底图：首屏不再干等串行超时 + 逐级降级。
+        startLoading()
+        _mapReady.value = !BasemapProbe.needsProbe(_mapStyle.value, place.latitude, place.longitude)
+        maybeProbeBasemap()
         // 用户重新选了地点：自动模式下的回退记忆跟着地点走 —— 换城市就重新给 OSM 一次机会。
         // GPS 漂移（不是用户选择）不算，否则每分钟的定位刷新都会把回退清掉、白折腾一遍瓦片。
         if (userChosen && _mapStyle.value == MapStyle.AUTO) {
