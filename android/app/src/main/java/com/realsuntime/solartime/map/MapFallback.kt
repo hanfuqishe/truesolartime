@@ -488,6 +488,16 @@ data class MapUiState(
     val fellBack: Boolean,
 ) {
     companion object {
+        /**
+         * 未知态（定位不可用）用的「无坐标」锚点：赤道与本初子午线的交点。
+         *
+         * 用 (0, 0) 而不是上一个地点的坐标：源的选择（[MapStyle.effective]）本来就要看境内/境外，
+         * 拿旧坐标去判断等于让旧地点继续决定底图；0°E/0°N 落在境外，于是走「OSM + 高德兜底」，
+         * 也就是现有的境外自动探测规则。
+         */
+        const val UNKNOWN_LATITUDE = 0.0
+        const val UNKNOWN_LONGITUDE = 0.0
+
         /** 由「设置 + 地点 + 会话状态」算出 UI 状态（纯函数，单测直接盯相等性）。 */
         fun of(style: MapStyle, latitude: Double, longitude: Double, state: MapFallbackState): MapUiState {
             val plan = MapFallback.plan(style, latitude, longitude, state)
@@ -498,6 +508,25 @@ data class MapUiState(
                 zoom = zoomPlan.zoom,
                 degraded = zoomPlan.degraded,
                 unavailable = zoomPlan.unavailable,
+                fellBack = plan.fellBack,
+            )
+        }
+
+        /**
+         * **未知态**的地图状态：没有坐标，级别固定为最低的全球底图 [MapFallback.MIN_ZOOM]。
+         *
+         * 源仍按现有规则挑（自动模式 = 境内高德 / 境外 OSM，无坐标按境外处理），
+         * 回退与「底图不可用」也照旧由会话状态机决定 —— 只是不再有具体地点的标记与经纬度。
+         */
+        fun ofUnknown(style: MapStyle, state: MapFallbackState): MapUiState {
+            val plan = MapFallback.plan(style, UNKNOWN_LATITUDE, UNKNOWN_LONGITUDE, state)
+            return MapUiState(
+                requested = plan.requested,
+                source = plan.effective,
+                zoom = MapFallback.MIN_ZOOM,
+                // 固定 z3 是产品口径（看全球底图），不是「被降级」。
+                degraded = false,
+                unavailable = state.zoomUnavailable(plan.effective, MapFallback.MIN_ZOOM),
                 fellBack = plan.fellBack,
             )
         }

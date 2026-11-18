@@ -49,6 +49,7 @@ import com.realsuntime.solartime.map.TileBlank
 import com.realsuntime.solartime.map.TileContent
 import com.realsuntime.solartime.map.TileEvent
 import com.realsuntime.solartime.map.TileResult
+import com.realsuntime.solartime.solar.Placeholders
 import com.realsuntime.solartime.solar.TimeFormat
 import kotlinx.coroutines.delay
 import org.osmdroid.tileprovider.MapTileProviderBase
@@ -92,6 +93,11 @@ private const val LOADING_SKELETON_TIMEOUT_MILLIS = 6_000L
 fun MapCard(
     place: Place,
     ui: MapUiState,
+    /**
+     * 定位不可用（未知态）：没有坐标可标 —— 不画定位标记、右上角经纬度显示 `—`，
+     * 视口由 [MapUiState.ofUnknown] 固定为最低级别的全球底图（z3）。
+     */
+    locationUnknown: Boolean,
     loading: Boolean,
     ready: Boolean,
     isZoomUnavailable: (Int) -> Boolean,
@@ -140,7 +146,12 @@ fun MapCard(
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = TimeText.coordinates(context, place.latitude, place.longitude),
+                    // 未知态没有坐标：右上角显示 `—`（不要写上一次地点的经纬度）。
+                    text = if (locationUnknown) {
+                        Placeholders.coordinates()
+                    } else {
+                        TimeText.coordinates(context, place.latitude, place.longitude)
+                    },
                     style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -161,11 +172,12 @@ fun MapCard(
                                 place = place,
                                 style = style,
                                 zoom = ui.zoom,
+                                showMarker = !locationUnknown,
                                 watcher = blankWatcher,
                                 onTileEvent = { event -> latestTileEvent.value(event) },
                             ).also { mapView = it }
                         },
-                        update = { view -> syncMap(view, place, style) },
+                        update = { view -> syncMap(view, place, style, showMarker = !locationUnknown) },
                     )
                 }
                 if (ui.unavailable) {
@@ -191,9 +203,14 @@ fun MapCard(
     // * 以前用 `animateTo`（带动画）+ 另一个 `LaunchedEffect` 里 `setZoom`，两个效果会互相打断 ——
     //   `setZoom` 会 `forceFinished` 掉平移动画，地图就停在中途，真机上就是「标记不在中心」；
     // * 居中放在缩放之后再做一次，是因为缩放会按当前滚动中心重算，先居中再缩放偶尔会差几个像素。
-    LaunchedEffect(place, ui.source, ui.zoom, mapView) {
+    LaunchedEffect(place, ui.source, ui.zoom, mapView, locationUnknown) {
         val view = mapView ?: return@LaunchedEffect
-        val (latitude, longitude) = markerPointOf(place, ui.source)
+        // 未知态没有观测点：视口落在 (0, 0)（境外口径的全球底图中心），不标任何位置。
+        val (latitude, longitude) = if (locationUnknown) {
+            MapUiState.UNKNOWN_LATITUDE to MapUiState.UNKNOWN_LONGITUDE
+        } else {
+            markerPointOf(place, ui.source)
+        }
         val target = GeoPoint(latitude, longitude)
         view.controller.setCenter(target)
         if (view.zoomLevelDouble.roundToInt() != ui.zoom) {
@@ -319,6 +336,8 @@ private fun createMapView(
     place: Place,
     style: MapStyle,
     zoom: Int,
+    /** 是否画定位标记：未知态（定位不可用）为 false —— 没有坐标可标。 */
+    showMarker: Boolean,
     watcher: TileBlankWatcher,
     onTileEvent: (TileEvent) -> Unit,
 ): MapView {
@@ -334,13 +353,7 @@ private fun createMapView(
         maxZoomLevel = MapFallback.MAX_ZOOM.toDouble()
         controller.setZoom(zoom.toDouble())
         controller.setCenter(center)
-        overlays.add(
-            Marker(this).apply {
-                position = center
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                title = place.label
-            },
-        )
+        if (showMarker) overlays.add(newMarker(this, place, style))
         // 地图嵌在可滚动列表中：手势落在图上时由地图接管，避免父级滚动抢夺。
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
@@ -539,14 +552,38 @@ private data class TileScan(val inspected: Int, val blanks: List<TileEvent>) {
     }
 }
 
-private fun syncMap(view: MapView, place: Place, style: MapStyle) {
+/** 定位标记：位置取该底图坐标系里的坐标，标题是地名（未知态不建它）。 */
+private fun newMarker(view: MapView, place: Place, style: MapStyle): Marker {
+    val (latitude, longitude) = markerPointOf(place, style)
+    return Marker(view).apply {
+        position = GeoPoint(latitude, longitude)
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        title = place.label
+    }
+}
+
+private fun syncMap(view: MapView, place: Place, style: MapStyle, showMarker: Boolean) {
     val tileSource = MapTileSources.tileSourceOf(style)
     if (view.tileProvider.tileSource.name() != tileSource.name()) {
         view.setTileSource(tileSource)
         // 切源会清空瓦片缓存：再推一次重绘，别让地图停在旧队列上等下一次手势。
         view.invalidate()
     }
-    val marker = view.overlays.filterIsInstance<Marker>().firstOrNull() ?: return
+    val marker = view.overlays.filterIsInstance<Marker>().firstOrNull()
+    if (!showMarker) {
+        // 进入未知态：把标记摘掉（地图上不能留一个「看起来就是这里」的点）。
+        if (marker != null) {
+            view.overlays.remove(marker)
+            view.invalidate()
+        }
+        return
+    }
+    if (marker == null) {
+        // 从未知态恢复：补回标记。
+        view.overlays.add(newMarker(view, place, style))
+        view.invalidate()
+        return
+    }
     val (latitude, longitude) = markerPointOf(place, style)
     if (marker.position.latitude != latitude || marker.position.longitude != longitude) {
         marker.position = GeoPoint(latitude, longitude)

@@ -60,6 +60,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 fun SettingsSheet(
     place: Place,
     trackingGps: Boolean,
+    /** 定位不可用（未知态）：「当前位置」那一行不能写上一个地点的名字与经纬度。 */
+    locationUnknown: Boolean = false,
     remindersEnabled: Boolean,
     keyTimeChimeEnabled: Boolean,
     keepScreenOn: Boolean,
@@ -131,7 +133,12 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "${TimeText.placeLabel(context, place)}　${TimeText.coordinates(context, place.latitude, place.longitude)}",
+                // 未知态：位置就是「不知道」，不要写上一个城市（那是要避免的误导）。
+                text = if (locationUnknown) {
+                    stringResource(R.string.location_unavailable)
+                } else {
+                    "${TimeText.placeLabel(context, place)}　${TimeText.coordinates(context, place.latitude, place.longitude)}"
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))

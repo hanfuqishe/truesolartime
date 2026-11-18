@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -70,25 +71,35 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.realsuntime.solartime.BuildConfig
 import com.realsuntime.solartime.MainViewModel
 import com.realsuntime.solartime.R
+import com.realsuntime.solartime.data.LocationAvailability
 import com.realsuntime.solartime.data.TakeBand
 import com.realsuntime.solartime.data.TakeTemperature
 import com.realsuntime.solartime.data.WeatherRepository
+import com.realsuntime.solartime.solar.Placeholders
 import com.realsuntime.solartime.solar.Shichen
 import com.realsuntime.solartime.solar.SolarSnapshot
 import com.realsuntime.solartime.solar.SolarTimeMath
@@ -160,6 +171,16 @@ private val SUN_LABEL_SIDE_INSET = 8.dp
 /** 地图视口的宽高比：手机 4:3、平板 16:9（与鸿蒙版一致）。 */
 private const val PHONE_MAP_ASPECT_RATIO = 4f / 3f
 private const val WIDE_MAP_ASPECT_RATIO = 16f / 9f
+/** 未知态占位符的不透明度：比真实读数淡一档，强化「占位」观感。 */
+private const val PLACEHOLDER_ALPHA = 0.6f
+/**
+ * 未知态时钟占位符的字距（em）。
+ *
+ * 半角 `-` 在拉丁字体里本来就是一短横，字距只要**很小**一点、让一对 `-` 不至于粘成一条长横：
+ * 0.06em ≈ 7px（主字号），两个 `-` 之间约 24px、冒号两侧约 17px —— 仍然读得出「两短横 + 冒号」。
+ * 再大（试过 0.16em）四个 `-` 会被均匀拉开，看着就是虚线碎片了。
+ */
+private const val PLACEHOLDER_LETTER_SPACING_EM = 0.06f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,6 +189,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val place by viewModel.place.collectAsStateWithLifecycle()
     val trackingGps by viewModel.trackingGps.collectAsStateWithLifecycle()
     val waitingForFix by viewModel.waitingForFix.collectAsStateWithLifecycle()
+    // 定位不可用（未知态）：跟随 GPS 却拿不到定位时，界面上不能继续演上一个城市。
+    val locationUnknown by viewModel.locationUnknown.collectAsStateWithLifecycle()
     val remindersEnabled by viewModel.remindersEnabled.collectAsStateWithLifecycle()
     val keyTimeChimeEnabled by viewModel.keyTimeChimeEnabled.collectAsStateWithLifecycle()
     val districtName by viewModel.districtName.collectAsStateWithLifecycle()
@@ -186,27 +209,54 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
 
     // 卡片上的城市：
-    // ① 反查到的行政区划优先；
-    // ② 反查还没回来/失败时，只有「预设城市」才回退到城市名；
-    // ③ 手工坐标与 GPS 定位没有城市名可用（标签是「手动设置」这类占位词，不该显示），
+    // ① 未知态（跟随 GPS 但没定位）：不能写「上一个城市」，只写「定位不可用」（可点击去系统设置）；
+    // ② 反查到的行政区划优先；
+    // ③ 反查还没回来/失败时，只有「预设城市」才回退到城市名；
+    // ④ 手工坐标与 GPS 定位没有城市名可用（标签是「手动设置」这类占位词，不该显示），
     //    一律显示减号，等反查结果到了再换成区划名。
-    val cityText = cityLabel(
-        districtName = districtName,
-        presetLabel = place.labelResName?.let { TimeText.placeLabel(context, place) },
-        unknown = stringResource(R.string.city_unknown),
-    )
+    val cityText = if (locationUnknown) {
+        stringResource(R.string.location_unavailable)
+    } else {
+        cityLabel(
+            districtName = districtName,
+            presetLabel = place.labelResName?.let { TimeText.placeLabel(context, place) },
+            unknown = stringResource(R.string.city_unknown),
+        )
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
-    val snapshot = remember(now, place, zoneOffsetSeconds) {
-        SolarTimeSnapshot.compute(now, place.latitude, place.longitude, zoneOffsetSeconds)
+    // 未知态的标准时间用**系统时区**（不是上一次地点的时区）：只取偏移，太阳相关的读数一律留空。
+    val systemOffsetSeconds = remember(now.epochSecond / 60) {
+        LocationAvailability.systemOffsetSeconds(now)
+    }
+    val snapshot = remember(now, place, zoneOffsetSeconds, systemOffsetSeconds, locationUnknown) {
+        if (locationUnknown) {
+            // 没有坐标：只借 SolarSnapshot 的「标准时钟」口径（lat/lon 传 0，太阳值不显示、也不参与主题）。
+            SolarTimeSnapshot.compute(now, 0.0, 0.0, systemOffsetSeconds)
+        } else {
+            SolarTimeSnapshot.compute(now, place.latitude, place.longitude, zoneOffsetSeconds)
+        }
     }
 
     // 大卡片里的日期、天气、逐时预报与关键时段：半分钟刷新一次就够，不必每秒读偏好；
     // 但新数据一到（例如刚换了城市、天气刚取回来）要立刻重算，所以把天气版本号也当键。
     val weatherRevision = WeatherRepository.revision()
-    val heroExtras = remember(place, now.epochSecond / 30, weatherRevision, zoneOffsetSeconds) {
-        loadHeroExtras(context, place, now, zoneOffsetSeconds)
+    val heroExtras = if (locationUnknown) {
+        // 未知态：日期照常（按系统时区），天气与逐时留空 —— 没有坐标就没有天气。
+        remember(now.epochSecond / 30, systemOffsetSeconds) {
+            unknownHeroExtras(
+                context = context,
+                now = now,
+                zoneOffsetSeconds = systemOffsetSeconds,
+                weatherPlaceholder = Placeholders.weather(),
+                temperaturePlaceholder = Placeholders.temperature(),
+            )
+        }
+    } else {
+        remember(place, now.epochSecond / 30, weatherRevision, zoneOffsetSeconds) {
+            loadHeroExtras(context, place, now, zoneOffsetSeconds)
+        }
     }
     // 天气来源（Open-Meteo / 7Timer!）只随缓存版本号变：底部署名跟着它切换，别每秒读一次偏好。
     val weatherSource = remember(weatherRevision) { WeatherRepository.source(context) }
@@ -230,6 +280,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         if (granted) {
             viewModel.startGpsTracking()
         } else {
+            // 先把「要跟随 GPS」这个意图落进 ViewModel：没权限时它立刻进未知态
+            // （不能一边说要跟随定位、一边继续显示上一个地点的太阳时），再去要权限。
+            viewModel.beginGpsFollowingWithoutPermission()
             locationPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -237,6 +290,17 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 ),
             )
         }
+    }
+
+    // 未知态的地名「定位不可用」可点击：跳到系统「应用详情 / 权限」页，用户在那里允许定位。
+    val openLocationSettings: () -> Unit = {
+        viewModel.postMessage(context.getString(R.string.location_unavailable_hint))
+        PowerSettings.openAppDetailsSettings(context)
+    }
+
+    // 从系统设置回来（刚授权 / 刚撤销定位）：重新核对未知态，别等用户再点一次。
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.syncLocationState()
     }
 
     // 默认跟随 GPS：首次启动自动申请一次定位权限。
@@ -287,7 +351,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
     // 主题跟着太阳走：白天浅色，夜晚整体换深色（不再看系统的深色开关）。
     // 设置里选了「亮色/暗色」就忽略日出日落，强制用那一套；默认「自动」= 原来的行为。
-    val uiIsDay = !themeMode.isDark(sunIsUp = snapshot.isDay)
+    // 未知态没有太阳高度角：按系统时区的钟点粗判昼夜（不能拿上一个地点的太阳高度角来推断）。
+    val sunIsUp = if (locationUnknown) {
+        LocationAvailability.isDaytime(snapshot.localStandardTime)
+    } else {
+        snapshot.isDay
+    }
+    val uiIsDay = !themeMode.isDark(sunIsUp = sunIsUp)
     TrueSolarTimeTheme(darkTheme = !uiIsDay) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -311,11 +381,15 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 Column {
                     Header(
                         // 只有跟随 GPS 才显示「GPS」徽标；预设城市 / 手动坐标什么都不显示
-                        // （地名在下面大卡片里，标题行不占位）。
-                        badge = HeaderBadge.textFor(
-                            place.source,
-                            stringResource(R.string.location_badge_gps),
-                        ),
+                        // （地名在下面大卡片里，标题行不占位）。未知态没有定位，同样不显示。
+                        badge = if (locationUnknown) {
+                            null
+                        } else {
+                            HeaderBadge.textFor(
+                                place.source,
+                                stringResource(R.string.location_badge_gps),
+                            )
+                        },
                         onOpenSettings = { showSettings = true },
                     )
                     Spacer(Modifier.height(12.dp))
@@ -335,8 +409,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                     HeroCard(
                                         snapshot = snapshot,
                                         districtName = cityText,
-                                        coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                                        coordinates = if (locationUnknown) {
+                                            Placeholders.coordinates()
+                                        } else {
+                                            TimeText.coordinates(context, place.latitude, place.longitude)
+                                        },
                                         waitingForFix = waitingForFix,
+                                        locationUnknown = locationUnknown,
+                                        onLocationUnavailableClick = openLocationSettings,
                                         extras = heroExtras,
                                         isDay = uiIsDay,
                                         modifier = Modifier.fillMaxHeight(),
@@ -347,6 +427,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                 LockedCardDensity(scale = cardScale) {
                                     SunCard(
                                         snapshot = snapshot,
+                                        locationUnknown = locationUnknown,
                                         modifier = Modifier.fillMaxHeight(),
                                     )
                                 }
@@ -359,8 +440,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             HeroCard(
                                 snapshot = snapshot,
                                 districtName = cityText,
-                                coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
+                                coordinates = if (locationUnknown) {
+                                    Placeholders.coordinates()
+                                } else {
+                                    TimeText.coordinates(context, place.latitude, place.longitude)
+                                },
                                 waitingForFix = waitingForFix,
+                                locationUnknown = locationUnknown,
+                                onLocationUnavailableClick = openLocationSettings,
                                 extras = heroExtras,
                                 isDay = uiIsDay,
                             )
@@ -368,7 +455,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         Spacer(Modifier.height(14.dp))
 
                         LockedCardDensity {
-                            SunCard(snapshot = snapshot)
+                            SunCard(snapshot = snapshot, locationUnknown = locationUnknown)
                         }
                     }
                     Spacer(Modifier.height(14.dp))
@@ -379,6 +466,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         MapCard(
                             place = place,
                             ui = mapUi,
+                            locationUnknown = locationUnknown,
                             loading = mapLoading,
                             ready = mapReady,
                             isZoomUnavailable = viewModel::isMapZoomUnavailable,
@@ -409,6 +497,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             SettingsSheet(
                 place = place,
                 trackingGps = trackingGps,
+                locationUnknown = locationUnknown,
                 remindersEnabled = remindersEnabled,
                 keyTimeChimeEnabled = keyTimeChimeEnabled,
                 keepScreenOn = keepScreenOn,
@@ -486,24 +575,40 @@ private fun HeroCard(
     districtName: String?,
     coordinates: String,
     waitingForFix: Boolean,
+    /**
+     * 定位不可用（未知态）：真太阳时 / 时辰 / 天气 / 逐时 / 经纬度全部换成占位符，
+     * 只有标准时间（系统时区）与日期照常显示。
+     */
+    locationUnknown: Boolean,
+    /** 未知态点地名「定位不可用」时执行：跳系统「应用详情 / 权限」页。 */
+    onLocationUnavailableClick: () -> Unit,
     extras: HeroExtras,
     /** 卡片该用白天的暖橙底还是夜里的深蓝底：由主题设置 + 太阳高度角共同决定（见 `ThemeMode`）。 */
     isDay: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    // 真太阳时有读数吗：未知态 / 还没等到首个 fix 都没有 —— 所有「按太阳算出来的」东西一律留空。
+    val showPlaceholders = locationUnknown || waitingForFix
     val solarSeconds = snapshot.trueSolarTime.toSecondOfDay().toDouble()
     // 真太阳时落在关键时间段里时，数字与时间轴圆点一起换成该时段的配色。
-    val inKeyTime = !waitingForFix && extras.bands.any { it.contains(solarSeconds / 60.0) }
+    val inKeyTime = !showPlaceholders && extras.bands.any { it.contains(solarSeconds / 60.0) }
     val accent = HeroPalette.accent(isDay)
     // 关键时段的色段一直画出来（与桌面卡片一致），只有「当前正落在某个关键时段里」时才把
     // 真太阳时数字与时间轴圆点也换成该时段的配色。
-    val bandTint = if (waitingForFix) null else HeroPalette.band(extras.temperature, isDay)
-    val inkTint = if (waitingForFix) null else HeroPalette.ink(extras.temperature, isDay)
+    val bandTint = if (showPlaceholders) null else HeroPalette.band(extras.temperature, isDay)
+    val inkTint = if (showPlaceholders) null else HeroPalette.ink(extras.temperature, isDay)
     val solarColor = if (inKeyTime) inkTint ?: accent else accent
     val dateTail = listOf(extras.dateText, extras.weatherText, extras.rangeText)
         .filter { it.isNotBlank() }
         .joinToString(" · ")
+    // 地名可点击：只有未知态才有这个入口（其它情况的地区名只是文字）。
+    val unavailableHint = stringResource(R.string.location_unavailable_hint)
+    val cityClickModifier = if (locationUnknown) {
+        Modifier.clickable(onClickLabel = unavailableHint, onClick = onLocationUnavailableClick)
+    } else {
+        Modifier
+    }
 
     Box(
         modifier = modifier
@@ -541,7 +646,12 @@ private fun HeroCard(
             // 时辰只显示时辰名（如「亥时」／英文 "Hai hour"），与桌面卡片共用本地化字符串；
             // `snapshot.shichenName` 是固定的中文名，不能直接用，否则英文界面下两边写法不一致。
             // 时初／时正（`snapshot.shichenHalf`）仍照旧算着，只是不再显示。
-            val shichenLabel = TimeText.shichenName(context, snapshot.shichenIndex)
+            // 未知态没有真太阳时，也就没有时辰 —— 显示 `--`。
+            val shichenLabel = if (showPlaceholders) {
+                Placeholders.shichen()
+            } else {
+                TimeText.shichenName(context, snapshot.shichenIndex)
+            }
             val utcWidthPx = cityRowMeasurer.measure(utcLabel, cityRowStyle).size.width.toFloat()
             val cityWidthPx = if (cityLabel.isEmpty()) {
                 0f
@@ -675,7 +785,8 @@ private fun HeroCard(
                                     // 尾部再让出 6dp，地区与竖线之间留出明显间隙（不与线贴在一起）。
                                     modifier = Modifier
                                         .weight(1f)
-                                        .padding(end = cityEndInset),
+                                        .padding(end = cityEndInset)
+                                        .then(cityClickModifier),
                                 )
                             }
                             Row(
@@ -720,7 +831,7 @@ private fun HeroCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = if (cityRowTier == 1) TextAlign.Center else TextAlign.Start,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).then(cityClickModifier),
                             )
                             Text(
                                 text = shichenLabel,
@@ -747,7 +858,7 @@ private fun HeroCard(
                                 .onSizeChanged { clockRowHeightPx = it.height.toFloat() },
                         ) {
                             HeroClock(
-                                text = TimeFormat.clock(snapshot.localStandardTime),
+                                text = AnnotatedString(TimeFormat.clock(snapshot.localStandardTime)),
                                 seconds = snapshot.localStandardTime.second,
                                 color = Color.White,
                             )
@@ -765,13 +876,24 @@ private fun HeroCard(
                                 .background(dividerColor),
                         )
 
-                        // 右：真太阳时（逐秒刷新）
+                        // 右：真太阳时（逐秒刷新）。未知态 / 还没等到 fix：三组横线占位，
+                        // 字号、行高、宽度与真实时间完全一致（主字号 `‒‒:‒‒` + 半高 `:‒‒`），版式不跳。
                         Column(modifier = Modifier.weight(1f)) {
-                            if (waitingForFix) {
-                                HeroClock(text = "--:--", seconds = null, color = solarColor)
+                            if (showPlaceholders) {
+                                HeroClock(
+                                    text = placeholderClock(Placeholders.trueSolarClockMain()),
+                                    seconds = null,
+                                    secondsText = placeholderClock(Placeholders.trueSolarClockSeconds()),
+                                    color = solarColor.copy(alpha = PLACEHOLDER_ALPHA),
+                                )
                             } else {
                                 HeroClock(
-                                    text = "%02d:%02d".format(snapshot.trueSolarTime.hour, snapshot.trueSolarTime.minute),
+                                    text = AnnotatedString(
+                                        "%02d:%02d".format(
+                                            snapshot.trueSolarTime.hour,
+                                            snapshot.trueSolarTime.minute,
+                                        ),
+                                    ),
                                     seconds = snapshot.trueSolarTime.second,
                                     color = solarColor,
                                 )
@@ -872,14 +994,16 @@ private fun HeroCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // 0–24 时时间轴：与桌面卡片、鸿蒙版同款（1vp 细线 + 柔化圆点）
+            // 0–24 时时间轴：与桌面卡片、鸿蒙版同款（1vp 细线 + 柔化圆点）。
+            // 未知态没有真太阳时就没有「现在走到哪」的圆点（画在 0:00 上等于报了个假时刻）。
             HeroAxis(
-                solarSecondsOfDay = if (waitingForFix) 0.0 else solarSeconds,
-                bands = if (waitingForFix) emptyList() else extras.bands,
+                solarSecondsOfDay = if (showPlaceholders) null else solarSeconds,
+                bands = if (locationUnknown) emptyList() else extras.bands,
                 bandColor = bandTint,
                 dotColor = if (inKeyTime && bandTint != null) bandTint else HeroPalette.DOT,
             )
-            if (!waitingForFix && extras.hourly.isNotEmpty()) {
+            // 逐时行：未知态也照画（六格时间 + `--°` 占位、无图标），行高与正常态一致。
+            if (extras.hourly.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 HeroHourly(extras.hourly)
             }
@@ -936,10 +1060,10 @@ private object HeroPalette {
     }
 }
 
-/** 时间轴：1vp 轨道 + 关键时段的色段 + 当前时刻的柔化圆点。 */
+/** 时间轴：1vp 轨道 + 关键时段的色段 + 当前时刻的柔化圆点（[solarSecondsOfDay] 为 null 时不画圆点）。 */
 @Composable
 private fun HeroAxis(
-    solarSecondsOfDay: Double,
+    solarSecondsOfDay: Double?,
     bands: List<TakeBand>,
     bandColor: Color?,
     dotColor: Color,
@@ -966,6 +1090,8 @@ private fun HeroAxis(
         }
         // 半径与 alpha 曲线是太阳点共用的那组常量（SunColors.SOFT_DOT_*）：两处点必须一模一样，
         // 所以这里不再写 5.5dp / 0.5 / 0.45 这些魔数。
+        // 未知态（定位不可用）没有真太阳时：连圆点也不画，否则等于在 0:00 上报了个假时刻。
+        val solarSeconds = solarSecondsOfDay ?: return@Canvas
         val radius = SunColors.SOFT_DOT_RADIUS_DP.dp.toPx()
         val center = Offset(
             x = (size.width * (solarSecondsOfDay / SECONDS_PER_DAY).toFloat()).coerceIn(0f, size.width),
@@ -989,6 +1115,9 @@ private fun HeroAxis(
  * 图标下面那一行原来写的是天气文字（`多云` / `小雨`），现在换成该格的气温（`18°`）——
  * 与 iOS 对齐，也省得长名字（英文 "Partly cloudy"）在 22dp 的格子里被省略号砍掉。
  * 字号/配色/行距沿用原来那一格文字标签的样式（只换内容，不动版式），所以卡片高度不变。
+ *
+ * 未知态（定位不可用）同样画满六格：时间标签照常、温度是 `--°`、**图标不画但位子留着**
+ * （`iconRes == null` 时补一个同尺寸的空位），所以卡片高度与正常态逐像素一致，不会突然变矮。
  */
 @Composable
 private fun HeroHourly(cells: List<HourCell>) {
@@ -1004,11 +1133,16 @@ private fun HeroHourly(cells: List<HourCell>) {
                     color = HeroPalette.LABEL_DIM,
                     maxLines = 1,
                 )
-                Image(
-                    painter = painterResource(cell.iconRes),
-                    contentDescription = null,
-                    modifier = Modifier.padding(top = 3.dp).size(22.dp),
-                )
+                if (cell.iconRes != null) {
+                    Image(
+                        painter = painterResource(cell.iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.padding(top = 3.dp).size(22.dp),
+                    )
+                } else {
+                    // 没有天气就没有图标，但**位置要留着**：行高与正常态一致。
+                    Spacer(Modifier.padding(top = 3.dp).size(22.dp))
+                }
                 Text(
                     text = cell.temperature,
                     style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium),
@@ -1026,6 +1160,26 @@ private const val MINUTES_PER_DAY: Double = 24.0 * 60.0
 private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
 
 /**
+ * 未知态时钟的占位文本（`--:--` / `:--`）。
+ *
+ * 用**半角**连字符（`--`），不在字符串里写全角 `－`：全角破折号在时钟字号下像一条长横，
+ * 「空位」的感觉反而不对。真正的问题是**字体** —— 默认字体栈以中文为主，半角 `-` 被画得极短，
+ * 几个连起来像碎点；这里显式指定**拉丁无衬线字体**（与数字同一个字体族），并用 `em` 单位加一点
+ * 字距，两个 `-` 就读成了「两短横 + 冒号」。
+ *
+ * 字距用 `em`（而不是 sp）：主段大号、秒段半高，各自按自己的字号等比拉开，
+ * 所以整行仍与真实时间同宽同高。
+ */
+private fun placeholderClock(text: String): AnnotatedString = buildAnnotatedString {
+    withStyle(
+        SpanStyle(
+            fontFamily = FontFamily.SansSerif,
+            letterSpacing = PLACEHOLDER_LETTER_SPACING_EM.em,
+        ),
+    ) { append(text) }
+}
+
+/**
  * 首页大卡片里的一格时间（`HH:mm` + 半高秒）。
  *
  * 两条硬规则：
@@ -1040,7 +1194,19 @@ private const val SECONDS_PER_DAY: Double = 24.0 * 3600.0
  * 字重走 `cardFontWeight`：显式给出目标字重，并把系统「粗体字」的调整量抵掉。
  */
 @Composable
-private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modifier = Modifier) {
+private fun HeroClock(
+    text: AnnotatedString,
+    seconds: Int?,
+    color: Color,
+    modifier: Modifier = Modifier,
+    /**
+     * 半高那一组显示什么（默认由 [seconds] 生成 `:ss`）。
+     *
+     * 未知态（定位不可用）传占位文本：占位符与真实时间的**版式完全一致**（主字号 `‒‒:‒‒` +
+     * 半高 `:‒‒`），所以卡片高度、两列宽度都不会跳。
+     */
+    secondsText: AnnotatedString? = null,
+) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val baseStyle = cardTextStyle(
@@ -1052,18 +1218,20 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
     // 所以这里不能交给 cardTextStyle，得在算完 mainSp / secondsSp 之后自己套。
     val lineBoxEm = rememberSystemLineBoxEm()
     val probeSp = 100f
+    // 半高那一组的实际文本：`secondsText` 优先（未知态是 `:‒‒`）。
+    val tailText: AnnotatedString? = secondsText ?: seconds?.let { AnnotatedString(":%02d".format(it)) }
     // 用「88:88」与「:88」作样本：等宽数字下与实际渲染同宽，和具体时刻无关。
     val mainProbePx = measurer
         .measure("88:88", baseStyle.copy(fontSize = probeSp.sp), maxLines = 1)
         .size.width.toFloat()
-    val secondsProbePx = if (seconds == null) {
+    val secondsProbePx = if (tailText == null) {
         0f
     } else {
         measurer
             .measure(":88", baseStyle.copy(fontSize = (probeSp / 2f).sp), maxLines = 1)
             .size.width.toFloat()
     }
-    val gapPx = if (seconds == null) 0f else with(density) { SECONDS_GAP.toPx() }
+    val gapPx = if (tailText == null) 0f else with(density) { SECONDS_GAP.toPx() }
     val totalRatio = (mainProbePx + secondsProbePx + gapPx) / probeSp // 每 1sp 对应的像素宽
 
     // 用 onSizeChanged 取这一栏的可用宽度（不能用 BoxWithConstraints：它是 SubcomposeLayout，
@@ -1090,9 +1258,9 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
             color = color,
             maxLines = 1,
         )
-        if (seconds != null) {
+        if (tailText != null) {
             Text(
-                text = ":%02d".format(seconds),
+                text = tailText,
                 style = baseStyle.copy(fontSize = secondsSp.sp).pinSystemLineBox(lineBoxEm),
                 color = color,
                 maxLines = 1,
@@ -1106,6 +1274,8 @@ private fun HeroClock(text: String, seconds: Int?, color: Color, modifier: Modif
 @Composable
 private fun SunCard(
     snapshot: SolarSnapshot,
+    /** 定位不可用（未知态）：高度角 / 白昼 / 圆盘全部换成「没有读数」的形态。 */
+    locationUnknown: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1126,7 +1296,12 @@ private fun SunCard(
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = stringResource(R.string.altitude, snapshot.altitudeDegrees),
+                    // 未知态没有观测点：高度角留 `—`（不显示上一次地点的读数）。
+                    text = if (locationUnknown) {
+                        Placeholders.altitude()
+                    } else {
+                        stringResource(R.string.altitude, snapshot.altitudeDegrees)
+                    },
                     style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Medium),
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -1136,17 +1311,28 @@ private fun SunCard(
 
             // 圆盘铺满卡片内容宽度：日出／上中天／日落三个时间直接标在圆的外侧，
             // 不再占右边一整栏，所以卡片高度比带右栏时更低。
-            SunDial(snapshot = snapshot)
+            SunDial(snapshot = snapshot, locationUnknown = locationUnknown)
 
             Spacer(Modifier.height(SUN_DAYLIGHT_GAP))
 
-            Text(
-                text = stringResource(R.string.sun_daylight_line, daylightText(context, snapshot)),
-                style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+            // 「白昼 X 小时 X 分」这行：未知态只留一个 `—`（不编 12 小时之类的假数据），
+            // 而且必须和正常态的整行**同一位置**：两者都放进同一行、同一套 Box 居中，
+            // 谁都不带额外 padding / fillMaxWidth 的差异，切换时这一行不会左右挪。
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (locationUnknown) {
+                        Placeholders.daylight()
+                    } else {
+                        stringResource(R.string.sun_daylight_line, daylightText(context, snapshot))
+                    },
+                    style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -1203,7 +1389,12 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 颜色一律取主题 token（白天／夜间两套由 `TrueSolarTimeTheme` 换掉色板），这里不写死颜色。
  */
 @Composable
-private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
+private fun SunDial(
+    snapshot: SolarSnapshot,
+    /** 定位不可用（未知态）：昼夜各半的对半圆，不画太阳点 / 箭头 / 时间标签。 */
+    locationUnknown: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     val scheme = MaterialTheme.colorScheme
     // 白天弧单独取淡金：亮色主题下主色实色在白卡上太沉（见 `sunDayArcColor` 的注释）；
     // 太阳点是**两层**：外圈光晕（2.75→5.5dp，alpha 0.35→0）+ 纯色实心核心（2.75dp，alpha 1.0）。
@@ -1219,12 +1410,27 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     val polarNight = polar == SolarTimeMath.PolarState.POLAR_NIGHT
     // 极昼 / 极夜没有日出日落：传 null，让几何层按 polar 标志把地平线沉到圆下 / 升到圆上。
     val normal = polar == SolarTimeMath.PolarState.NORMAL
-    val sunriseHour = if (normal) snapshot.sunriseTrueSolar.toHours() else null
-    val sunsetHour = if (normal) snapshot.sunsetTrueSolar.toHours() else null
-    val trueSolarHour = snapshot.trueSolarTime.toSecondOfDay() / SECONDS_PER_HOUR
+    // 未知态（定位不可用）：昼夜各半 —— 日出 06:00、日落 18:00，地平线正好过圆心；
+    // 但它**不是**「一个普通日」：太阳点 / 运动箭头 / 时间标签全部不画（见 SunPath.unknown）。
+    val sunriseHour = when {
+        locationUnknown -> SunPathGeometry.UNKNOWN_SUNRISE_HOUR
+        normal -> snapshot.sunriseTrueSolar.toHours()
+        else -> null
+    }
+    val sunsetHour = when {
+        locationUnknown -> SunPathGeometry.UNKNOWN_SUNSET_HOUR
+        normal -> snapshot.sunsetTrueSolar.toHours()
+        else -> null
+    }
+    val trueSolarHour = if (locationUnknown) {
+        12.0 // 未知态没有真实时刻；参数化取 12:00（太阳点在圆顶，反正不画）
+    } else {
+        snapshot.trueSolarTime.toSecondOfDay() / SECONDS_PER_HOUR
+    }
     // 南半球观察者面朝北：06:00 的太阳在右、18:00 在左，整条轨迹与北半球镜像。
     // 只认观测点自己的纬度（snapshot.latitude），不掺时区 / 北京时间之类的东西。
-    val southernHemisphere = snapshot.latitude < 0
+    // 未知态没有观测点，对半圆不镜像（上下半圈本来就是对称的）。
+    val southernHemisphere = !locationUnknown && snapshot.latitude < 0
 
     val labelStyle = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium)
     val dataColor = MaterialTheme.colorScheme.onSurface
@@ -1266,16 +1472,21 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             .onSizeChanged { dialPx = it },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val path = SunPathGeometry.compute(
-                width = size.width,
-                height = size.height,
-                sunriseHour = sunriseHour,
-                sunsetHour = sunsetHour,
-                trueSolarHour = trueSolarHour,
-                isPolarDay = polarDay,
-                isPolarNight = polarNight,
-                southernHemisphere = southernHemisphere,
-            )
+            val path = if (locationUnknown) {
+                // 未知态的「对半圆」走独立的几何入口：昼夜各 180°、地平线过圆心、无太阳点。
+                SunPathGeometry.unknown(size.width, size.height)
+            } else {
+                SunPathGeometry.compute(
+                    width = size.width,
+                    height = size.height,
+                    sunriseHour = sunriseHour,
+                    sunsetHour = sunsetHour,
+                    trueSolarHour = trueSolarHour,
+                    isPolarDay = polarDay,
+                    isPolarNight = polarNight,
+                    southernHemisphere = southernHemisphere,
+                )
+            }
             val center = Offset(path.centerX, path.centerY)
             // 轨迹线（亮 / 暗两个主题、地平线上下）都比上一版细：白天实线 1.6dp、夜晚虚线 1.5dp，
             // 虚线间隔跟着从 6/6dp 缩到 4/4dp —— 线细了间隔不缩，看起来还是一段段粗棒。
@@ -1359,76 +1570,83 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             // 运动方向箭头：画在圆内侧 0.72R 上的一小段弧（跨 30°，以当前太阳点角度为中心），
             // 末端一个实心小三角。方向与太阳点同一套参数化 —— 北半球顺时针、南半球逆时针。
             // 颜色刻意用低对比的 onSurfaceVariant（不用主色，免得和白天弧抢视觉）。
-            val motion = SunPathGeometry.motionArrow(path, trueSolarHour)
-            val arrowRadius = path.radius * SunPathGeometry.MOTION_ARROW_RADIUS_RATIO
-            val arrowStartAngle = Math.toDegrees(
-                atan2(
-                    (motion.startY - path.centerY).toDouble(),
-                    (motion.startX - path.centerX).toDouble(),
-                ),
-            ).toFloat()
-            val arrowEndAngle = Math.toDegrees(
-                atan2(
-                    (motion.endY - path.centerY).toDouble(),
-                    (motion.endX - path.centerX).toDouble(),
-                ),
-            ).toFloat()
-            // 归一到 (−180, 180]：正 = 顺时针（北半球），负 = 逆时针（南半球）。
-            val arrowSweep = ((arrowEndAngle - arrowStartAngle + 540f) % 360f) - 180f
-            drawArc(
-                color = scheme.onSurfaceVariant,
-                startAngle = arrowStartAngle,
-                sweepAngle = arrowSweep,
-                useCenter = false,
-                topLeft = Offset(path.centerX - arrowRadius, path.centerY - arrowRadius),
-                size = Size(arrowRadius * 2f, arrowRadius * 2f),
-                style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
-            )
-            // 箭头尖 = 弧的终点，朝向该点的切线方向：顺时针是 (−r.y, r.x)，逆时针取反。
-            val radiusX = motion.endX - path.centerX
-            val radiusY = motion.endY - path.centerY
-            val radiusLength = sqrt(radiusX * radiusX + radiusY * radiusY).coerceAtLeast(0.001f)
-            val clockwise = if (arrowSweep > 0f) 1f else -1f
-            val dirX = clockwise * (-radiusY / radiusLength)
-            val dirY = clockwise * (radiusX / radiusLength)
-            val headLength = 5.dp.toPx()
-            val headHalfWidth = headLength * 0.45f
-            val headBaseX = motion.tipX - dirX * headLength
-            val headBaseY = motion.tipY - dirY * headLength
-            val normalX = -dirY
-            val normalY = dirX
-            drawPath(
-                path = Path().apply {
-                    moveTo(motion.tipX, motion.tipY)
-                    lineTo(headBaseX + normalX * headHalfWidth, headBaseY + normalY * headHalfWidth)
-                    lineTo(headBaseX - normalX * headHalfWidth, headBaseY - normalY * headHalfWidth)
-                    close()
-                },
-                color = scheme.onSurfaceVariant,
-            )
+            // 未知态（定位不可用）没有轨迹可讲：整段不画（见 SunPath.showsMotionArrow）。
+            if (path.showsMotionArrow) {
+                val motion = SunPathGeometry.motionArrow(path, trueSolarHour)
+                val arrowRadius = path.radius * SunPathGeometry.MOTION_ARROW_RADIUS_RATIO
+                val arrowStartAngle = Math.toDegrees(
+                    atan2(
+                        (motion.startY - path.centerY).toDouble(),
+                        (motion.startX - path.centerX).toDouble(),
+                    ),
+                ).toFloat()
+                val arrowEndAngle = Math.toDegrees(
+                    atan2(
+                        (motion.endY - path.centerY).toDouble(),
+                        (motion.endX - path.centerX).toDouble(),
+                    ),
+                ).toFloat()
+                // 归一到 (−180, 180]：正 = 顺时针（北半球），负 = 逆时针（南半球）。
+                val arrowSweep = ((arrowEndAngle - arrowStartAngle + 540f) % 360f) - 180f
+                drawArc(
+                    color = scheme.onSurfaceVariant,
+                    startAngle = arrowStartAngle,
+                    sweepAngle = arrowSweep,
+                    useCenter = false,
+                    topLeft = Offset(path.centerX - arrowRadius, path.centerY - arrowRadius),
+                    size = Size(arrowRadius * 2f, arrowRadius * 2f),
+                    style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round),
+                )
+                // 箭头尖 = 弧的终点，朝向该点的切线方向：顺时针是 (−r.y, r.x)，逆时针取反。
+                val radiusX = motion.endX - path.centerX
+                val radiusY = motion.endY - path.centerY
+                val radiusLength = sqrt(radiusX * radiusX + radiusY * radiusY).coerceAtLeast(0.001f)
+                val clockwise = if (arrowSweep > 0f) 1f else -1f
+                val dirX = clockwise * (-radiusY / radiusLength)
+                val dirY = clockwise * (radiusX / radiusLength)
+                val headLength = 5.dp.toPx()
+                val headHalfWidth = headLength * 0.45f
+                val headBaseX = motion.tipX - dirX * headLength
+                val headBaseY = motion.tipY - dirY * headLength
+                val normalX = -dirY
+                val normalY = dirX
+                drawPath(
+                    path = Path().apply {
+                        moveTo(motion.tipX, motion.tipY)
+                        lineTo(headBaseX + normalX * headHalfWidth, headBaseY + normalY * headHalfWidth)
+                        lineTo(headBaseX - normalX * headHalfWidth, headBaseY - normalY * headHalfWidth)
+                        close()
+                    },
+                    color = scheme.onSurfaceVariant,
+                )
+            }
 
             // 当前太阳点：**两层**，先光晕后核心 —— 核心是纯色圆（alpha 1.0），压在最上面，
             // 所以弧线绝不会从点下面透出来（真机上单层渐变曾被渲染成均匀半透明）。
             // 光晕：半径 5.5dp 的径向渐变，内沿 2.75dp（= 核心半径）alpha 0.35 → 外沿 0，只在外圈发光。
             // 地平线以下用同样的两层，只把颜色换成低对比的 outline；不做硬边空心圈。
-            val sun = Offset(path.sunX, path.sunY)
-            val dotGlowColorStops = if (path.isSunUp) dotGlowStops else belowHorizonGlowStops
-            val dotCoreFill = if (path.isSunUp) dotCoreColor else scheme.outline
-            drawCircle(
-                brush = Brush.radialGradient(
-                    *dotGlowColorStops.toTypedArray(),
-                    center = sun,
+            // 未知态没有观测点：太阳点整块不画（见 SunPath.showsSunDot）。
+            if (path.showsSunDot) {
+                val sun = Offset(path.sunX, path.sunY)
+                val dotGlowColorStops = if (path.isSunUp) dotGlowStops else belowHorizonGlowStops
+                val dotCoreFill = if (path.isSunUp) dotCoreColor else scheme.outline
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        *dotGlowColorStops.toTypedArray(),
+                        center = sun,
+                        radius = dotGlowRadius,
+                    ),
                     radius = dotGlowRadius,
-                ),
-                radius = dotGlowRadius,
-                center = sun,
-            )
-            // 核心：纯 Color，不走 Brush、不 copy(alpha) —— 保证 100% 不透明。
-            drawCircle(color = dotCoreFill, radius = dotCoreRadius, center = sun)
+                    center = sun,
+                )
+                // 核心：纯 Color，不走 Brush、不 copy(alpha) —— 保证 100% 不透明。
+                drawCircle(color = dotCoreFill, radius = dotCoreRadius, center = sun)
+            }
         }
 
         // 标签层：等画布量到尺寸后再摆，坐标全部来自纯几何函数。
-        if (dialPx.width > 0 && dialPx.height > 0) {
+        // 未知态不画日出／上中天／日落标签（也就没有「极昼／极夜」那句文案）。
+        if (!locationUnknown && dialPx.width > 0 && dialPx.height > 0) {
             val path = SunPathGeometry.compute(
                 width = dialPx.width.toFloat(),
                 height = dialPx.height.toFloat(),

@@ -18,6 +18,16 @@ internal object PowerSettings {
     /** 华为/荣耀的「应用启动管理」页面；其余机型退到应用详情页。 */
     fun openBackgroundSettings(context: Context) {
         if (openHuaweiStartupManager(context)) return
+        openAppDetailsSettings(context)
+    }
+
+    /**
+     * 本应用的**系统设置页**（应用详情 → 权限）。
+     *
+     * 「定位不可用」那行字点下去就是这里：撤销/授予定位权限的唯一官方入口，
+     * 也是用户找得到「应用 → 权限 → 位置」的那条路。
+     */
+    fun openAppDetailsSettings(context: Context) {
         val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             .setData(Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

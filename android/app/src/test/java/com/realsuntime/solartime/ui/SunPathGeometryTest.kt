@@ -6,6 +6,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -785,5 +786,82 @@ class SunPathGeometryTest {
                 assertTrue("$south $hour 箭头离太阳点太近：$sunDistance", sunDistance > 6.0)
             }
         }
+    }
+
+    // ---- 未知态（定位不可用）：昼夜各半的对半圆 ----
+
+    /**
+     * 未知态是**对半圆**：白天弧 180°（上半圈，从 9 点经 12 点到 3 点）、夜间弧 180°（下半圈），
+     * 地平线正好从圆心穿过。
+     */
+    @Test
+    fun unknownStateIsAnEvenDayNightCircle() {
+        val path = SunPathGeometry.unknown(width, height)
+        assertTrue("未知态必须打上 unknown 标记", path.unknown)
+        assertFalse("未知态不是极昼", path.isPolarDay)
+        assertFalse("未知态不是极夜", path.isPolarNight)
+        assertFalse("整圆不是白天", path.isWholeCircleDay)
+        assertFalse("整圆不是夜晚", path.isWholeCircleNight)
+
+        // 地平线 = 圆心那条水平线（不能算成弦：弦两端就在圆的最左 / 最右）。
+        assertEquals("地平线应过圆心", centerY, path.horizonY, 0.01f)
+        assertEquals("地平线半弦 = 半径", radius, SunPathGeometry.horizonHalfChord(path), 0.5f)
+
+        val span = SunPathGeometry.dayArcSpan(
+            SunPathGeometry.UNKNOWN_SUNRISE_HOUR,
+            SunPathGeometry.UNKNOWN_SUNSET_HOUR,
+        )
+        assertNotNull("未知态必须有白天弧（不是极昼极夜的整圆）", span)
+        span!!
+        assertEquals("白天弧 = 180°", 180f, span.sweepDegrees, 0.01f)
+        assertEquals("夜间弧 = 180°", 180f, 360f - span.sweepDegrees, 0.01f)
+        // drawArc 口径：−180° 是 9 点方向，顺时针扫 180° 经过 −90°（12 点）到 0°（3 点）—— 正是上半圈。
+        assertEquals("白天弧从 9 点（−180°）起画", -180f, span.startDegrees, 0.01f)
+        assertEquals("白天弧中点 = 圆顶（−90°）", -90f, span.startDegrees + span.sweepDegrees / 2f, 0.01f)
+    }
+
+    /** 未知态没有观测点：不画太阳点、不画运动箭头、不画日出/上中天/日落标签。 */
+    @Test
+    fun unknownStateDrawsNoSunDotNoArrowAndNoLabels() {
+        val path = SunPathGeometry.unknown(width, height)
+        assertFalse("未知态不画太阳点", path.showsSunDot)
+        assertFalse("未知态不画运动箭头", path.showsMotionArrow)
+        assertFalse("未知态不画时间标签", path.showsTimeLabels)
+        assertFalse("未知态也没有上中天标签", path.hasTransitLabel)
+    }
+
+    /** 回归护栏：普通日、极昼、极夜该怎么画还怎么画（未知态那条分支不能漏进别的盘面）。 */
+    @Test
+    fun normalPolarAndUnknownKeepTheirOwnBranches() {
+        val normal = dial(6.0, 18.0, trueSolarHour = 9.0)
+        assertFalse(normal.unknown)
+        assertTrue(normal.showsSunDot)
+        assertTrue(normal.showsMotionArrow)
+        assertTrue(normal.showsTimeLabels)
+        assertTrue(normal.hasTransitLabel)
+
+        val polarDay = SunPathGeometry.compute(
+            width = width,
+            height = height,
+            sunriseHour = null,
+            sunsetHour = null,
+            trueSolarHour = 0.5,
+            isPolarDay = true,
+            isPolarNight = false,
+        )
+        assertTrue(polarDay.showsTimeLabels)
+        assertTrue("极昼保留上中天标签", polarDay.hasTransitLabel)
+
+        val polarNight = SunPathGeometry.compute(
+            width = width,
+            height = height,
+            sunriseHour = null,
+            sunsetHour = null,
+            trueSolarHour = 12.0,
+            isPolarDay = false,
+            isPolarNight = true,
+        )
+        assertTrue(polarNight.showsSunDot)
+        assertFalse("极夜仍不画上中天标签", polarNight.hasTransitLabel)
     }
 }

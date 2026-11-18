@@ -42,6 +42,14 @@ data class SunPath(
     val isPolarNight: Boolean,
     /** 南半球：x 取 `C.x − R·sin θ`（镜像），见类注释。默认北半球，保持老调用方不变。 */
     val southernHemisphere: Boolean = false,
+    /**
+     * **定位不可用（未知态）**：昼夜各半的对半圆，地平线从圆心穿过。
+     *
+     * 这种盘面没有观测点，太阳点 / 运动箭头 / 日出日落时间标签全都没有意义，
+     * 由 [showsSunDot] / [showsMotionArrow] / [showsTimeLabels] 统一关掉
+     * （UI 只画两段弧 + 中间那条地平线）。
+     */
+    val unknown: Boolean = false,
 ) {
     /** 圆顶（12:00 所在）的 y。 */
     val topY: Float get() = centerY - radius
@@ -54,6 +62,15 @@ data class SunPath(
 
     /** 圆最右（18:00 所在）的 x。 */
     val rightX: Float get() = centerX + radius
+
+    /** 未知态没有位置，也就没有「此刻太阳在哪」：不画太阳点。 */
+    val showsSunDot: Boolean get() = !unknown
+
+    /** 未知态不画运动方向箭头（没有轨迹可讲）。 */
+    val showsMotionArrow: Boolean get() = !unknown
+
+    /** 未知态不画日出 / 上中天 / 日落时间标签（也就没有「白昼/极昼/极夜」那行文案）。 */
+    val showsTimeLabels: Boolean get() = !unknown
 
     /** 整圆都在地平线以上（极昼 / 昼长 ≥ 24h）：白天弧覆盖整圆。 */
     val isWholeCircleDay: Boolean get() = horizonY >= bottomY
@@ -68,9 +85,9 @@ data class SunPath(
      * 要不要画「上中天」标签。
      *
      * **极夜没有**：太阳整日不升，根本没有上中天可言，标一个 12:00 的时间只会误导；
-     * 极昼有（太阳在 12:00 前后最高），普通日照样有。
+     * 极昼有（太阳在 12:00 前后最高），普通日照样有。**未知态也没有**：没有观测点就没有上中天。
      */
-    val hasTransitLabel: Boolean get() = !isPolarNight
+    val hasTransitLabel: Boolean get() = !isPolarNight && !unknown
 }
 
 /**
@@ -243,6 +260,7 @@ object SunPathGeometry {
         isPolarDay: Boolean,
         isPolarNight: Boolean,
         southernHemisphere: Boolean = false,
+        unknown: Boolean = false,
     ): SunPath {
         val radius = RADIUS_RATIO * min(width, height)
         val centerX = width / 2f
@@ -270,8 +288,34 @@ object SunPathGeometry {
             isPolarDay = isPolarDay,
             isPolarNight = isPolarNight,
             southernHemisphere = southernHemisphere,
+            unknown = unknown,
         )
     }
+
+    /** 「昼夜各半」的日出 / 日落口径：06:00 与 18:00，正好让地平线穿过圆心。 */
+    const val UNKNOWN_SUNRISE_HOUR = 6.0
+    const val UNKNOWN_SUNSET_HOUR = 18.0
+
+    /**
+     * **未知态**（定位不可用）的盘面：一个昼夜各半的圆。
+     *
+     * 借 [compute] 的正常日参数化（日出 06:00、日落 18:00）得到：
+     * 白天弧 180°（上半圈，实线）、夜间弧 180°（下半圈，虚线）、地平线 y = 圆心。
+     * 与普通日不同的是 [SunPath.unknown] = true：太阳点 / 运动箭头 / 时间标签全部关掉
+     * —— 没有观测点，也就没有「此刻太阳在哪」。
+     */
+    fun unknown(width: Float, height: Float): SunPath = compute(
+        width = width,
+        height = height,
+        sunriseHour = UNKNOWN_SUNRISE_HOUR,
+        sunsetHour = UNKNOWN_SUNSET_HOUR,
+        // 没有真实时刻可标：参数化取 12:00（圆顶），反正太阳点不画。
+        trueSolarHour = 12.0,
+        isPolarDay = false,
+        isPolarNight = false,
+        southernHemisphere = false,
+        unknown = true,
+    )
 
     /**
      * 圆盘内侧那段「太阳运动方向」短弧的起止点（见 [MotionArrow]）。

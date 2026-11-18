@@ -46,6 +46,17 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_LOCATION_ASKED, false)
         set(value) = prefs.edit().putBoolean(KEY_LOCATION_ASKED, value).apply()
 
+    /**
+     * 用户是否处于「跟随 GPS」（默认跟随，与启动时自动开始跟随的行为一致）。
+     *
+     * 记的是**意图**，不是「有没有定位」：没授权 / 一直拿不到 fix 时它仍是 true，
+     * 界面据此进入「定位不可用」的未知态（见 `LocationAvailability`）。
+     * 用户手动选城市 / 输入经纬度时置 false。
+     */
+    var followGps: Boolean
+        get() = prefs.getBoolean(KEY_FOLLOW_GPS, true)
+        set(value) = prefs.edit().putBoolean(KEY_FOLLOW_GPS, value).apply()
+
     /** 应用在前台时是否禁止自动熄屏（默认开）。 */
     var keepScreenOn: Boolean
         get() = prefs.getBoolean(KEY_KEEP_SCREEN_ON, true)
@@ -76,6 +87,8 @@ class AppSettings(context: Context) {
         const val KEY_MAP_STYLE = "map_style"
         const val KEY_HOURLY_CHIME = "hourly_chime"
         const val KEY_LOCATION_ASKED = "location_permission_requested"
+        /** 「跟随 GPS」意图：默认 true（与首次启动自动跟随一致）。 */
+        const val KEY_FOLLOW_GPS = "follow_gps"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_LAST_WIDGET_FIX = "last_widget_fix"

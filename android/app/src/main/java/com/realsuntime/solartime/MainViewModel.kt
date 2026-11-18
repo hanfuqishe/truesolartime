@@ -9,6 +9,7 @@ import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.AppSettings
 import com.realsuntime.solartime.data.DistrictResolver
 import com.realsuntime.solartime.data.LocalZone
+import com.realsuntime.solartime.data.LocationAvailability
 import com.realsuntime.solartime.data.LocationTracker
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.PlaceSource
@@ -58,6 +59,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 已开始跟随但还没收到任何定位结果。 */
     private val _waitingForFix = MutableStateFlow(false)
     val waitingForFix: StateFlow<Boolean> = _waitingForFix.asStateFlow()
+
+    /**
+     * 用户是否处于「跟随 GPS」：记的是**意图**（点过「实时跟随 GPS」或默认跟随），
+     * 不等于「已经拿到定位」。手动选城市 / 输入经纬度后置 false（见 [stopFollowingGps]）。
+     */
+    private val _followGps = MutableStateFlow(settings.followGps)
+    val followGps: StateFlow<Boolean> = _followGps.asStateFlow()
+
+    /** 本次跟随会话里是否已有可信定位（新 fix，或刚启动时手上那个上一次的 GPS 地点）。 */
+    private val _hasFix = MutableStateFlow(false)
+
+    /**
+     * **定位不可用（未知态）**：跟随 GPS 却拿不到有效定位（未授权，或授权后等不到 fix）。
+     *
+     * 界面据此把太阳相关的读数全部换成占位符、标准时间改用系统时区、地图缩到全球底图 ——
+     * 绝不沿用上一个地点的坐标假装「定位到了那里」（判定本身在 `LocationAvailability`）。
+     */
+    private val _locationUnknown = MutableStateFlow(false)
+    val locationUnknown: StateFlow<Boolean> = _locationUnknown.asStateFlow()
+
+    /** 重新推导未知态；[followGps] / [hasFix] 一变就必须调它。 */
+    private fun refreshLocationUnknown() {
+        _locationUnknown.value = LocationAvailability.isUnknown(_followGps.value, _hasFix.value)
+    }
 
     private val _remindersEnabled = MutableStateFlow(settings.remindersEnabled)
     val remindersEnabled: StateFlow<Boolean> = _remindersEnabled.asStateFlow()
@@ -141,6 +166,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var stopTracking: (() -> Unit)? = null
     private var announcedFirstFix = false
 
+    /**
+     * 本次跟随会话里是否收到过**新的**定位（区别于启动时沿用上一次会话的 GPS 地点）。
+     *
+     * 看门狗据此判断「授权了但一直拿不到 fix」：只有旧地点、没有新 fix 时，20 秒后进未知态。
+     */
+    private var liveFixReceived = false
+
+    /** 跟随会话序号：旧的看门狗到点时若会话已经换了，直接作废（不要拿上一轮的超时判新会话）。 */
+    private var trackingSession = 0
+
+    /**
+     * 手上那个「上一次的 GPS 地点」还值不值得当定位用。
+     *
+     * 一旦看门狗判过「等不到新 fix」，它就**不再**被当成定位（否则每次回到前台都会先演 20 秒
+     * 旧城市、再退回未知态）；真拿到新 fix 时由 [applyFix] 重新置 true。
+     */
+    private var storedPlaceTrusted = true
+
     init {
         viewModelScope.launch {
             while (isActive) {
@@ -151,7 +194,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // 天气心跳：只问「该刷新了吗」，真正的网络请求由 WeatherRepository 的节流决定
                 // （低精度前台 60/120/300 秒退避、后台 10 分钟、30 分钟过期、5 分钟失败节流）。
                 // 没有这条心跳，低精度的 60 秒轮询只能靠桌面小组件的每分钟刷新来带，没加小组件就永远不升级。
-                runCatching { WeatherRepository.requestRefresh(application, _place.value) }
+                // 未知态没有坐标：不拿上一个地点的坐标去刷天气（那正是要避免的「假装定位到了那里」）。
+                if (!_locationUnknown.value) {
+                    runCatching { WeatherRepository.requestRefresh(application, _place.value) }
+                }
                 delay(1_000L - System.currentTimeMillis() % 1_000L)
             }
         }
@@ -168,12 +214,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         // 地图卡片的 UI 状态：把「会话状态 + 地点 + 设置」压成 MapUiState，只在其真的变化时才发。
+        // 未知态没有坐标：源仍按「自动＝境内高德 / 境外 OSM」的规则（无坐标按境外处理），
+        // 级别固定为 z3 全球底图（见 [MapUiState.ofUnknown]）。
         viewModelScope.launch {
-            combine(mapFallback.state, _place, _mapStyle) { state, place, style ->
-                MapUiState.of(style, place.latitude, place.longitude, state)
+            combine(mapFallback.state, _place, _mapStyle, _locationUnknown) { state, place, style, unknown ->
+                if (unknown) {
+                    MapUiState.ofUnknown(style, state)
+                } else {
+                    MapUiState.of(style, place.latitude, place.longitude, state)
+                }
             }.distinctUntilChanged().collect {
                 _mapUi.value = it
                 if (it.unavailable) _mapLoading.value = false // 「底图不可用」也是一种结论，别一直转圈
+                // 未知态看的是全球底图，不需要等「首屏并行探测」（那是给具体地点定源/定级用的）。
+                if (_locationUnknown.value) _mapReady.value = true
             }
         }
         // 打开应用时整体刷一次并重排刷新闹钟：被「强行停止」过的应用其闹钟会被系统清空、
@@ -190,8 +244,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             KeyTimeChime.schedule(application)
         }
         // 默认跟随 GPS；用户手动指定过位置时保持手动。
-        if (locationTracker.hasPermission() && settings.place.source != PlaceSource.MANUAL) {
+        // 「跟随 GPS」是**意图**：没授权 / 等不到 fix 时它就是未知态的依据，所以先记下来再决定要不要开监听。
+        _followGps.value = settings.followGps && LocationAvailability.followsGps(settings.place.source)
+        if (locationTracker.hasPermission() && _followGps.value) {
             startGpsTracking(announce = false)
+        } else {
+            // 没权限（或本来就是手动地点）：不装监听；跟随 GPS 时立刻进未知态，别拿上一个地点顶替。
+            _hasFix.value = false
+            refreshLocationUnknown()
         }
     }
 
@@ -204,7 +264,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     @SuppressLint("MissingPermission")
     fun startGpsTracking(announce: Boolean = true) {
+        // 点「实时跟随 GPS」就是明确的跟随意图：即便这次拿不到定位，也要记下来（未知态据此判定）。
+        _followGps.value = true
+        settings.followGps = true
         if (!locationTracker.hasPermission()) {
+            // 没权限 = 不可能拿到定位：立刻进未知态，把上一个地点的太阳数据收起来。
+            stopTracking?.invoke()
+            stopTracking = null
+            _trackingGps.value = false
+            _waitingForFix.value = false
+            _hasFix.value = false
+            refreshLocationUnknown()
             _message.value = app.getString(R.string.msg_location_permission)
             return
         }
@@ -212,17 +282,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         stopTracking?.invoke()
         stopTracking = null
         announcedFirstFix = !announce
+        liveFixReceived = false
+        // 用户主动点了「实时跟随 GPS」：重新给系统缓存里那次定位一次机会（他想再看一次结果）。
+        if (announce) storedPlaceTrusted = true
 
-        locationTracker.lastKnownLocation()?.let { applyFix(it) }
+        val lastKnown = locationTracker.lastKnownLocation()
+        when {
+            // 系统缓存里那次定位：正常启动时先拿来顶着（不在冷启动阶段闪占位符）；
+            // 但看门狗已经判过「等不到 fix」之后就不再采信 —— 它和手上那个旧地点是同一份缓存，
+            // 再信一次会让「回到前台 → 演 20 秒旧城市 → 又变未知」来回跳。
+            lastKnown != null && storedPlaceTrusted -> applyFix(lastKnown)
+            // 手上原本就是 GPS 地点（上一次会话留下的已知位置）：先当「有定位」，别一启动就闪占位符；
+            // 它只是**过渡**，看门狗到点还没有新 fix 就会进未知态（见下面的 20 秒协程）。
+            _place.value.source == PlaceSource.GPS && storedPlaceTrusted -> _hasFix.value = true
+            // 默认坐标 / 预设城市 / 手动坐标：没有任何定位依据 → 未知态。
+            else -> _hasFix.value = false
+        }
         _waitingForFix.value = _place.value.source != PlaceSource.GPS
         _trackingGps.value = true
+        refreshLocationUnknown()
 
         stopTracking = locationTracker.startTracking(GPS_INTERVAL_MILLIS) { location -> applyFix(location) }
 
+        // 看门狗：20 秒还没等到**新的** fix，就承认「定位不可用」——
+        // 授权了却一直拿不到 fix（室内、遮挡、定位服务异常）同样属于未知态，
+        // 不能拿上一次会话的旧坐标一直演下去；真拿到 fix 时 [applyFix] 会立刻恢复显示。
+        val session = ++trackingSession
         viewModelScope.launch {
             delay(FIX_TIMEOUT_MILLIS)
-            if (_waitingForFix.value && _trackingGps.value) {
-                _message.value = app.getString(R.string.msg_gps_timeout)
+            if (session != trackingSession || !_trackingGps.value) return@launch
+            if (_waitingForFix.value) _message.value = app.getString(R.string.msg_gps_timeout)
+            if (!liveFixReceived) {
+                // 旧坐标不再可信：以后每次回到前台都直接进未知态，不要再演一遍旧城市。
+                storedPlaceTrusted = false
+                _hasFix.value = false
+                refreshLocationUnknown()
             }
         }
     }
@@ -234,10 +328,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _waitingForFix.value = false
     }
 
+    /**
+     * 点了「实时跟随 GPS」但当前**没有定位权限**（权限弹窗由界面去要）。
+     *
+     * 记下跟随意图并立刻进未知态：用户明明说了要跟随定位，界面就不能继续显示上一个地点。
+     * 授权成功后走 [startGpsTracking]，拿到 fix 即刻恢复正常显示。
+     */
+    fun beginGpsFollowingWithoutPermission() {
+        _followGps.value = true
+        settings.followGps = true
+        stopTracking?.invoke()
+        stopTracking = null
+        _trackingGps.value = false
+        _waitingForFix.value = false
+        _hasFix.value = false
+        liveFixReceived = false
+        refreshLocationUnknown()
+    }
+
+    /**
+     * 用户改成了手动指定位置（预设城市 / 手动坐标）：跟随 GPS 的意图随之结束，
+     * 未知态立刻解除（[LocationAvailability.isUnknown] 见到 followGps=false 就返回 false）。
+     */
+    private fun stopFollowingGps() {
+        _followGps.value = false
+        settings.followGps = false
+        _hasFix.value = true
+        refreshLocationUnknown()
+    }
+
+    /**
+     * 回到前台（例如用户刚从系统设置里改完定位权限）：重新核对「跟随 GPS + 有没有定位」。
+     *
+     * 授权被撤销 → 立刻进未知态（别继续显示旧地点）；授权被补上 → 重新开监听等 fix。
+     */
+    fun syncLocationState() {
+        if (!_followGps.value) return
+        if (!locationTracker.hasPermission()) {
+            _hasFix.value = false
+            refreshLocationUnknown()
+            return
+        }
+        if (!_hasFix.value) startGpsTracking(announce = false)
+    }
+
     private fun applyFix(location: Location) {
         val accuracy = if (location.hasAccuracy()) app.getString(R.string.gps_label_accuracy, location.accuracy.toInt()) else app.getString(R.string.gps_label)
         _waitingForFix.value = false
+        // 拿到真实定位：未知态立刻解除（所有占位符随之换回真实读数）。
+        liveFixReceived = true
+        storedPlaceTrusted = true
+        _hasFix.value = true
+        _followGps.value = true
         updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, accuracy))
+        refreshLocationUnknown()
 
         if (!announcedFirstFix) {
             announcedFirstFix = true
@@ -248,6 +392,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun applyManualPlace(latitude: Double, longitude: Double, label: String) {
         stopGpsTracking()
+        stopFollowingGps()
         // 手动坐标与上一个地点毫无关系：先把旧地名清掉，别让上一个城市（预设或上一次反查结果）
         // 在新坐标反查回来之前继续挂在卡片上。反查成功会写入新名字，失败就一直是 null → 显示「-」。
         _districtName.value = null
@@ -264,6 +409,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun usePreset(preset: Place) {
         stopGpsTracking()
+        stopFollowingGps()
         updatePlace(
             preset.copy(source = PlaceSource.MANUAL, label = TimeText.placeLabel(app, preset)),
             userChosen = true,
@@ -304,8 +450,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 失败/回退/降级全程静默：不弹 toast，只写进 [mapFallbackState] 供诊断页展示。
      */
     fun onMapTileEvent(event: TileEvent) {
-        val place = _place.value
         val style = _mapStyle.value
+        val (latitude, longitude) = mapAnchor()
         // 有瓦片画出来了：收起「正在载入底图…」。
         if (event.result == TileResult.LOADED) _mapLoading.value = false
         // 只记诊断用的「当下级别」，**不**开「刚改过视口」的残响窗口：
@@ -313,13 +459,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mapFallback.noteTileZoom(event.zoom)
         when (event.result) {
             TileResult.LOADED ->
-                mapFallback.onTileLoaded(style, place.latitude, place.longitude, event.zoom)
+                mapFallback.onTileLoaded(style, latitude, longitude, event.zoom)
 
             TileResult.FAILED ->
-                mapFallback.onTileFailed(style, place.latitude, place.longitude, event.zoom)
+                mapFallback.onTileFailed(style, latitude, longitude, event.zoom)
 
             TileResult.BLANK ->
-                mapFallback.onTileBlank(style, place.latitude, place.longitude, event.zoom, event.colorKinds)
+                mapFallback.onTileBlank(style, latitude, longitude, event.zoom, event.colorKinds)
         }
     }
 
@@ -328,15 +474,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mapFallback.onZoomApplied(zoom)
     }
 
+    /**
+     * 地图的坐标锚点：未知态没有坐标，一律用 (0, 0)（境外口径 → OSM + 高德兜底），
+     * 免得底图的源/级别还按**上一个地点**在境内外的判断走。
+     */
+    private fun mapAnchor(): Pair<Double, Double> =
+        if (_locationUnknown.value) {
+            MapUiState.UNKNOWN_LATITUDE to MapUiState.UNKNOWN_LONGITUDE
+        } else {
+            _place.value.latitude to _place.value.longitude
+        }
 
     /** 这一级是否已被判「没内容/没瓦片」（空白检测的定时重扫据此跳过已经判过的级别）。 */
     fun isMapZoomUnavailable(zoom: Int): Boolean {
-        val place = _place.value
+        val (latitude, longitude) = mapAnchor()
         val state = mapFallback.snapshot()
         val plan = com.realsuntime.solartime.map.MapFallback.plan(
             _mapStyle.value,
-            place.latitude,
-            place.longitude,
+            latitude,
+            longitude,
             state,
         )
         return state.zoomUnavailable(plan.effective, zoom)
@@ -357,6 +513,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun maybeProbeBasemap(force: Boolean = false) {
         val place = _place.value
         val style = _mapStyle.value
+        // 未知态没有坐标：直接看 z3 全球底图，不做「给具体地点定源定级」的并行探测。
+        if (_locationUnknown.value) {
+            _mapReady.value = true
+            return
+        }
         if (!BasemapProbe.needsProbe(style, place.latitude, place.longitude)) return
         val key = BasemapProbe.cacheKey(place.latitude, place.longitude)
         if (!force && mapFallback.probeFresh(key)) return

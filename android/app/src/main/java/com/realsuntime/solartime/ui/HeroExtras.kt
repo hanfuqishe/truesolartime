@@ -24,7 +24,8 @@ internal data class HourCell(
     val label: String,
     /** 图标下面那一行：该格气温（如 `18°`），缺读数时是占位符 `-`。 */
     val temperature: String,
-    val iconRes: Int,
+    /** 天气图标；null = 不画图标（未知态没有天气，但要占住同一格位置保持行高）。 */
+    val iconRes: Int?,
 )
 
 internal data class HeroExtras(
@@ -72,6 +73,60 @@ internal fun loadHeroExtras(
         hourly = hourCells(context, hourly, now, cached?.code, cached?.temperatureC, zone),
         bands = schedule?.bands.orEmpty(),
         temperature = schedule?.temperature,
+    )
+}
+
+/**
+ * 未知态（定位不可用）的附加数据：**日期与逐时行照常**（按系统时区），天气读数留空。
+ *
+ * 没有坐标就没有天气，但**逐时行的结构要留住**：六格时间标签照常按系统时间往后推，
+ * 图标不画、温度写 `--°` —— 卡片高度与正常态一致，不会因为少了一行而突然变矮。
+ * 关键时段的色段不画（那需要真实的天气温度）。
+ */
+internal fun unknownHeroExtras(
+    context: Context,
+    now: Instant,
+    zoneOffsetSeconds: Int,
+    weatherPlaceholder: String,
+    temperaturePlaceholder: String,
+): HeroExtras {
+    val zone = LocalZone.zoneOffset(zoneOffsetSeconds)
+    val civil = now.atZone(zone)
+    return HeroExtras(
+        dateText = TimeText.dateShortWithWeekday(context, civil.toLocalDate()),
+        weatherText = weatherPlaceholder,
+        rangeText = "",
+        hourly = placeholderHourCells(
+            nowHour = civil.hour,
+            nowLabel = context.getString(R.string.weather_now),
+            hourLabel = { hour -> context.getString(R.string.weather_hour, hour) },
+            temperature = temperaturePlaceholder,
+        ),
+        bands = emptyList(),
+        temperature = null,
+    )
+}
+
+/**
+ * 未知态的六格逐时占位（**纯函数**，便于单测）。
+ *
+ * 规则与正常态一致：首格是「现在」，之后每小时一格，跨午夜回绕到 0 点；
+ * 每格温度都是占位符，图标为 null（行内照样留出 22dp 的图标位，行高不变）。
+ *
+ * @param nowHour 系统时区此刻的小时（0–23）
+ */
+internal fun placeholderHourCells(
+    nowHour: Int,
+    nowLabel: String,
+    hourLabel: (Int) -> String,
+    temperature: String,
+    count: Int = HOUR_CELLS,
+): List<HourCell> = (0 until count).map { offset ->
+    val hour = Math.floorMod(nowHour + offset, 24)
+    HourCell(
+        label = if (offset == 0) nowLabel else hourLabel(hour),
+        temperature = temperature,
+        iconRes = null,
     )
 }
 

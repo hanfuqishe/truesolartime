@@ -83,6 +83,9 @@
     <string name="widget_waiting_gps">Waiting for GPS fix…</string>
     <string name="widget_description">Left: local standard time and date. Right: true solar time and coordinates.</string>
     <string name="msg_location_permission">No location permission. Allow it in system settings, or enter coordinates manually.</string>
+    <!-- 未知态：跟随 GPS 但拿不到定位。地名位置写「定位不可用」，点它跳系统权限设置。 -->
+    <string name="location_unavailable">Location unavailable</string>
+    <string name="location_unavailable_hint">Allow location in Settings, or pick a city manually</string>
     <string name="msg_gps_timeout">No GPS fix yet. Try open sky, or set coordinates manually.</string>
     <string name="msg_following_gps">Following GPS (%1$s), updated every minute</string>
     <string name="gps_label">GPS</string>

@@ -60,20 +60,29 @@ object SolarTimeSnapshot {
     private val BEIJING: ZoneOffset = ZoneOffset.ofHours(8)
 
     /**
-     * @param zoneOffsetSeconds 观测点所在地的标准时区偏移（秒）。传 −1 表示由调用方没算过，
-     *   这里按坐标兜底（中国境内 +8，境外按经度取整）。有国家码的调用方应先用
+     * 「调用方没算过时区」的哨兵值。
+     *
+     * **不能用 −1 当哨兵**：西半球的合法偏移本来就是负数（纽约 −5、洛杉矶 −8），
+     * 拿「负数」当「没传」会把它们的标准时钟错误地换回按经度取整的口径
+     * （未知态用系统时区时尤其致命：人在纽约会显示成 UTC+0）。
+     */
+    const val UNSET_ZONE_OFFSET_SECONDS: Int = Int.MIN_VALUE
+
+    /**
+     * @param zoneOffsetSeconds 观测点所在地的标准时区偏移（秒）。传 [UNSET_ZONE_OFFSET_SECONDS]
+     *   表示调用方没算过，这里按坐标兜底（中国境内 +8，境外按经度取整）。有国家码的调用方应先用
      *   `data.LocalZone.offsetSeconds` 算好再传进来，多时区大国才不会偏一个小时。
      */
     fun compute(
         instant: Instant,
         latitude: Double,
         longitude: Double,
-        zoneOffsetSeconds: Int = -1,
+        zoneOffsetSeconds: Int = UNSET_ZONE_OFFSET_SECONDS,
     ): SolarSnapshot {
         val trueSolarSeconds = SolarTimeMath.trueSolarSecondsOfDay(instant, longitude)
         val beijingDateTime = instant.atZone(BEIJING)
         val sunTimes = SolarTimeMath.sunTimes(beijingDateTime.toLocalDate(), latitude, longitude)
-        val localOffset = if (zoneOffsetSeconds >= 0) {
+        val localOffset = if (zoneOffsetSeconds != UNSET_ZONE_OFFSET_SECONDS) {
             zoneOffsetSeconds
         } else {
             SolarTimeMath.standardZoneOffsetSeconds(latitude, longitude)

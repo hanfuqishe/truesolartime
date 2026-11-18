@@ -83,6 +83,9 @@
     <string name="widget_waiting_gps">等待 GPS 定位…</string>
     <string name="widget_description">左側顯示所在國標準時間與日期，右側顯示當地真太陽時與經緯度</string>
     <string name="msg_location_permission">沒有定位權限，請在系統設定中允許，或手動輸入經緯度</string>
+    <!-- 未知態：跟隨 GPS 但拿不到定位。地名位置寫「定位不可用」，點它跳系統權限設定。 -->
+    <string name="location_unavailable">定位不可用</string>
+    <string name="location_unavailable_hint">可在系統設定中允許定位，或手動選擇城市</string>
     <string name="msg_gps_timeout">尚未收到定位結果，可能需要在空曠處等待；也可手動設定經緯度</string>
     <string name="msg_following_gps">已跟隨 GPS 定位（%1$s），每分鐘更新</string>
     <string name="gps_label">GPS</string>
