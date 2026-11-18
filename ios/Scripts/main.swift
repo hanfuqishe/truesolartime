@@ -2110,8 +2110,8 @@ expect(
         && MapStyle.amapSatellite.tileURLTemplate.contains("style=6")
 )
 expect(
-    "设置页只给四个选项（自动 / OSM / 高德矢量 / 高德卫星）",
-    MapStyle.selectable == [.auto, .osm, .amapVector, .amapSatellite]
+    "设置页五个选项（自动 / Apple 地图 / OSM / 高德矢量 / 高德卫星）",
+    MapStyle.selectable == [.auto, .apple, .osm, .amapVector, .amapSatellite]
 )
 // Apple 路径：不探测、uiState.source == .apple、zoom == nil、恒 live
 var appleState = BasemapState(mode: .auto, preferred: .apple, now: 0)
@@ -2163,6 +2163,58 @@ expect(
     "未知态仍走 Apple：诊断源显示 Apple（系统底图）、缩放 3",
     BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("Apple")
         && BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("缩放 3")
+)
+print("== 底图选项与视图身份（切换样式必须生效）==")
+expect(
+    "设置页五个选项，顺序：自动 / Apple 地图 / OpenStreetMap / 高德矢量 / 高德卫星",
+    MapStyle.selectable == [.auto, .apple, .osm, .amapVector, .amapSatellite],
+    "actual=\(MapStyle.selectable.map(\.rawValue))"
+)
+expect(
+    "选 .apple 与「自动」行为一致：都走系统底图、都不挂 overlay（无瓦片模板）",
+    MapStyle.apple.isSystemBasemap
+        && MapStyle.auto.isSystemBasemap
+        && MapStyle.auto.effective(countryCode: "cn", latitude: 39.9, longitude: 116.4) == .apple
+        && MapStyle.apple.tileURLTemplate.isEmpty
+        && MapStyle.auto.tileURLTemplate.isEmpty
+)
+// 身份：换样式必须换 id（否则 SwiftUI 会复用旧 MKMapView，地图看起来「没反应」）。
+let identityPlace = Place(latitude: -69.37, longitude: 76.38, source: .manual, label: "", presetKey: nil, countryCode: "cn")
+let resolvedAutoStyle = MapStyle.auto.effective(
+    countryCode: identityPlace.countryCode,
+    latitude: identityPlace.latitude,
+    longitude: identityPlace.longitude
+)
+expect(
+    "Apple 视图身份随样式变化：自动解析为 .apple（与显式 .apple 相同、与 .osm 不同）",
+    resolvedAutoStyle == .apple
+        && MapViewIdentity.apple(place: identityPlace, style: resolvedAutoStyle)
+            == MapViewIdentity.apple(place: identityPlace, style: .apple)
+        && MapViewIdentity.apple(place: identityPlace, style: .osm)
+            != MapViewIdentity.apple(place: identityPlace, style: .apple)
+)
+expect(
+    "手动视图身份随样式 / 源 / 缩放变化",
+    MapViewIdentity.manual(place: identityPlace, style: .osm, source: .osm, zoom: 12)
+        != MapViewIdentity.manual(place: identityPlace, style: .amapVector, source: .amapVector, zoom: 12)
+        && MapViewIdentity.manual(place: identityPlace, style: .osm, source: .osm, zoom: 12)
+            != MapViewIdentity.manual(place: identityPlace, style: .osm, source: .osm, zoom: 10)
+        && MapViewIdentity.manual(place: identityPlace, style: .osm, source: .osm, zoom: 12)
+            != MapViewIdentity.manual(place: identityPlace, style: .osm, source: .amapVector, zoom: 12)
+)
+expect(
+    "分支身份：未知态固定、Apple 与手动不同、自动与显式 .apple 相同",
+    MapViewIdentity.current(isLocationUnknown: true, place: identityPlace, style: .osm, source: .osm, zoom: 12)
+        == MapViewIdentity.unknown
+        && MapViewIdentity.current(isLocationUnknown: false, place: identityPlace, style: .apple, source: .apple, zoom: nil)
+            != MapViewIdentity.current(isLocationUnknown: false, place: identityPlace, style: .osm, source: .osm, zoom: 12)
+        && MapViewIdentity.current(isLocationUnknown: false, place: identityPlace, style: .apple, source: .apple, zoom: nil)
+            == MapViewIdentity.apple(place: identityPlace, style: .apple)
+)
+expect(
+    "地点只按 4 位小数进身份（GPS 抖动不重建）",
+    MapViewIdentity.placeKey(latitude: 31.23041, longitude: 121.47371)
+        == MapViewIdentity.placeKey(latitude: 31.23042, longitude: 121.47372)
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]

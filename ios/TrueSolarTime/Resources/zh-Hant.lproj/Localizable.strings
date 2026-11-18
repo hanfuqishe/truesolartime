@@ -50,7 +50,6 @@
 "map.diagMapPending" = "尚未回灌（地圖還沒建好）";
 "map.appleBasemap" = "Apple 地圖（系統底圖）";
 "map.styleApple" = "Apple 地圖";
-"settings.mapAutoHint" = "用 Apple 地圖（推薦）";
 
 /* 設定頁 */
 "settings.title" = "位置與提醒";
@@ -62,7 +61,7 @@
 "settings.longitude" = "經度";
 "settings.applyCoordinates" = "套用座標";
 "settings.sectionMap" = "地圖底圖";
-"settings.mapHint" = "自動：境內用高德，境外用 OpenStreetMap";
+"settings.mapHint" = "自動：用 Apple 地圖（系統底圖）";
 "settings.sectionReminders" = "提醒";
 "settings.shichenTitle" = "時辰交接提醒";
 "settings.shichenDesc" = "每個時辰交接時準時提醒（250 ms 蜂鳴）";

@@ -115,7 +115,7 @@ enum MapStyle: String, CaseIterable, Identifiable {
 
     /// 设置页里给用户选的四个选项：自动（Apple）/ OSM / 高德矢量 / 高德卫星。
     /// `.apple` 是 `.auto` 的解析结果，不作为独立选项展示。
-    static let selectable: [MapStyle] = [.auto, .osm, .amapVector, .amapSatellite]
+    static let selectable: [MapStyle] = [.auto, .apple, .osm, .amapVector, .amapSatellite]
 
     var attribution: String {
         switch self {

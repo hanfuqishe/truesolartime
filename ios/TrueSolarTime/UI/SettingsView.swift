@@ -72,10 +72,7 @@ struct SettingsView: View {
                             .foregroundStyle(palette.onSurfaceVariant)
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
-                            // 「自动」的说明改成「用 Apple 地图（推荐）」（其余三项保持原样）。
-            Text(L("settings.mapAutoHint"))
-                .font(.system(size: 12))
-                .foregroundStyle(palette.onSurfaceVariant)
+                
             ForEach(MapStyle.selectable) { style in
                                 Button(style.label) { model.setMapStyle(style) }
                                     .buttonStyle(ThemedChipButtonStyle(isSelected: style == model.mapStyle))

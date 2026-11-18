@@ -456,6 +456,9 @@ final class AppModel: ObservableObject {
     func setMapStyle(_ style: MapStyle) {
         mapStyle = style
         settings.mapStyle = style
+        // **立刻**让底图控制器按新样式重新配置：不能只靠 `MapCard` 的 `.onChange`
+        // （地图在别的 Tab 里可能还没出现，回来时才 build，那时状态已经过期）。
+        BasemapController.shared.configure(style: style, place: place)
     }
 
     /// 回到前台时刷新位置、数据与提醒。

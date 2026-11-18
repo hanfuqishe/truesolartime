@@ -83,6 +83,8 @@ struct MapCard: View {
                 }
             }
             .aspectRatio(4.0 / 3.0, contentMode: .fit)
+            // 分支容器也按身份重建（跨类型切换时 SwiftUI 可能复用容器）。
+            .id(mapBranchIdentity)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.top, 10)
 
@@ -107,19 +109,29 @@ struct MapCard: View {
     private var isAppleBasemap: Bool { resolvedStyle.isSystemBasemap }
 
     /// Apple 底图的身份：**只有地点（4 位小数）+ 样式**，不含源 / 缩放（Apple 没有这些概念）。
+    /// Apple 底图的身份：**地点（4 位小数）+ 样式**（Core 纯函数，可断言）。
     private var appleMapIdentity: String {
-        String(format: "apple|%.4f|%.4f|%@", place.latitude, place.longitude, resolvedStyle.rawValue)
+        MapViewIdentity.apple(place: place, style: resolvedStyle)
     }
 
+    /// 手动 OSM / 高德的身份：地点 + 样式 + 实际源 + 实际缩放。
     private var mapIdentity: String {
-        String(
-            format: "%d|%.4f|%.4f|%@|%d|%d",
-            isLocationUnknown ? 1 : 0,
-            place.latitude,
-            place.longitude,
-            resolvedStyle.rawValue,
-            basemap.uiState.source == .osm ? 1 : 0,
-            basemap.uiState.zoom ?? -1
+        MapViewIdentity.manual(
+            place: place,
+            style: resolvedStyle,
+            source: basemap.uiState.source,
+            zoom: basemap.uiState.zoom
+        )
+    }
+
+    /// 分支容器身份：跨类型切换（未知态 / Apple / 手动）时连容器也重建。
+    private var mapBranchIdentity: String {
+        MapViewIdentity.current(
+            isLocationUnknown: isLocationUnknown,
+            place: place,
+            style: resolvedStyle,
+            source: basemap.uiState.source,
+            zoom: basemap.uiState.zoom
         )
     }
 

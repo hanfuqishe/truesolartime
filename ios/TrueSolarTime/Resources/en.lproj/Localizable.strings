@@ -49,7 +49,6 @@
 "map.diagMapPending" = "Not recorded yet";
 "map.appleBasemap" = "Apple Maps (system basemap)";
 "map.styleApple" = "Apple Maps";
-"settings.mapAutoHint" = "Use Apple Maps (recommended)";
 
 /* Settings */
 "settings.title" = "Location & reminders";
@@ -61,7 +60,7 @@
 "settings.longitude" = "Longitude";
 "settings.applyCoordinates" = "Apply";
 "settings.sectionMap" = "Map source";
-"settings.mapHint" = "Auto: AutoNavi in mainland China, OpenStreetMap elsewhere";
+"settings.mapHint" = "Auto: Apple Maps (system basemap)";
 "settings.sectionReminders" = "Reminders";
 "settings.shichenTitle" = "Shichen change alert";
 "settings.shichenDesc" = "Beep right when the next shichen begins (250 ms)";
