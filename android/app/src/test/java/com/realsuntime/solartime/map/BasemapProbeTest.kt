@@ -95,6 +95,76 @@ class BasemapProbeTest {
         assertEquals(MapStyle.AMAP_VECTOR, timedOut.choice.source)
     }
 
+    // ------------------------------------------------------------ 提前收工
+    //
+    // 回归：早退不能只看「任意一档有内容」。z3 先回来、z12 还在飞时若立刻收工，
+    // decide 只能看到 z3，最终选了低精度 —— 与「取有内容的最高精度」矛盾。
+
+    private val probeZooms = BasemapProbe.AMAP_PROBE_ZOOMS.toList()
+
+    /** z3 有内容，z12/z10 还在飞（不在 map 里）→ 必须继续等，不能早退。 */
+    @Test
+    fun earlyExitWaitsForHigherZoomsStillInFlight() {
+        val concluded = mapOf(3 to amap(3, true))
+        assertFalse(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+    }
+
+    /** z3 有内容，z12/z10 都已回结论（这里都是空白）→ 可以早退，且 decide 选 z3。 */
+    @Test
+    fun earlyExitAllowedOnceHigherZoomsConcluded() {
+        val concluded = mapOf(
+            12 to amap(12, false),
+            10 to amap(10, false),
+            3 to amap(3, true),
+        )
+        assertTrue(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+        assertEquals(3, BasemapProbe.decide(osmReachable = false, amap = concluded.values.toList()).zoom)
+    }
+
+    /** z12 有内容、z10/z3 还在飞 → 已经是最优，不必等更低档。 */
+    @Test
+    fun earlyExitAtTheHighestZoomWithContent() {
+        val concluded = mapOf(12 to amap(12, true))
+        assertTrue(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+    }
+
+    /** z12 空白、z10 有内容、z3 还在飞 → z10 之上的都已有结论，可以早退。 */
+    @Test
+    fun earlyExitWhenOnlyLowerZoomsRemainInFlight() {
+        val concluded = mapOf(
+            12 to amap(12, false),
+            10 to amap(10, true),
+        )
+        assertTrue(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+    }
+
+    /** 一块有内容的都没有 → 不能早退（哪怕所有档都已出结论、都是空白）。 */
+    @Test
+    fun earlyExitRequiresAtLeastOneTileWithContent() {
+        assertFalse(BasemapProbe.shouldEarlyExit(emptyMap(), probeZooms))
+        assertFalse(
+            BasemapProbe.shouldEarlyExit(
+                mapOf(12 to amap(12, false), 10 to amap(10, false), 3 to amap(3, false)),
+                probeZooms,
+            ),
+        )
+    }
+
+    /** 端到端：z3 先回有内容、z12 后回有内容 → 期间不能早退，最终选 z12。 */
+    @Test
+    fun endToEndHighestZoomWinsWhenItArrivesLater() {
+        val concluded = mutableMapOf<Int, BasemapProbe.AmapProbe>()
+
+        // t0：只有 z3 有内容，z12/z10 还在飞 → 不能退。
+        concluded[3] = amap(3, true)
+        assertFalse(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+
+        // t1：z12 有内容回来 → 可以退，且选择 z12（不是先回来的 z3）。
+        concluded[12] = amap(12, true)
+        assertTrue(BasemapProbe.shouldEarlyExit(concluded, probeZooms))
+        assertEquals(12, BasemapProbe.decide(osmReachable = false, amap = concluded.values.toList()).zoom)
+    }
+
     // ------------------------------------------------------------ 降级链种子
 
     @Test

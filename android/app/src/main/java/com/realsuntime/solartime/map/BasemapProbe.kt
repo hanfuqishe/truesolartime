@@ -25,7 +25,8 @@ object BasemapProbe {
     const val TILE_TIMEOUT_MILLIS = 2_500L
 
     /**
-     * 提前收工：只要已经探到「高德有内容」，等到这个时刻就不再等 OSM 了。
+     * 提前收工的**最早时刻**：到这个时刻之后，只要「有内容的最高档」之上都已经有结论就收工
+     * （判定见 [shouldEarlyExit]；更高精度的档还在飞时会继续等，不再为了快而丢掉精度）。
      *
      * OSM 被墙时它的 DNS/连接会一直挂到超时（几秒），而高德通常 1 秒内就有结论；
      * 死等 OSM 会让首屏白等好几秒。慢到 2 秒还没回的 OSM，本来也不适合当首屏底图
@@ -127,6 +128,23 @@ object BasemapProbe {
         if (lastKey == null || lastAtMillis == null) return true
         if (lastKey != key) return true
         return nowMillis - lastAtMillis >= CACHE_MILLIS
+    }
+
+    /**
+     * 提前收工判定（纯函数）：已经探到「有内容」的瓦片后，**比它精度更高的档都已有结论**才允许早退。
+     *
+     * 之前的实现是「任意一档有内容就早退」：z3 先回、z12 还在飞，2 秒一到就退，[decide] 只能看到 z3，
+     * 于是选了个低精度 —— 与「取有内容的最高精度」自相矛盾。这里必须等到 z12 / z10 都出结论
+     * （拿到但空白、网络失败都算结论，只要它已经进了 [amap]）。
+     *
+     * @param amap 已经出结论的档（键 = zoom）；**还在飞的档不能出现在这里**。
+     * @param zooms 本次要探的所有档（见 [AMAP_PROBE_ZOOMS]）。
+     * @return true = 可以立刻收工；false = 还有更高精度的档在飞，或暂时没有任何有内容的档。
+     */
+    fun shouldEarlyExit(amap: Map<Int, AmapProbe>, zooms: List<Int>): Boolean {
+        val best = amap.values.filter { it.hasContent }.maxByOrNull { it.zoom } ?: return false
+        // 比 best 更高的档只要还没进 map（还在飞），就继续等它出结论。
+        return zooms.none { it > best.zoom && !amap.containsKey(it) }
     }
 
     /**

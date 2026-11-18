@@ -73,9 +73,12 @@ object BasemapProbeRunner {
 
         val finished = withTimeoutOrNull(BasemapProbe.OVERALL_TIMEOUT_MILLIS) {
             while (pending.get() > 0) {
-                // 提前收工：已经探到「高德有内容」，就别再为被墙的 OSM 白等到超时。
+                // 提前收工：已经探到「有内容」，**并且比它精度更高的档都已有结论**（空白 / 失败也算），
+                // 才允许停。之前的「任意一档有内容就退」会让 z3 先回来、z12 还在飞时立刻收工，
+                // decide 只看到 z3 → 选低精度。
+                // 另外，OSM 已经通了的话高德结果根本不会被采用（decide 先判 OSM），不必再等高精度档。
                 val earlyEnough = System.currentTimeMillis() - startedAt >= BasemapProbe.EARLY_EXIT_MILLIS &&
-                    amap.values.any { it.hasContent }
+                    (osmReachable.get() || BasemapProbe.shouldEarlyExit(amap, zooms))
                 if (earlyEnough) break
                 delay(WAIT_STEP_MILLIS)
             }
