@@ -39,8 +39,10 @@ struct BasemapMapDebug: Equatable {
         let mode = isUnknown ? "未知态" : "正常态"
         let center = String(format: "%.1f,%.1f", centerLatitude, centerLongitude)
         let span = String(format: "%.0f×%.0f", latitudeDelta, longitudeDelta)
+        // Apple 系统底图没有「缩放级别」概念：显示「—」，不要显示成 z0。
+        let zoomText = (isUnknown || source == .apple) ? "—" : "\(zoom)"
         // 未知态用的是**系统底图**（Apple），不是我们探测出来的源。
         let sourceText = isUnknown ? "Apple（系统底图）" : source.label
-        return "\(mode) · 中心 \(center) · 跨度 \(span) · 缩放 \(zoom) · 标记 \(markerCount) 个 · 源 \(sourceText)"
+        return "\(mode) · 中心 \(center) · 跨度 \(span) · 缩放 \(zoomText) · 标记 \(markerCount) 个 · 源 \(sourceText)"
     }
 }

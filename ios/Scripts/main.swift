@@ -1858,7 +1858,7 @@ expect(
 expect(
     "未知态默认诊断：中心 20.0,0.0 / 跨度 90×120 / z3 / 标记 0 / 源 OSM（字段齐全，含「源」）",
     BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text
-        == "未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 Apple（系统底图）",
+        == "未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 — · 标记 0 个 · 源 Apple（系统底图）",
     "actual=\(BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text)"
 )
 expect(
@@ -1885,7 +1885,7 @@ expect(
     unknownMapDebug.text.contains("未知态")
         && unknownMapDebug.text.contains("中心 20.0,0.0")
         && unknownMapDebug.text.contains("跨度 90×120")
-        && unknownMapDebug.text.contains("缩放 3")
+        && unknownMapDebug.text.contains("缩放 —")
         && unknownMapDebug.text.contains("标记 0 个")
         && unknownMapDebug.text.contains("Apple"),
     "actual=\(unknownMapDebug.text)"
@@ -2162,7 +2162,7 @@ expect(
 expect(
     "未知态仍走 Apple：诊断源显示 Apple（系统底图）、缩放 3",
     BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("Apple")
-        && BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("缩放 3")
+        && BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("缩放 —")
 )
 print("== 底图选项与视图身份（切换样式必须生效）==")
 expect(
@@ -2345,6 +2345,38 @@ expect(
     "成功后：已尝试 + 成功",
     attempt.summary(now: 180) == "已尝试 · 3 分钟前 · 成功",
     "actual=\(attempt.summary(now: 180))"
+)
+// WeatherKit 造出来的快照必须自带 `source == .weatherKit`（否则「天气来源」会显示成 Open-Meteo）。
+let wkHours = [WeatherHour(epochSeconds: 1_000, temperatureC: 10, code: 0)]
+let wkSnapshot = WeatherSnapshot(temperatureC: 10, code: 0, hourly: wkHours, source: .weatherKit)
+expect(
+    "WeatherKit 快照的 source 是 .weatherKit、步长 1 小时",
+    wkSnapshot.source == .weatherKit
+        && wkSnapshot.stepHours == 1
+        && WeatherChain.attribution(for: wkSnapshot.source).link != nil
+)
+expect(
+    "WeatherSnapshot 不因构造参数缺省被改回 Open-Meteo（显式 source 生效）",
+    wkSnapshot.source != .openMeteo && wkSnapshot.source.displayName == L("weather.sourceWeatherKit")
+)
+// 缓存往返：source 必须保留（缓存里丢了 source → 诊断会显示成 Open-Meteo）。
+let wkData = try! JSONEncoder().encode(wkSnapshot.hourly)
+let wkBack = try! JSONDecoder().decode([WeatherHour].self, from: wkData)
+expect(
+    "缓存往返：hourly 编解码保真（source 单独存 rawValue，也断言字符串常量不变）",
+    wkBack.count == 1 && wkBack[0].temperatureC == 10 && WeatherSource.weatherKit.rawValue == "weatherkit"
+)
+expect(
+    "成功之后不该再回退：手动 WeatherKit 没有下一源；自动模式只有失败才用 Open-Meteo",
+    WeatherChain.nextSource(after: .weatherKit, setting: .weatherKit) == nil
+        && WeatherChain.order(setting: .auto).first == .weatherKit
+)
+expect(
+    "Apple 底图的诊断不该显示 z0（缩放为「—」）",
+    BasemapMapDebug(
+        isUnknown: false, centerLatitude: 39.9, centerLongitude: 116.4,
+        latitudeDelta: 0, longitudeDelta: 0, zoom: 0, markerCount: 1, source: .apple
+    ).text.contains("缩放 —")
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]

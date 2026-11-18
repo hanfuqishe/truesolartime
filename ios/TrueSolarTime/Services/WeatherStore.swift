@@ -185,6 +185,9 @@ final class WeatherStore {
                 case .success(let snapshot):
                     self.weatherKitFailure = nil
                     self.weatherKitAttempt.markSucceeded(at: Date().timeIntervalSince1970)
+                    // **必须先落盘**：`finish` 只是把 snapshot 交给调用方，缓存（含 `Key.source`）要自己写。
+                    // 之前这里漏了 save，于是诊断里「WeatherKit 已尝试·成功」但「天气来源」还是上一次的 Open-Meteo。
+                    self.save(place: place, snapshot: snapshot)
                     self.finish(place: place, completion: completion, snapshot: snapshot)
                 case .failure(let failure):
                     self.weatherKitFailure = failure.displayText

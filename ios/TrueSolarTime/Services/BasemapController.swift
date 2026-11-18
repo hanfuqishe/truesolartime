@@ -111,6 +111,17 @@ final class BasemapController: ObservableObject {
         if style.isSystemBasemap {
             isUnknownMode = false
             state.markSystemBasemap(at: now.timeIntervalSince1970)
+            // Apple 底图没有 overlay / 自己管理视口：这里直接回灌一条诊断，别让它停在「尚未回灌」。
+            mapDebug = BasemapMapDebug(
+                isUnknown: false,
+                centerLatitude: place.latitude,
+                centerLongitude: place.longitude,
+                latitudeDelta: 0,
+                longitudeDelta: 0,
+                zoom: 0,
+                markerCount: 1,
+                source: .apple
+            )
             publishIfChanged()
             return
         }
