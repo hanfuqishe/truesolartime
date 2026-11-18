@@ -25,6 +25,7 @@ import {
   cacheKey,
   decide,
   needsProbe,
+  shouldEarlyExit,
   tileOf,
   uiStateOf
 } from '../core/MapFallback';
@@ -200,18 +201,28 @@ export class MapTileService {
       tileOf(MapStyle.OSM, place.latitude, place.longitude, MapFallback.MIN_ZOOM), false);
     const z12Promise: Promise<boolean> = MapTileService.probeTicket(
       tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 12), true)
-      .then((ok: boolean) => { amap.z12 = ok; return ok; });
+      .then((ok: boolean) => {
+        amap.setState(12, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
+        return ok;
+      });
     const z10Promise: Promise<boolean> = MapTileService.probeTicket(
       tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 10), true)
-      .then((ok: boolean) => { amap.z10 = ok; return ok; });
+      .then((ok: boolean) => {
+        amap.setState(10, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
+        return ok;
+      });
     const z3Promise: Promise<boolean> = MapTileService.probeTicket(
       tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, MapFallback.MIN_ZOOM), true)
-      .then((ok: boolean) => { amap.z3 = ok; return ok; });
+      .then((ok: boolean) => {
+        amap.setState(3, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
+        return ok;
+      });
     const all: Promise<ProbeDecision> = Promise.all([osmPromise, z12Promise, z10Promise, z3Promise])
       .then((results: boolean[]) => decide(results[0], amap));
     const early: Promise<ProbeDecision> = new Promise<ProbeDecision>((resolve: (value: ProbeDecision) => void) => {
       setTimeout(() => {
-        if (amap.z12 || amap.z10 || amap.z3) {
+        // 只有「更高精度档都已有结论」时才允许早退；否则继续等，避免低精度抢答。
+        if (shouldEarlyExit(amap, [12, 10, 3])) {
           resolve(decide(false, amap));
         }
       }, MapFallback.PROBE_EARLY_EXIT_MILLIS);

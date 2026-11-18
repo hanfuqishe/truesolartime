@@ -38,10 +38,12 @@ import {
   ProbeCache,
   ProbeDecision,
   applyDecision,
+  bestContentZoom,
   cacheKey,
   decide,
   needsProbe,
   sameUiState,
+  shouldEarlyExit,
   shouldProbe,
   tileOf,
   uiStateOf,
@@ -1266,18 +1268,50 @@ for (const item of equationCases) {
   const amap = new AmapProbe();
   equal('osm reachable wins with z12', MapStyle.OSM, decide(true, amap).source);
   equal('osm reachable keeps z12', 12, decide(true, amap).zoom);
-  amap.z12 = true;
+  amap.setState(12, AmapProbe.CONTENT);
   const z12Decision = decide(false, amap);
   check('amap z12 is preferred when osm is down',
     z12Decision.source === MapStyle.AMAP_VECTOR && z12Decision.zoom === 12 && !z12Decision.unavailable);
-  amap.z12 = false;
-  amap.z10 = true;
+  amap.setState(12, AmapProbe.EMPTY);
+  amap.setState(10, AmapProbe.CONTENT);
   equal('amap falls back to z10', 10, decide(false, amap).zoom);
-  amap.z10 = false;
-  amap.z3 = true;
+  amap.setState(10, AmapProbe.EMPTY);
+  amap.setState(3, AmapProbe.CONTENT);
   equal('amap falls back to z3', 3, decide(false, amap).zoom);
-  amap.z3 = false;
+  amap.setState(3, AmapProbe.EMPTY);
   check('all probes blank means unavailable', decide(false, amap).unavailable);
+
+  // 三态早退：更高精度还在飞时不能拿低精度抢答。
+  const earlyZ3 = new AmapProbe();
+  earlyZ3.setState(3, AmapProbe.CONTENT);
+  check('z3 content with z12/z10 still flying does not early exit',
+    !shouldEarlyExit(earlyZ3, [12, 10, 3]));
+  earlyZ3.setState(12, AmapProbe.EMPTY);
+  earlyZ3.setState(10, AmapProbe.EMPTY);
+  check('z3 content with higher zooms settled can early exit', shouldEarlyExit(earlyZ3, [12, 10, 3]));
+  equal('settled z3 case chooses z3', 3, decide(false, earlyZ3).zoom);
+
+  const earlyZ12 = new AmapProbe();
+  earlyZ12.setState(12, AmapProbe.CONTENT);
+  equal('best content zoom tracks the tri-state', 12, bestContentZoom(earlyZ12));
+  check('z12 content exits immediately', shouldEarlyExit(earlyZ12, [12, 10, 3]));
+  const earlyZ10 = new AmapProbe();
+  earlyZ10.setState(12, AmapProbe.EMPTY);
+  earlyZ10.setState(10, AmapProbe.CONTENT);
+  check('z10 content with z12 settled can early exit', shouldEarlyExit(earlyZ10, [12, 10, 3]));
+  equal('settled z10 case chooses z10', 10, decide(false, earlyZ10).zoom);
+  const noContent = new AmapProbe();
+  noContent.setState(12, AmapProbe.EMPTY);
+  noContent.setState(10, AmapProbe.EMPTY);
+  noContent.setState(3, AmapProbe.EMPTY);
+  check('no content never early exits', !shouldEarlyExit(noContent, [12, 10, 3]));
+  // 端到端：z3 先回有内容，z12 后回有内容 → 最终必须选 z12。
+  const lateZ12 = new AmapProbe();
+  lateZ12.setState(3, AmapProbe.CONTENT);
+  check('late z12 keeps the probe waiting', !shouldEarlyExit(lateZ12, [12, 10, 3]));
+  lateZ12.setState(12, AmapProbe.CONTENT);
+  equal('late z12 wins over earlier z3', 12, decide(false, lateZ12).zoom);
+  check('late z12 now allows early exit', shouldEarlyExit(lateZ12, [12, 10, 3]));
 
   equal('zooms above 12 is empty', '', zoomsAbove(12).join(','));
   equal('zooms above 10', '12,11', zoomsAbove(10).join(','));

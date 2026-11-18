@@ -535,11 +535,82 @@ export class MapFallback {
   }
 }
 
-/** 高德三档探测的命中情况（z12 / z10 / z3 哪一级有内容）。 */
+/**
+ * 高德三档探测状态（z12 / z10 / z3），每档三态：
+ *   - [UNKNOWN] 请求还没回来；
+ *   - [EMPTY] 已返回但没内容（失败 / 空白）；
+ *   - [CONTENT] 已返回且有内容。
+ * 不能用 boolean：「还没回来」与「回来了但没内容」必须区分，否则早退会误把低精度当成唯一选择。
+ */
 export class AmapProbe {
-  z12: boolean = false;
-  z10: boolean = false;
-  z3: boolean = false;
+  static readonly UNKNOWN: number = -1;
+  static readonly EMPTY: number = 0;
+  static readonly CONTENT: number = 1;
+
+  z12: number = AmapProbe.UNKNOWN;
+  z10: number = AmapProbe.UNKNOWN;
+  z3: number = AmapProbe.UNKNOWN;
+
+  /** 该档是否已经有结论（有内容 / 无内容都算；还在飞 = false）。 */
+  hasVerdict(zoom: number): boolean {
+    return this.stateOf(zoom) !== AmapProbe.UNKNOWN;
+  }
+
+  stateOf(zoom: number): number {
+    if (zoom === 12) {
+      return this.z12;
+    }
+    if (zoom === 10) {
+      return this.z10;
+    }
+    return this.z3;
+  }
+
+  setState(zoom: number, state: number): void {
+    if (zoom === 12) {
+      this.z12 = state;
+    } else if (zoom === 10) {
+      this.z10 = state;
+    } else {
+      this.z3 = state;
+    }
+  }
+
+  /** 已有内容的最高级别；都没有则 -1。 */
+  bestContentZoom(): number {
+    if (this.z12 === AmapProbe.CONTENT) {
+      return 12;
+    }
+    if (this.z10 === AmapProbe.CONTENT) {
+      return 10;
+    }
+    if (this.z3 === AmapProbe.CONTENT) {
+      return 3;
+    }
+    return -1;
+  }
+}
+
+/** 纯函数：已有内容的最高级别；没有则 -1。 */
+export function bestContentZoom(amap: AmapProbe): number {
+  return amap.bestContentZoom();
+}
+
+/**
+ * 早退是否安全：已知某档有内容，且**所有比它更高的档都已有结论**（有内容 / 无内容）。
+ * 只要更高的档还在飞，就继续等 —— 否则 z3 先回、z12 后回有内容时会被低精度抢先定级。
+ */
+export function shouldEarlyExit(amap: AmapProbe, zooms: number[]): boolean {
+  const best: number = amap.bestContentZoom();
+  if (best < 0) {
+    return false;
+  }
+  for (const zoom of zooms) {
+    if (zoom > best && !amap.hasVerdict(zoom)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** 首屏探测的最终决定：走哪个源、哪一级、是否「底图不可用」。 */
@@ -568,14 +639,9 @@ export function decide(osmReachable: boolean, amap: AmapProbe): ProbeDecision {
   if (osmReachable) {
     return new ProbeDecision(MapStyle.OSM, MapFallback.DEFAULT_ZOOM, false);
   }
-  if (amap.z12) {
-    return new ProbeDecision(MapStyle.AMAP_VECTOR, 12, false);
-  }
-  if (amap.z10) {
-    return new ProbeDecision(MapStyle.AMAP_VECTOR, 10, false);
-  }
-  if (amap.z3) {
-    return new ProbeDecision(MapStyle.AMAP_VECTOR, 3, false);
+  const best: number = amap.bestContentZoom();
+  if (best > 0) {
+    return new ProbeDecision(MapStyle.AMAP_VECTOR, best, false);
   }
   return new ProbeDecision(MapStyle.AMAP_VECTOR, MapFallback.DEFAULT_ZOOM, true);
 }
