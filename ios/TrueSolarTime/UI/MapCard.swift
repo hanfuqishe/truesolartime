@@ -14,6 +14,8 @@ struct MapCard: View {
 
     let place: Place
     let mapStyle: MapStyle
+    /// 定位不可用（未知态）：z3 全球底图、不画标记、经纬度显示 `--`。
+    let isLocationUnknown: Bool
 
     @ObservedObject private var basemap = BasemapController.shared
 
@@ -132,11 +134,14 @@ private struct MapViewRepresentable: UIViewRepresentable {
 
     let place: Place
     let style: MapStyle
-    /// 未知态：不画标记（只有全球底图）。
-    let hidesMarker: Bool
     /// 有效 plan 快照（源 / 缩放 / 不可用）：**只有它变了才重建 overlay**。
     /// 计数（OSM 失败次数 / 空白判定次数）不在里面，所以不会因为「又失败一块瓦片」而重组地图。
     let plan: BasemapUiState
+    /// 未知态：不画标记（只有全球底图）。
+    ///
+    /// 注意：**必须放在 `plan` 之后** —— memberwise init 的实参顺序要和声明顺序一致，
+    /// 调用点是 `place:style:plan:hidesMarker:`（之前顺序写反，CI 直接编译不过）。
+    let hidesMarker: Bool
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()

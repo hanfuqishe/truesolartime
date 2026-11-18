@@ -36,7 +36,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var showDiagnostics = false
     @Published var message: String?
 
-    private let settings = AppSettings()
+    /// `AppSettings` 是 **struct**：要给它的属性赋值（如 `settings.followGps = …`）必须用 `var`。
+    private var settings = AppSettings()
     private let location = LocationProvider()
     private var clockTimer: Timer?
     private var fixWatchdog: Timer?
