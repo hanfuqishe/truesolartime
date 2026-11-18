@@ -121,7 +121,6 @@ class SunColorsTest {
         assertEquals(0xFFFFFBF6.toInt(), SunColors.CARD_SURFACE_LIGHT)
         assertEquals(0xFF857468.toInt(), SunColors.NIGHT_DASH_LIGHT)
         assertEquals(0.0f, SunColors.SUN_DOT_RING_ALPHA, 1e-6f)
-        assertEquals(0.7f, SunColors.DAY_TICK_ALPHA, 1e-6f)
         assertEquals(0.15, SunColors.MIN_WARMTH_GAP, 1e-9)
     }
 }

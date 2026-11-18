@@ -84,7 +84,7 @@ fun TrueSolarTimeTheme(
  * - **亮色主题**：白天弧 = 淡金 [SunColors.DAY_ARC]（`#EAD095`，白卡上对比度 ≈1.46，只做「路径示意」）；
  *   太阳点 = **纯色实心核心 2.75dp**（太阳金 [SunColors.DAY_SUN] `#D9AC1C`，alpha 1.0）
  *   \+ 外圈光晕（同色 alpha 0.35 → 0，2.75→5.5dp）；核心画在光晕之上，弧线不会透出来；
- *   日出 / 日落刻度 = 同样的金、70% 透明（比点淡一档）。
+ *   日出 / 日落交点**不画小圆点**（弧端 + 两侧时间标签已足够），只保留弧本身。
  * - **暗色主题**：白天弧仍是实色主色（深蓝底上那档金色正好，调淡反而糊）；太阳点结构相同，
  *   颜色换成夜金 [SunColors.NIGHT_SUN]（`#F5D68A`，与 `DarkColors.primary` 同色）。
  *
@@ -128,14 +128,6 @@ fun sunDotGlowStops(color: Color): List<Pair<Float, Color>> {
     val positions = SunColors.sunDotGlowStopPositions()
     val alphas = SunColors.sunDotGlowStopAlphas()
     return positions.mapIndexed { index, position -> position to color.copy(alpha = alphas[index]) }
-}
-
-/** 日出 / 日落刻度点：亮色主题用太阳金 + 70% 透明（比太阳点淡一档），暗色主题仍是主色。 */
-@Composable
-fun sunTickColor(): Color = if (isLightSunPalette()) {
-    Color(SunColors.DAY_SUN).copy(alpha = SunColors.DAY_TICK_ALPHA)
-} else {
-    MaterialTheme.colorScheme.primary
 }
 
 /** 当前是不是亮色主题：按卡片底色（surface）的亮度判断。 */

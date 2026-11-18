@@ -228,7 +228,7 @@ class SunPathGeometryTest {
         }
     }
 
-    /** 地平线这条弦的两端正好落在日出 / 日落刻度上。 */
+    /** 地平线这条弦的两端正好落在日出 / 日落交点上。 */
     @Test
     fun horizonChordEndsAtSunriseAndSunsetPoints() {
         val sunrise = 4.99
@@ -262,7 +262,7 @@ class SunPathGeometryTest {
         )
     }
 
-    /** 白天弧的扫角 = 昼长占 24h 的比例；从日出刻度顺时针经过 12:00 扫到日落刻度。 */
+    /** 白天弧的扫角 = 昼长占 24h 的比例；从日出交点顺时针经过 12:00 扫到日落交点。 */
     @Test
     fun dayArcSpanRunsFromSunriseThroughNoonToSunset() {
         val twelveHour = SunPathGeometry.dayArcSpan(6.0, 18.0)
@@ -277,6 +277,45 @@ class SunPathGeometryTest {
         // 落日越过 24:00 时按下一圈补 2π，扫角仍是正数（昼长 21.5h → 322.5°）。
         val wrapped = SunPathGeometry.dayArcSpan(3.0, 0.5)
         assertEquals(21.5 / 24.0 * 360.0, wrapped!!.sweepDegrees.toDouble(), 0.1)
+    }
+
+    /**
+     * 交点上的小圆点已删，白天弧两端各外扩 [SunPathGeometry.ARC_ENDPOINT_OVERDRAW_DEG]，
+     * 让圆头线帽略微穿过地平线；按 R≈74dp 换算，这段外扩约 1dp。
+     */
+    @Test
+    fun dayArcEndsAreExtendedSlightlyBeyondTheHorizonCrossings() {
+        val span = SunPathGeometry.dayArcSpan(6.0, 18.0)!!
+        val extended = SunPathGeometry.withEndpointOverdraw(span)
+
+        assertEquals(
+            span.startDegrees - SunPathGeometry.ARC_ENDPOINT_OVERDRAW_DEG,
+            extended.startDegrees,
+            1e-4f,
+        )
+        assertEquals(
+            span.sweepDegrees + 2f * SunPathGeometry.ARC_ENDPOINT_OVERDRAW_DEG,
+            extended.sweepDegrees,
+            1e-4f,
+        )
+        // 两端都真的越过了交点：起点更早、终点更晚。
+        assertTrue(extended.startDegrees < span.startDegrees)
+        assertTrue(extended.startDegrees + extended.sweepDegrees > span.startDegrees + span.sweepDegrees)
+
+        // 外扩量级：0.5°~1°，在真实半径上约 1dp。
+        assertTrue(SunPathGeometry.ARC_ENDPOINT_OVERDRAW_DEG in 0.5f..1f)
+        val radius = SunPathGeometry.RADIUS_RATIO * dialHeight
+        val overdrawDp = radius * Math.toRadians(SunPathGeometry.ARC_ENDPOINT_OVERDRAW_DEG.toDouble()).toFloat()
+        assertEquals("外扩应约 1dp", 1.0f, overdrawDp, 0.15f)
+    }
+
+    /** 昼长接近 24h 时外扩不会把扫角顶过 360°（否则夜间弧会变成负扫角、画反）。 */
+    @Test
+    fun endpointOverdrawNeverExceedsAFullCircle() {
+        val nearFull = SunPathGeometry.dayArcSpan(0.05, 23.95)!!
+        val extended = SunPathGeometry.withEndpointOverdraw(nearFull)
+        assertTrue("扫角不能超过整圈：${extended.sweepDegrees}", extended.sweepDegrees <= 360f)
+        assertTrue("夜间弧扫角不能为负：${360f - extended.sweepDegrees}", 360f - extended.sweepDegrees >= 0f)
     }
 
     // ---- 外侧标签锚点（labelAnchors） ----

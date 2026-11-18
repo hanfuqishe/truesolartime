@@ -27,7 +27,7 @@ import kotlin.math.sqrt
  *   日出恰好 0:00（日落 24:00）时两个交点重合在圆**最下方**，地平线与圆**相切**（见 [horizonY]）。
  *
  * 时刻一律是**当地真太阳时**的小时数（0–24）：圆盘的角度就是真太阳时的小时数，
- * 换成标准时 / 北京时间来算会让太阳点与日出日落刻度对不上。
+ * 换成标准时 / 北京时间来算会让太阳点与日出日落交点对不上。
  *
  * 这个类刻意不依赖任何 Android 绘图 API，方便在 JVM 单测里直接断言数值。
  */
@@ -316,7 +316,7 @@ object SunPathGeometry {
      * 白天弧的起止角度（`drawArc` 口径，见 [SunArcSpan]）；日出或日落缺一个（极昼 / 极夜）时返回
      * null，调用方按 [SunPath.isWholeCircleDay] / [SunPath.isWholeCircleNight] 画整圆。
      *
-     * 真太阳时里日出与日落关于 12:00 对称，于是白天弧恰好从日出刻度起、顺时针扫到日落刻度；
+     * 真太阳时里日出与日落关于 12:00 对称，于是白天弧恰好从日出交点起、顺时针扫到日落交点；
      * 落日越过 24:00（极圈附近夏令时的那几天）时按下一圈补 2π，保证扫角是正数、不会反着画。
      */
     fun dayArcSpan(sunriseHour: Double?, sunsetHour: Double?): SunArcSpan? {
@@ -331,6 +331,27 @@ object SunPathGeometry {
             sweepDegrees = Math.toDegrees(sweep).toFloat(),
         )
     }
+
+    /**
+     * 白天弧两端各沿圆外扩的角度（度）：约 **1dp**（半径 ≈74dp 时 0.8° ≈ 1.03dp）。
+     *
+     * 日出 / 日落交点上的小圆点已经删掉，只剩弧端一个圆头线帽（比端点多半条线宽）。
+     * 不外扩时白弧会「停在地平线前一点」，看起来悬空；两端各外扩这么多之后，
+     * 白弧会略微穿过地平线，接缝自然。**太阳高度角算出的交点本身不变**，
+     * 标签（[labelAnchors]）仍按真实交点摆位。
+     */
+    const val ARC_ENDPOINT_OVERDRAW_DEG = 0.8f
+
+    /**
+     * 把白天弧的两端各外扩 [ARC_ENDPOINT_OVERDRAW_DEG]。
+     *
+     * 扫角封顶 360°：昼长接近 24h（太阳刚要落就升）时，外扩会把白天弧接到整圈，
+     * 夜里那一小段随之消失，避免算出一个负的夜间扫角。
+     */
+    fun withEndpointOverdraw(span: SunArcSpan): SunArcSpan = SunArcSpan(
+        startDegrees = span.startDegrees - ARC_ENDPOINT_OVERDRAW_DEG,
+        sweepDegrees = (span.sweepDegrees + 2f * ARC_ENDPOINT_OVERDRAW_DEG).coerceAtMost(360f),
+    )
 
     /**
      * 算出三个时间标签 + 极昼极夜文案的锚点（见 [SunLabelAnchors]）。
@@ -400,7 +421,7 @@ object SunPathGeometry {
     /**
      * 地平线这条弦的半宽：`sqrt(R² − (y_h − C.y)²)`，单位像素。
      *
-     * 弦两端正好落在日出 / 日落刻度上；极昼极夜时地平线在圆外（|dy| > R），返回 0 表示没有弦。
+     * 弦两端正好落在日出 / 日落交点上；极昼极夜时地平线在圆外（|dy| > R），返回 0 表示没有弦。
      * 日出 0:00（相切）时也返回 0：弦退化成一个点。
      * 单独拿出来是为了让 UI 只负责画线、不算几何（也便于单测断言「弦端 = 日出点」）。
      */

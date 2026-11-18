@@ -15,7 +15,6 @@ package com.realsuntime.solartime.ui.theme
  * | 白天弧 [DAY_ARC] | `#EAD095` | ≈1.46 | 淡金，只做「路径示意」；比最初的 `#D09464`（≈2.52）轻得多 |
  * | 白天太阳点 [DAY_SUN] | `#D9AC1C` | ≈2.07 | **纯色实心核心** 2.75dp（alpha 1.0），外圈光晕同色 0.35→0 到 5.5dp |
  * | 夜晚太阳点 [NIGHT_SUN] | `#F5D68A` | — | 与 `DarkColors.primary` 同一档夜金，核心同样纯色不透明 |
- * | 日出/日落刻度 [DAY_SUN] @ 70% | `#D9AC1C` | ≈1.7（合成） | 与太阳点同色系、更淡更小 |
  * | 夜晚虚线（`LightColors.outline`） | `#857468` | ≈4.34 | 中性灰，靠**色相**与暖金弧区分，不再靠「更深」 |
  *
  * 太阳点曾经照搬时间轴「现在」圆点的单个渐变圆，但真机截图放大后 alpha 阶梯没有生效：
@@ -40,7 +39,7 @@ internal object SunColors {
     /** 白天弧：淡金（比上一版 `#E6CB9C` 更黄、更少褐），白卡上对比度 ≈1.46（要求 1.4~1.9，只是「路径示意」）。 */
     const val DAY_ARC = 0xFFEAD095.toInt()
 
-    /** 白天太阳点的颜色（也是日出 / 日落刻度的颜色）：`#D9AC1C`，白卡上对比度 ≈2.07，色相 H46° / S87%。 */
+    /** 白天太阳点的颜色：`#D9AC1C`，白卡上对比度 ≈2.07，色相 H46° / S87%。 */
     const val DAY_SUN = 0xFFD9AC1C.toInt()
 
     /** 夜间太阳点的颜色：夜金 `#F5D68A`（= `DarkColors.primary`，深蓝底上对比度 ≈11.4）。 */
@@ -53,9 +52,6 @@ internal object SunColors {
      * 常量留着只为单测能钉住「不许再加回来」。
      */
     const val SUN_DOT_RING_ALPHA = 0f
-
-    /** 日出 / 日落刻度点：同太阳金、更淡（只有点的一半存在感，不与太阳点抢主次）。 */
-    const val DAY_TICK_ALPHA = 0.7f
 
     // ---- 圆盘线宽（dp）----
     // 上一条轨迹线是 2.5dp 的实线 / 2.5dp + 6/6dp 的虚线，在 194dp 高的画布上显得又粗又重；

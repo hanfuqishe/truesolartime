@@ -100,7 +100,6 @@ import com.realsuntime.solartime.ui.theme.softDotStops
 import com.realsuntime.solartime.ui.theme.sunDayArcColor
 import com.realsuntime.solartime.ui.theme.sunDotColor
 import com.realsuntime.solartime.ui.theme.sunDotGlowStops
-import com.realsuntime.solartime.ui.theme.sunTickColor
 import com.realsuntime.solartime.widget.ChimeAlarm
 import com.realsuntime.solartime.widget.WidgetAxis
 import java.time.LocalTime
@@ -1181,13 +1180,13 @@ private fun DialLabel(text: String, style: TextStyle, color: Color, offset: IntO
  * 时间圆盘：**圆 = 一天 24 小时**，12:00 在正上方、00:00 在正下方，
  * 地平线是一条水平线，其高度由日出时刻决定（见 `SunPathGeometry`）。
  *
- * 盘面画五样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
- * 1. 白天弧：实线 1.6dp、主色；夜晚弧：虚线 1.5dp / 4dp 间隔、低对比度；
+ * 盘面画四样东西（**不再画外圈「表圈」**：白天弧 / 夜晚虚线就是圆盘唯一的边界）：
+ * 1. 白天弧：实线 1.6dp、主色；夜晚弧：虚线 1.5dp / 4dp 间隔、低对比度；弧端各外扩 0.8°（≈1dp），
+ *    让线帽略微穿过地平线（交点上的小圆点已按用户要求删掉）；
  * 2. 地平线：一条**固定长度**的横线（画布左右各内缩 4dp），高度由日出时刻决定，贯穿整个画面；
- * 3. 日出 / 日落刻度点：地平线与圆的两个交点（极昼极夜不画）；
- * 4. 当前太阳点：**两层** —— 外圈光晕（2.75→5.5dp，alpha 0.35→0）+ 纯色实心核心（2.75dp、alpha 1.0，
+ * 3. 当前太阳点：**两层** —— 外圈光晕（2.75→5.5dp，alpha 0.35→0）+ 纯色实心核心（2.75dp、alpha 1.0，
  *    先光晕后核心）；地平线以上金色、以下低对比 outline；核心绝不被弧线透出；
- * 5. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
+ * 4. 运动方向箭头：圆内侧 0.72R 上一段 30° 的短弧 + 实心小三角，标出太阳往哪走
  *    （北半球顺时针、南半球逆时针，颜色 onSurfaceVariant，不与主色抢视觉）。
  *
  * 南半球（`snapshot.latitude < 0`）时圆盘整体左右镜像：观察者面朝北，06:00 的太阳在右、
@@ -1210,12 +1209,11 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
     // 太阳点是**两层**：外圈光晕（2.75→5.5dp，alpha 0.35→0）+ 纯色实心核心（2.75dp，alpha 1.0）。
     // 核心用纯 Color 直接画、不套 Brush 也不 copy(alpha)，所以弧线不会从点下面透出来。
     // 地平线以下用同样的两层结构，只把颜色换成低对比的 outline。
-    // 刻度点用太阳金 70%。地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
+    // 地平线与运动箭头仍是灰（outline / onSurfaceVariant），不动。
     val dayArcColor = sunDayArcColor()
     val dotCoreColor = sunDotColor()
     val dotGlowStops = sunDotGlowStops(dotCoreColor)
     val belowHorizonGlowStops = sunDotGlowStops(scheme.outline)
-    val sunTickColor = sunTickColor()
     val polar = snapshot.polar
     val polarDay = polar == SolarTimeMath.PolarState.MIDNIGHT_SUN
     val polarNight = polar == SolarTimeMath.PolarState.POLAR_NIGHT
@@ -1284,7 +1282,6 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
             // 极昼 / 极夜的整圆用同一组线宽（白天实线用 1.6dp，极夜虚圆用 1.5dp + 4/4dp）。
             val dayArcStroke = SunColors.DAY_ARC_STROKE_DP.dp.toPx()
             val nightArcStroke = SunColors.NIGHT_ARC_STROKE_DP.dp.toPx()
-            val tickRadius = 2.5.dp.toPx()
             // 太阳点：核心 2.75dp（纯色不透明，= 时间轴半径 × 0.5）+ 外圈光晕到 5.5dp（alpha 0.35→0）。
             val dotCoreRadius = SunColors.SUN_DOT_CORE_RADIUS_DP.dp.toPx()
             val dotGlowRadius = SunColors.SUN_DOT_GLOW_RADIUS_DP.dp.toPx()
@@ -1316,26 +1313,32 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                     )
                 }
             } else {
-                // 白天弧：从日出刻度顺时针经过 12:00（正上方）扫到日落刻度。
+                // 白天弧：从日出交点顺时针经过 12:00（正上方）扫到日落交点。
+                // 交点上的小圆点已删，两端各外扩 0.8°（≈1dp），让圆头线帽略微穿过地平线，
+                // 不然弧端会看起来悬在地平线前一点。
+                val dayArc = SunPathGeometry.withEndpointOverdraw(span)
                 drawArc(
                     color = dayArcColor,
-                    startAngle = span.startDegrees,
-                    sweepAngle = span.sweepDegrees,
+                    startAngle = dayArc.startDegrees,
+                    sweepAngle = dayArc.sweepDegrees,
                     useCenter = false,
                     topLeft = arcTopLeft,
                     size = arcSize,
                     style = Stroke(width = dayArcStroke, cap = StrokeCap.Round),
                 )
-                // 夜晚弧：剩下那一圈，虚线、低对比度。
-                drawArc(
-                    color = scheme.outline,
-                    startAngle = span.startDegrees + span.sweepDegrees,
-                    sweepAngle = 360f - span.sweepDegrees,
-                    useCenter = false,
-                    topLeft = arcTopLeft,
-                    size = arcSize,
-                    style = Stroke(width = nightArcStroke, pathEffect = nightDash),
-                )
+                // 夜晚弧：从白天弧的终点接上，整圈补齐（白天弧外扩后，夜间弧相应短 1.6°）。
+                val nightSweep = 360f - dayArc.sweepDegrees
+                if (nightSweep > 0f) {
+                    drawArc(
+                        color = scheme.outline,
+                        startAngle = dayArc.startDegrees + dayArc.sweepDegrees,
+                        sweepAngle = nightSweep,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = nightArcStroke, pathEffect = nightDash),
+                    )
+                }
             }
 
             // 地平线：固定长度的一条横线（画布左右各内缩 4dp），高度由日出时刻决定。
@@ -1350,19 +1353,8 @@ private fun SunDial(snapshot: SolarSnapshot, modifier: Modifier = Modifier) {
                 strokeWidth = 1.dp.toPx(),
             )
 
-            // 日出 / 日落刻度：正好落在地平线与圆的交点上（极昼极夜没有交点）。
-            if (span != null && sunriseHour != null && sunsetHour != null) {
-                for (hour in listOf(sunriseHour, sunsetHour)) {
-                    drawCircle(
-                        color = sunTickColor,
-                        radius = tickRadius,
-                        center = Offset(
-                            SunPathGeometry.hourX(path.centerX, path.radius, hour, southernHemisphere),
-                            SunPathGeometry.hourY(path.centerY, path.radius, hour),
-                        ),
-                    )
-                }
-            }
+            // 日出 / 日落交点不再画小圆点：弧的端点 + 两侧时间标签已经说明了位置，
+            // 那个点会和「当前太阳点」抢注意力（用户要求删掉）。
 
             // 运动方向箭头：画在圆内侧 0.72R 上的一小段弧（跨 30°，以当前太阳点角度为中心），
             // 末端一个实心小三角。方向与太阳点同一套参数化 —— 北半球顺时针、南半球逆时针。
