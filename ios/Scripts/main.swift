@@ -1850,6 +1850,32 @@ expect(
     )
 )
 print("== 定位不可用（未知态）==")
+// 未知态昼夜：按**系统时钟的钟点**（06:00 ≤ 小时 < 18:00 → 白天），不看太阳高度角。
+func unknownDay(_ elapsedOfDay: Int, offsetHours: Int) -> Bool {
+    LocationUnknown.isDaytime(epochSeconds: elapsedOfDay, systemOffsetSeconds: offsetHours * 3_600)
+}
+expect(
+    "未知态昼夜：08:00 → 白天、17:59 → 白天、18:00 → 夜间、05:59 → 夜间",
+    unknownDay(8 * 3600, offsetHours: 0)
+        && unknownDay(17 * 3600 + 59 * 60, offsetHours: 0)
+        && !unknownDay(18 * 3600, offsetHours: 0)
+        && !unknownDay(5 * 3600 + 59 * 60, offsetHours: 0)
+)
+expect(
+    "未知态昼夜跨时区：UTC−5 的 20:00 → 夜间（本地 15:00 是白天）、UTC+8 的 20:00 → 夜间",
+    !unknownDay(20 * 3600, offsetHours: 0)
+        && unknownDay(20 * 3600, offsetHours: -5)   // 20:00 UTC = 15:00 本地 → 白天
+        && !unknownDay(20 * 3600, offsetHours: 8)   // 20:00 UTC = 04:00 本地 → 夜间
+        && !unknownDay(12 * 3600, offsetHours: 8)   // 12:00 UTC = 20:00 本地 → 夜间
+        && unknownDay(12 * 3600, offsetHours: -5),  // 12:00 UTC = 07:00 本地 → 白天
+    "20:00Z(−5)=\(LocationUnknown.isDaytime(epochSeconds: 20 * 3600, systemOffsetSeconds: -5 * 3600)) "
+        + "20:00Z(+8)=\(LocationUnknown.isDaytime(epochSeconds: 20 * 3600, systemOffsetSeconds: 8 * 3600))"
+)
+expect(
+    "未知态昼夜常量：白天区间 06:00–18:00",
+    LocationUnknown.isDaytimeStartHour == 6 && LocationUnknown.isDaytimeEndHour == 18
+)
+
 // 回归：点「跟随 GPS」时**先落意图**（build 70 的 bug：无权限被 guard 挡掉，意图没记下来）。
 let noPermissionStart = LocationUnknown.startFollowing(hasPermission: false, hasCurrentFix: false)
 expect(

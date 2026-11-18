@@ -81,7 +81,16 @@ final class AppModel: ObservableObject {
     ///
     /// 页面背景、卡片、大卡片渐变都读它；`SunCard` 里的太阳弧仍按真实高度角画（事实，不是配色）。
     var uiIsDay: Bool {
-        themeMode.isDayPalette(sunIsUp: snapshot.isDay)
+        // 未知态：没有可信坐标，太阳高度角没意义 → 按**系统时区的钟点**判昼夜
+        // （06:00 ≤ 小时 < 18:00 → 白天），否则手机时间是白天也会被渲染成夜间。
+        // 强制亮色 / 暗色的主题设置仍然照旧生效（`isDayPalette` 会忽略入参）。
+        let sunIsUp = isLocationUnknown
+            ? LocationUnknown.isDaytime(
+                epochSeconds: Int(now.timeIntervalSince1970),
+                systemOffsetSeconds: TimeZone.current.secondsFromGMT(for: now)
+            )
+            : snapshot.isDay
+        return themeMode.isDayPalette(sunIsUp: sunIsUp)
     }
 
     /// 当前天气来自哪个源（底部署名跟着它切换）。

@@ -35,6 +35,25 @@ enum LocationUnknown {
         followGps && !hasValidFix
     }
 
+    // MARK: 未知态的昼夜（按系统时钟，不看太阳）
+
+    /// 白天起点（含）：06:00。
+    static let isDaytimeStartHour = 6
+    /// 白天终点（不含）：18:00。
+    static let isDaytimeEndHour = 18
+
+    /// 未知态该用白天还是夜间配色：**按系统时区的钟点**判断（06:00 ≤ 小时 < 18:00 → 白天）。
+    ///
+    /// 为什么不用 `snapshot.isDay`（太阳高度角）：未知态没有可信坐标（lat/lon 传 0），
+    /// 高度角恒为负 → 手机系统时间是白天也会被渲染成夜间（build 71 的 bug）。
+    /// 与 Android `LocationAvailability.isDaytime` 同一套规则；只影响主题与卡片配色，
+    /// **不影响**占位符逻辑。
+    static func isDaytime(epochSeconds: Int, systemOffsetSeconds: Int) -> Bool {
+        let secondsOfDay = ((epochSeconds % 86_400) + 86_400) % 86_400
+        let local = ((secondsOfDay + systemOffsetSeconds) % 86_400 + 86_400) % 86_400
+        let hour = local / 3_600
+        return hour >= isDaytimeStartHour && hour < isDaytimeEndHour
+    }
     // MARK: 跟随意图的状态转移（纯函数，回归断言用）
 
     /// 用户点「跟随 GPS」之后四个状态位的目标值。

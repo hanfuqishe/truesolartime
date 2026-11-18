@@ -87,6 +87,8 @@ final class BasemapController: ObservableObject {
     /// - 手动选底图 → `mode = .manual`（**不探测**、不回退、不降级）；
     /// - 从手动切回「自动」→ 缓存失效，重新探测。
     func configure(style: MapStyle, place: Place, now: Date = Date()) {
+        // 退出未知态：回到正常的地点配置（`configureUnknown` 会把它置回 true）。
+        isUnknownMode = false
         let siteKey = String(format: "%.4f,%.4f", place.latitude, place.longitude)
         guard style != configuredStyle || siteKey != configuredSiteKey else { return }
         let previousStyle = configuredStyle
@@ -145,7 +147,7 @@ final class BasemapController: ObservableObject {
     ///
     /// 关键：**不要**拿 (0,0) 走正常地点探测（那会退回串行等超时），也**不要**进回退/降级状态机。
     func configureUnknown(now: Date = Date()) {
-        guard !isUnknownMode || configuredStyle != nil else { return }
+        // 每次进入未知态都重新定级（缓存命中就零探测）；重复调用是幂等的。
         isUnknownMode = true
         configuredStyle = .auto
         let stamp = now.timeIntervalSince1970

@@ -78,6 +78,9 @@ struct MapCard: View {
         .onAppear { configure() }
         .onChange(of: place) { _ in configure() }
         .onChange(of: mapStyle) { _ in configure() }
+        // **进入 / 退出未知态也要重新配置**：`place` 没变（旧的坐标还在），
+        // 只靠 `.onChange(of: place)` 永远不会触发，地图就会停在上一个地点。
+        .onChange(of: isLocationUnknown) { _ in configure() }
         .task(id: basemap.uiState.ready) { await runLoadingState() }
     }
 
@@ -213,7 +216,33 @@ private struct MapViewRepresentable: UIViewRepresentable {
             self.plan = plan
         }
 
-        /// **唯一**的视口入口：一次 `setRegion` 同时给 center + span。
+        /// 未知态：**z3 全球底图**（跨约 90°×120°）。不画标记、也不跟随地点。
+        static let unknownRegion = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 20, longitude: 0),
+            span: MKCoordinateSpan(latitudeDelta: 90, longitudeDelta: 120)
+        )
+
+        /// 未知态视口是否已经落过（避免每次状态发布都 setRegion）。
+        private var appliedUnknownViewport = false
+
+        /// 视口入口（**唯一**）：未知态 → 全球 z3；正常态 → 按地点落一次。
+        ///
+        /// 进入未知态时把 `appliedViewport` 清空，退出时才能按当前地点重新落一次；
+        /// 标记的显隐由 `hidesMarker` 在 `attach` 里处理。
+        func updateViewport(isUnknown: Bool, place: Place, style: MapStyle, on mapView: MKMapView) {
+            if isUnknown {
+                guard !appliedUnknownViewport else { return }
+                appliedUnknownViewport = true
+                appliedViewport = nil
+                BasemapController.shared.noteViewportChanged()
+                mapView.setRegion(Self.unknownRegion, animated: false)
+                return
+            }
+            appliedUnknownViewport = false
+            applyViewportIfNeeded(to: place, style: style, on: mapView)
+        }
+
+        /// 正常态：一次 `setRegion` 同时给 center + span（只在「地点 / 样式」变化时动）。
         ///
         /// 不做「先 setCenter 再 setZoom」、也不在别处单独改 span —— 两次动画会互相打断
         /// （安卓那边就是这样停在半路、标记不居中的）。地点没变就直接返回，因此
