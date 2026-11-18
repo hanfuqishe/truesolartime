@@ -41,3 +41,4 @@ harmony/.sign/
 # 生成脚本与说明仍然入库，见 docs/store-shots/marketing/make_marketing.py
 docs/store-shots/**/*.png
 docs/store-shots/**/*.jpg
+docs/store-shots/**/*.jpeg
