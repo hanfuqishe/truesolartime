@@ -476,8 +476,20 @@ final class WeatherStore {
             count: 6,
             stepHours: WeatherSnapshot.slotStepHours(snapshot, source: source)
         )
-        let times = WeatherParsing.hourlyPointsLabel(points: points, zoneOffsetSeconds: TimeZone.current.secondsFromGMT())
-        return "\(times) · \(WeatherParsing.slotMatchLabel(readings))"
+        let offset = TimeZone.current.secondsFromGMT()
+        let now = Int(Date().timeIntervalSince1970)
+        let slots = WeatherParsing.visibleSlots(
+            points: points,
+            nowEpochSeconds: now,
+            zoneOffsetSeconds: offset,
+            count: 6,
+            stepHours: WeatherSnapshot.slotStepHours(snapshot, source: source)
+        )
+        let times = WeatherParsing.hourlyPointsLabel(points: points, zoneOffsetSeconds: offset)
+        let slotTimes = WeatherParsing.slotTimesLabel(slots, zoneOffsetSeconds: offset)
+        let nowText = WeatherParsing.localClockLabel(epochSeconds: now, zoneOffsetSeconds: offset)
+        let step = WeatherSnapshot.slotStepHours(snapshot, source: source)
+        return "\(times) · 格=\(slotTimes) · \(WeatherParsing.slotMatchLabel(readings)) · now=\(nowText) · step=\(step)h"
     }
 
     /// 诊断一行：数据源设置 + WeatherKit 尝试状态（含「几分钟前」「成功/失败原因」）。

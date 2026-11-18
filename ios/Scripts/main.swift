@@ -2445,6 +2445,47 @@ expect(
     "诊断标签：前 6 条按本地时区给出 HH:mm",
     WeatherParsing.hourlyPointsLabel(points: alignedPoints, zoneOffsetSeconds: 8 * 3_600, limit: 3).split(separator: ",").count == 3
 )
+// build 88 的决定性场景：22:11、数据从 22:00 起。六格必须是 22:00…03:00 且 6/6，
+// 且**严格递增、互不重复**（否则第二格会与第一格同一时刻 → 永远 miss）。
+func slotScenario(nowMinute: Int) -> (slots: [WeatherSlot], readings: [WeatherSlotReading]) {
+    let base = 1_700_000_000 - (1_700_000_000 % 3_600)   // 对齐整点
+    let points = (0..<8).map { index in
+        WeatherHour(epochSeconds: base + index * 3_600, temperatureC: 9 + index, code: 0)
+    }
+    let now = base + nowMinute * 60
+    let slots = WeatherParsing.visibleSlots(
+        points: points, nowEpochSeconds: now, zoneOffsetSeconds: 0, count: 6, stepHours: 1
+    )
+    let readings = WeatherParsing.slotReadings(
+        points: points, nowEpochSeconds: now, zoneOffsetSeconds: 0, count: 6, stepHours: 1
+    )
+    return (slots, readings)
+}
+let scenario = slotScenario(nowMinute: 11)
+let base = 1_700_000_000 - (1_700_000_000 % 3_600)
+expect(
+    "22:11 起、数据从 22:00 起 → 六格 epoch 就是 22,23,0,1,2,3 点，且命中 6/6",
+    scenario.slots.map { $0.epochSeconds } == (0..<6).map { base + $0 * 3_600 }
+        && WeatherParsing.slotMatchLabel(scenario.readings) == "命中 6/6",
+    "slots=\(scenario.slots.map { $0.epochSeconds - base }) label=\(WeatherParsing.slotMatchLabel(scenario.readings))"
+)
+expect(
+    "六格 epoch 严格递增、互不重复（锁死「两格同一时刻」这个 bug）",
+    zip(scenario.slots.dropFirst(), scenario.slots).allSatisfy { $1.epochSeconds < $0.epochSeconds }
+        && Set(scenario.slots.map { $0.epochSeconds }).count == 6
+)
+// 标签序列（用 now=22:11 的假时间；本地时区固定按 UTC 断言，避免依赖真机时区）
+let labelSlot = slotScenario(nowMinute: 11).slots
+expect(
+    "标签序列：现在, 23時, 0時, 1時, 2時, 3時（相对 22:00 起点）",
+    WeatherParsing.localClockLabel(epochSeconds: labelSlot[0].epochSeconds, zoneOffsetSeconds: 0) == "22:00"
+        && WeatherParsing.localClockLabel(epochSeconds: labelSlot[1].epochSeconds, zoneOffsetSeconds: 0) == "23:00"
+        && labelSlot[0].isNow && !labelSlot[1].isNow
+)
+expect(
+    "诊断串：六格时刻带「现在」标记",
+    WeatherParsing.slotTimesLabel(labelSlot, zoneOffsetSeconds: 0).hasPrefix("现在(22:00),23:00")
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

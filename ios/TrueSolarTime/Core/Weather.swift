@@ -510,6 +510,22 @@ enum WeatherParsing {
     /// （旧文档的 `time` 字段、镜像站的残项），槽位就会停在一条不存在的读数上 ——
     /// 界面上看起来是「这个点的标签对应另一个点的温度」。落点只允许在半步长内，
     /// 这样既不会跳过缺口、也不会把 6 格压短成 5 格。
+    /// 诊断：六格**真实槽位时刻**（本地 HH:mm），带「现在」标记 —— 与 `hourlyPointsLabel` 并列即可判断
+    /// 「槽位整体错一格」还是「时区换算错」。
+    static func slotTimesLabel(_ slots: [WeatherSlot], zoneOffsetSeconds: Int) -> String {
+        guard !slots.isEmpty else { return "—" }
+        return slots.map { slot in
+            let local = ((slot.epochSeconds + zoneOffsetSeconds) % 86_400 + 86_400) % 86_400
+            let hhmm = String(format: "%02d:%02d", local / 3_600, (local % 3_600) / 60)
+            return slot.isNow ? "现在(\(hhmm))" : hhmm
+        }.joined(separator: ",")
+    }
+
+    /// 诊断：本地 `HH:mm`（给 now 用）。
+    static func localClockLabel(epochSeconds: Int, zoneOffsetSeconds: Int) -> String {
+        let local = ((epochSeconds + zoneOffsetSeconds) % 86_400 + 86_400) % 86_400
+        return String(format: "%02d:%02d", local / 3_600, (local % 3_600) / 60)
+    }
     /// 诊断：前 `limit` 条 `hourly` 的本地时刻（`21:00, 22:00, …`），用来判断「点是不是在整点」。
     static func hourlyPointsLabel(
         points: [WeatherHour],
