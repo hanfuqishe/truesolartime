@@ -1353,8 +1353,42 @@ for (const item of equationCases) {
   check('no result before four seconds is not unavailable', !emptyProbe.unavailable(3_999));
   check('no result at four seconds is unavailable', emptyProbe.unavailable(4_000));
   check('blank results never become content', !emptyProbe.consider(MapStyle.AMAP_VECTOR, 3, false, 100));
-  equal('best content ranking helper follows source and zoom',
-    true, isBetterTile(MapStyle.OSM, 3, MapStyle.AMAP_VECTOR, 12));
+  equal('higher zoom beats a different source',
+    false, isBetterTile(MapStyle.OSM, 3, MapStyle.AMAP_VECTOR, 12));
+
+  // ---- 先换源、再降级：同级按区域偏好选源 ----
+  const domestic = new ProgressiveProbe(0, MapStyle.AMAP_VECTOR);
+  check('domestic prefers amap at the same zoom',
+    domestic.consider(MapStyle.AMAP_VECTOR, 12, true, 100));
+  check('domestic ignores osm at the same zoom',
+    !domestic.consider(MapStyle.OSM, 12, true, 200));
+
+  const domesticFallback = new ProgressiveProbe(0, MapStyle.AMAP_VECTOR);
+  check('blank amap z12 lets osm z12 through immediately',
+    domesticFallback.consider(MapStyle.OSM, 12, true, 300));
+  equal('domestic fallback uses osm', MapStyle.OSM, domesticFallback.source);
+
+  const abroad = new ProgressiveProbe(0, MapStyle.OSM);
+  check('abroad preference ignores osm blank', !abroad.consider(MapStyle.OSM, 12, false, 100));
+  check('abroad falls back to amap z12 when osm is blank',
+    abroad.consider(MapStyle.AMAP_VECTOR, 12, true, 300));
+  equal('abroad fallback uses amap', MapStyle.AMAP_VECTOR, abroad.source);
+
+  const downgrade = new ProgressiveProbe(0, MapStyle.AMAP_VECTOR);
+  downgrade.consider(MapStyle.AMAP_VECTOR, 10, true, 100);
+  check('higher zoom upgrades from z10 to z12',
+    downgrade.consider(MapStyle.OSM, 12, true, 900));
+  equal('downgrade chain ends at z12', 12, downgrade.zoom);
+
+  // 南极中山站：countryCode=cn → 偏好高德，但高德 z12 空白、OSM z12 有内容 → OSM z12。
+  const zhongshanPreferred = MapFallback.preferredStyle(MapStyle.AUTO, -69.37, 76.38, 'cn');
+  equal('zhongshan is region-preferred to amap', MapStyle.AMAP_VECTOR, zhongshanPreferred);
+  const zhongshanProbe = new ProgressiveProbe(0, zhongshanPreferred);
+  check('zhongshan amap z12 blank is skipped',
+    !zhongshanProbe.consider(MapStyle.AMAP_VECTOR, 12, false, 200));
+  check('zhongshan osm z12 wins', zhongshanProbe.consider(MapStyle.OSM, 12, true, 400));
+  equal('zhongshan end-to-end source', MapStyle.OSM, zhongshanProbe.source);
+  equal('zhongshan end-to-end zoom', 12, zhongshanProbe.zoom);
 
   equal('zooms above 12 is empty', '', zoomsAbove(12).join(','));
   equal('zooms above 10', '12,11', zoomsAbove(10).join(','));

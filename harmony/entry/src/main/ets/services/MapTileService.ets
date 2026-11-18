@@ -95,7 +95,7 @@ export class MapTileService {
       MapTileService.state = MapFallback.markViewportSettling(MapTileService.state, Date.now());
     }
     const style: MapStyle = MapTilesLogic.styleFromKey(styleKey);
-    const firstDecision: ProbeDecision | null = await MapTileService.probeIfNeeded(style, place);
+    const firstDecision: ProbeDecision | null = await MapTileService.probeIfNeeded(style, place, countryCode);
     await MapTileService.probeIfDue();
     if (firstDecision !== null) {
       return MapTileService.buildDecisionResult(firstDecision, place, countryCode, centerLatitude,
@@ -212,15 +212,20 @@ export class MapTileService {
   }
 
   /**
-   * 渐进升级：4 块并行探测，一块回来就判断一次 —— 先到先用，更好的才升级。
+   * 渐进升级：5 块并行探测（OSM z3/z12、高德 z12/z10/z3），一块回来就判断一次。
+   * 同级两源都有内容时按区域偏好选源；偏好源空白则用另一源（先换源、再降级）。
    * 首块出图立即返回该决定；后续升级通过 [setProbeListener] 回调通知界面。
    */
-  private static async probeIfNeeded(style: MapStyle, place: Place): Promise<ProbeDecision | null> {
+  private static async probeIfNeeded(style: MapStyle, place: Place,
+      countryCode: string): Promise<ProbeDecision | null> {
     const key: string = cacheKey(place.latitude, place.longitude);
     if (!needsProbe(style, key, MapTileService.probeCache, Date.now())) {
       return null;
     }
-    const session: ProgressiveProbe = new ProgressiveProbe(Date.now());
+    const preferred: MapStyle = style === MapStyle.AUTO
+      ? MapFallback.preferredStyle(style, place.latitude, place.longitude, countryCode)
+      : style;
+    const session: ProgressiveProbe = new ProgressiveProbe(Date.now(), preferred);
     MapTileService.probeSession = session;
     let firstDecision: ProbeDecision | null = null;
     const consider = (source: MapStyle, zoom: number, hasContent: boolean): void => {
@@ -243,6 +248,9 @@ export class MapTileService {
       }
     };
     MapTileService.probeTicket(tileOf(MapStyle.OSM, place.latitude, place.longitude, 3), false)
+      .then((ok: boolean) => consider(MapStyle.OSM, 3, ok));
+    // OSM z12：同级两源都探，才能「偏好源空白时先换源」。
+    MapTileService.probeTicket(tileOf(MapStyle.OSM, place.latitude, place.longitude, 12), false)
       .then((ok: boolean) => consider(MapStyle.OSM, 12, ok));
     MapTileService.probeTicket(tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 12), true)
       .then((ok: boolean) => consider(MapStyle.AMAP_VECTOR, 12, ok));

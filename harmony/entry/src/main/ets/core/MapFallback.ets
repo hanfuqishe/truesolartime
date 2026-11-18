@@ -711,13 +711,18 @@ export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
   return next;
 }
 
-/** 候选源 / 级别是否比当前更好：先比源（OSM 优于高德），同源再比级别（z 越大越好）。 */
+/**
+ * 候选源 / 级别是否比当前更好：**先比级别**（z 越大越好），同级再比源（偏好源优先）。
+ *
+ * 这样「偏好源该级空白、另一源同级有内容」时会用另一源（先换源），
+ * 只有两源同级都没有才降到下一级（再降级）。
+ */
 export function isBetterTile(source: MapStyle, zoom: number, currentSource: MapStyle,
-    currentZoom: number): boolean {
-  if (source === currentSource) {
+    currentZoom: number, preferredSource: MapStyle = MapStyle.OSM): boolean {
+  if (zoom !== currentZoom) {
     return zoom > currentZoom;
   }
-  return source === MapStyle.OSM && currentSource !== MapStyle.OSM;
+  return source === preferredSource && currentSource !== preferredSource;
 }
 
 /**
@@ -743,10 +748,13 @@ export class ProgressiveProbe {
   upgradeMillis: number = -1;
   upgradeZoom: number = 0;
   userInteracted: boolean = false;
+  /** 区域偏好源：同精度时选它；它空白才用另一源（先换源、再降级）。 */
+  preferredSource: MapStyle = MapStyle.OSM;
   private startMillis: number = -1;
 
-  constructor(nowMillis: number) {
+  constructor(nowMillis: number, preferredSource: MapStyle = MapStyle.OSM) {
     this.startMillis = nowMillis;
+    this.preferredSource = preferredSource;
   }
 
   /** 用户手势（平移 / 缩放）后冻结升级。 */
@@ -759,7 +767,7 @@ export class ProgressiveProbe {
     if (!this.hasContent) {
       return false;
     }
-    if (this.source === MapStyle.OSM && this.zoom === MapFallback.DEFAULT_ZOOM) {
+    if (this.source === this.preferredSource && this.zoom === MapFallback.DEFAULT_ZOOM) {
       return true;
     }
     if (this.userInteracted) {
@@ -791,7 +799,7 @@ export class ProgressiveProbe {
     if (this.stopped(nowMillis)) {
       return false;
     }
-    if (!isBetterTile(source, zoom, this.source, this.zoom)) {
+    if (!isBetterTile(source, zoom, this.source, this.zoom, this.preferredSource)) {
       return false;
     }
     this.source = source;
