@@ -262,3 +262,7 @@
 "weather.skipSettingOpenMeteo" = "setting = Open-Meteo";
 "weather.skipAlreadyTried" = "already tried this round";
 "settings.weatherDiagSource" = "Weather source";
+
+"weather.diagRefreshSkipped" = "refresh skipped: %@";
+"weather.skipInFlight" = "request in flight";
+"weather.skipNotDue" = "not due yet";

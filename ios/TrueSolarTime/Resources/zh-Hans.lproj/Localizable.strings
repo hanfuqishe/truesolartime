@@ -262,3 +262,7 @@
 "weather.skipSettingOpenMeteo" = "设置=Open-Meteo";
 "weather.skipAlreadyTried" = "本轮已试过";
 "settings.weatherDiagSource" = "天气数据源";
+
+"weather.diagRefreshSkipped" = "刷新跳过：%@";
+"weather.skipInFlight" = "请求进行中";
+"weather.skipNotDue" = "未到刷新窗口";

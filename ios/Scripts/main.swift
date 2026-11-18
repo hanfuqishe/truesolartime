@@ -2322,6 +2322,30 @@ expect(
     !WeatherChain.shouldRequestWeatherKit(setting: .openMeteo, isLocationUnknown: false)
         && L("weather.skipSettingOpenMeteo") != L("weather.diagWeatherKitOk")
 )
+// 尝试状态机：地点变化必须重置，三种诊断文案各就各位。
+var attempt = WeatherAttemptState()
+expect(
+    "初始状态：未尝试",
+    !attempt.attempted && attempt.summary(now: 0) == "未尝试"
+)
+attempt.markFailed("无 entitlement", at: 0)
+expect(
+    "失败后：已尝试 + 失败原因 + 分钟数",
+    attempt.attempted && attempt.summary(now: 600) == "已尝试 · 10 分钟前 · 失败：无 entitlement",
+    "actual=\(attempt.summary(now: 600))"
+)
+expect(
+    "地点变化要重置（否则第一次失败后再也不试）",
+    WeatherAttemptState.shouldReset(placeChanged: true) && !WeatherAttemptState.shouldReset(placeChanged: false)
+)
+attempt.reset()
+expect("重置后回到未尝试", !attempt.attempted && attempt.summary(now: 600) == "未尝试")
+attempt.markSucceeded(at: 0)
+expect(
+    "成功后：已尝试 + 成功",
+    attempt.summary(now: 180) == "已尝试 · 3 分钟前 · 成功",
+    "actual=\(attempt.summary(now: 180))"
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

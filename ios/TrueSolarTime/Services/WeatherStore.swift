@@ -73,7 +73,8 @@ final class WeatherStore {
     /// 最近一次 WeatherKit 失败原因（诊断用；成功或未尝试时为 nil）。
     private(set) var weatherKitFailure: String?
     /// 本轮是否已经试过 WeatherKit（自动模式回退 Open-Meteo 时避免无限重入）。
-    private var weatherKitAttempted = false
+    /// WeatherKit 的尝试状态（是否尝试 / 时刻 / 结果），地点变化时重置。
+    private(set) var weatherKitAttempt = WeatherAttemptState()
     /// 这一次**为什么没试** WeatherKit（设置=Open-Meteo / 已试过）；试过时为 nil。
     private(set) var weatherKitSkipReason: String?
     /// 最近一次取数的结果说明（诊断用：主源成功 / 沿用缓存 / 降到 7Timer! / 两个源都失败）。
@@ -176,16 +177,18 @@ final class WeatherStore {
             setting: AppSettings().weatherSource,
             isLocationUnknown: false
         ) {
-            weatherKitAttempted = true
+
             let setting = AppSettings().weatherSource
             WeatherKitProvider.fetch(latitude: place.latitude, longitude: place.longitude) { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case .success(let snapshot):
                     self.weatherKitFailure = nil
+                    self.weatherKitAttempt.markSucceeded(at: Date().timeIntervalSince1970)
                     self.finish(place: place, completion: completion, snapshot: snapshot)
                 case .failure(let failure):
                     self.weatherKitFailure = failure.displayText
+                    self.weatherKitAttempt.markFailed(failure.displayText, at: Date().timeIntervalSince1970)
                     self.lastErrorDescription = Lf("weather.diagWeatherKitFailureFormat", failure.displayText)
                     // 手动 WeatherKit：不回退（保留旧数据），直接收工；自动模式下继续走 Open-Meteo。
                     if WeatherChain.nextSource(after: .weatherKit, setting: setting) == nil {
@@ -449,18 +452,27 @@ final class WeatherStore {
     }
 
     /// 最近一次失败原因（诊断页一行）；没有失败过时显示「无」。
-    /// 天气数据源设置 + 本次 WeatherKit 的结果（诊断项一行）。
+    /// 地点变化 / 手动切换数据源时调用：清掉上一次状态，让下一轮重新尝试 WeatherKit。
+    func resetWeatherKitAttempt() {
+        weatherKitAttempt.reset()
+        weatherKitFailure = nil
+        weatherKitSkipReason = nil
+    }
+
+    /// 上一次 `requestRefresh` 为什么没真正发起请求（in-flight / 未到刷新窗口）。
+    private(set) var lastSkipReason: String?
+
+    /// 诊断一行：数据源设置 + WeatherKit 尝试状态（含「几分钟前」「成功/失败原因」）。
     func weatherKitSummary() -> String {
         let setting = AppSettings().weatherSource
-        let outcome: String
-        if let failure = weatherKitFailure {
-            outcome = Lf("weather.diagWeatherKitFailed", failure)
-        } else if let skipped = weatherKitSkipReason {
-            outcome = Lf("weather.diagWeatherKitSkipped", skipped)
-        } else {
-            outcome = L("weather.diagWeatherKitOk")
+        var text = "\(setting.label) · WeatherKit \(weatherKitAttempt.summary(now: Date().timeIntervalSince1970))"
+        if let skipped = weatherKitSkipReason {
+            text += " · " + Lf("weather.diagWeatherKitSkipped", skipped)
         }
-        return "\(setting.label) · \(outcome)"
+        if let skip = lastSkipReason {
+            text += " · " + Lf("weather.diagRefreshSkipped", skip)
+        }
+        return text
     }
 
     func failureSummary() -> String {
