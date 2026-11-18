@@ -39,6 +39,21 @@ const LOCATION_PERMISSIONS: Permissions[] = [
 ];
 
 export class LocationService {
+  /** 打开本应用在系统设置里的详情页（权限设置入口）。 */
+  static async openAppSettings(context: common.UIAbilityContext): Promise<void> {
+    try {
+      await context.startAbility({
+        bundleName: 'com.huawei.hmos.settings',
+        abilityName: 'com.huawei.hmos.settings.MainAbility',
+        uri: 'application_info_entry',
+        parameters: { pushParams: context.applicationInfo.name }
+      });
+    } catch (error) {
+      const failure: BusinessError = error as BusinessError;
+      console.warn(`open settings failed: ${failure.code} ${failure.message}`);
+    }
+  }
+
   /** 申请定位权限；已授权时立即返回 true。 */
   static async ensurePermission(context: common.UIAbilityContext): Promise<boolean> {
     try {

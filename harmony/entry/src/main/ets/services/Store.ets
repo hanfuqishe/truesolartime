@@ -202,6 +202,33 @@ export class AppStore {
     store.flush();
   }
 
+  /** 「跟随 GPS」的**意图**（默认 true）：不代表此刻有定位，未知态由它 + 无 fix 共同判定。 */
+  static gpsIntent(): boolean {
+    return AppStore.booleanValue(AppStore.settingsStore(), 'gps_intent', true);
+  }
+
+  static setGpsIntent(intent: boolean): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    store.putSync('gps_intent', intent);
+    store.flush();
+  }
+
+  /** 未知态地图缓存：上次成功出图的源（'osm' / 'amap'）与时刻，只被未知态读写。 */
+  static unknownMapSource(): string {
+    return AppStore.stringValue(AppStore.settingsStore(), 'unknown_map_source', '');
+  }
+
+  static unknownMapMillis(): number {
+    return AppStore.numberValue(AppStore.settingsStore(), 'unknown_map_time', -1);
+  }
+
+  static saveUnknownMapSource(source: string): void {
+    const store: preferences.Preferences = AppStore.settingsStore();
+    store.putSync('unknown_map_source', source);
+    store.putSync('unknown_map_time', Date.now());
+    store.flush();
+  }
+
   /** 应用在前台时是否禁止自动熄屏（默认开）。 */
   static keepScreenOn(): boolean {
     return AppStore.booleanValue(AppStore.settingsStore(), 'keep_screen_on', true);

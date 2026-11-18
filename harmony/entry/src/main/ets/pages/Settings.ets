@@ -198,6 +198,8 @@ struct Settings {
       DistrictService.clearCached();
     }
     AppStore.setPlace(place);
+    // 选城市 / 输坐标 = 退出「跟随 GPS」意图；只有 GPS 定位重新打开意图。
+    AppStore.setGpsIntent(place.source === PlaceSource.GPS);
     this.place = place;
     this.placeName = this.labelOf(place);
     this.manualLatitude = place.latitude.toFixed(4);

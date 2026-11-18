@@ -6,6 +6,7 @@ import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } fro
 import { MapTileService, MapLoadResult } from '../services/MapTileService';
 import { MapUiState, sameUiState } from '../core/MapFallback';
 import { Place, PlaceSource } from '../core/Place';
+import { LocationPlaceholders, UnknownLocationLogic } from '../core/LocationUnknown';
 import { PlaceBadgeLogic } from '../core/PlaceBadge';
 import { Shichen } from '../core/Shichen';
 import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
@@ -173,6 +174,10 @@ struct Index {
   @State placeName: string = '';
   @State district: string = '';
   @State districtFull: string = '';
+  /** 「跟随 GPS」的意图（持久化，默认 true）与「定位不可用」未知态。 */
+  @State gpsIntent: boolean = true;
+  @State locationUnknown: boolean = false;
+  private unknownTimer: number = -1;
   @State weatherTemperature: string = WeatherLogic.PLACEHOLDER;
   @State weatherText: string = '';
   @State weatherRange: string = '';
@@ -267,6 +272,7 @@ struct Index {
 
   private reloadSettings(): void {
     this.place = AppStore.place();
+    this.gpsIntent = AppStore.gpsIntent();
     this.shichenReminders = AppStore.shichenReminders();
     this.keyTimeChime = AppStore.keyTimeChime();
     this.mapStyleKey = AppStore.mapStyle();
@@ -275,24 +281,46 @@ struct Index {
   }
 
   /**
-   * 跟随 GPS 时的前台定位节奏：应用打开期间每分钟静默取一次（不弹权限框；没授权就跳过）。
-   * 桌面卡片走的是另一条路径，每 5 分钟一次，见 CardService.syncGpsPlace。
+   * 跟随 GPS 时的前台定位节奏：应用打开期间每分钟静默取一次（不弹权限框）。
+   * 意图为真但未授权 / 20 秒仍无 fix → 进入「定位不可用」未知态。
    */
   private syncGpsSilently(): void {
-    if (this.place.source !== PlaceSource.GPS) {
+    if (!this.gpsIntent) {
+      this.locationUnknown = false;
       return;
     }
     LocationService.hasPermission().then((granted: boolean) => {
       if (!granted) {
+        // 未授权：意图仍在，直接进未知态（不用等 20 秒）。
+        this.locationUnknown = true;
         return;
       }
       LocationService.current().then((point: GeoPoint | null) => {
         if (point === null) {
+          this.startUnknownCountdown();
           return;
         }
+        this.locationUnknown = false;
+        if (this.unknownTimer >= 0) {
+          clearTimeout(this.unknownTimer);
+          this.unknownTimer = -1;
+        }
+        this.lastGpsMillis = Date.now();
         this.applyPlace(new Place(point.latitude, point.longitude, PlaceSource.GPS, '', ''));
       });
     });
+  }
+
+  /** 授权后 20 秒仍没有 fix → 未知态。 */
+  private startUnknownCountdown(): void {
+    if (this.unknownTimer >= 0) {
+      clearTimeout(this.unknownTimer);
+    }
+    this.unknownTimer = setTimeout(() => {
+      if (this.gpsIntent && this.place.source !== PlaceSource.GPS) {
+        this.locationUnknown = true;
+      }
+    }, UnknownLocationLogic.FIX_TIMEOUT_MILLIS);
   }
 
   /** 距离上次前台取定位是否已经满一分钟。 */
@@ -327,6 +355,10 @@ struct Index {
    * 多时区大国经度分段。界面上的 UTC 标签、标准时钟、日出日落与真太阳时基准都用这一个值。
    */
   private zoneOffsetSeconds(): number {
+    if (this.locationUnknown) {
+      // 未知态用**系统时区**；注意西半球偏移本身是负数，不能拿负数当「没传」。
+      return UnknownLocationLogic.offsetSecondsOr(null, Date.now());
+    }
     return CivicTimeLogic.standardOffsetSeconds(this.place.latitude, this.place.longitude,
       this.countryCodeOfPlace());
   }
@@ -351,7 +383,7 @@ struct Index {
     // 关键时间的字色要按秒跟进（进入/离开时段的那一秒就变色），所以放在每秒的 tick 里算。
     this.inKeyTime = TakeTimeLogic.insideBands(this.keyBands, seconds);
     // 跟随 GPS 时前台每分钟取一次定位；桌面卡片侧是 5 分钟一次（CardService）。
-    if (this.place.source === PlaceSource.GPS && this.gpsDue()) {
+    if (this.gpsIntent && this.gpsDue()) {
       this.lastGpsMillis = now;
       this.syncGpsSilently();
     }
@@ -476,6 +508,16 @@ struct Index {
     this.hourLabels = hourLabelList;
     this.hourTemps = temps.map((value: number | null): string => WeatherLogic.temperatureLabel(value));
     this.hourIcons = icons;
+    if (this.locationUnknown) {
+      // 未知态：逐时保留六格，首格「现在」+ 按系统时间逐小时（跨午夜回绕），温度 `-°`、不画图标。
+      this.hourLabels = UnknownLocationLogic.hourlyLabels(Math.floor(now / 1000), zoneSeconds, language,
+        WeatherLogic.SLOT_COUNT);
+      this.hourTemps = UnknownLocationLogic.hourlyTemperatures(WeatherLogic.SLOT_COUNT);
+      this.hourIcons = [];
+      this.weatherTemperature = LocationPlaceholders.DASH;
+      this.weatherText = '';
+      this.weatherRange = '';
+    }
     // 当前地点没有缓存、但正在取数：天气位显示「更新中…」，取完（成败都会落到这里）再改文案。
     this.weatherPending = weather === null && WeatherService.isRefreshing();
 
@@ -518,6 +560,11 @@ struct Index {
   private applyPlace(place: Place): void {
     this.place = place;
     AppStore.setPlace(place);
+    if (place.source === PlaceSource.GPS) {
+      AppStore.setGpsIntent(true);
+      this.gpsIntent = true;
+      this.locationUnknown = false;
+    }
     this.refreshDerived();
     this.recenterMap();
     this.tick();
@@ -563,6 +610,21 @@ struct Index {
       return;
     }
     this.startMapLoading();
+    if (this.locationUnknown) {
+      // 未知态：z3 全球底图，不画标记；有缓存零探测，否则并行探 2 块 z3。
+      MapTileService.loadUnknown(this.mapWpx, this.mapHpx).then((result: MapLoadResult) => {
+        this.stopMapLoading();
+        this.mapTiles = result.tiles;
+        this.mapAttribution = result.attribution;
+        this.mapAppliedZoom = result.zoom;
+        this.mapUnavailable = result.unavailable;
+        this.mapDegraded = false;
+      }).catch((error: BusinessError) => {
+        this.stopMapLoading();
+        console.warn(`unknown map failed: ${error.code} ${error.message}`);
+      });
+      return;
+    }
     MapTileService.load(this.place, this.mapStyleKey, this.countryCodeOfPlace(), this.mapCenterLat,
       this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx, viewportChanged)
       .then((result: MapLoadResult) => {
@@ -659,6 +721,10 @@ struct Index {
 
   private dateTail(): string {
     const parts: string[] = [TimeFormat.dateCompact(Date.now(), this.language)];
+    if (this.locationUnknown) {
+      parts.push(LocationPlaceholders.DASH);
+      return parts.join(' · ');
+    }
     const hasWeather: boolean = this.weatherTemperature !== WeatherLogic.PLACEHOLDER && this.weatherText.length > 0;
     if (hasWeather) {
       parts.push(`${this.weatherTemperature} ${this.weatherText}`);
@@ -680,7 +746,7 @@ struct Index {
    * 预设城市 / 手动输入的经纬度一律不显示 —— 地名已经在大卡片里，标题行不占位。
    */
   private showsGpsBadge(): boolean {
-    return PlaceBadgeLogic.showsGps(this.place.source);
+    return !this.locationUnknown && PlaceBadgeLogic.showsGps(this.place.source);
   }
 
   /**
@@ -691,6 +757,9 @@ struct Index {
    * ③ 手工坐标与 GPS 定位没有名字可用，显示半角减号，等反查结果到了再换成区划名。
    */
   private districtLabel(): string {
+    if (this.locationUnknown) {
+      return LocationPlaceholders.UNKNOWN_PLACE;
+    }
     if (this.districtFull.length > 0) {
       return this.districtFull;
     }
@@ -698,6 +767,16 @@ struct Index {
       return this.district;
     }
     return this.placeName.length > 0 ? this.placeName : CITY_UNKNOWN;
+  }
+
+  /** 真太阳时（未知态显示 `--:--:--`，宽度与真实时间接近，不跳版）。 */
+  private trueSolarText(): string {
+    return this.locationUnknown ? LocationPlaceholders.TIME : TimeFormat.clock(this.solarSecond);
+  }
+
+  /** 时辰 / 高度角 / 白昼等短字段：未知态一律 `--`。 */
+  private shortText(value: string): string {
+    return this.locationUnknown ? LocationPlaceholders.SHORT : value;
   }
 
   /**
@@ -906,6 +985,14 @@ struct Index {
               .textAlign(TextAlign.End)
               .layoutWeight(1)
               .margin({ left: 8 })
+              .onClick(() => {
+                // 未知态：「定位不可用」可点，跳到系统应用详情/权限设置。
+                if (this.locationUnknown && this.context !== null) {
+                  LocationService.openAppSettings(this.context).catch((error: BusinessError) => {
+                    console.warn(`open settings failed: ${error.code} ${error.message}`);
+                  });
+                }
+              })
           }
           .width('100%')
           Row() {
@@ -960,7 +1047,7 @@ struct Index {
               .fontFamily(this.cardFont(FontWeight.Normal))
               .lineHeight(this.cardLineHeight(this.cs(12)))
               .fontColor('#CCFFFFFF')
-            Text(this.snapshot.shichenName)
+            Text(this.shortText(this.snapshot.shichenName))
               .fontSize(this.cs(12))
               .fontFamily(this.cardFont(FontWeight.Normal))
               .lineHeight(this.cardLineHeight(this.cs(12)))
@@ -972,29 +1059,41 @@ struct Index {
           }
           .width('100%')
           Row() {
-            Text(TimeFormat.clock(this.solarSecond))
-              .fontSize(this.clockMainSize())
-              .fontFamily(this.cardFont(FontWeight.Medium))
-              .lineHeight(this.cardLineHeight(this.clockMainSize()))
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.solarColor())
-              .maxLines(1)
-            Text(':')
-              .fontSize(this.clockSecondSize())
-              .fontFamily(this.cardFont(FontWeight.Medium))
-              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.solarColor())
-              .maxLines(1)
-              .margin({ bottom: this.clockSecondLift() })
-            Text(pad2(this.solarSecond % 60))
-              .fontSize(this.clockSecondSize())
-              .fontFamily(this.cardFont(FontWeight.Medium))
-              .lineHeight(this.cardLineHeight(this.clockSecondSize()))
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.solarColor())
-              .maxLines(1)
-              .margin({ bottom: this.clockSecondLift(), left: 1 })
+            if (this.locationUnknown) {
+              Text(LocationPlaceholders.TIME)
+                .fontSize(this.clockMainSize())
+                .fontFamily(this.cardFont(FontWeight.Medium))
+                .lineHeight(this.cardLineHeight(this.clockMainSize()))
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.solarColor())
+                .letterSpacing(1)
+                .opacity(0.6)
+                .maxLines(1)
+            } else {
+              Text(this.trueSolarText())
+                .fontSize(this.clockMainSize())
+                .fontFamily(this.cardFont(FontWeight.Medium))
+                .lineHeight(this.cardLineHeight(this.clockMainSize()))
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.solarColor())
+                .maxLines(1)
+              Text(':')
+                .fontSize(this.clockSecondSize())
+                .fontFamily(this.cardFont(FontWeight.Medium))
+                .lineHeight(this.cardLineHeight(this.clockSecondSize()))
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.solarColor())
+                .maxLines(1)
+                .margin({ bottom: this.clockSecondLift() })
+              Text(pad2(this.solarSecond % 60))
+                .fontSize(this.clockSecondSize())
+                .fontFamily(this.cardFont(FontWeight.Medium))
+                .lineHeight(this.cardLineHeight(this.clockSecondSize()))
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.solarColor())
+                .maxLines(1)
+                .margin({ bottom: this.clockSecondLift(), left: 1 })
+            }
           }
           .width('100%')
           .alignItems(VerticalAlign.Bottom)
@@ -1016,7 +1115,7 @@ struct Index {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         if (this.coordinatesFit(this.dateTail(), TimeFormat.coordinates(this.place.latitude, this.place.longitude))) {
-          Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+          Text(this.shortText(TimeFormat.coordinates(this.place.latitude, this.place.longitude)))
             .fontSize(this.cs(10))
             .fontFamily(this.cardFont(FontWeight.Normal))
             .lineHeight(this.cardLineHeight(this.cs(10)))
@@ -1090,11 +1189,19 @@ struct Index {
               .lineHeight(this.cardLineHeight(this.cs(10)))
               .fontColor(this.hourlyTextColor())
               .maxLines(1)
-            Image(weatherIcon(index < this.hourIcons.length ? this.hourIcons[index] : 'unknown'))
-              .width(this.cs(22))
-              .height(this.cs(22))
-              .objectFit(ImageFit.Contain)
-              .margin({ top: 3 })
+            if (this.locationUnknown) {
+              // 同尺寸占位，保住行高。
+              Row()
+                .width(this.cs(22))
+                .height(this.cs(22))
+                .margin({ top: 3 })
+            } else {
+              Image(weatherIcon(index < this.hourIcons.length ? this.hourIcons[index] : 'unknown'))
+                .width(this.cs(22))
+                .height(this.cs(22))
+                .objectFit(ImageFit.Contain)
+                .margin({ top: 3 })
+            }
             Text(index < this.hourTemps.length ? this.hourTemps[index] : '')
               .fontSize(this.cs(10))
               .fontFamily(this.cardFont(FontWeight.Normal))
@@ -1141,7 +1248,7 @@ struct Index {
           .lineHeight(this.cardLineHeight(this.cs(14)))
           .fontColor(this.palette.subtle)
           .layoutWeight(1)
-        Text(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`)
+        Text(this.shortText(`高度角 ${this.snapshot.altitudeDegrees.toFixed(1)}°`))
           .fontSize(this.cs(12))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(12)))
@@ -1173,7 +1280,7 @@ struct Index {
       .height(this.cs(SUN_DIAL_HEIGHT))
       .margin({ top: this.cs(8) })
 
-      Text(`白昼 ${this.daylightLine()}`)
+      Text(this.shortText(`白昼 ${this.daylightLine()}`))
         .fontSize(this.cs(12))
         .fontFamily(this.cardFont(FontWeight.Normal))
         .lineHeight(this.cardLineHeight(this.cs(12)))
@@ -1200,7 +1307,8 @@ struct Index {
    */
   @Builder
   sunDialLabelLayer() {
-    if (this.sunDialW > 0 && this.sunDialH > 0) {
+    // 未知态：不画日出/日落/上中天标签。
+    if (!this.locationUnknown && this.sunDialW > 0 && this.sunDialH > 0) {
       if (this.snapshot.polar === PolarState.NORMAL) {
         Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
           .fontSize(this.cs(11))
@@ -1297,14 +1405,16 @@ struct Index {
             .lineHeight(this.cardLineHeight(12))
             .fontColor(this.palette.subtle)
         }
-        // 标点：始终落在视口正中，对应上面的坐标。
-        Column()
-          .width(16)
-          .height(16)
-          .borderRadius(8)
-          .backgroundColor('#FFFFFF')
-          .border({ width: 4, color: this.palette.accent })
-          .shadow({ radius: 8, color: '#A6000000' })
+        // 标点：始终落在视口正中，对应上面的坐标；未知态不画标记。
+        if (!this.locationUnknown) {
+          Column()
+            .width(16)
+            .height(16)
+            .borderRadius(8)
+            .backgroundColor('#FFFFFF')
+            .border({ width: 4, color: this.palette.accent })
+            .shadow({ radius: 8, color: '#A6000000' })
+        }
       }
       .width('100%')
       .aspectRatio(this.mapAspectRatio())
@@ -1421,6 +1531,34 @@ struct Index {
     const arcColor: string = this.palette.sunArc;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
+
+    // 未知态：昼弧 180° 实线 + 夜弧 180° 虚线、地平线过圆心；无太阳点/箭头/标签。
+    if (this.locationUnknown) {
+      const centerX: number = width / 2;
+      const centerY: number = height / 2;
+      const radius: number = SunPathGeometry.RADIUS_RATIO * Math.min(width, height);
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, full, false);
+      ctx.strokeStyle = arcColor;
+      ctx.lineWidth = SunDialColors.DAY_ARC_WIDTH;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI, false);
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = SunDialColors.NIGHT_ARC_WIDTH;
+      ctx.setLineDash([SunDialColors.NIGHT_DASH_LENGTH, SunDialColors.NIGHT_DASH_LENGTH]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const horizon: HorizonSpan = SunPathGeometry.horizonSpan(width, this.cs(SUN_HORIZON_INSET));
+      ctx.beginPath();
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = 1;
+      ctx.moveTo(horizon.startX, centerY);
+      ctx.lineTo(horizon.endX, centerY);
+      ctx.stroke();
+      return;
+    }
 
     // 白天弧 / 夜晚弧；极昼极夜没有「日出→日落」那一段，整圆一种性质。
     // 南半球（southernHemisphere）扫角为负 → 用 anticlockwise 反向画，整圆也一样。

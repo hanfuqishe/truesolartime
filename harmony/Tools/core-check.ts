@@ -20,6 +20,12 @@ import { PlaceBadgeLogic } from './core/PlaceBadge';
 import { CivicTimeLogic } from './core/CivicTime';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
 import { SunDialColors } from './core/SunDialColors';
+import {
+  LocationPlaceholders,
+  UnknownLocationLogic,
+  UnknownMapCache,
+  UnknownMapDecision
+} from './core/LocationUnknown';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 import {
@@ -1308,6 +1314,67 @@ for (const item of equationCases) {
   check('unavailable decision marks every probed zoom',
     unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12) &&
       unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 3));
+}
+
+// ---- 定位不可用（未知态）：占位符 / 系统时区 / 逐时六格 / 未知态地图 ----
+{
+  check('gps intent without a fix is unknown', UnknownLocationLogic.isUnknown(true, false));
+  check('a fix ends the unknown state', !UnknownLocationLogic.isUnknown(true, true));
+  check('no gps intent is never unknown', !UnknownLocationLogic.isUnknown(false, false));
+
+  // 西半球偏移（UTC−5 = −18000）必须原样保留，不能拿负数当「没传」。
+  const nowMillis: number = 1_700_000_000_000;
+  equal('negative offsets survive', -18000, UnknownLocationLogic.offsetSecondsOr(-18000, nowMillis));
+  equal('null offset falls back to the system zone',
+    UnknownLocationLogic.systemOffsetSeconds(nowMillis), UnknownLocationLogic.offsetSecondsOr(null, nowMillis));
+  equal('zero is a valid offset', 0, UnknownLocationLogic.offsetSecondsOr(0, nowMillis));
+
+  check('time placeholder uses ascii only', LocationPlaceholders.isPlaceholderText(LocationPlaceholders.TIME));
+  check('short placeholder uses ascii only', LocationPlaceholders.isPlaceholderText(LocationPlaceholders.SHORT));
+  check('dash placeholder uses ascii only', LocationPlaceholders.isPlaceholderText(LocationPlaceholders.DASH));
+  check('temperature placeholder uses ascii only',
+    LocationPlaceholders.isPlaceholderText(LocationPlaceholders.TEMPERATURE));
+  equal('time placeholder', '--:--:--', LocationPlaceholders.TIME);
+  equal('short placeholder', '--', LocationPlaceholders.SHORT);
+  equal('temperature placeholder', '-°', LocationPlaceholders.TEMPERATURE);
+  check('em dash is rejected', !LocationPlaceholders.isPlaceholderText('——'));
+
+  // 逐时六格：首格「现在」，其余按系统时间逐小时（跨午夜回绕），温度全 `-°`。
+  const unknownLabels: string[] = UnknownLocationLogic.hourlyLabels(
+    Date.UTC(2026, 10, 16, 13, 55) / 1000, 8 * 3600, 'zh-CN', 6);
+  equal('unknown hourly labels', '现在,22时,23时,0时,1时,2时', unknownLabels.join(','));
+  const unknownTemps: string[] = UnknownLocationLogic.hourlyTemperatures(6);
+  equal('unknown hourly temp count', 6, unknownTemps.length);
+  check('unknown hourly temps are all -°',
+    unknownTemps.every((temp: string): boolean => temp === LocationPlaceholders.TEMPERATURE));
+
+  // 未知态圆盘：昼弧 180°、夜弧 180°。
+  equal('unknown day arc starts at -180', -180, UnknownLocationLogic.dayArcStartDegrees());
+  equal('unknown day arc sweeps 180', 180, UnknownLocationLogic.dayArcSweepDegrees());
+
+  // 未知态地图：缓存命中零探测；无缓存按两块 z3 的结果定源；都失败 → 不可用。
+  const emptyUnknownCache: UnknownMapCache | null = null;
+  const cacheHit: UnknownMapCache = new UnknownMapCache();
+  cacheHit.source = 'amap';
+  cacheHit.millis = nowMillis;
+  const cachedDecision: UnknownMapDecision = UnknownLocationLogic.decideMap(cacheHit, nowMillis, false, false);
+  check('cached unknown map skips probing',
+    cachedDecision.fromCache && cachedDecision.source === MapStyle.AMAP_VECTOR && cachedDecision.zoom === 3);
+  const expired: UnknownMapCache = new UnknownMapCache();
+  expired.source = 'osm';
+  expired.millis = nowMillis - UnknownLocationLogic.CACHE_TTL_MILLIS - 1;
+  check('expired unknown cache probes again',
+    !UnknownLocationLogic.decideMap(expired, nowMillis, false, false).fromCache);
+  equal('unknown map prefers osm when it answers', MapStyle.OSM,
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, true, true).source);
+  equal('unknown map takes amap when only amap answers', MapStyle.AMAP_VECTOR,
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, true).source);
+  check('unknown map is unavailable when both probes fail',
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, false).unavailable);
+  check('unknown probe uses the east asia z3 tile',
+    UnknownLocationLogic.probeTile(MapStyle.OSM).indexOf('/3/6/2') > 0 &&
+      UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR).indexOf('x=6') > 0 &&
+      UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR).indexOf('y=2') > 0);
 }
 
 // ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----

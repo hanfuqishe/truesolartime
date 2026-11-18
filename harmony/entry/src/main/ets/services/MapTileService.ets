@@ -29,6 +29,12 @@ import {
   uiStateOf
 } from '../core/MapFallback';
 import { Place } from '../core/Place';
+import {
+  UnknownLocationLogic,
+  UnknownMapCache,
+  UnknownMapDecision
+} from '../core/LocationUnknown';
+import { AppStore } from './Store';
 import { HttpUtil } from './HttpUtil';
 
 /** 一次底图加载的结果（界面只读它；uiState 相同就完全不更新）。 */
@@ -233,6 +239,50 @@ export class MapTileService {
     }
     const content: TileContent | null = await MapTileService.decodeContent(bytes);
     return content !== null && !content.isBlank;
+  }
+
+  /** 未知态地图：z3 全球底图；有缓存零探测，否则并行探 2 块 z3（2 秒封顶），都失败 → 不可用。 */
+  static async loadUnknown(widthPx: number, heightPx: number): Promise<MapLoadResult> {
+    MapTileService.lastStyleKey = 'auto';
+    MapTileService.lastRequestedZoom = UnknownLocationLogic.MAP_ZOOM;
+    const cache: UnknownMapCache = new UnknownMapCache();
+    cache.source = AppStore.unknownMapSource();
+    cache.millis = AppStore.unknownMapMillis();
+    let decision: UnknownMapDecision;
+    if (UnknownLocationLogic.cacheUsable(cache, Date.now())) {
+      decision = UnknownLocationLogic.decideMap(cache, Date.now(), false, false);
+    } else {
+      const osmProbe: Promise<boolean> = MapTileService.probeTicket(
+        UnknownLocationLogic.probeTile(MapStyle.OSM), false);
+      const amapProbe: Promise<boolean> = MapTileService.probeTicket(
+        UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR), true);
+      const all: Promise<boolean[]> = Promise.all([osmProbe, amapProbe]);
+      const timeout: Promise<boolean[]> = new Promise<boolean[]>((resolve: (value: boolean[]) => void) => {
+        setTimeout(() => resolve([false, false]), UnknownLocationLogic.PROBE_TIMEOUT_MILLIS);
+      });
+      const results: boolean[] = await Promise.race([all, timeout]);
+      decision = UnknownLocationLogic.decideMap(null, Date.now(), results[0], results[1]);
+      if (!decision.unavailable) {
+        AppStore.saveUnknownMapSource(decision.source === MapStyle.OSM ? 'osm' : 'amap');
+      }
+    }
+    MapTileService.lastUnavailable = decision.unavailable;
+    const result: MapLoadResult = new MapLoadResult();
+    result.zoom = decision.zoom;
+    result.unavailable = decision.unavailable;
+    result.uiState = new MapUiState();
+    result.uiState.requestedZoom = decision.zoom;
+    result.uiState.source = decision.source;
+    result.uiState.zoom = decision.zoom;
+    result.uiState.unavailable = decision.unavailable;
+    result.attribution = decision.unavailable ? '' : (decision.source === MapStyle.OSM
+      ? '底图 © OpenStreetMap contributors' : '底图 © 高德地图');
+    if (!decision.unavailable) {
+      const layer: MapLayer = MapTilesLogic.layerForStyle(decision.source, 25.0, 110.0);
+      result.tiles = MapTilesLogic.visibleTiles(layer, 25.0, 110.0, UnknownLocationLogic.MAP_ZOOM,
+        widthPx, heightPx);
+    }
+    return result;
   }
 
   /** 探测结果新鲜时的快速路径：只算 plan/zoom + 瓦片 URL，不做整屏下载与空白分析。 */
