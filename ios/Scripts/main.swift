@@ -407,9 +407,111 @@ let tangentArc = SunPathGeometry.dayArcAngles(
     isPolarNight: false
 )
 expect(
-    "日出 0:00：白天弧是整圆（弦退化成切点，昼长 24h）",
+    "日出 0:00：白天弧是整圆（弦退化成切点，昼长 24h；外扩后仍封顶 2π）",
     tangentArc != nil && abs((tangentArc!.end - tangentArc!.start) - 2 * Double.pi) < 1e-9,
     tangentArc.map { "span=\(($0.end - $0.start) * 180 / Double.pi)°" } ?? "nil"
+)
+
+print("== 白天弧两端外扩 0.8°（不再画日出/日落刻度点）==")
+/// 0.8° 换成的弧度。
+let overshoot = SunPathGeometry.dayArcOvershootRadians
+expect(
+    "外扩常量 = 0.8°（弧度 ≈ 0.01396）",
+    SunPathGeometry.dayArcOvershootDegrees == 0.8
+        && abs(overshoot - 0.8 * Double.pi / 180) < 1e-12,
+    "actual=\(SunPathGeometry.dayArcOvershootDegrees)°"
+)
+let noonDayArc = SunPathGeometry.dayArcAngles(
+    sunriseHour: 6,
+    sunsetHour: 18,
+    isPolarDay: false,
+    isPolarNight: false
+)
+let sunriseAngle = SunPathGeometry.angleOfDayHour(6)
+let sunsetAngle = SunPathGeometry.angleOfDayHour(18)
+let arcStart = noonDayArc?.start ?? .nan
+let arcEnd = noonDayArc?.end ?? .nan
+let arcSpanDegrees = (arcEnd - arcStart) * 180 / Double.pi
+expect(
+    "起点 = 日出 − 0.8°",
+    noonDayArc != nil && abs(arcStart - (sunriseAngle - overshoot)) < 1e-12,
+    "start=\(arcStart)"
+)
+expect(
+    "扫角 = 跨度 + 1.6°（两端各 0.8°）",
+    noonDayArc != nil
+        && abs((arcEnd - arcStart) - ((sunsetAngle - sunriseAngle) + 2 * overshoot)) < 1e-12,
+    "span=\(arcSpanDegrees)°"
+)
+expect(
+    "两端确实越过交点（起点更早、终点更晚）",
+    noonDayArc != nil && arcStart < sunriseAngle && arcEnd > sunsetAngle,
+    "start<sunrise: \(arcStart < sunriseAngle) end>sunset: \(arcEnd > sunsetAngle)"
+)
+// R ≈ 73.72pt 时 0.8° 的弧长 ≈ 1pt。
+let overshootPoints = Double(canvasRadius) * overshoot
+expect(
+    "0.8° 在 R≈73.7pt 上约 1pt（0.9…1.2）",
+    overshootPoints > 0.9 && overshootPoints < 1.2,
+    String(format: "R=%.2fpt → %.2fpt", canvasRadius, overshootPoints)
+)
+// 昼长接近 24h：白天扫角封顶 ≤ 2π、夜间扫角 ≥ 0（为 0 时不画虚线）。
+let sweeps24h = SunPathGeometry.arcSweeps(
+    sunriseHour: 0,
+    sunsetHour: 23.5,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expect(
+    "昼长 23.5h：白天扫角 ≤ 360°、夜间扫角 ≥ 0",
+    sweeps24h != nil
+        && sweeps24h!.day <= 2 * Double.pi + 1e-12
+        && sweeps24h!.night >= 0,
+    sweeps24h.map { String(format: "day=%.1f° night=%.1f°", $0.day * 180 / Double.pi, $0.night * 180 / Double.pi) } ?? "nil"
+)
+expect(
+    "普通日（12h）：白天 + 夜间 = 360°",
+    sweeps24h != nil
+        && abs((sweeps24h!.day + sweeps24h!.night) - 2 * Double.pi) < 1e-12
+)
+let sweepsNoon = SunPathGeometry.arcSweeps(
+    sunriseHour: 6,
+    sunsetHour: 18,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expect(
+    "12h 昼：白天扫角 = 180° + 1.6°，夜间 = 178.4°",
+    sweepsNoon != nil
+        && abs(sweepsNoon!.day * 180 / Double.pi - 181.6) < 1e-9
+        && abs(sweepsNoon!.night * 180 / Double.pi - 178.4) < 1e-9,
+    sweepsNoon.map { String(format: "day=%.2f° night=%.2f°", $0.day * 180 / Double.pi, $0.night * 180 / Double.pi) } ?? "nil"
+)
+// 整圆白天：夜间扫角为 0（不画虚线）、白天正好 360°。
+let sweepsFull = SunPathGeometry.arcSweeps(
+    sunriseHour: 0,
+    sunsetHour: 24,
+    isPolarDay: false,
+    isPolarNight: false
+)
+expect(
+    "24h 昼：白天 360°、夜间 0°（不画夜间虚线）",
+    sweepsFull != nil
+        && abs(sweepsFull!.day - 2 * Double.pi) < 1e-9
+        && sweepsFull!.night < 1e-9,
+    sweepsFull.map { String(format: "day=%.3f night=%.3f", $0.day, $0.night) } ?? "nil"
+)
+expect(
+    "极昼：整圆白天（0…2π）；极夜：没有白天弧",
+    SunPathGeometry.dayArcAngles(sunriseHour: nil, sunsetHour: nil, isPolarDay: true, isPolarNight: false).map {
+        abs($0.start) < 1e-12 && abs($0.end - 2 * Double.pi) < 1e-12
+    } == true
+        && SunPathGeometry.dayArcAngles(sunriseHour: nil, sunsetHour: nil, isPolarDay: false, isPolarNight: true) == nil
+)
+expect(
+    "刻度点已彻底移除：token 表里没有 sunTick 之类",
+    !ThemeColors.day.tokens.contains { $0.name.lowercased().contains("tick") }
+        && !ThemeColors.night.tokens.contains { $0.name.lowercased().contains("tick") }
 )
 
 // 极短弦：昼长 1 小时（两个交点只隔 ±7.5°）。

@@ -239,14 +239,14 @@ struct SunCard: View {
 // MARK: - 圆盘（纯绘制）
 
 /// 只负责画：白天弧实线 + 夜晚弧虚线（圆盘边界只有这两段，没有额外的「表圈」）+
-/// 贯穿圆盘的地平线 + 日出日落刻度点 + 当前太阳点。
+/// 贯穿圆盘的地平线 + 当前太阳点（**不画**日出/日落刻度点：弧端外扩 0.8° 盖住交点）。
 /// 文字不在这里画（`SunCard` 用真 `Text` 叠在上面），所以这里不需要任何标签尺寸假设。
 ///
 /// 颜色一律取主题 token（`palette.sunArc` / `palette.sunDot` / `palette.primary` /
 /// `palette.onSurfaceVariant` / `palette.surface`），两套主题各用自己的一档，**不碰系统色**
 /// （系统 `.orange` / `.secondary` 在强制主题下会串色）。
 /// 弧与点各单独一档：白天弧淡金细线（只作路径示意）、太阳点是**纯色核心 + 独立光晕**
-/// （尺寸与时间轴「现在」圆点一致：核心 5.5pt、外沿 7.5pt）；地平线 / 箭头 / 刻度点仍是灰或主色。
+/// （尺寸与时间轴「现在」圆点一致：核心 5.5pt、外沿 7.5pt）；地平线 / 箭头仍是灰。
 private struct SunDialCanvas: View {
 
     @Environment(\.palette) private var palette
@@ -305,21 +305,27 @@ private struct SunDialCanvas: View {
             isPolarDay: isPolarDay,
             isPolarNight: isPolarNight
         ) {
+            // 白天弧两端各外扩 0.8°（Core 里算好）：弧端略穿过地平线，
+            // 交点因此被弧「盖住」—— 圆盘上不再画日出 / 日落刻度点。
             context.stroke(
                 arcPath(center: path.center, radius: path.radius, from: arc.start, to: arc.end),
                 with: .color(dayColor),
                 style: dayStyle
             )
-            context.stroke(
-                arcPath(
-                    center: path.center,
-                    radius: path.radius,
-                    from: arc.end,
-                    to: arc.start + 2.0 * Double.pi
-                ),
-                with: .color(nightColor),
-                style: nightStyle
-            )
+            // 夜间虚线从**外扩后的终点**接上；扫角为 0（整圆都是白天）时不画。
+            let nightSweep = 2.0 * Double.pi - (arc.end - arc.start)
+            if nightSweep > 1e-9 {
+                context.stroke(
+                    arcPath(
+                        center: path.center,
+                        radius: path.radius,
+                        from: arc.end,
+                        to: arc.start + 2.0 * Double.pi
+                    ),
+                    with: .color(nightColor),
+                    style: nightStyle
+                )
+            }
         }
     }
 
@@ -328,7 +334,8 @@ private struct SunDialCanvas: View {
     /// 地平线：**一条贯穿画布的横线**，长度固定为「画布宽 − 左右各 4pt」（与安卓一致）。
     ///
     /// 所有场景（普通日 / 短昼 / 极昼 / 极夜 / 相切）一样长、一样颜色、一样不透明度，
-    /// 不再按弦长延伸、也不分圆内 / 圆外两段；日出 / 日落交点仍画两个刻度点（相切时只有一个）。
+    /// 不再按弦长延伸、也不分圆内 / 圆外两段。**不画日出 / 日落刻度点**（与安卓一致）：
+    /// 白天弧两端各外扩 0.8°，交点已经被弧端盖住了。
     private func drawHorizon(_ context: inout GraphicsContext, size: CGSize) {
         let startX = SunPathGeometry.horizonStartX(size: size)
         let endX = SunPathGeometry.horizonEndX(size: size)
@@ -336,7 +343,7 @@ private struct SunDialCanvas: View {
         var line = Path()
         line.move(to: CGPoint(x: startX, y: path.horizonY))
         line.addLine(to: CGPoint(x: endX, y: path.horizonY))
-        // 比白天弧（2.5pt）细：1pt；单色单不透明度。
+        // 比白天弧（1.6pt）细：1pt；单色单不透明度。
         // 用 `onSurfaceVariant` 而不是 `outlineVariant`：后者在夜间主题是 #24304F，对卡片只有 1.26:1，
         // 等于看不见（夜间可见性是硬要求）；这一档白天 2.6:1、夜间 3.6:1，两套都读得出来。
         context.stroke(
@@ -344,17 +351,6 @@ private struct SunDialCanvas: View {
             with: .color(palette.onSurfaceVariant.opacity(0.7)),
             lineWidth: 1
         )
-
-        // 交点就是日出 / 日落（各画一个小刻度点）；弦长为 0（相切）时只留一个点。
-        guard let chord = SunPathGeometry.horizonChord(path: path) else { return }
-        var dotCenters = [chord.start]
-        if chord.end.x - chord.start.x > 1 {
-            dotCenters.append(chord.end)
-        }
-        for point in dotCenters {
-            let dot = CGRect(x: point.x - 2.5, y: point.y - 2.5, width: 5, height: 5)
-            context.fill(Path(ellipseIn: dot), with: .color(palette.primary))
-        }
     }
 
     // MARK: 运动方向小弧
@@ -424,7 +420,7 @@ private struct SunDialCanvas: View {
         //   ② 核心（后画）：5.5pt 纯色实心，alpha 1.0 —— 不用渐变，边界干净。
         // 时间轴的点是「实心 + 0.28 平铺柔光」两笔（`NowDotStyle`）；这里只共用**尺寸**
         // （核心半径、整体外沿），光晕用渐变收边：亮金画在米白卡上，平铺柔光会散成光斑。
-        // 地平线、箭头、日出日落刻度点仍用主色 / 次要色（灰），不跟着变。
+        // 地平线、箭头仍用次要色（灰），不跟着变。
         let halo = SunHaloStyle.shared
         let core = SunPathGeometry.sunRadius
         let coreRect = CGRect(x: sun.x - core, y: sun.y - core, width: core * 2, height: core * 2)

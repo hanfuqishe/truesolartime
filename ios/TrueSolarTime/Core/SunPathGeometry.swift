@@ -222,13 +222,23 @@ enum SunPathGeometry {
 
     // MARK: - 画弧 / 弦用的小工具
 
+    /// 白天弧两端各**外扩**的角度（度）：0.8°。
+    ///
+    /// 圆盘上不再画日出 / 日落那两个刻度圆点（与安卓一致）：弧端各自越过地平线一点点，
+    /// 交点自然被弧「盖住」。R ≈ 73.7pt 时 0.8° 的弧长约 **1pt**，肉眼刚好是「出线一点」。
+    static let dayArcOvershootDegrees: Double = 0.8
+    /// 同上，换算成弧度。
+    static var dayArcOvershootRadians: Double { dayArcOvershootDegrees * Double.pi / 180 }
+
     /// 白天弧的起止角（θ，弧度），从日出角**递增**到日落角，途中经过圆顶（12:00）。
     ///
     /// - 极昼：整圆都是白天 → `(0, 2π)`；
     /// - 极夜：整圆都在地平线以下 → `nil`（没有白天弧）；
-    /// - 正常：日出/日落缺一个时按「12 小时白昼」兜底（06:00 / 18:00）。
+    /// - 正常：日出/日落缺一个时按「12 小时白昼」兜底（06:00 / 18:00）；
+    /// - **两端各外扩 `dayArcOvershootRadians`（0.8°）**：起点 = 日出 − 0.8°、扫角 = 跨度 + 1.6°，
+    ///   扫角封顶 2π（昼长接近 24 小时时就是整圆）。
     ///
-    /// 夜间弧就是它的补集 `(end, start + 2π)`。
+    /// 夜间弧是它的补集 `(end, start + 2π)`，扫角 = 2π − 白天扫角；为 0 时不该画。
     static func dayArcAngles(
         sunriseHour: Double?,
         sunsetHour: Double?,
@@ -238,10 +248,32 @@ enum SunPathGeometry {
         if isPolarNight { return nil }
         if isPolarDay { return (0.0, 2.0 * Double.pi) }
 
-        let start = angleOfDayHour(sunriseHour ?? 6.0)
-        var end = angleOfDayHour(sunsetHour ?? 18.0)
-        while end <= start { end += 2.0 * Double.pi }
-        return (start, end)
+        let overshoot = dayArcOvershootRadians
+        let sunrise = angleOfDayHour(sunriseHour ?? 6.0)
+        var sunset = angleOfDayHour(sunsetHour ?? 18.0)
+        while sunset <= sunrise { sunset += 2.0 * Double.pi }
+
+        // 两端各外扩 0.8°：起点往前、终点往后，扫角因此 +1.6°；封顶整圆。
+        let span = min(sunset - sunrise + 2 * overshoot, 2.0 * Double.pi)
+        let start = sunrise - overshoot
+        return (start, start + span)
+    }
+
+    /// 白天 / 夜间弧的扫角（弧度）：`night + day == 2π`，夜间为 0 时不该画虚线。
+    static func arcSweeps(
+        sunriseHour: Double?,
+        sunsetHour: Double?,
+        isPolarDay: Bool,
+        isPolarNight: Bool
+    ) -> (day: Double, night: Double)? {
+        guard let arc = dayArcAngles(
+            sunriseHour: sunriseHour,
+            sunsetHour: sunsetHour,
+            isPolarDay: isPolarDay,
+            isPolarNight: isPolarNight
+        ) else { return nil }
+        let day = arc.end - arc.start
+        return (day, max(2.0 * Double.pi - day, 0))
     }
 
     /// 地平线与圆的交点（日出 / 日落刻度点）。地平线落到圆外（极昼 / 极夜）时返回 nil。
