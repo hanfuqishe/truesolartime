@@ -255,3 +255,10 @@
 "weather.diagWeatherKitFailure" = "WeatherKit failure";
 
 "weather.diagWeatherKitFailureFormat" = "WeatherKit failed: %@";
+
+"weather.diagWeatherKitOk" = "WeatherKit attempted";
+"weather.diagWeatherKitFailed" = "WeatherKit failed: %@";
+"weather.diagWeatherKitSkipped" = "not attempted: %@";
+"weather.skipSettingOpenMeteo" = "setting = Open-Meteo";
+"weather.skipAlreadyTried" = "already tried this round";
+"settings.weatherDiagSource" = "Weather source";

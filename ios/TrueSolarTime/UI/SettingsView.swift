@@ -72,23 +72,28 @@ struct SettingsView: View {
                             .foregroundStyle(palette.onSurfaceVariant)
 
                         LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
-                
-            // 天气数据源：自动 / WeatherKit / Open-Meteo
-            Text(L("settings.weatherSource"))
-                .font(.system(size: 12))
-                .foregroundStyle(palette.onSurfaceVariant)
-            Text(L("weather.sourceHint"))
-                .font(.system(size: 11))
-                .foregroundStyle(palette.onSurfaceVariant)
-            HStack(spacing: 8) {
-                ForEach(WeatherSourceSetting.allCases) { setting in
-                    Button(setting.label) { model.setWeatherSource(setting) }
-                        .buttonStyle(ThemedChipButtonStyle(isSelected: setting == model.weatherSourceSetting))
-                }
-            }
-            ForEach(MapStyle.selectable) { style in
+                            ForEach(MapStyle.selectable) { style in
                                 Button(style.label) { model.setMapStyle(style) }
                                     .buttonStyle(ThemedChipButtonStyle(isSelected: style == model.mapStyle))
+                            }
+                        }
+                    }
+
+                    // **独立 section**：天气数据源（不要塞进地图那块，否则说明文字与芯片同行会互相挤压）。
+                    section(title: L("settings.weatherSource")) {
+                        // 说明文字整行宽、可换行；芯片另起一行。
+                        Text(L("weather.sourceHint"))
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                            ForEach(WeatherSourceSetting.allCases) { setting in
+                                Button(setting.label) { model.setWeatherSource(setting) }
+                                    .buttonStyle(ThemedChipButtonStyle(isSelected: setting == model.weatherSourceSetting))
+                                    // 芯片不参与压缩：文字完整（必要时空出宽度换行到下一格）。
+                                    .fixedSize()
                             }
                         }
                     }
@@ -163,6 +168,7 @@ struct SettingsView: View {
                                 // 排查「天气不刷新 / 时间对不上」先看这四行。
                                 diagnosticLine(title: L("settings.diagSource"), value: WeatherStore.shared.sourceSummary())
                                 diagnosticLine(title: L("settings.diagAge"), value: WeatherStore.shared.ageSummary())
+                                diagnosticLine(title: L("settings.weatherDiagSource"), value: WeatherStore.shared.weatherKitSummary())
                                 diagnosticLine(title: L("settings.diagLastFailure"), value: WeatherStore.shared.failureSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
                                 diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)

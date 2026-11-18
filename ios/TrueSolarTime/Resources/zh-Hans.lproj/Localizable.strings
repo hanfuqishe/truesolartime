@@ -255,3 +255,10 @@
 "weather.diagWeatherKitFailure" = "WeatherKit 失败";
 
 "weather.diagWeatherKitFailureFormat" = "WeatherKit 失败：%@";
+
+"weather.diagWeatherKitOk" = "本次已尝试 WeatherKit";
+"weather.diagWeatherKitFailed" = "WeatherKit 失败：%@";
+"weather.diagWeatherKitSkipped" = "未尝试：%@";
+"weather.skipSettingOpenMeteo" = "设置=Open-Meteo";
+"weather.skipAlreadyTried" = "本轮已试过";
+"settings.weatherDiagSource" = "天气数据源";

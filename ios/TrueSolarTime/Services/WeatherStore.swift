@@ -74,6 +74,8 @@ final class WeatherStore {
     private(set) var weatherKitFailure: String?
     /// 本轮是否已经试过 WeatherKit（自动模式回退 Open-Meteo 时避免无限重入）。
     private var weatherKitAttempted = false
+    /// 这一次**为什么没试** WeatherKit（设置=Open-Meteo / 已试过）；试过时为 nil。
+    private(set) var weatherKitSkipReason: String?
     /// 最近一次取数的结果说明（诊断用：主源成功 / 沿用缓存 / 降到 7Timer! / 两个源都失败）。
     private(set) var lastResultDescription: String?
     /// 最近一次请求结束的时刻。
@@ -151,6 +153,7 @@ final class WeatherStore {
         place: Place,
         force: Bool = false,
         ignoreLowPrecisionThrottle: Bool = false,
+        skipWeatherKit: Bool = false,
         completion: ((WeatherSnapshot?) -> Void)? = nil
     ) -> Bool {
         guard !inFlight else { return false }
@@ -193,7 +196,7 @@ final class WeatherStore {
                     // 不复制取数逻辑；`weatherKitAttempted` 保证不会再次尝试 WeatherKit。
                     self.inFlight = false
                     self.attemptStartedAt = nil
-                    _ = self.requestRefresh(place: place, force: true, completion: completion)
+                    _ = self.requestRefresh(place: place, force: true, skipWeatherKit: true, completion: completion)
                 }
             }
             return true
@@ -446,6 +449,20 @@ final class WeatherStore {
     }
 
     /// 最近一次失败原因（诊断页一行）；没有失败过时显示「无」。
+    /// 天气数据源设置 + 本次 WeatherKit 的结果（诊断项一行）。
+    func weatherKitSummary() -> String {
+        let setting = AppSettings().weatherSource
+        let outcome: String
+        if let failure = weatherKitFailure {
+            outcome = Lf("weather.diagWeatherKitFailed", failure)
+        } else if let skipped = weatherKitSkipReason {
+            outcome = Lf("weather.diagWeatherKitSkipped", skipped)
+        } else {
+            outcome = L("weather.diagWeatherKitOk")
+        }
+        return "\(setting.label) · \(outcome)"
+    }
+
     func failureSummary() -> String {
         lastErrorDescription ?? L("common.none")
     }

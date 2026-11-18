@@ -2301,6 +2301,27 @@ expect(
         && WeatherSourceSetting.of(id: "openMeteo") == .openMeteo
         && WeatherSourceSetting.of(id: "nonsense") == .auto
 )
+expect(
+    "天气源解析：nil / 空串 / \"AUTO\" / \"weatherkit\" / \"openMeteo\" / 非法值 各自正确，非法一律 .auto",
+    WeatherSourceSetting.of(id: nil) == .auto
+        && WeatherSourceSetting.of(id: "") == .auto
+        && WeatherSourceSetting.of(id: "  ") == .auto
+        && WeatherSourceSetting.of(id: "AUTO") == .auto
+        && WeatherSourceSetting.of(id: "weatherkit") == .weatherKit
+        && WeatherSourceSetting.of(id: "WEATHERKIT") == .weatherKit
+        && WeatherSourceSetting.of(id: "openMeteo") == .openMeteo
+        && WeatherSourceSetting.of(id: "garbage") == .auto,
+    "auto=\(WeatherSourceSetting.of(id: "AUTO")) wk=\(WeatherSourceSetting.of(id: "weatherkit")) om=\(WeatherSourceSetting.of(id: "openMeteo")) bad=\(WeatherSourceSetting.of(id: "garbage"))"
+)
+expect(
+    "自动设置 + 正常态 → 必须尝试 WeatherKit（之前的 bug 就是这里恒 false）",
+    WeatherChain.shouldRequestWeatherKit(setting: .auto, isLocationUnknown: false)
+)
+expect(
+    "手动 Open-Meteo → 不尝试 WeatherKit，且跳过原因文案正确",
+    !WeatherChain.shouldRequestWeatherKit(setting: .openMeteo, isLocationUnknown: false)
+        && L("weather.skipSettingOpenMeteo") != L("weather.diagWeatherKitOk")
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
