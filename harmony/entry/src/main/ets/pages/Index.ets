@@ -1156,20 +1156,24 @@ struct Index {
 
         Row() {
           Row().layoutWeight(this.solarSecond > 0 ? this.solarSecond / 60 : 0.1)
-          Column()
-            .width(this.cs(11))
-            .height(this.cs(11))
-            .borderRadius(this.cs(5.5))
-            // 时间轴「现在」圆点（原样，不要再改）：半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0。
-            .radialGradient({
-              center: ['50%', '50%'],
-              radius: SunDialColors.DOT_RADIUS,
-              colors: [
-                [SunDialColors.dotGradientColors(this.dotColor())[0], SunDialColors.DOT_STOPS[0]],
-                [SunDialColors.dotGradientColors(this.dotColor())[1], SunDialColors.DOT_STOPS[1]],
-                [SunDialColors.dotGradientColors(this.dotColor())[2], SunDialColors.DOT_STOPS[2]]
-              ]
-            })
+          // 未知态：只隐藏「现在」圆点。**时间轴的色段必须保留** —— 关键时段标记与地点无关，
+          // 这是用户明确选定的方案（A），以后不要顺手把色段也一起隐藏。
+          if (!this.locationUnknown) {
+            Column()
+              .width(this.cs(11))
+              .height(this.cs(11))
+              .borderRadius(this.cs(5.5))
+              // 时间轴「现在」圆点（原样，不要再改）：半径 5.5vp，色标 0 / 0.45 / 1，alpha 1 / 0.45 / 0。
+              .radialGradient({
+                center: ['50%', '50%'],
+                radius: SunDialColors.DOT_RADIUS,
+                colors: [
+                  [SunDialColors.dotGradientColors(this.dotColor())[0], SunDialColors.DOT_STOPS[0]],
+                  [SunDialColors.dotGradientColors(this.dotColor())[1], SunDialColors.DOT_STOPS[1]],
+                  [SunDialColors.dotGradientColors(this.dotColor())[2], SunDialColors.DOT_STOPS[2]]
+                ]
+              })
+          }
           Row().layoutWeight(this.solarSecond < 86400 ? (86400 - this.solarSecond) / 60 : 0.1)
         }
         .width('100%')
