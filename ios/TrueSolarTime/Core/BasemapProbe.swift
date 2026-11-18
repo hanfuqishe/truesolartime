@@ -55,6 +55,24 @@ enum BasemapProbe {
         amapZoomLevels.filter { $0 > zoom }
     }
 
+    /// 什么时候可以**提前收工**（2 秒那一枪该不该开）。
+    ///
+    /// 条件：**不存在比当前最优精度更高、且还没有结论的档**。
+    /// 否则会出现「z3 先回来 → 2 秒一到就出结论 → 选了低精度」，而 z12 其实还在飞
+    /// （单块 2.5 秒超时、整体 4 秒硬顶，完全等得起）。
+    ///
+    /// 「有结论」= 已经出现在 `amap` 里：无论 `true`（有内容）还是 `false`（空白 / 失败）；
+    /// 只有**还在飞**（字典里没有这个键）才算没结论。
+    ///
+    /// - Parameters:
+    ///   - amap: 已回来的高德探测结果（精度 → 是否有内容）。
+    ///   - zooms: 参与探测的档位（默认 `[12, 10, 3]`）。
+    static func shouldEarlyExit(amap: [Int: Bool], zooms: [Int] = amapZoomLevels) -> Bool {
+        guard let best = amap.filter({ $0.value }).keys.max() else { return false }
+        // 还有更高的档没结论（还在飞）→ 不许早退，必须等它。
+        return !zooms.contains { $0 > best && amap[$0] == nil }
+    }
+
     /// 由结论换算 `zoomStep`：0 正常、1 降一级、2 降两级、3 = z3 全球、4 = 不可用。
     ///
     /// **一步落位**：选中 z10 就直接 `zoomStep = 2`，不再「先 z11 再 z10」。

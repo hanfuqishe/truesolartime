@@ -346,10 +346,13 @@ final class BasemapController: ObservableObject {
         }
     }
 
-    /// 2 秒到点：高德已经有一档有内容 → 立刻收工（不等 OSM）；否则继续等硬超时。
+    /// 2 秒到点：只有「**不存在比当前最优精度更高、且还在飞**的档」时才收工（`BasemapProbe.shouldEarlyExit`）。
+    ///
+    /// 以前这里是「任意一档有内容就早退」，会把「z3 先回、z12 还在飞」判成结论 → 只能选到低精度。
+    /// 现在更高的档只要还没结论（`amap[zoom] == nil`）就继续等，直到它回来（空白 / 失败也算有结论）。
     private func earlyExitIfAmapContent(_ session: ProbeSession) {
         guard probeSession === session, !session.done else { return }
-        guard session.amapResults.values.contains(true) else { return }
+        guard BasemapProbe.shouldEarlyExit(amap: session.amapResults) else { return }
         finishProbe(session)
     }
 

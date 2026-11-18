@@ -1906,6 +1906,41 @@ expect(
     "active=\(unknownMapState.active) step=\(unknownMapState.zoomStep)"
 )
 
+
+// 早退条件：不能因为「低精度先回来」就早退，否则永远选不到最高精度。
+expect(
+    "z3 有内容、z12/z10 还在飞 → 不许早退（否则只会选到 z3）",
+    !BasemapProbe.shouldEarlyExit(amap: [3: true])
+)
+expect(
+    "z3 有内容、z12/z10 已有结论（空白）→ 可以早退，且 decide 选 z3",
+    BasemapProbe.shouldEarlyExit(amap: [12: false, 10: false, 3: true])
+        && BasemapProbe.decide(osmReachable: false, amap: [12: false, 10: false, 3: true]).zoom == 3
+)
+expect(
+    "z12 有内容、更低档还在飞 → 可以早退（不必等更低档）",
+    BasemapProbe.shouldEarlyExit(amap: [12: true])
+)
+expect(
+    "z12 空白、z10 有内容、z3 还在飞 → 可以早退（更高的 z12 已有结论）",
+    BasemapProbe.shouldEarlyExit(amap: [12: false, 10: true])
+)
+expect(
+    "一档有内容都没有 → 不早退（等硬超时）",
+    !BasemapProbe.shouldEarlyExit(amap: [12: false, 10: false, 3: false])
+        && !BasemapProbe.shouldEarlyExit(amap: [:])
+)
+// 端到端：z3 先回 true、z12 后回 true → 最终选 z12（最高精度）。
+var probeArrivals: [Int: Bool] = [3: true]
+let earlyAfterZ3 = BasemapProbe.shouldEarlyExit(amap: probeArrivals)
+probeArrivals[12] = true
+let choiceAfterZ12 = BasemapProbe.decide(osmReachable: false, amap: probeArrivals)
+expect(
+    "端到端：z3 先回 true 不早退；z12 回来后才出结论，且选 z12",
+    !earlyAfterZ3 && choiceAfterZ12.zoom == 12,
+    "earlyAfterZ3=\(earlyAfterZ3) choice=\(String(describing: choiceAfterZ12.zoom))"
+)
+
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
