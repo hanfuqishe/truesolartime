@@ -35,6 +35,33 @@ enum LocationUnknown {
         followGps && !hasValidFix
     }
 
+    // MARK: 跟随意图的状态转移（纯函数，回归断言用）
+
+    /// 用户点「跟随 GPS」之后四个状态位的目标值。
+    struct FollowStart: Equatable {
+        let followGps: Bool
+        let hasValidFix: Bool
+        let trackingGps: Bool
+        let waitingForFix: Bool
+    }
+
+    /// **无权限也必须先落意图**：`followGps` 恒为 `true`，界面才能进入未知态。
+    ///
+    /// 真机 bug（build 70）：`startGpsTracking` 在无权限时 `guard ... return` 直接返回，
+    /// 后面的 `setFollowGps(true)` 永远不执行 → 意图仍是 false → `isLocationUnknown` 恒 false
+    /// → 「撤销权限 + 打开跟随 GPS」后界面继续显示上一个地点。这条纯函数把这个顺序钉死。
+    static func startFollowing(hasPermission: Bool, hasCurrentFix: Bool) -> FollowStart {
+        if hasPermission {
+            return FollowStart(
+                followGps: true,
+                hasValidFix: hasCurrentFix,
+                trackingGps: true,
+                waitingForFix: true
+            )
+        }
+        // 没授权：意图照样记下来，但**不算有有效定位**，也不启动采样 / 看门狗。
+        return FollowStart(followGps: true, hasValidFix: false, trackingGps: false, waitingForFix: false)
+    }
     /// 未知态的标准时间快照：**按系统时区**（显式传偏移，负偏移照常生效），太阳量不可用。
     ///
     /// 为什么 latitude/longitude 给 0：未知态根本不显示任何太阳量（真太阳时 / 高度角 / 时辰

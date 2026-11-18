@@ -98,7 +98,9 @@ struct ContentView: View {
         .toast(message: $model.message)
         .task {
             model.requestLocationPermissionIfNeeded()
-            model.startGpsTracking(announce: false)
+            // 启动恢复：只在「本来就打算跟随 GPS」时启动；再复核一次权限（撤销过就进未知态）。
+            model.resumeGpsIfNeeded(announce: false)
+            model.syncLocationPermission()
         }
         .onChange(of: scenePhase) { phase in
             switch phase {

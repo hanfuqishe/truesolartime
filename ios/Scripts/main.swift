@@ -1850,6 +1850,36 @@ expect(
     )
 )
 print("== 定位不可用（未知态）==")
+// 回归：点「跟随 GPS」时**先落意图**（build 70 的 bug：无权限被 guard 挡掉，意图没记下来）。
+let noPermissionStart = LocationUnknown.startFollowing(hasPermission: false, hasCurrentFix: false)
+expect(
+    "无权限 + 点「跟随 GPS」→ followGps 仍变 true、hasValidFix = false（意图必须先落地）",
+    noPermissionStart.followGps
+        && !noPermissionStart.hasValidFix
+        && !noPermissionStart.trackingGps
+        && !noPermissionStart.waitingForFix,
+    "next=\(noPermissionStart)"
+)
+expect(
+    "无权限 + 落意图之后 → 判定就是未知态（不再显示旧地点）",
+    LocationUnknown.isUnknown(followGps: noPermissionStart.followGps, hasValidFix: noPermissionStart.hasValidFix)
+)
+let permissionStart = LocationUnknown.startFollowing(hasPermission: true, hasCurrentFix: false)
+expect(
+    "有权限 + 点「跟随 GPS」→ followGps true、trackingGps true、waitingForFix true（还没 fix 所以 hasValidFix false）",
+    permissionStart.followGps
+        && permissionStart.trackingGps
+        && permissionStart.waitingForFix
+        && !permissionStart.hasValidFix,
+    "next=\(permissionStart)"
+)
+let resumeWithFix = LocationUnknown.startFollowing(hasPermission: true, hasCurrentFix: true)
+expect(
+    "授权后点「跟随 GPS」且已有 fix → 立刻退出未知态（hasValidFix 保持 true）",
+    resumeWithFix.hasValidFix
+        && !LocationUnknown.isUnknown(followGps: resumeWithFix.followGps, hasValidFix: resumeWithFix.hasValidFix)
+)
+
 // 判定：跟随意图 + 没有有效定位（未授权 / 看门狗超时）。
 expect(
     "跟随 GPS 且没有有效定位 → 未知态",

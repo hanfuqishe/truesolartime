@@ -134,15 +134,43 @@ final class AppModel: ObservableObject {
         location.requestPermissionIfNeeded()
     }
 
+    /// 启动 / 回前台时的「恢复定位」：**只在用户本来就打算跟随时**才启动。
+    ///
+    /// 不能直接调 `startGpsTracking`：那个方法会写跟随意图（`followGps = true`），
+    /// 预设城市 / 手动坐标的用户会在启动时被翻成「跟随 GPS」，进而误进未知态。
+    func resumeGpsIfNeeded(announce: Bool = false) {
+        guard followGps else { return }
+        startGpsTracking(announce: announce)
+    }
+
+    /// 复核系统定位权限（启动 / 回前台都调）：撤销或拒绝 → 没有有效定位。
+    ///
+    /// `notDetermined`（还没弹过系统弹窗）不算撤销，避免首启就闪一下未知态。
+    func syncLocationPermission() {
+        guard followGps else { return }
+        guard location.authorizationStatus != .notDetermined else { return }
+        if !location.hasPermission {
+            hasValidFix = false
+        }
+    }
+
     func startGpsTracking(announce: Bool = true) {
+        // 状态转移在 Core 里（`LocationUnknown.startFollowing`），**先落意图、再提示**：
+        // 无权限时也要把 followGps 记成 true，否则界面永远进不了「定位不可用」未知态
+        // （build 70 的 bug：`guard ... return` 把后面的 setFollowGps 挡掉了）。
+        let next = LocationUnknown.startFollowing(
+            hasPermission: location.hasPermission,
+            hasCurrentFix: hasValidFix
+        )
+        setFollowGps(next.followGps)
+        hasValidFix = next.hasValidFix
+        trackingGps = next.trackingGps
+        waitingForFix = next.waitingForFix
+
         guard location.hasPermission else {
             message = L("msg.noLocationPermission")
             return
         }
-
-        trackingGps = true
-        setFollowGps(true)
-        waitingForFix = true
 
         location.startSampling { [weak self] fix in
             self?.applyFix(fix, announce: announce)
@@ -425,15 +453,13 @@ final class AppModel: ObservableObject {
     func handleBecameActive() {
         now = Date()
         // 系统设置里改过定位权限 → 这里复核一次（撤销权限立刻进未知态，重新授权就继续定位）。
-        if followGps, !location.hasPermission {
-            hasValidFix = false
-        }
+        syncLocationPermission()
         if trackingGps {
             location.startSampling { [weak self] fix in
                 self?.applyFix(fix, announce: false)
             }
         } else if location.hasPermission && place.source != .manual {
-            startGpsTracking(announce: false)
+            resumeGpsIfNeeded(announce: false)
         }
         // 回到前台：降级后「重试主源」立刻试一次（跳过退避窗口，不等计时器）。
         refreshData(ignoreLowPrecisionThrottle: true)
