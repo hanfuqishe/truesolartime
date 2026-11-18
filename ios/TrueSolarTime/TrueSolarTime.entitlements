@@ -2,9 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- WeatherKit：App ID 上必须开启同名 capability，描述文件才会带上这个 entitlement。
-	     目前**只做签名链路验证**，业务代码还没接 WeatherKit；若 Archive 因签名失败，
-	     说明 App ID 的 capability 没同步到描述文件（见 ios/ci/asc.py 里的 ensure_weatherkit_capability）。 -->
+	<!-- WeatherKit requires the capability to be enabled on the App ID
+	     (developer.apple.com > Identifiers > com.realsuntime.solartime > WeatherKit).
+	     The ASC API does not accept capabilityType=WEATHERKIT, so that step is manual:
+	     POST /v1/bundleIdCapabilities returns 409 ENTITY_ERROR.ATTRIBUTE.TYPE.
+	     Once enabled, the provisioning profile carries this entitlement automatically. -->
 	<key>com.apple.developer.weatherkit</key>
 	<true/>
 </dict>

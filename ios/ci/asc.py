@@ -263,6 +263,31 @@ def unwrap(resp: dict) -> dict:
     return resp
 
 
+#: `ensure_weatherkit_capability` 的结果：
+#: - `True`  新开成功
+#: - `False` 已存在（真正的重复创建）
+#: - `None`  **ASC API 不支持这个 capability**（只能去开发者后台手工勾选）
+CAPABILITY_UNSUPPORTED = None
+
+
+def classify_capability_post_error(status: int, body: str) -> str:
+    """把 `POST /v1/bundleIdCapabilities` 的错误响应分类（**纯函数**，便于自检）。
+
+    返回：
+      - `"unsupported"`：ASC API 不认这个 capabilityType。实测 WeatherKit 就是这种：
+        HTTP 409 + `code: ENTITY_ERROR.ATTRIBUTE.TYPE` + detail
+        `'WEATHERKIT' is not a valid value for the attribute 'capabilityType'.`
+        —— 这不是「已存在」，而是接口层面根本没开放这个值，只能去后台手工勾选。
+      - `"exists"`：真的已经开过了（其它 409/422）。
+      - `"error"`：其它状态码，按失败处理。
+    """
+    if status not in (409, 422):
+        return "error"
+    text = (body or "").lower()
+    if "entity_error.attribute.type" in text or "not a valid value" in text:
+        return "unsupported"
+    return "exists"
+
 WEATHERKIT_CAPABILITY = "WEATHERKIT"
 
 
@@ -360,10 +385,20 @@ def ensure_weatherkit_capability(bid_id: str, token: str) -> bool:
         ) from exc
     error = (resp.get("__error__") if isinstance(resp, dict) else None) or {}
     if error:
-        # 409/422（已存在）已被 tolerate 拦住，走到这里只可能是这两个码。
-        print(f"      WeatherKit capability 已存在（HTTP {error.get('status')}），跳过")
-        return False
-
+        status = error.get("status") or 0
+        kind = classify_capability_post_error(status, error.get("body") or "")
+        if kind == "unsupported":
+            # 409 + ENTITY_ERROR.ATTRIBUTE.TYPE：ASC 没开放这个值（不是「已存在」）——
+            # 假定用户已在开发者后台手工勾选，打一条 info 后继续。
+            print(
+                "[info] ASC API 不支持 capabilityType=WEATHERKIT；"
+                "假定已在后台手工开启，继续建描述文件"
+            )
+            return CAPABILITY_UNSUPPORTED
+        if kind == "exists":
+            print(f"      WeatherKit capability 已存在（HTTP {status}），跳过")
+            return False
+        raise AscError(f"开启 WeatherKit capability 失败：HTTP {status}\n{error.get('body')}")
     created = unwrap(resp)
     print(f"      WeatherKit capability 已开启（新建 id={created.get('id')}）")
     return True
@@ -734,6 +769,20 @@ def cmd_selfcheck(args, token_unused=None) -> int:
     assert needle not in src, "签名流程不能再对 bundleIdCapabilities 发 GET"
     assert 'tolerate=(409, 422)' in src, "创建 capability 必须容忍「已存在」（409/422）"
     print("[ok] 签名流程只用 POST create-capability（无 GET），且容忍 409/422")
+
+    # 409 的两种含义必须分开：ENTITY_ERROR.ATTRIBUTE.TYPE =「ASC 不支持该 capability」，
+    # 不是「已存在」——以前误判成已存在，导致 Archive 一直缺 entitlement。
+    unsupported_body = ('{"code": "ENTITY_ERROR.ATTRIBUTE.TYPE", "detail":'
+                        '"''WEATHERKIT'' is not a valid value for the attribute''capabilityType''."}')
+    assert classify_capability_post_error(409, unsupported_body) == "unsupported"
+    assert classify_capability_post_error(422, "not a valid value for the attribute") == "unsupported"
+    assert classify_capability_post_error(409, '{"code": "ENTITY_ERROR.RELATIONSHIP.INVALID"}') == "exists"
+    assert classify_capability_post_error(500, "boom") == "error"
+    assert classify_capability_post_error(201, "") == "error"
+    assert CAPABILITY_UNSUPPORTED is None
+    print("[ok] 409 分类：ENTITY_ERROR.ATTRIBUTE.TYPE → unsupported（只打 info）；其它 409 → 已存在")
+    assert "[info] ASC API 不支持 capabilityType=WEATHERKIT" in src
+    print("[ok] 不支持分支只打一条 info（假定已手工开启），不再谎称「已存在」")
     print("selfcheck all passed")
     return 0
 

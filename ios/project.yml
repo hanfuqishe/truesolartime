@@ -49,9 +49,10 @@ targets:
         INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleDefault
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         ENABLE_USER_SCRIPT_SANDBOXING: YES
-        # WeatherKit 的 entitlement（app 侧的签名声明）。路径相对 SRCROOT（= ios/）。
-        # 需要在 App ID 上开启同名 capability，否则描述文件里没有这条、Archive 会失败：
-        #   ios/ci/asc.py 的 ensure_weatherkit_capability() 会幂等地补上。
+        # WeatherKit：App ID 上已**手工勾选**该能力（ASC API 不支持 capabilityType=WEATHERKIT，
+        # 实测 POST 会 409 ENTITY_ERROR.ATTRIBUTE.TYPE，所以只能后台手工开）。
+        # 若哪天签名又报「profile 不含 weatherkit entitlement」，先把这行注释掉恢复 CI 绿灯，
+        # 再到 developer.apple.com 重新确认该 App ID 的 WeatherKit 勾选状态。
         CODE_SIGN_ENTITLEMENTS: TrueSolarTime/TrueSolarTime.entitlements
       configs:
         Release:
