@@ -4,7 +4,7 @@ import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { MapTileService, MapLoadResult } from '../services/MapTileService';
-import { MapUiState, sameUiState } from '../core/MapFallback';
+import { MapUiState, ProbeDecision, sameUiState } from '../core/MapFallback';
 import { Place, PlaceSource } from '../core/Place';
 import { LocationPlaceholders, UnknownLocationLogic } from '../core/LocationUnknown';
 import { PlaceBadgeLogic } from '../core/PlaceBadge';
@@ -241,6 +241,7 @@ struct Index {
     font.registerFont({ familyName: CARD_FONT_MEDIUM, familySrc: $rawfile('font/card_sans_medium.ttf') });
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     AppStore.init(this.context);
+    MapTileService.setProbeListener((decision: ProbeDecision) => this.onProbeUpgrade(decision));
     this.reloadSettings();
     this.weatherRevision = WeatherService.revision();
     this.districtRevision = DistrictService.revision();
@@ -672,7 +673,25 @@ struct Index {
     }
   }
 
+  /** 渐进升级：保持视口中心不变，只换源 / 级别；用户已交互过就不再升级。 */
+  private onProbeUpgrade(decision: ProbeDecision): void {
+    if (this.locationUnknown) {
+      return;
+    }
+    const result: MapLoadResult = MapTileService.upgradeResult(decision);
+    if (sameUiState(this.lastMapUi, result.uiState)) {
+      return;
+    }
+    this.lastMapUi = result.uiState;
+    this.mapTiles = result.tiles;
+    this.mapAttribution = result.attribution;
+    this.mapAppliedZoom = result.zoom;
+    this.mapUnavailable = result.unavailable;
+    this.mapDegraded = false;
+  }
+
   private zoomMapBy(delta: number): void {
+    MapTileService.markMapInteraction();
     const next: number = MapTilesLogic.clampZoom(this.mapZoom + delta);
     if (next === this.mapZoom) {
       return;
@@ -1441,6 +1460,8 @@ struct Index {
               if (event.scale > 0) {
                 const next: number = MapTilesLogic.clampZoom(this.mapBaseZoom + Math.log2(event.scale));
                 if (next !== this.mapZoom) {
+                  // 用户手动缩放：冻结后续探测升级。
+                  MapTileService.markMapInteraction();
                   this.applyViewport(this.mapCenterLat, this.mapCenterLon, next);
                 }
               }

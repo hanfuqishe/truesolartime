@@ -710,3 +710,107 @@ export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
   next.lastReboundMillis = nowMillis;
   return next;
 }
+
+/** 候选源 / 级别是否比当前更好：先比源（OSM 优于高德），同源再比级别（z 越大越好）。 */
+export function isBetterTile(source: MapStyle, zoom: number, currentSource: MapStyle,
+    currentZoom: number): boolean {
+  if (source === currentSource) {
+    return zoom > currentZoom;
+  }
+  return source === MapStyle.OSM && currentSource !== MapStyle.OSM;
+}
+
+/**
+ * 渐进升级：探测结果一块一块回来，**先到先用**，更好的才升级。
+ *
+ * 冻结条件（任一满足即不再升级）：
+ *   - 当前已是 OSM z12（最好结果）；
+ *   - 用户已经手动平移 / 缩放（[markUserInteracted]）；
+ *   - 距首次出图超过 10 秒。
+ * 什么都没返回时，4 秒后判「底图不可用」。
+ */
+export class ProgressiveProbe {
+  /** 首次出图的时长上限：超过它不再接受任何升级。 */
+  static readonly UPGRADE_WINDOW_MILLIS: number = 10 * 1000;
+  /** 什么都没返回时，多久判不可用。 */
+  static readonly GIVE_UP_MILLIS: number = 4000;
+
+  source: MapStyle = MapStyle.AMAP_VECTOR;
+  zoom: number = 0;
+  hasContent: boolean = false;
+  firstShownMillis: number = -1;
+  firstZoom: number = 0;
+  upgradeMillis: number = -1;
+  upgradeZoom: number = 0;
+  userInteracted: boolean = false;
+  private startMillis: number = -1;
+
+  constructor(nowMillis: number) {
+    this.startMillis = nowMillis;
+  }
+
+  /** 用户手势（平移 / 缩放）后冻结升级。 */
+  markUserInteracted(): void {
+    this.userInteracted = true;
+  }
+
+  /** 是否已经冻结升级。 */
+  stopped(nowMillis: number): boolean {
+    if (!this.hasContent) {
+      return false;
+    }
+    if (this.source === MapStyle.OSM && this.zoom === MapFallback.DEFAULT_ZOOM) {
+      return true;
+    }
+    if (this.userInteracted) {
+      return true;
+    }
+    return nowMillis - this.firstShownMillis > ProgressiveProbe.UPGRADE_WINDOW_MILLIS;
+  }
+
+  /** 是否已经等够 4 秒还什么都没有。 */
+  unavailable(nowMillis: number): boolean {
+    return !this.hasContent && nowMillis - this.startMillis >= ProgressiveProbe.GIVE_UP_MILLIS;
+  }
+
+  /**
+   * 收到一块探测结果；需要出图 / 升级时返回 true（并更新内部当前选择），否则忽略。
+   */
+  consider(source: MapStyle, zoom: number, hasContent: boolean, nowMillis: number): boolean {
+    if (!hasContent) {
+      return false;
+    }
+    if (!this.hasContent) {
+      this.source = source;
+      this.zoom = zoom;
+      this.hasContent = true;
+      this.firstShownMillis = nowMillis;
+      this.firstZoom = zoom;
+      return true;
+    }
+    if (this.stopped(nowMillis)) {
+      return false;
+    }
+    if (!isBetterTile(source, zoom, this.source, this.zoom)) {
+      return false;
+    }
+    this.source = source;
+    this.zoom = zoom;
+    this.upgradeMillis = nowMillis;
+    this.upgradeZoom = zoom;
+    return true;
+  }
+
+  /** 诊断文案：「首图 z3 @312ms，升级 z12 @1830ms」或「无升级」。 */
+  describe(nowMillis: number): string {
+    if (!this.hasContent) {
+      return '无首图';
+    }
+    const first: number = this.firstShownMillis - this.startMillis;
+    if (this.upgradeMillis < 0) {
+      return `首图 z${this.firstZoom} @${first}ms，无升级`;
+    }
+    return `首图 z${this.firstZoom} @${first}ms，升级 z${this.upgradeZoom} @${
+      this.upgradeMillis - this.startMillis}ms`;
+  }
+}

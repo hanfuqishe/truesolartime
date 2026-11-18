@@ -37,10 +37,12 @@ import {
   MapUiState,
   ProbeCache,
   ProbeDecision,
+  ProgressiveProbe,
   applyDecision,
   bestContentZoom,
   cacheKey,
   decide,
+  isBetterTile,
   needsProbe,
   sameUiState,
   shouldEarlyExit,
@@ -1312,6 +1314,47 @@ for (const item of equationCases) {
   lateZ12.setState(12, AmapProbe.CONTENT);
   equal('late z12 wins over earlier z3', 12, decide(false, lateZ12).zoom);
   check('late z12 now allows early exit', shouldEarlyExit(lateZ12, [12, 10, 3]));
+
+  // ---- 渐进升级：先到先用、更好的才升级、冻结条件 ----
+  const progressive = new ProgressiveProbe(0);
+  check('first z3 is shown immediately',
+    progressive.consider(MapStyle.AMAP_VECTOR, 3, true, 312));
+  check('later z12 upgrades the z3',
+    progressive.consider(MapStyle.AMAP_VECTOR, 12, true, 1830));
+  equal('final zoom after progressive upgrade', 12, progressive.zoom);
+  equal('progressive diagnostic', '首图 z3 @312ms，升级 z12 @1830ms', progressive.describe(2000));
+
+  const z12First = new ProgressiveProbe(0);
+  z12First.consider(MapStyle.AMAP_VECTOR, 12, true, 300);
+  check('z3 arriving after z12 is ignored', !z12First.consider(MapStyle.AMAP_VECTOR, 3, true, 900));
+  equal('z12 stays after late z3', 12, z12First.zoom);
+
+  const sourceUpgrade = new ProgressiveProbe(0);
+  sourceUpgrade.consider(MapStyle.AMAP_VECTOR, 12, true, 300);
+  check('osm z12 upgrades an amap z12', sourceUpgrade.consider(MapStyle.OSM, 12, true, 900));
+  equal('source upgraded to osm', MapStyle.OSM, sourceUpgrade.source);
+
+  const alreadyBest = new ProgressiveProbe(0);
+  alreadyBest.consider(MapStyle.OSM, 12, true, 300);
+  check('osm z12 ignores everything later', !alreadyBest.consider(MapStyle.OSM, 12, true, 900));
+  check('osm z12 is a stop condition', alreadyBest.stopped(900));
+
+  const interacted = new ProgressiveProbe(0);
+  interacted.consider(MapStyle.AMAP_VECTOR, 3, true, 200);
+  interacted.markUserInteracted();
+  check('user interaction freezes upgrades', !interacted.consider(MapStyle.AMAP_VECTOR, 12, true, 800));
+
+  const tooLate = new ProgressiveProbe(0);
+  tooLate.consider(MapStyle.AMAP_VECTOR, 3, true, 200);
+  check('upgrade after ten seconds is ignored',
+    !tooLate.consider(MapStyle.AMAP_VECTOR, 12, true, 10_201));
+
+  const emptyProbe = new ProgressiveProbe(0);
+  check('no result before four seconds is not unavailable', !emptyProbe.unavailable(3_999));
+  check('no result at four seconds is unavailable', emptyProbe.unavailable(4_000));
+  check('blank results never become content', !emptyProbe.consider(MapStyle.AMAP_VECTOR, 3, false, 100));
+  equal('best content ranking helper follows source and zoom',
+    true, isBetterTile(MapStyle.OSM, 3, MapStyle.AMAP_VECTOR, 12));
 
   equal('zooms above 12 is empty', '', zoomsAbove(12).join(','));
   equal('zooms above 10', '12,11', zoomsAbove(10).join(','));

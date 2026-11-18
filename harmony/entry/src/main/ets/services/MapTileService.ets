@@ -11,7 +11,6 @@
 import { image } from '@kit.ImageKit';
 import { MapLayer, MapStyle, MapTile, MapTilesLogic } from '../core/MapTiles';
 import {
-  AmapProbe,
   MapFallback,
   MapFallbackState,
   MapTileLogic,
@@ -20,16 +19,15 @@ import {
   MapZoomPlan,
   ProbeCache,
   ProbeDecision,
+  ProgressiveProbe,
   TileContent,
   applyDecision,
   cacheKey,
-  decide,
   needsProbe,
-  shouldEarlyExit,
   tileOf,
   uiStateOf
 } from '../core/MapFallback';
-import { Place } from '../core/Place';
+import { Place, PlaceSource } from '../core/Place';
 import {
   UnknownLocationLogic,
   UnknownMapCache,
@@ -65,6 +63,12 @@ export class MapTileService {
   private static readonly PROBE_TIMEOUT_MILLIS: number = 2500;
   private static readonly USER_AGENT: string = 'TrueSolarTime-HarmonyOS/1.0 (map tiles)';
   private static probeCache: ProbeCache = new ProbeCache();
+  private static probeSession: ProgressiveProbe | null = null;
+  private static probeListener: ((decision: ProbeDecision) => void) | null = null;
+  private static lastCenterLat: number = 0;
+  private static lastCenterLon: number = 0;
+  private static lastWidthPx: number = 0;
+  private static lastHeightPx: number = 0;
 
   static reset(): void {
     MapTileService.state = new MapFallbackState();
@@ -82,13 +86,33 @@ export class MapTileService {
     MapTileService.lastLongitude = place.longitude;
     MapTileService.lastCountry = countryCode;
     MapTileService.lastRequestedZoom = requestedZoom;
+    MapTileService.lastCenterLat = centerLatitude;
+    MapTileService.lastCenterLon = centerLongitude;
+    MapTileService.lastWidthPx = widthPx;
+    MapTileService.lastHeightPx = heightPx;
     if (viewportChanged) {
       // 程序化改中心/缩放会取消在飞的请求：接下来 2 秒的失败是假失败，别计入统计。
       MapTileService.state = MapFallback.markViewportSettling(MapTileService.state, Date.now());
     }
     const style: MapStyle = MapTilesLogic.styleFromKey(styleKey);
-    await MapTileService.probeIfNeeded(style, place);
+    const firstDecision: ProbeDecision | null = await MapTileService.probeIfNeeded(style, place);
     await MapTileService.probeIfDue();
+    if (firstDecision !== null) {
+      return MapTileService.buildDecisionResult(firstDecision, place, countryCode, centerLatitude,
+        centerLongitude, widthPx, heightPx);
+    }
+    // 探测判定不可用（4 秒什么都没有）：恒 z3，不逐级降级。
+    if (MapTileService.probeSession !== null && MapTileService.probeSession.unavailable(Date.now())
+      && !MapTileService.probeSession.hasContent) {
+      const unavailable: MapLoadResult = new MapLoadResult();
+      unavailable.zoom = MapFallback.MIN_ZOOM;
+      unavailable.unavailable = true;
+      unavailable.uiState.requestedZoom = MapFallback.MIN_ZOOM;
+      unavailable.uiState.zoom = MapFallback.MIN_ZOOM;
+      unavailable.uiState.unavailable = true;
+      MapTileService.lastUnavailable = true;
+      return unavailable;
+    }
     // 探测已定级 → 不再逐块下载整屏做空白分析（那会把首屏拖回几十秒）：
     // 直接把瓦片 URL 交给 Image，依靠刚探测出的源与级别。
     if (!needsProbe(style, cacheKey(place.latitude, place.longitude), MapTileService.probeCache, Date.now())) {
@@ -188,54 +212,84 @@ export class MapTileService {
   }
 
   /**
-   * 首屏探测：**并行**发 4 块单瓦片（OSM z3、高德 z12/z10/z3），总超时 4 秒、
-   * 已知高德有内容时 2 秒提前收工；结果直接定级并写 5 分钟缓存。
+   * 渐进升级：4 块并行探测，一块回来就判断一次 —— 先到先用，更好的才升级。
+   * 首块出图立即返回该决定；后续升级通过 [setProbeListener] 回调通知界面。
    */
-  private static async probeIfNeeded(style: MapStyle, place: Place): Promise<void> {
+  private static async probeIfNeeded(style: MapStyle, place: Place): Promise<ProbeDecision | null> {
     const key: string = cacheKey(place.latitude, place.longitude);
     if (!needsProbe(style, key, MapTileService.probeCache, Date.now())) {
-      return;
+      return null;
     }
-    const amap: AmapProbe = new AmapProbe();
-    const osmPromise: Promise<boolean> = MapTileService.probeTicket(
-      tileOf(MapStyle.OSM, place.latitude, place.longitude, MapFallback.MIN_ZOOM), false);
-    const z12Promise: Promise<boolean> = MapTileService.probeTicket(
-      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 12), true)
-      .then((ok: boolean) => {
-        amap.setState(12, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
-        return ok;
-      });
-    const z10Promise: Promise<boolean> = MapTileService.probeTicket(
-      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 10), true)
-      .then((ok: boolean) => {
-        amap.setState(10, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
-        return ok;
-      });
-    const z3Promise: Promise<boolean> = MapTileService.probeTicket(
-      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, MapFallback.MIN_ZOOM), true)
-      .then((ok: boolean) => {
-        amap.setState(3, ok ? AmapProbe.CONTENT : AmapProbe.EMPTY);
-        return ok;
-      });
-    const all: Promise<ProbeDecision> = Promise.all([osmPromise, z12Promise, z10Promise, z3Promise])
-      .then((results: boolean[]) => decide(results[0], amap));
-    const early: Promise<ProbeDecision> = new Promise<ProbeDecision>((resolve: (value: ProbeDecision) => void) => {
-      setTimeout(() => {
-        // 只有「更高精度档都已有结论」时才允许早退；否则继续等，避免低精度抢答。
-        if (shouldEarlyExit(amap, [12, 10, 3])) {
-          resolve(decide(false, amap));
+    const session: ProgressiveProbe = new ProgressiveProbe(Date.now());
+    MapTileService.probeSession = session;
+    let firstDecision: ProbeDecision | null = null;
+    const consider = (source: MapStyle, zoom: number, hasContent: boolean): void => {
+      const now: number = Date.now();
+      if (!session.consider(source, zoom, hasContent, now)) {
+        return;
+      }
+      const decision: ProbeDecision = session.unavailable(now)
+        ? new ProbeDecision(source, zoom, true)
+        : new ProbeDecision(source, zoom, false);
+      if (firstDecision === null) {
+        firstDecision = decision;
+      }
+      MapTileService.state = applyDecision(MapTileService.state, decision, now);
+      MapTileService.probeCache.key = key;
+      MapTileService.probeCache.millis = now;
+      MapTileService.probeCache.decision = decision;
+      if (MapTileService.probeListener !== null) {
+        MapTileService.probeListener(decision);
+      }
+    };
+    MapTileService.probeTicket(tileOf(MapStyle.OSM, place.latitude, place.longitude, 3), false)
+      .then((ok: boolean) => consider(MapStyle.OSM, 12, ok));
+    MapTileService.probeTicket(tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 12), true)
+      .then((ok: boolean) => consider(MapStyle.AMAP_VECTOR, 12, ok));
+    MapTileService.probeTicket(tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 10), true)
+      .then((ok: boolean) => consider(MapStyle.AMAP_VECTOR, 10, ok));
+    MapTileService.probeTicket(tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 3), true)
+      .then((ok: boolean) => consider(MapStyle.AMAP_VECTOR, 3, ok));
+    // 等到「有首图」或「4 秒什么都没有」为止；期间后续结果会继续通过 listener 升级。
+    await new Promise<void>((resolve: () => void) => {
+      const timer: number = setInterval(() => {
+        const now: number = Date.now();
+        if (session.hasContent || session.unavailable(now)) {
+          clearInterval(timer);
+          resolve();
         }
-      }, MapFallback.PROBE_EARLY_EXIT_MILLIS);
+      }, 40);
     });
-    const hardTimeout: Promise<ProbeDecision> = new Promise<ProbeDecision>(
-      (resolve: (value: ProbeDecision) => void) => {
-        setTimeout(() => resolve(decide(false, amap)), MapFallback.PROBE_TOTAL_TIMEOUT_MILLIS);
-      });
-    const decision: ProbeDecision = await Promise.race([all, early, hardTimeout]);
-    MapTileService.state = applyDecision(MapTileService.state, decision, Date.now());
-    MapTileService.probeCache.key = key;
-    MapTileService.probeCache.millis = Date.now();
-    MapTileService.probeCache.decision = decision;
+    if (firstDecision === null) {
+      MapTileService.probeCache.key = key;
+      MapTileService.probeCache.millis = Date.now();
+    }
+    return firstDecision;
+  }
+
+  /** 界面注册渐进升级回调：更高精度回来时不必重新拉整屏，只换源/级别。 */
+  static setProbeListener(listener: ((decision: ProbeDecision) => void) | null): void {
+    MapTileService.probeListener = listener;
+  }
+
+  /** 升级用结果：视口中心保持不变，只换源 / 级别。 */
+  static upgradeResult(decision: ProbeDecision): MapLoadResult {
+    const place: Place = new Place(MapTileService.lastCenterLat, MapTileService.lastCenterLon,
+      PlaceSource.MANUAL, '', '');
+    return MapTileService.buildDecisionResult(decision, place, '', MapTileService.lastCenterLat,
+      MapTileService.lastCenterLon, MapTileService.lastWidthPx, MapTileService.lastHeightPx);
+  }
+
+  /** 用户已手动平移/缩放：冻结后续升级。 */
+  static markMapInteraction(): void {
+    if (MapTileService.probeSession !== null) {
+      MapTileService.probeSession.markUserInteracted();
+    }
+  }
+
+  /** 诊断：`首图 z3 @312ms，升级 z12 @1830ms`。 */
+  static probeDiagnostic(): string {
+    return MapTileService.probeSession === null ? '无探测' : MapTileService.probeSession.describe(Date.now());
   }
 
   /** 单块探测：魔数校验；高德的块还要解像素判空白（空白不算有内容）。 */
@@ -293,6 +347,30 @@ export class MapTileService {
       result.tiles = MapTilesLogic.visibleTiles(layer, 25.0, 110.0, UnknownLocationLogic.MAP_ZOOM,
         widthPx, heightPx);
     }
+    return result;
+  }
+
+  /** 由一次探测决定直接生成结果（首图 / 升级都走这里，不重新拉整屏）。 */
+  private static buildDecisionResult(decision: ProbeDecision, place: Place, countryCode: string,
+      centerLatitude: number, centerLongitude: number, widthPx: number, heightPx: number): MapLoadResult {
+    const result: MapLoadResult = new MapLoadResult();
+    result.zoom = decision.zoom;
+    result.unavailable = decision.unavailable;
+    result.uiState = new MapUiState();
+    result.uiState.requestedZoom = decision.zoom;
+    result.uiState.source = decision.source;
+    result.uiState.zoom = decision.zoom;
+    result.uiState.unavailable = decision.unavailable;
+    result.attribution = decision.unavailable ? '' : (decision.source === MapStyle.OSM
+      ? '底图 © OpenStreetMap contributors' : '底图 © 高德地图');
+    if (!decision.unavailable) {
+      const layer: MapLayer = MapTilesLogic.layerForStyle(decision.source, place.latitude, place.longitude,
+        countryCode);
+      result.tiles = MapTilesLogic.visibleTiles(layer, centerLatitude, centerLongitude, decision.zoom,
+        widthPx, heightPx);
+    }
+    MapTileService.lastAppliedZoom = decision.zoom;
+    MapTileService.lastUnavailable = decision.unavailable;
     return result;
   }
 
@@ -440,6 +518,7 @@ export class MapTileService {
       statusLine,
       blankLine,
       failures,
+      `渐进升级 = ${MapTileService.probeDiagnostic()}`,
       probeLine
     ];
   }
