@@ -267,3 +267,5 @@
 "weather.diagRefreshSkipped" = "刷新跳過：%@";
 "weather.skipInFlight" = "請求進行中";
 "weather.skipNotDue" = "未到刷新視窗";
+
+"settings.diagHourly" = "逐時點";

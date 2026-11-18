@@ -266,3 +266,5 @@
 "weather.diagRefreshSkipped" = "refresh skipped: %@";
 "weather.skipInFlight" = "request in flight";
 "weather.skipNotDue" = "not due yet";
+
+"settings.diagHourly" = "Hourly points";

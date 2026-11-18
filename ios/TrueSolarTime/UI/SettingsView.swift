@@ -168,6 +168,7 @@ struct SettingsView: View {
                                 // 排查「天气不刷新 / 时间对不上」先看这四行。
                                 diagnosticLine(title: L("settings.diagSource"), value: WeatherStore.shared.sourceSummary())
                                 diagnosticLine(title: L("settings.diagAge"), value: WeatherStore.shared.ageSummary())
+                                diagnosticLine(title: L("settings.diagHourly"), value: WeatherStore.shared.hourlyDiagnostics())
                                 diagnosticLine(title: L("settings.weatherDiagSource"), value: WeatherStore.shared.weatherKitSummary())
                                 diagnosticLine(title: L("settings.diagLastFailure"), value: WeatherStore.shared.failureSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)

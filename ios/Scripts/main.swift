@@ -2378,6 +2378,73 @@ expect(
         latitudeDelta: 0, longitudeDelta: 0, zoom: 0, markerCount: 1, source: .apple
     ).text.contains("缩放 —")
 )
+// 逐时匹配：整点 / 半点（WeatherKit 常见偏移）/ 缺点 三种情况。
+func hourlyPoints(_ offsetsMinutes: [Int], baseEpoch: Int = 1_700_000_000) -> [WeatherHour] {
+    // baseEpoch 对齐到整点
+    let base = baseEpoch - (baseEpoch % 3_600)
+    return offsetsMinutes.enumerated().map { index, minute in
+        WeatherHour(epochSeconds: base + index * 3_600 + minute * 60, temperatureC: 10 + index, code: 0)
+    }
+}
+let alignedPoints = hourlyPoints(Array(repeating: 0, count: 8))
+let alignedReadings = WeatherParsing.slotReadings(
+    points: alignedPoints,
+    nowEpochSeconds: alignedPoints[0].epochSeconds,
+    zoneOffsetSeconds: 0,
+    count: 6,
+    stepHours: 1
+)
+expect(
+    "点在 :00 → 六格全命中",
+    WeatherParsing.slotMatchLabel(alignedReadings) == "命中 6/6",
+    "actual=\(WeatherParsing.slotMatchLabel(alignedReadings))"
+)
+let shiftedPoints = hourlyPoints(Array(repeating: 30, count: 8))
+let shiftedReadings = WeatherParsing.slotReadings(
+    points: shiftedPoints,
+    nowEpochSeconds: shiftedPoints[0].epochSeconds,
+    zoneOffsetSeconds: 0,
+    count: 6,
+    stepHours: 1
+)
+expect(
+    "点落在 :30（WeatherKit 偏移）→ 六格仍全命中（±30 分钟容差）",
+    WeatherParsing.slotMatchLabel(shiftedReadings) == "命中 6/6",
+    "actual=\(WeatherParsing.slotMatchLabel(shiftedReadings))"
+)
+var gapPoints = hourlyPoints(Array(repeating: 0, count: 8))
+gapPoints.remove(at: 3)   // 缺第 4 个整点
+let gapReadings = WeatherParsing.slotReadings(
+    points: gapPoints,
+    nowEpochSeconds: gapPoints[0].epochSeconds,
+    zoneOffsetSeconds: 0,
+    count: 6,
+    stepHours: 1
+)
+expect(
+    "缺点某小时 → 只有那一格占位（5/6），其余正常",
+    WeatherParsing.slotMatchLabel(gapReadings) == "命中 5/6",
+    "actual=\(WeatherParsing.slotMatchLabel(gapReadings))"
+)
+// 锚点：首条就是当前整点时，「现在」格取它。
+let futureFirst = hourlyPoints(Array(repeating: 0, count: 8))
+let slotsFuture = WeatherParsing.visibleSlots(
+    points: futureFirst,
+    nowEpochSeconds: futureFirst[0].epochSeconds + 60,   // 刚过整点 1 分钟
+    zoneOffsetSeconds: 0,
+    count: 6,
+    stepHours: 1
+)
+expect(
+    "首条 = 当前整点 → 锚点取它，「现在」格时刻 == 首条",
+    slotsFuture.first?.isNow == true
+        && slotsFuture.first?.epochSeconds == futureFirst[0].epochSeconds,
+    "actual=\(slotsFuture.first?.epochSeconds ?? -1) vs \(futureFirst[0].epochSeconds)"
+)
+expect(
+    "诊断标签：前 6 条按本地时区给出 HH:mm",
+    WeatherParsing.hourlyPointsLabel(points: alignedPoints, zoneOffsetSeconds: 8 * 3_600, limit: 3).split(separator: ",").count == 3
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

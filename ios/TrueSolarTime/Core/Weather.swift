@@ -510,6 +510,44 @@ enum WeatherParsing {
     /// （旧文档的 `time` 字段、镜像站的残项），槽位就会停在一条不存在的读数上 ——
     /// 界面上看起来是「这个点的标签对应另一个点的温度」。落点只允许在半步长内，
     /// 这样既不会跳过缺口、也不会把 6 格压短成 5 格。
+    /// 诊断：前 `limit` 条 `hourly` 的本地时刻（`21:00, 22:00, …`），用来判断「点是不是在整点」。
+    static func hourlyPointsLabel(
+        points: [WeatherHour],
+        zoneOffsetSeconds: Int,
+        limit: Int = 6
+    ) -> String {
+        guard !points.isEmpty else { return "—" }
+        let formatter = { (epoch: Int) -> String in
+            let local = ((epoch + zoneOffsetSeconds) % 86_400 + 86_400) % 86_400
+            return String(format: "%02d:%02d", local / 3_600, (local % 3_600) / 60)
+        }
+        return points.prefix(max(limit, 1)).map { formatter($0.epochSeconds) }.joined(separator: ",")
+    }
+
+    /// 诊断：六格里命中了几个采样点（`命中 1/6`）。命中少 = 槽位与数据对不上。
+    static func slotMatchLabel(_ readings: [WeatherSlotReading]) -> String {
+        let hits = readings.filter { $0.temperatureC != nil }.count
+        return "命中 \(hits)/\(readings.count)"
+    }
+    /// 在 `±step/2` 内找离 `epoch` 最近的采样点（宽容匹配；没有则 nil）。
+    ///
+    /// 容差取**半个步长**：1 小时源 = ±1800 秒，正好覆盖「整点 / 半点和 1 秒误差」两种情况，
+    /// 又不会把相邻小时的读数串到这一格（相邻两点相差 3600 秒 > 容差）。
+    static func nearestPoint(to epoch: Int, in points: [WeatherHour], step: Int) -> WeatherHour? {
+        let tolerance = max(step, 1) / 2
+        var best: WeatherHour?
+        var bestDelta = Int.max
+        for point in points {
+            let delta = abs(point.epochSeconds - epoch)
+            guard delta <= tolerance else { continue }
+            if delta < bestDelta {
+                best = point
+                bestDelta = delta
+            }
+        }
+        return best
+    }
+
     private static func snapToPoint(_ nominal: Int, points: [WeatherHour], step: Int) -> Int {
         guard let nearest = point(at: nominal, in: points) else { return nominal }
         return abs(nearest.epochSeconds - nominal) < step / 2 ? nearest.epochSeconds : nominal
@@ -538,12 +576,11 @@ enum WeatherParsing {
             stepHours: stepHours,
             skip: skip
         )
-        let byEpoch = Dictionary(
-            points.map { ($0.epochSeconds, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
         return slots.map { slot in
-            let point = byEpoch[slot.epochSeconds]
+            // **宽容匹配**：槽位落在名义网格上，采样点可能偏 30 分钟（WeatherKit 的 hourly 常见）
+            // 或差 1 秒；只要在 ±step/2 内就取最近一条，找不到才是占位符。
+            // 之前是 `byEpoch[slot.epochSeconds]` 精确相等，偏一点就全 miss（build 87 六格全是 `-`）。
+            let point = nearestPoint(to: slot.epochSeconds, in: points, step: max(stepHours, 1) * 3600)
             let code = slot.isNow ? (currentCode ?? point?.code) : point?.code
             let temperature = slot.isNow
                 ? (currentTemperatureC ?? point?.temperatureC)

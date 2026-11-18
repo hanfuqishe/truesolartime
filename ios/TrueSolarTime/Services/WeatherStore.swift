@@ -465,6 +465,21 @@ final class WeatherStore {
     /// 上一次 `requestRefresh` 为什么没真正发起请求（in-flight / 未到刷新窗口）。
     private(set) var lastSkipReason: String?
 
+    /// 诊断一行：前 6 条逐时点的本地时刻 + 六格命中数（判断「点不在整点」还是「槽位算错」）。
+    func hourlyDiagnostics() -> String {
+        let snapshot = cached()
+        let points = snapshot?.hourly ?? []
+        let readings = WeatherParsing.slotReadings(
+            points: points,
+            nowEpochSeconds: Int(Date().timeIntervalSince1970),
+            zoneOffsetSeconds: TimeZone.current.secondsFromGMT(),
+            count: 6,
+            stepHours: WeatherSnapshot.slotStepHours(snapshot, source: source)
+        )
+        let times = WeatherParsing.hourlyPointsLabel(points: points, zoneOffsetSeconds: TimeZone.current.secondsFromGMT())
+        return "\(times) · \(WeatherParsing.slotMatchLabel(readings))"
+    }
+
     /// 诊断一行：数据源设置 + WeatherKit 尝试状态（含「几分钟前」「成功/失败原因」）。
     func weatherKitSummary() -> String {
         let setting = AppSettings().weatherSource
