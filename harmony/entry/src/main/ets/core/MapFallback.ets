@@ -243,9 +243,11 @@ export class MapFallbackState {
   /** 按 zoom 位标记「该源在该级别没有瓦片」；位 0..31。 */
   osmUnavailableMask: number = 0;
   amapUnavailableMask: number = 0;
+  esriUnavailableMask: number = 0;
   /** 其中因为空白瓦片才判没内容的级别（结构性，别被「z3 出图」清掉）。 */
   osmBlankMask: number = 0;
   amapBlankMask: number = 0;
+  esriBlankMask: number = 0;
   lastFailedZoom: number = -1;
   zoomFailures: number = 0;
   blankTileCount: number = 0;
@@ -277,7 +279,12 @@ export class MapFallbackState {
 
   /** 该源在这个级别是否已被判定「没有瓦片」。 */
   zoomUnavailable(style: MapStyle, zoom: number): boolean {
-    const mask: number = style === MapStyle.OSM ? this.osmUnavailableMask : this.amapUnavailableMask;
+    let mask: number = this.amapUnavailableMask;
+    if (style === MapStyle.OSM) {
+      mask = this.osmUnavailableMask;
+    } else if (style === MapStyle.ESRI) {
+      mask = this.esriUnavailableMask;
+    }
     return (mask & (1 << zoom)) !== 0;
   }
 
@@ -299,8 +306,10 @@ export class MapFallbackState {
     next.probeAtMillis = this.probeAtMillis;
     next.osmUnavailableMask = this.osmUnavailableMask;
     next.amapUnavailableMask = this.amapUnavailableMask;
+    next.esriUnavailableMask = this.esriUnavailableMask;
     next.osmBlankMask = this.osmBlankMask;
     next.amapBlankMask = this.amapBlankMask;
+    next.esriBlankMask = this.esriBlankMask;
     next.lastFailedZoom = this.lastFailedZoom;
     next.zoomFailures = this.zoomFailures;
     next.blankTileCount = this.blankTileCount;
@@ -329,6 +338,11 @@ export class MapFallbackState {
       if (available) {
         next.osmBlankMask = next.osmBlankMask & ~bit;
       }
+    } else if (style === MapStyle.ESRI) {
+      next.esriUnavailableMask = available ? (next.esriUnavailableMask & ~bit) : (next.esriUnavailableMask | bit);
+      if (available) {
+        next.esriBlankMask = next.esriBlankMask & ~bit;
+      }
     } else {
       next.amapUnavailableMask = available ? (next.amapUnavailableMask & ~bit) : (next.amapUnavailableMask | bit);
       if (available) {
@@ -344,6 +358,8 @@ export class MapFallbackState {
     const bit: number = 1 << zoom;
     if (style === MapStyle.OSM) {
       next.osmBlankMask = next.osmBlankMask | bit;
+    } else if (style === MapStyle.ESRI) {
+      next.esriBlankMask = next.esriBlankMask | bit;
     } else {
       next.amapBlankMask = next.amapBlankMask | bit;
     }
@@ -387,12 +403,12 @@ export class MapFallback {
   /** 地点指纹的经纬度精度：0.001° ≈ 111m，够区分「换城市」。 */
   static readonly PROBE_KEY_DIGITS: number = 3;
 
-  /** 按地区算首选底图：境内高德、境外 OSM。 */
+  /** 按地区算首选底图：境内高德、境外 ESRI（OSM 域名在部分网络被 DNS 污染）。 */
   static preferredStyle(style: MapStyle, latitude: number, longitude: number, countryCode: string): MapStyle {
     if (style !== MapStyle.AUTO) {
       return style;
     }
-    return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? MapStyle.AMAP_VECTOR : MapStyle.OSM;
+    return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? MapStyle.AMAP_VECTOR : MapStyle.ESRI;
   }
 
   /** 一次底图选择：自动模式且已回退 → 实际用高德；手动模式不动。 */
@@ -437,11 +453,12 @@ export class MapFallback {
       // 回弹要有静默窗口 + 冷却：否则 z3 一出图就清上级记忆 → 立刻弹回 z12 → 再失败 → 无限升降。
       if (state.canRecoverChain(nowMillis)) {
         // 保留「空白瓦片」的结构性记忆，只清网络问题学来的。
-        const sticky: number = plan.effective === MapStyle.OSM ? next.osmBlankMask : next.amapBlankMask;
         if (plan.effective === MapStyle.OSM) {
-          next.osmUnavailableMask = next.osmUnavailableMask & sticky;
+          next.osmUnavailableMask = next.osmUnavailableMask & next.osmBlankMask;
+        } else if (plan.effective === MapStyle.ESRI) {
+          next.esriUnavailableMask = next.esriUnavailableMask & next.esriBlankMask;
         } else {
-          next.amapUnavailableMask = next.amapUnavailableMask & sticky;
+          next.amapUnavailableMask = next.amapUnavailableMask & next.amapBlankMask;
         }
         next.lastReboundMillis = nowMillis;
       }
@@ -699,6 +716,15 @@ export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
   if (decision.source === MapStyle.OSM) {
     return state.recovered(nowMillis);
   }
+  if (decision.source === MapStyle.ESRI) {
+    const esriNext: MapFallbackState = state.copy();
+    esriNext.lastReboundMillis = nowMillis;
+    // ESRI 本身可用：清掉旧的「OSM 回退到高德」标记，否则 plan 会继续用高德并误报降级。
+    esriNext.fellBack = false;
+    esriNext.fallbackFailures = 0;
+    esriNext.probeAtMillis = -1;
+    return esriNext;
+  }
   let next: MapFallbackState = state.copy();
   for (const level of zoomsAbove(decision.zoom)) {
     next = next.markZoom(MapStyle.AMAP_VECTOR, level, false);
@@ -717,12 +743,26 @@ export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
  * 这样「偏好源该级空白、另一源同级有内容」时会用另一源（先换源），
  * 只有两源同级都没有才降到下一级（再降级）。
  */
+/** 源优先级：偏好源 > ESRI > OSM > 高德。 */
+export function sourceRank(style: MapStyle, preferredSource: MapStyle): number {
+  if (style === preferredSource) {
+    return 3;
+  }
+  if (style === MapStyle.ESRI) {
+    return 2;
+  }
+  if (style === MapStyle.OSM) {
+    return 1;
+  }
+  return 0;
+}
+
 export function isBetterTile(source: MapStyle, zoom: number, currentSource: MapStyle,
-    currentZoom: number, preferredSource: MapStyle = MapStyle.OSM): boolean {
+    currentZoom: number, preferredSource: MapStyle = MapStyle.ESRI): boolean {
   if (zoom !== currentZoom) {
     return zoom > currentZoom;
   }
-  return source === preferredSource && currentSource !== preferredSource;
+  return sourceRank(source, preferredSource) > sourceRank(currentSource, preferredSource);
 }
 
 /**
@@ -748,11 +788,11 @@ export class ProgressiveProbe {
   upgradeMillis: number = -1;
   upgradeZoom: number = 0;
   userInteracted: boolean = false;
-  /** 区域偏好源：同精度时选它；它空白才用另一源（先换源、再降级）。 */
-  preferredSource: MapStyle = MapStyle.OSM;
+  /** 区域偏好源：同精度时选它；它空白才用其它源（先换源、再降级）。 */
+  preferredSource: MapStyle = MapStyle.ESRI;
   private startMillis: number = -1;
 
-  constructor(nowMillis: number, preferredSource: MapStyle = MapStyle.OSM) {
+  constructor(nowMillis: number, preferredSource: MapStyle = MapStyle.ESRI) {
     this.startMillis = nowMillis;
     this.preferredSource = preferredSource;
   }

@@ -33,7 +33,9 @@ export enum MapStyle {
   AUTO = 0,
   OSM = 1,
   AMAP_VECTOR = 2,
-  AMAP_SATELLITE = 3
+  AMAP_SATELLITE = 3,
+  /** ESRI World_Street_Map：只在「自动」的境外路径里作为偏好源，设置页不提供手动选项。 */
+  ESRI = 4
 }
 
 /** 一个可选项：存进偏好的稳定标识、按钮文案与对应的底图。 */
@@ -73,6 +75,9 @@ export class MapLayer {
 const AMAP_LAYER: MapLayer = new MapLayer('amap-vector', MapDatum.GCJ02, '底图 © 高德地图');
 const AMAP_SATELLITE_LAYER: MapLayer = new MapLayer('amap-satellite', MapDatum.GCJ02, '底图 © 高德地图');
 const OSM_LAYER: MapLayer = new MapLayer('osm', MapDatum.WGS84, '地图数据 © OpenStreetMap 贡献者');
+/** ESRI 要求完整署名：Esri, HERE, Garmin, © OpenStreetMap contributors。 */
+const ESRI_LAYER: MapLayer = new MapLayer('esri', MapDatum.WGS84,
+  '底图 © Esri, HERE, Garmin, © OpenStreetMap contributors');
 
 /** 一块待绘制的瓦片：左上角相对视口左上角的偏移（像素）。 */
 export class MapTile {
@@ -110,7 +115,8 @@ export class MapTilesLogic {
    * @param countryCode ISO 3166-1 alpha-2；未知传空串。
    */
   static layerFor(latitude: number, longitude: number, countryCode: string = ''): MapLayer {
-    return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? AMAP_LAYER : OSM_LAYER;
+    // 境外自动首选 ESRI：实测 OSM 域名在无 VPN 的华为设备上常被 DNS 污染。
+    return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? AMAP_LAYER : ESRI_LAYER;
   }
 
   /** 偏好里的标识 → 底图；认不出的标识按「自动」处理（旧版本升上来时就是这个默认值）。 */
@@ -138,6 +144,9 @@ export class MapTilesLogic {
     }
     if (style === MapStyle.AMAP_SATELLITE) {
       return AMAP_SATELLITE_LAYER;
+    }
+    if (style === MapStyle.ESRI) {
+      return ESRI_LAYER;
     }
     return MapTilesLogic.layerFor(latitude, longitude, countryCode);
   }
@@ -223,6 +232,11 @@ export class MapTilesLogic {
   }
 
   static tileUrl(layer: MapLayer, zoom: number, tileX: number, tileY: number): string {
+    if (layer.name === 'esri') {
+      // ESRI 的路径顺序是 {z}/{y}/{x}（与 OSM 的 {z}/{x}/{y} 相反）。
+      return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${
+        zoom}/${tileY}/${tileX}`;
+    }
     if (layer.datum === MapDatum.GCJ02) {
       if (layer.name === 'amap-satellite') {
         const satelliteHost: string = AMAP_SATELLITE_HOSTS[(tileX + tileY) % AMAP_SATELLITE_HOSTS.length];

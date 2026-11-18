@@ -249,6 +249,11 @@ export class MapTileService {
     };
     MapTileService.probeTicket(tileOf(MapStyle.OSM, place.latitude, place.longitude, 3), false)
       .then((ok: boolean) => consider(MapStyle.OSM, 3, ok));
+    // ESRI z3 / z12：境外自动的首选源，必须和 OSM 同级都探。
+    MapTileService.probeTicket(tileOf(MapStyle.ESRI, place.latitude, place.longitude, 3), false)
+      .then((ok: boolean) => consider(MapStyle.ESRI, 3, ok));
+    MapTileService.probeTicket(tileOf(MapStyle.ESRI, place.latitude, place.longitude, 12), false)
+      .then((ok: boolean) => consider(MapStyle.ESRI, 12, ok));
     // OSM z12：同级两源都探，才能「偏好源空白时先换源」。
     MapTileService.probeTicket(tileOf(MapStyle.OSM, place.latitude, place.longitude, 12), false)
       .then((ok: boolean) => consider(MapStyle.OSM, 12, ok));
@@ -323,20 +328,24 @@ export class MapTileService {
     cache.millis = AppStore.unknownMapMillis();
     let decision: UnknownMapDecision;
     if (UnknownLocationLogic.cacheUsable(cache, Date.now())) {
-      decision = UnknownLocationLogic.decideMap(cache, Date.now(), false, false);
+      decision = UnknownLocationLogic.decideMap(cache, Date.now(), false, false, false);
     } else {
+      // 未知态无缓存：三块 z3（ESRI / OSM / 高德）并行；OSM 可能被污染、高德境外空白，不能少 ESRI。
+      const esriProbe: Promise<boolean> = MapTileService.probeTicket(
+        UnknownLocationLogic.probeTile(MapStyle.ESRI), false);
       const osmProbe: Promise<boolean> = MapTileService.probeTicket(
         UnknownLocationLogic.probeTile(MapStyle.OSM), false);
       const amapProbe: Promise<boolean> = MapTileService.probeTicket(
         UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR), true);
-      const all: Promise<boolean[]> = Promise.all([osmProbe, amapProbe]);
+      const all: Promise<boolean[]> = Promise.all([esriProbe, osmProbe, amapProbe]);
       const timeout: Promise<boolean[]> = new Promise<boolean[]>((resolve: (value: boolean[]) => void) => {
-        setTimeout(() => resolve([false, false]), UnknownLocationLogic.PROBE_TIMEOUT_MILLIS);
+        setTimeout(() => resolve([false, false, false]), UnknownLocationLogic.PROBE_TIMEOUT_MILLIS);
       });
       const results: boolean[] = await Promise.race([all, timeout]);
-      decision = UnknownLocationLogic.decideMap(null, Date.now(), results[0], results[1]);
+      decision = UnknownLocationLogic.decideMap(null, Date.now(), results[0], results[1], results[2]);
       if (!decision.unavailable) {
-        AppStore.saveUnknownMapSource(decision.source === MapStyle.OSM ? 'osm' : 'amap');
+        AppStore.saveUnknownMapSource(decision.source === MapStyle.ESRI ? 'esri'
+          : (decision.source === MapStyle.OSM ? 'osm' : 'amap'));
       }
     }
     MapTileService.lastUnavailable = decision.unavailable;
@@ -348,8 +357,7 @@ export class MapTileService {
     result.uiState.source = decision.source;
     result.uiState.zoom = decision.zoom;
     result.uiState.unavailable = decision.unavailable;
-    result.attribution = decision.unavailable ? '' : (decision.source === MapStyle.OSM
-      ? '底图 © OpenStreetMap contributors' : '底图 © 高德地图');
+    result.attribution = decision.unavailable ? '' : MapTilesLogic.layerForStyle(decision.source, 25.0, 110.0).attribution;
     if (!decision.unavailable) {
       const layer: MapLayer = MapTilesLogic.layerForStyle(decision.source, 25.0, 110.0);
       result.tiles = MapTilesLogic.visibleTiles(layer, 25.0, 110.0, UnknownLocationLogic.MAP_ZOOM,
@@ -369,8 +377,8 @@ export class MapTileService {
     result.uiState.source = decision.source;
     result.uiState.zoom = decision.zoom;
     result.uiState.unavailable = decision.unavailable;
-    result.attribution = decision.unavailable ? '' : (decision.source === MapStyle.OSM
-      ? '底图 © OpenStreetMap contributors' : '底图 © 高德地图');
+    result.attribution = decision.unavailable ? '' : MapTilesLogic.layerForStyle(decision.source,
+      place.latitude, place.longitude, countryCode).attribution;
     if (!decision.unavailable) {
       const layer: MapLayer = MapTilesLogic.layerForStyle(decision.source, place.latitude, place.longitude,
         countryCode);
@@ -497,7 +505,8 @@ export class MapTileService {
       ? `${MapTileService.styleName(plan.effective)}（手动选择，不回退）`
       : (plan.fellBack
         ? `高德（OSM 失败 ${plan.fallbackFailures} 次后回退）`
-        : `${MapTileService.styleName(plan.effective)}（自动：${plan.effective === MapStyle.OSM ? '境外' : '境内'}）`);
+        : `${MapTileService.styleName(plan.effective)}（自动：${
+          plan.effective === MapStyle.OSM || plan.effective === MapStyle.ESRI ? '境外' : '境内'}）`);
     const zoomLine: string = `地图缩放 = ${zoomPlan.zoom}` +
       (zoomPlan.degraded ? `（已降级：请求 ${zoomPlan.requested}）` : '');
     const statusLine: string = '瓦片状态 = ' + (MapTileService.lastUnavailable
@@ -534,6 +543,9 @@ export class MapTileService {
   private static styleName(style: MapStyle): string {
     if (style === MapStyle.OSM) {
       return 'OpenStreetMap';
+    }
+    if (style === MapStyle.ESRI) {
+      return 'ESRI';
     }
     if (style === MapStyle.AMAP_VECTOR) {
       return '高德矢量';

@@ -181,12 +181,17 @@ export class UnknownLocationLogic {
     return nowMillis - cache.millis <= UnknownLocationLogic.CACHE_TTL_MILLIS;
   }
 
-  /** 有缓存 → 直接用上次成功的源 + z3；无缓存 → 等两块 z3 探测结果。 */
+  /** 有缓存 → 上次成功的源 + z3；无缓存 → ESRI > OSM > 高德，三块都失败才不可用。 */
   static decideMap(cache: UnknownMapCache | null, nowMillis: number,
-      osmContent: boolean, amapContent: boolean): UnknownMapDecision {
+      esriContent: boolean, osmContent: boolean, amapContent: boolean): UnknownMapDecision {
     if (UnknownLocationLogic.cacheUsable(cache, nowMillis)) {
-      const source: MapStyle = cache === null || cache.source !== 'osm' ? MapStyle.AMAP_VECTOR : MapStyle.OSM;
+      const cached: string = cache === null ? '' : cache.source;
+      const source: MapStyle = cached === 'esri' ? MapStyle.ESRI
+        : (cached === 'osm' ? MapStyle.OSM : MapStyle.AMAP_VECTOR);
       return new UnknownMapDecision(source, UnknownLocationLogic.MAP_ZOOM, false, true);
+    }
+    if (esriContent) {
+      return new UnknownMapDecision(MapStyle.ESRI, UnknownLocationLogic.MAP_ZOOM, false, false);
     }
     if (osmContent) {
       return new UnknownMapDecision(MapStyle.OSM, UnknownLocationLogic.MAP_ZOOM, false, false);

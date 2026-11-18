@@ -45,6 +45,7 @@ import {
   decide,
   isBetterTile,
   needsProbe,
+  sourceRank,
   sameUiState,
   shouldEarlyExit,
   shouldProbe,
@@ -1014,18 +1015,18 @@ for (const item of equationCases) {
   const shanghai = MapTilesLogic.layerFor(31.2304, 121.4737);
   const tokyo = MapTilesLogic.layerFor(35.6812, 139.7671);
   check('amap inside China', shanghai.datum === MapDatum.GCJ02 && shanghai.name.indexOf('amap') === 0);
-  check('osm outside China', tokyo.datum === MapDatum.WGS84 && tokyo.name === 'osm');
+  check('outside China now prefers ESRI', tokyo.datum === MapDatum.WGS84 && tokyo.name === 'esri');
   check('china bounds', MapTilesLogic.isInChina(31.23, 121.47) && !MapTilesLogic.isInChina(35.68, 139.76));
 
-  // 自动选底图也按国家码判境内：新德里（in）用 OSM，上海（cn）用高德；
+  // 自动选底图也按国家码判境内：新德里（in）用 ESRI，上海（cn）用高德；
   // 没有国家码时才退回包围盒（新德里在框内 → 旧行为高德，加德满都同理）。
-  check('auto layer picks osm for delhi with country code in',
-    MapTilesLogic.layerFor(28.6139, 77.2090, 'in').name === 'osm');
+  check('auto layer picks esri for delhi with country code in',
+    MapTilesLogic.layerFor(28.6139, 77.2090, 'in').name === 'esri');
   check('auto layer picks amap for shanghai with country code cn',
     MapTilesLogic.layerFor(31.2304, 121.4737, 'cn').name === 'amap-vector');
   check('auto layer falls back to the bbox without a country code',
     MapTilesLogic.layerForStyle(MapStyle.AUTO, 28.6139, 77.2090).name === 'amap-vector'
-      && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
+      && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'esri');
 
   // 高德底图是 GCJ-02：上海一带的偏移在千米级（0.001°~0.01°）。
   const gcj = MapTilesLogic.toGcj02(31.2304, 121.4737);
@@ -1072,8 +1073,16 @@ for (const item of equationCases) {
   }
   check('center covered', spansCenter);
   check('amap tile url', tiles[0].url.indexOf('is.autonavi.com/appmaptile') > 0 && tiles[0].url.indexOf('&z=12') > 0);
-  const osmTile = MapTilesLogic.visibleTiles(tokyo, 35.6812, 139.7671, 12, widthPx, heightPx)[0];
-  check('osm tile url', osmTile.url.indexOf('tile.openstreetmap.org/12/') > 0);
+  const forcedOsmLayer = MapTilesLogic.layerForStyle(MapStyle.OSM, 35.6812, 139.7671);
+  const osmTile = MapTilesLogic.visibleTiles(forcedOsmLayer, 35.6812, 139.7671, 12, widthPx, heightPx)[0];
+  check('forced osm tile url', osmTile.url.indexOf('tile.openstreetmap.org/12/') > 0);
+  // ESRI 的路径顺序是 z/y/x：上海 z12 应为 /12/1673/3430（y 在前）。
+  const esriLayer = MapTilesLogic.layerForStyle(MapStyle.ESRI, 31.2304, 121.4737);
+  check('esri tile url uses z/y/x order',
+    esriLayer.name === 'esri' &&
+      MapTilesLogic.tileUrl(esriLayer, 12, 3430, 1673).indexOf('/12/1673/3430') > 0);
+  const esriTile = MapTilesLogic.visibleTiles(esriLayer, 31.2304, 121.4737, 12, widthPx, heightPx)[0];
+  check('esri layer builds esri urls', esriTile.url.indexOf('server.arcgisonline.com') > 0);
   check('zoom clamped', MapTilesLogic.clampZoom(1) === MIN_ZOOM && MapTilesLogic.clampZoom(99) === MAX_ZOOM);
 
   // 设置页可选的底图：自动按位置判断，其余三种强制指定。
@@ -1091,7 +1100,7 @@ for (const item of equationCases) {
   check('satellite tile url', satelliteTile.url.indexOf('webst0') > 0 && satelliteTile.url.indexOf('style=6') > 0);
   check('auto layer still follows place',
     MapTilesLogic.layerForStyle(MapStyle.AUTO, 31.2304, 121.4737).name === 'amap-vector'
-    && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'osm');
+    && MapTilesLogic.layerForStyle(MapStyle.AUTO, 35.6812, 139.7671).name === 'esri');
 }
 
 // ---- 地图底图兜底：空白瓦片判定 + 回退/降级状态机 ----
@@ -1143,18 +1152,19 @@ for (const item of equationCases) {
   const now: number = 1_700_000_000_000;
   const london: number[] = [51.5074, -0.1278];
   let state = new MapFallbackState();
-  for (let index = 0; index < 2; index++) {
+  for (let index = 0; index < 3; index++) {
     state = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, state, now + index);
   }
-  check('two osm failures do not fall back', !state.fellBack, `${state.osmFailures}`);
-  for (let index = 2; index < 3; index++) {
-    state = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, state, now + index);
-  }
-  check('third osm failure falls back to amap', state.fellBack && state.fallbackFailures === 3);
-  check('fallback schedules the osm probe five minutes later',
-    state.probeAtMillis === now + 2 + MapFallback.PROBE_INTERVAL_MILLIS);
+  check('three esri failures mark z12 unavailable',
+    state.zoomUnavailable(MapStyle.ESRI, 12) && !state.fellBack);
   const fallbackPlan = MapFallback.plan(MapStyle.AUTO, london[0], london[1], 'gb', state);
-  check('fallback plan uses amap', fallbackPlan.fellBack && fallbackPlan.effective === MapStyle.AMAP_VECTOR);
+  check('overseas auto still plans esri before degrading',
+    !fallbackPlan.fellBack && fallbackPlan.effective === MapStyle.ESRI);
+  // 探测相关用例用一份「已回退」状态：ESRI 成为境外偏好后，OSM 失败不再触发回退。
+  const fbState = new MapFallbackState();
+  fbState.fellBack = true;
+  fbState.fallbackFailures = 3;
+  fbState.probeAtMillis = now + MapFallback.PROBE_INTERVAL_MILLIS;
   const partial = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12,
     MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, new MapFallbackState(), now), now + 1);
   const recovered = MapFallback.onTileLoaded(MapStyle.AUTO, london[0], london[1], 'gb', 12, partial, now + 100);
@@ -1200,14 +1210,15 @@ for (const item of equationCases) {
   check('blank tile is counted for diagnostics',
     blanked.blankTileCount === 1 && blanked.lastBlankZoom === 12 && blanked.lastBlankColorKinds === 3);
 
-  // 5 分钟探测：到点才探；失败顺延 5 分钟，成功切回并清零。
+  // 5 分钟探测：到点才探；失败顺延 5 分钟，成功切回并清零（用合成回退状态）。
   check('probe is not due before five minutes',
-    !MapFallback.probeDue(state, state.probeAtMillis - 1));
-  check('probe is due at five minutes', MapFallback.probeDue(state, state.probeAtMillis));
-  const probeFailed = MapFallback.onProbeResult(state, false, state.probeAtMillis);
+    !MapFallback.probeDue(fbState, fbState.probeAtMillis - 1));
+  check('probe is due at five minutes', MapFallback.probeDue(fbState, fbState.probeAtMillis));
+  const probeFailed = MapFallback.onProbeResult(fbState, false, fbState.probeAtMillis);
   check('failed probe pushes the next probe five minutes out',
-    probeFailed.fellBack && probeFailed.probeAtMillis === state.probeAtMillis + MapFallback.PROBE_INTERVAL_MILLIS);
-  const probeOk = MapFallback.onProbeResult(state, true, state.probeAtMillis);
+    probeFailed.fellBack &&
+      probeFailed.probeAtMillis === fbState.probeAtMillis + MapFallback.PROBE_INTERVAL_MILLIS);
+  const probeOk = MapFallback.onProbeResult(fbState, true, fbState.probeAtMillis);
   check('successful probe switches back to osm', !probeOk.fellBack && probeOk.osmFailures === 0);
 
   // 采样：256×256 按步长 8 抽 32×32 个点（最近邻）。
@@ -1252,8 +1263,8 @@ for (const item of equationCases) {
   const cooled = rebound.copy();
   cooled.lastReboundMillis = chainBase + 40_000;
   cooled.lastFailureMillis = -1;
-  cooled.amapUnavailableMask = (1 << 12) | (1 << 11) | (1 << 10);
-  cooled.amapBlankMask = 0;
+  cooled.esriUnavailableMask = (1 << 12) | (1 << 11) | (1 << 10);
+  cooled.esriBlankMask = 0;
   const stillCooling = MapFallback.onTileLoaded(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 3, cooled,
     cooled.lastReboundMillis + 60_000);
   check('no rebound within the five minute cooldown',
@@ -1267,7 +1278,7 @@ for (const item of equationCases) {
   check('failures inside the viewport settle window are ignored', ignoredFailure.osmFailures === 0);
   const countedFailure = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 12,
     viewportSettling, now + 2_500);
-  check('failures after the settle window are counted', countedFailure.osmFailures === 1);
+  check('failures after the settle window are counted', countedFailure.zoomFailures === 1);
 
   // ---- 首屏并行探测：decide / zoomsAbove / cacheKey / shouldProbe / tileOf ----
   const amap = new AmapProbe();
@@ -1337,7 +1348,7 @@ for (const item of equationCases) {
   check('osm z12 upgrades an amap z12', sourceUpgrade.consider(MapStyle.OSM, 12, true, 900));
   equal('source upgraded to osm', MapStyle.OSM, sourceUpgrade.source);
 
-  const alreadyBest = new ProgressiveProbe(0);
+  const alreadyBest = new ProgressiveProbe(0, MapStyle.OSM);
   alreadyBest.consider(MapStyle.OSM, 12, true, 300);
   check('osm z12 ignores everything later', !alreadyBest.consider(MapStyle.OSM, 12, true, 900));
   check('osm z12 is a stop condition', alreadyBest.stopped(900));
@@ -1393,6 +1404,26 @@ for (const item of equationCases) {
   equal('zhongshan end-to-end source', MapStyle.OSM, zhongshanProbe.source);
   equal('zhongshan end-to-end zoom', 12, zhongshanProbe.zoom);
 
+  // ---- ESRI：境外自动偏好源；三源按级别 + 优先级选择 ----
+  equal('abroad auto prefers esri', MapStyle.ESRI,
+    MapFallback.preferredStyle(MapStyle.AUTO, 35.6812, 139.7671, 'jp'));
+  const esriProbe = new ProgressiveProbe(0, MapStyle.ESRI);
+  check('esri z12 content is used', esriProbe.consider(MapStyle.ESRI, 12, true, 100));
+  equal('esri z12 end-to-end', MapStyle.ESRI, esriProbe.source);
+  const esriBlankOsm = new ProgressiveProbe(0, MapStyle.ESRI);
+  check('esri blank falls to osm z12', esriBlankOsm.consider(MapStyle.OSM, 12, true, 200));
+  equal('esri blank uses osm', MapStyle.OSM, esriBlankOsm.source);
+  const bothForeignFail = new ProgressiveProbe(0, MapStyle.ESRI);
+  check('both foreign blanks fall to amap z12',
+    bothForeignFail.consider(MapStyle.AMAP_VECTOR, 12, true, 300));
+  equal('both foreign blanks use amap', MapStyle.AMAP_VECTOR, bothForeignFail.source);
+  const allZ12Fail = new ProgressiveProbe(0, MapStyle.ESRI);
+  check('all z12 blanks fall to esri z3', allZ12Fail.consider(MapStyle.ESRI, 3, true, 400));
+  equal('three-source fallback prefers esri z3', MapStyle.ESRI, allZ12Fail.source);
+  equal('three-source fallback zoom is z3', 3, allZ12Fail.zoom);
+  equal('esri ranks above osm at the same zoom', 2,
+    sourceRank(MapStyle.ESRI, MapStyle.AMAP_VECTOR));
+
   equal('zooms above 12 is empty', '', zoomsAbove(12).join(','));
   equal('zooms above 10', '12,11', zoomsAbove(10).join(','));
   equal('zooms above 3', '12,11,10', zoomsAbove(3).join(','));
@@ -1413,6 +1444,8 @@ for (const item of equationCases) {
 
   check('osm probe tile is a z3 osm tile',
     tileOf(MapStyle.OSM, 51.5074, -0.1278, 3).indexOf('tile.openstreetmap.org/3/') > 0);
+  check('esri probe tile uses z/y/x',
+    tileOf(MapStyle.ESRI, 31.2304, 121.4737, 12).indexOf('/12/1673/3430') > 0);
   check('amap probe tile carries the zoom',
     tileOf(MapStyle.AMAP_VECTOR, 51.5074, -0.1278, 12).indexOf('&z=12') > 0);
 
@@ -1499,24 +1532,26 @@ for (const item of equationCases) {
   const cacheHit: UnknownMapCache = new UnknownMapCache();
   cacheHit.source = 'amap';
   cacheHit.millis = nowMillis;
-  const cachedDecision: UnknownMapDecision = UnknownLocationLogic.decideMap(cacheHit, nowMillis, false, false);
+  const cachedDecision: UnknownMapDecision = UnknownLocationLogic.decideMap(cacheHit, nowMillis, false, false, false);
   check('cached unknown map skips probing',
     cachedDecision.fromCache && cachedDecision.source === MapStyle.AMAP_VECTOR && cachedDecision.zoom === 3);
   const expired: UnknownMapCache = new UnknownMapCache();
   expired.source = 'osm';
   expired.millis = nowMillis - UnknownLocationLogic.CACHE_TTL_MILLIS - 1;
   check('expired unknown cache probes again',
-    !UnknownLocationLogic.decideMap(expired, nowMillis, false, false).fromCache);
-  equal('unknown map prefers osm when it answers', MapStyle.OSM,
-    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, true, true).source);
-  equal('unknown map takes amap when only amap answers', MapStyle.AMAP_VECTOR,
-    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, true).source);
-  check('unknown map is unavailable when both probes fail',
-    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, false).unavailable);
-  check('unknown probe uses the east asia z3 tile',
-    UnknownLocationLogic.probeTile(MapStyle.OSM).indexOf('/3/6/2') > 0 &&
-      UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR).indexOf('x=6') > 0 &&
-      UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR).indexOf('y=2') > 0);
+    !UnknownLocationLogic.decideMap(expired, nowMillis, false, false, false).fromCache);
+  equal('unknown map prefers esri when it answers', MapStyle.ESRI,
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, true, true, true).source);
+  equal('unknown map takes osm when esri is blank', MapStyle.OSM,
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, true, true).source);
+  equal('unknown map takes amap when both foreign sources fail', MapStyle.AMAP_VECTOR,
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, false, true).source);
+  check('unknown map is unavailable when all three probes fail',
+    UnknownLocationLogic.decideMap(emptyUnknownCache, nowMillis, false, false, false).unavailable);
+  check('unknown probe uses three z3 sources',
+    UnknownLocationLogic.probeTile(MapStyle.ESRI).indexOf('server.arcgisonline.com') > 0 &&
+      UnknownLocationLogic.probeTile(MapStyle.OSM).indexOf('/3/6/2') > 0 &&
+      UnknownLocationLogic.probeTile(MapStyle.AMAP_VECTOR).indexOf('x=6') > 0);
 }
 
 // ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----
