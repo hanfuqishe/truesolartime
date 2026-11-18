@@ -73,6 +73,8 @@ enum CoordinateTransform {
 /// 底图选择：境内用高德（中文地名、路网更细），境外用 OpenStreetMap。
 enum MapStyle: String, CaseIterable, Identifiable {
     case auto
+    /// **iOS 的「自动」= Apple 地图**（MapKit 系统底图：不挂 overlay、不探测、不回退、不降级）。
+    case apple
     case osm
     case amapVector
     case amapSatellite
@@ -82,6 +84,7 @@ enum MapStyle: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .auto: return L("map.styleAuto")
+        case .apple: return L("map.styleApple")
         case .osm: return L("map.styleOsm")
         case .amapVector: return L("map.styleAmapVector")
         case .amapSatellite: return L("map.styleAmapSatellite")
@@ -95,35 +98,45 @@ enum MapStyle: String, CaseIterable, Identifiable {
     /// 瓦片 —— 境外没有高德数据，标点还会被 GCJ-02 偏移推歪。
     ///
     /// - Parameter countryCode: 观测点的 ISO 3166-1 alpha-2；未知传 nil。
+    /// 「自动」在 iOS 上**恒为 Apple 地图**（MapKit 系统底图）。
+    ///
+    /// 曾经按国家码选高德 / OSM，结果为了空白瓦片、回退、降级、停在旧地点修了近十轮。
+    /// Apple 底图走系统通道：大陆可出图（中国区数据本身就是高德）、无需 key、
+    /// 坐标系由系统处理，是零风险路径。OSM / 高德三个**手动**选项仍然保留。
     func effective(countryCode: String? = nil, latitude: Double, longitude: Double) -> MapStyle {
-        guard self == .auto else { return self }
-        let inChina = GeoRegion.isInChina(
-            countryCode: countryCode,
-            latitude: latitude,
-            longitude: longitude
-        )
-        return inChina ? .amapVector : .osm
+        _ = (countryCode, latitude, longitude, GeoRegion.self)
+        return self == .auto ? .apple : self
     }
 
     var isGcj02: Bool { self == .amapVector || self == .amapSatellite }
+
+    /// 是不是 Apple 系统底图（不挂 overlay、不探测，`MKMapView` 默认瓦片）。
+    var isSystemBasemap: Bool { self == .apple || self == .auto }
+
+    /// 设置页里给用户选的四个选项：自动（Apple）/ OSM / 高德矢量 / 高德卫星。
+    /// `.apple` 是 `.auto` 的解析结果，不作为独立选项展示。
+    static let selectable: [MapStyle] = [.auto, .osm, .amapVector, .amapSatellite]
 
     var attribution: String {
         switch self {
         case .osm: return L("map.attributionOsm")
         case .amapVector, .amapSatellite: return L("map.attributionAmap")
-        case .auto: return ""
+        case .apple, .auto: return L("map.appleBasemap")
         }
     }
 
     /// MKTileOverlay 的 URL 模板。高德的栅格瓦片无需 API Key。
+    /// **Apple 底图没有模板**（不挂 overlay），返回空串。
     var tileURLTemplate: String {
         switch self {
-        case .osm, .auto:
+        case .osm:
             return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         case .amapVector:
             return "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
         case .amapSatellite:
             return "https://webst01.is.autonavi.com/appmaptile?style=6&size=1&scale=1&x={x}&y={y}&z={z}"
+        case .apple, .auto:
+            return ""
         }
     }
 

@@ -2,15 +2,20 @@ import Foundation
 
 /// 一块瓦片实际由哪个源提供（`MapStyle.auto` 不算源，它只是「自动选」这个策略）。
 enum BasemapSource: String, Equatable, CaseIterable {
+    /// **Apple 系统底图**（自动模式 / 未知态）：不挂 overlay、不探测。
+    case apple
     case osm
     case amapVector
     case amapSatellite
 
     /// 高德的两个源（境内首选；也是 OSM 不可达时的回退目标）。
-    var isAmap: Bool { self != .osm }
+    var isAmap: Bool { self == .amapVector || self == .amapSatellite }
+    /// 系统底图（Apple / 自动）：没有级别概念，也不参与探测与降级。
+    var isSystemBasemap: Bool { self == .apple }
 
     var mapStyle: MapStyle {
         switch self {
+        case .apple: return .apple
         case .osm: return .osm
         case .amapVector: return .amapVector
         case .amapSatellite: return .amapSatellite
@@ -26,6 +31,7 @@ extension MapStyle {
     var basemapSource: BasemapSource? {
         switch self {
         case .auto: return nil
+        case .apple: return .apple
         case .osm: return .osm
         case .amapVector: return .amapVector
         case .amapSatellite: return .amapSatellite
@@ -138,7 +144,7 @@ struct BasemapState: Equatable {
         BasemapUiState(
             requestedZoom: requestedZoom,
             source: active,
-            zoom: effectiveZoom(requested: requestedZoom),
+            zoom: active.isSystemBasemap ? nil : effectiveZoom(requested: requestedZoom),
             degraded: isDegraded,
             unavailable: status == .unavailable,
             fellBack: didFallBackToAmap,
@@ -160,16 +166,19 @@ struct BasemapState: Equatable {
     }
 
     var status: Status {
+        // Apple 系统底图：没有级别概念，恒为 live（不降级、不判不可用）。
+        if active.isSystemBasemap { return .live }
         if zoomStep >= 4 { return .unavailable }
         if mode == .auto, preferred == .osm, active != .osm { return .probing }
         return .live
     }
 
-    var isDegraded: Bool { zoomStep > 0 }
+    var isDegraded: Bool { !active.isSystemBasemap && zoomStep > 0 }
 
     /// 是否处于「OSM 不可达 → 已回退高德」的状态（署名要追加一句说明）。
     var didFallBackToAmap: Bool {
-        mode == .auto && preferred == .osm && active != .osm
+        guard !active.isSystemBasemap else { return false }
+        return mode == .auto && preferred == .osm && active != .osm
     }
 
     /// 实际请求的缩放级别；`nil` 表示「底图不可用」（连 z3 都是空白）。
@@ -253,7 +262,8 @@ struct BasemapState: Equatable {
     /// 一块高德瓦片的像素判定结果（`blank` 来自 `BlankTileAnalysis`）。
     mutating func recordAmapTile(blank: Bool, at now: TimeInterval) {
         guard mode == .auto else { return }
-        guard active != .osm else { return }
+        // 只有高德瓦片才判空白（Apple 系统底图 / OSM 都不参与）
+        guard active.isAmap else { return }
         // 程序化改视口后的静默期内的结果不算（那批瓦片可能是被我们取消的）。
         guard !isViewportSettling(now: now) else { return }
         // 切源宽限期内的结果丢弃，免得拿上一个源的残瓦片判空白。
@@ -289,7 +299,7 @@ struct BasemapState: Equatable {
             screenTiles = 0
             screenBlankTiles = 0
         }
-        guard mode == .auto, active != .osm else { return }
+        guard mode == .auto, active.isAmap else { return }
         guard screenTiles >= Self.minTilesPerScreen, screenBlankTiles == screenTiles else { return }
         zoomStep = min(zoomStep + 1, 4)
         // 降级本身就是一次失败：把静默窗口重新拉开，别让下一屏的图马上把档位弹回去。
@@ -312,6 +322,17 @@ struct BasemapState: Equatable {
     /// 探测失败：只更新时间戳，等下一个 5 分钟。
     mutating func probeFailed(at now: TimeInterval) {
         lastProbeAt = now
+    }
+
+    /// 切到 **Apple 系统底图**（自动模式）：不探测、不回退、不降级，也没有缩放级别。
+    mutating func markSystemBasemap(at now: TimeInterval) {
+        // `preferred` 是 let（区域偏好），这里只把「实际使用的源」切到 Apple。
+        active = .apple
+        zoomStep = 0
+        osmFailures = 0
+        screenTiles = 0
+        screenBlankTiles = 0
+        lastSwitchAt = now
     }
 
     /// 并行探测给出的结论**一步落位**：直接定源 + 定级，并打上 5 分钟恢复冷却。

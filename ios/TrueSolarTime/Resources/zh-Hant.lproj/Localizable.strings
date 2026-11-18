@@ -49,6 +49,8 @@
 "map.diagMapTitle" = "地圖";
 "map.diagMapPending" = "尚未回灌（地圖還沒建好）";
 "map.appleBasemap" = "Apple 地圖（系統底圖）";
+"map.styleApple" = "Apple 地圖";
+"settings.mapAutoHint" = "用 Apple 地圖（推薦）";
 
 /* 設定頁 */
 "settings.title" = "位置與提醒";

@@ -18,6 +18,8 @@ struct MapCard: View {
     let isLocationUnknown: Bool
 
     @ObservedObject private var basemap = BasemapController.shared
+    /// 当前主题是不是白天（Apple 底图要跟着切深色）。
+    @Environment(\.isDay) private var isDay
 
     /// 加载态是否已经显示（120ms 防闪：探测很快命中缓存时不该闪一下骨架）。
     @State private var skeletonVisible = false
@@ -53,6 +55,11 @@ struct MapCard: View {
                     UnknownWorldMap()
                         .aspectRatio(4.0 / 3.0, contentMode: .fit)
                         .id("unknown-world-map")
+                } else if isAppleBasemap {
+                    // **自动 = Apple 地图**：MKMapView 默认底图，不挂 overlay、不探测。
+                    AppleMapView(place: place, style: resolvedStyle, isDay: isDay)
+                        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                        .id(appleMapIdentity)
                 } else if showsMap {
                     // **地图按探测结论出生**：只有 `uiState.ready`（或 6 秒兜底）之后才创建 MKMapView。
                     // 先按默认源建好再切源会让 MapKit 取消在飞请求、旧缓存清掉后不重发 → 一直转圈。
@@ -96,6 +103,14 @@ struct MapCard: View {
     }
 
     /// MKMapView 的身份：**未知态 / 地点（4 位小数）/ 底图样式 / 源 / 缩放**任一变化就重建。
+    /// 是不是走 Apple 系统底图（自动 / .apple）。
+    private var isAppleBasemap: Bool { resolvedStyle.isSystemBasemap }
+
+    /// Apple 底图的身份：**只有地点（4 位小数）+ 样式**，不含源 / 缩放（Apple 没有这些概念）。
+    private var appleMapIdentity: String {
+        String(format: "apple|%.4f|%.4f|%@", place.latitude, place.longitude, resolvedStyle.rawValue)
+    }
+
     private var mapIdentity: String {
         String(
             format: "%d|%.4f|%.4f|%@|%d|%d",
@@ -146,19 +161,64 @@ struct MapCard: View {
         BasemapController.shared.configure(style: mapStyle, place: place)
     }
 
-    /// 署名跟随**实际使用的**瓦片源；自动模式回退过会追加「OSM 不可达，已回退高德」。
+    /// 署名跟随**实际使用的**底图：Apple（未知态 / 自动）/ OSM / 高德。
     private var attributionText: String {
-        // 未知态用的是**系统底图**（Apple），不再是我们探测出来的源，署名跟着换。
-        if isLocationUnknown { return L("map.appleBasemap") }
-        let suffix = L("map.autoNote")
-        return mapStyle == .auto
-            ? "\(basemap.attribution) · \(suffix)"
-            : basemap.attribution
+        // 未知态与「自动（Apple）」都用系统底图。
+        if isLocationUnknown || isAppleBasemap { return L("map.appleBasemap") }
+        return basemap.attribution
     }
 }
 
 // MARK: - MKMapView 包装
 
+// MARK: - 自动：Apple 系统底图
+
+/// **自动模式专用**：`MKMapView` 默认底图（不挂任何 `MKTileOverlay`、不探测、不回退、不降级）。
+///
+/// - 视口：`makeUIView` 里按地点落一次（单点设置原则），`updateUIView` 不碰 region；
+/// - 深色地图：`overrideUserInterfaceStyle` 跟随昼夜主题（Apple 自带深色底图）；
+/// - 标注：与手动路径一样放一个标记（未知态另有 `UnknownWorldMap`）。
+private struct AppleMapView: UIViewRepresentable {
+
+    let place: Place
+    let style: MapStyle
+    let isDay: Bool
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView()
+        map.isRotateEnabled = false
+        map.isPitchEnabled = false
+        map.pointOfInterestFilter = .excludingAll
+        map.overrideUserInterfaceStyle = isDay ? .light : .dark
+
+        let converted = MapCoordinates.toMapCoordinates(
+            style: style,
+            latitude: place.latitude,
+            longitude: place.longitude
+        )
+        map.setRegion(
+            MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: converted.latitude, longitude: converted.longitude),
+                latitudinalMeters: 12_000,
+                longitudinalMeters: 12_000
+            ),
+            animated: false
+        )
+        let point = MKPointAnnotation()
+        point.coordinate = CLLocationCoordinate2D(latitude: converted.latitude, longitude: converted.longitude)
+        point.title = place.displayLabel
+        map.addAnnotation(point)
+        return map
+    }
+
+    /// 只跟随主题；**不 setRegion**（避免覆盖用户手势 / 反复重设）。
+    func updateUIView(_ map: MKMapView, context: Context) {
+        let target: UIUserInterfaceStyle = isDay ? .light : .dark
+        if map.overrideUserInterfaceStyle != target {
+            map.overrideUserInterfaceStyle = target
+        }
+    }
+}
 // MARK: - 未知态：纯 Apple 地图
 
 /// 未知态专用地图：**不挂任何 `MKTileOverlay`、不加任何 annotation、不设 delegate、不读 plan**。

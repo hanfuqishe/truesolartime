@@ -107,6 +107,14 @@ final class BasemapController: ObservableObject {
         configuredSiteKey = siteKey
         self.place = place
 
+        // **自动 = Apple 系统底图**：不探测、不回退、不降级、也没有级别。
+        if style.isSystemBasemap {
+            isUnknownMode = false
+            state.markSystemBasemap(at: now.timeIntervalSince1970)
+            publishIfChanged()
+            return
+        }
+
         guard style == .auto else {
             // 手动选底图：不探测，直接按选择出生。
             state.applyProbeDecision(
@@ -268,6 +276,8 @@ final class BasemapController: ObservableObject {
 
     /// 这一块瓦片该从哪个源、哪个缩放级别取；`nil` = 底图不可用（连 z3 都空白）。
     func plan(requestedZoom: Int) -> (source: BasemapSource, zoom: Int)? {
+        // Apple 系统底图不挂自定义 overlay，所以永远没有 plan。
+        guard !state.active.isSystemBasemap else { return nil }
         if requestedZoom != lastRequestedZoom {
             lastRequestedZoom = requestedZoom
             publishIfChanged()

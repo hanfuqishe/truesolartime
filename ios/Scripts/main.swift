@@ -1747,7 +1747,7 @@ let zhongshanDecision = BasemapProbe.decide(
 )
 expect(
     "南极中山站端到端（真实预设 cn）：偏好高德 → 高德在南极空白 → 换源 OSM z12（不降级到 z3）",
-    zhongshanPreferred == .amapVector
+    zhongshanPreferred == .apple
         && zhongshanDecision.source == .osm
         && zhongshanDecision.zoom == 12,
     "preferred=\(zhongshanPreferred) decision=\(zhongshanDecision)"
@@ -2093,6 +2093,78 @@ expect(
         && unknownMapState.osmFailures == 0,
     "active=\(unknownMapState.active) step=\(unknownMapState.zoomStep)"
 )
+print("== 底图：自动 = Apple 系统底图 ==")
+expect(
+    "自动（及任何自动解析结果）在 iOS 上恒为 .apple",
+    MapStyle.auto.effective(countryCode: "cn", latitude: 39.9, longitude: 116.4) == .apple
+        && MapStyle.auto.effective(countryCode: "eg", latitude: 25.2, longitude: 55.3) == .apple
+        && MapStyle.auto.effective(countryCode: nil, latitude: -69.37, longitude: 76.38) == .apple
+        && MapStyle.auto.isSystemBasemap
+        && MapStyle.apple.isSystemBasemap
+)
+expect(
+    "自动不挂 overlay：tileURLTemplate 为空、maximumZ 仍保留、手动三选项模板不变",
+    MapStyle.apple.tileURLTemplate.isEmpty
+        && MapStyle.auto.effective(countryCode: "cn", latitude: 0, longitude: 0).tileURLTemplate.isEmpty
+        && MapStyle.osm.tileURLTemplate.contains("openstreetmap.org")
+        && MapStyle.amapVector.tileURLTemplate.contains("web")
+        && MapStyle.amapSatellite.tileURLTemplate.contains("style=6")
+)
+expect(
+    "设置页只给四个选项（自动 / OSM / 高德矢量 / 高德卫星）",
+    MapStyle.selectable == [.auto, .osm, .amapVector, .amapSatellite]
+)
+// Apple 路径：不探测、uiState.source == .apple、zoom == nil、恒 live
+var appleState = BasemapState(mode: .auto, preferred: .apple, now: 0)
+appleState.markSystemBasemap(at: 10)
+let appleUi = appleState.uiState(requestedZoom: 12)
+expect(
+    "Apple：source == .apple、zoom == nil（无级别）、不降级、不可用为假、不回退",
+    appleUi.source == .apple
+        && appleUi.zoom == nil
+        && !appleUi.degraded
+        && !appleUi.unavailable
+        && !appleUi.fellBack
+        && appleState.status == .live
+
+)
+expect(
+    "Apple：连续 OSM 失败 / 高德空白都不影响（不探测、不回退、不降级）",
+    {
+        var apple = BasemapState(mode: .auto, preferred: .apple, now: 0)
+        apple.markSystemBasemap(at: 0)
+        for index in 0..<5 { apple.recordOSMTile(success: false, at: TimeInterval(index + 1)) }
+        for index in 0..<5 { apple.recordAmapTile(blank: true, at: TimeInterval(index + 10)) }
+        apple.closeScreenBatch(at: 20)
+        let ui = apple.uiState(requestedZoom: 12)
+        return apple.active == .apple && apple.zoomStep == 0 && ui.source == .apple && ui.zoom == nil
+    }(),
+    "Apple 状态不该被瓦片事件改动"
+)
+// 手动路径回归：探测顺序与 needsProbe 不变
+expect(
+    "手动三选项仍是探测路径（needsProbe 语义不变：没缓存就要探）",
+    BasemapProbe.needsProbe(cached: nil, key: "k", now: 0)
+        && !MapStyle.osm.isSystemBasemap
+        && !MapStyle.amapVector.isSystemBasemap
+        && !MapStyle.amapSatellite.isSystemBasemap
+)
+expect(
+    "手动路径的选源规则不变：境内偏好高德、换源优先于降级仍成立",
+    BasemapProbe.decide(osm: [12: true], amap: [12: true], preferred: .amapVector)
+        == BasemapProbe.Decision(source: .amapVector, zoom: 12)
+)
+expect(
+    "署名：Apple 路径用 map.appleBasemap；手动 OSM / 高德用各自文案",
+    MapStyle.apple.attribution == L("map.appleBasemap")
+        && MapStyle.osm.attribution == L("map.attributionOsm")
+        && MapStyle.amapVector.attribution == L("map.attributionAmap")
+)
+expect(
+    "未知态仍走 Apple：诊断源显示 Apple（系统底图）、缩放 3",
+    BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("Apple")
+        && BasemapMapDebug.unknownDefault(source: .apple, zoom: 3).text.contains("缩放 3")
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
@@ -2126,8 +2198,8 @@ for (latitude, longitude) in [(39.9042, 116.4074), (31.2304, 121.4737), (43.8256
 expect("往返精度 < 1e-6", roundTripError < 1e-6, String(format: "error=%.2e", roundTripError))
 
 print("== 底图自动选择 ==")
-expect("北京 → 高德矢量", MapStyle.auto.effective(latitude: 39.9042, longitude: 116.4074) == .amapVector)
-expect("伦敦 → OpenStreetMap", MapStyle.auto.effective(latitude: 48.8566, longitude: 2.3522) == .osm)
+expect("北京 → Apple 地图", MapStyle.auto.effective(latitude: 39.9042, longitude: 116.4074) == .apple)
+expect("伦敦 → Apple 地图", MapStyle.auto.effective(latitude: 48.8566, longitude: 2.3522) == .apple)
 expect("手动指定不覆盖", MapStyle.amapSatellite.effective(latitude: 48.8566, longitude: 2.3522) == .amapSatellite)
 
 print("== 成都正午（北京时间）==")
@@ -2723,11 +2795,11 @@ expect(
 )
 expect(
     "新德里 + 国家码 in → 底图用 OpenStreetMap",
-    MapStyle.auto.effective(countryCode: "in", latitude: delhiLatitude, longitude: delhiLongitude) == .osm
+    MapStyle.auto.effective(countryCode: "in", latitude: delhiLatitude, longitude: delhiLongitude) == .apple
 )
 expect(
     "新德里无国家码 → 底图退回包围盒（仍是高德，已知近似）",
-    MapStyle.auto.effective(latitude: delhiLatitude, longitude: delhiLongitude) == .amapVector
+    MapStyle.auto.effective(latitude: delhiLatitude, longitude: delhiLongitude) == .apple
 )
 expect("新德里（预设自带国家码）不算中国境内", Place.presets.first { $0.presetKey == "city.newdelhi" }?.isInChina == false)
 
@@ -2748,7 +2820,7 @@ expect(
 )
 expect(
     "上海 + 国家码 cn → 底图用高德矢量",
-    MapStyle.auto.effective(countryCode: "cn", latitude: shanghaiLatitude, longitude: shanghaiLongitude) == .amapVector
+    MapStyle.auto.effective(countryCode: "cn", latitude: shanghaiLatitude, longitude: shanghaiLongitude) == .apple
 )
 
 // 港澳台按国家码算境内（中国全境统一 +8）。

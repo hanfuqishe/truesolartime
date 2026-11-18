@@ -48,6 +48,8 @@
 "map.diagMapTitle" = "Map";
 "map.diagMapPending" = "Not recorded yet";
 "map.appleBasemap" = "Apple Maps (system basemap)";
+"map.styleApple" = "Apple Maps";
+"settings.mapAutoHint" = "Use Apple Maps (recommended)";
 
 /* Settings */
 "settings.title" = "Location & reminders";
