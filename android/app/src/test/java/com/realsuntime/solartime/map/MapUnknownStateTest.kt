@@ -128,17 +128,24 @@ class MapUnknownStateTest {
 
     // ---- 快路径：探测集合与选择 ----
 
-    /** 探测只有两块：OSM z3 与高德 z3（不再探 z12/z10，也没有「逐级降级」）。 */
+    /** 探测是三块 z3：ESRI / OSM / 高德（顺序即优先级；不再探 z12/z10，也没有「逐级降级」）。 */
     @Test
-    fun probeOnlyCoversTwoZ3Tiles() {
-        assertEquals(2, UnknownBasemap.PROBE_TILES.size)
-        assertEquals(2, UnknownBasemap.PROBE_CANDIDATES.size)
+    fun probeCoversThreeZ3TilesInPriorityOrder() {
+        assertEquals(3, UnknownBasemap.PROBE_TILES.size)
+        assertEquals(3, UnknownBasemap.PROBE_CANDIDATES.size)
         assertEquals(
-            listOf(MapStyle.OSM, MapStyle.AMAP_VECTOR),
+            listOf(MapStyle.ESRI, MapStyle.OSM, MapStyle.AMAP_VECTOR),
             UnknownBasemap.PROBE_CANDIDATES,
         )
-        assertTrue("两块都必须是 z3", UnknownBasemap.PROBE_TILES.all { it.zoom == MapFallback.MIN_ZOOM })
+        assertTrue("三块都必须是 z3", UnknownBasemap.PROBE_TILES.all { it.zoom == MapFallback.MIN_ZOOM })
         assertTrue(UnknownBasemap.PROBE_TILES.all { it.zoom == 3 })
+        // 都是在东亚那块（x=6,y=2），不是纯色大洋瓦片。
+        assertTrue(UnknownBasemap.PROBE_TILES.all { it.x == 6 && it.y == 2 })
+        // ESRI 地址必须与运行期同一个拼法（z/y/x）。
+        assertTrue(
+            UnknownBasemap.PROBE_TILES.first { it.style == MapStyle.ESRI }.esriUrl
+                .endsWith("/tile/3/2/6"),
+        )
         // 探测别的级别会被断言抓住：正常态才探 z12/z10/z3。
         assertTrue(BasemapProbe.AMAP_PROBE_ZOOMS.any { it != MapFallback.MIN_ZOOM })
         // 封顶时间必须 ≤ 5 秒目标。
@@ -146,22 +153,42 @@ class MapUnknownStateTest {
         assertTrue(UnknownBasemap.TILE_TIMEOUT_MILLIS <= UnknownBasemap.PROBE_DEADLINE_MILLIS)
     }
 
+    /** 选择按优先级 ESRI > OSM > 高德，而不是「谁先回来」。 */
     @Test
-    fun chooseTakesTheFirstSourceWithContent() {
+    fun chooseFollowsPriorityNotArrivalOrder() {
+        // ESRI 有内容 → ESRI（哪怕 OSM/高德也有内容）
+        assertEquals(
+            MapStyle.ESRI,
+            UnknownBasemap.choose(
+                mapOf(MapStyle.ESRI to true, MapStyle.OSM to true, MapStyle.AMAP_VECTOR to true),
+            ),
+        )
+        // ESRI 失败 + OSM 有 → OSM
         assertEquals(
             MapStyle.OSM,
-            UnknownBasemap.choose(mapOf(MapStyle.OSM to true, MapStyle.AMAP_VECTOR to true)),
+            UnknownBasemap.choose(
+                mapOf(MapStyle.ESRI to false, MapStyle.OSM to true, MapStyle.AMAP_VECTOR to true),
+            ),
         )
+        // ESRI/OSM 都失败 + 高德有 → 高德
         assertEquals(
             MapStyle.AMAP_VECTOR,
-            UnknownBasemap.choose(mapOf(MapStyle.OSM to false, MapStyle.AMAP_VECTOR to true)),
+            UnknownBasemap.choose(
+                mapOf(MapStyle.ESRI to false, MapStyle.OSM to false, MapStyle.AMAP_VECTOR to true),
+            ),
         )
+        // 只有高德还没结论时，ESRI 先到就有内容 → 还是 ESRI
         assertEquals(
-            MapStyle.OSM,
-            UnknownBasemap.choose(mapOf(MapStyle.OSM to true, MapStyle.AMAP_VECTOR to false)),
+            MapStyle.ESRI,
+            UnknownBasemap.choose(mapOf(MapStyle.ESRI to true)),
         )
-        assertNull(UnknownBasemap.choose(mapOf(MapStyle.OSM to false, MapStyle.AMAP_VECTOR to false)))
-        assertNull("两块都没回来 → 没有源", UnknownBasemap.choose(emptyMap()))
+        // 全失败 / 都没回来 → 不可用
+        assertNull(
+            UnknownBasemap.choose(
+                mapOf(MapStyle.ESRI to false, MapStyle.OSM to false, MapStyle.AMAP_VECTOR to false),
+            ),
+        )
+        assertNull("三块都没回来 → 没有源", UnknownBasemap.choose(emptyMap()))
     }
 
     // ---- 正常态回归 ----
@@ -181,7 +208,7 @@ class MapUnknownStateTest {
         assertEquals("境外 → Esri", MapStyle.ESRI, abroad.source)
         assertEquals(MapFallback.DEFAULT_ZOOM, abroad.zoom)
         assertTrue("正常态境外仍要并行探测", BasemapProbe.needsProbe(MapStyle.AUTO, 35.68, 139.65))
-        // 正常态的探测级别集合仍是 z12/z10/z3（没被未知态的两块快路径改掉）。
+        // 正常态的探测级别集合仍是 z12/z10/z3（没被未知态的三块快路径改掉）。
         assertEquals(listOf(12, 10, 3), BasemapProbe.AMAP_PROBE_ZOOMS.toList())
     }
 }

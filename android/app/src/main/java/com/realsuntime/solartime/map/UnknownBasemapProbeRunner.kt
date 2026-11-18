@@ -12,13 +12,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 未知态全球底图的**两块瓦片**并行探测（[UnknownBasemap] 的「跑腿」部分）。
+ * 未知态全球底图的**三块瓦片**并行探测（[UnknownBasemap] 的「跑腿」部分）。
  *
- * 两块同时发：OSM z3 与高德 z3，各几 KB。先回来且有内容的那块胜出，[UnknownBasemap.PROBE_DEADLINE_MILLIS]
- * 封顶；两块都失败（或到点都没回来）就返回 `source = null`，界面直接显示「底图不可用」。
+ * 三块同时发：ESRI z3、OSM z3 与高德 z3，各几 KB。按 **ESRI > OSM > 高德** 选第一个有内容的，[UnknownBasemap.PROBE_DEADLINE_MILLIS]
+ * 封顶；三块都失败（或到点都没回来）就返回 `source = null`，界面直接显示「底图不可用」。
  *
  * 为什么要独立的 [CoroutineScope]：`HttpURLConnection` 的 connect/read 是阻塞调用、**不响应协程取消**。
  * 把请求挂在调用方的结构化并发树上，整个探测就得等最慢那一个跑完（正常态那套实测因此拖到 7 秒）。
@@ -40,15 +39,14 @@ object UnknownBasemapProbeRunner {
         deadlineMillis: Long = UnknownBasemap.PROBE_DEADLINE_MILLIS,
     ): UnknownBasemapResult {
         val startedAt = System.currentTimeMillis()
-        val winner = AtomicReference<MapStyle?>(null)
+        val results = java.util.concurrent.ConcurrentHashMap<MapStyle, Boolean>()
         val pending = AtomicInteger(UnknownBasemap.PROBE_TILES.size)
 
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         UnknownBasemap.PROBE_TILES.forEach { tile ->
             scope.launch {
                 try {
-                    // 第一块有内容的瓦片回来就记下它，另一块不必再等。
-                    if (fetch(tile)) winner.compareAndSet(null, tile.style)
+                    results[tile.style] = fetch(tile)
                 } finally {
                     pending.decrementAndGet()
                 }
@@ -56,20 +54,26 @@ object UnknownBasemapProbeRunner {
         }
 
         val finishedEarly = withTimeoutOrNull(deadlineMillis) {
-            // 有胜者就收工；两块都失败（pending 归零）也收工；否则等到封顶。
-            while (winner.get() == null && pending.get() > 0) {
+            while (true) {
+                val best = UnknownBasemap.choose(results)
+                // 比当前最优更高优先级的块还没出结论 → 再等等（最多到封顶），否则会选低优先级源。
+                val bestIndex = best?.let { UnknownBasemap.PROBE_CANDIDATES.indexOf(it) } ?: -1
+                val waitingForBetter = bestIndex > 0 &&
+                    UnknownBasemap.PROBE_CANDIDATES.take(bestIndex).any { results[it] == null }
+                if (best != null && !waitingForBetter) break
+                if (best == null && pending.get() == 0) break
                 delay(WAIT_STEP_MILLIS)
             }
             true
         } != null
         scope.cancel()
 
-        val source = winner.get()
+        val source = UnknownBasemap.choose(results)
         val elapsed = System.currentTimeMillis() - startedAt
         val detail = when {
-            source != null -> "${styleName(source)} 先返回（${elapsed}ms）"
-            !finishedEarly -> "两块都没在 ${deadlineMillis}ms 内返回"
-            else -> "两块都失败（${elapsed}ms）"
+            source != null -> "按优先级选 ${styleName(source)}（${elapsed}ms）"
+            !finishedEarly -> "三块都没在 ${deadlineMillis}ms 内返回"
+            else -> "三块都失败（${elapsed}ms）"
         }
         return UnknownBasemapResult(source = source, elapsedMillis = elapsed, detail = detail)
     }
@@ -79,9 +83,9 @@ object UnknownBasemapProbeRunner {
         val connection = open(tileUrl(tile))
         try {
             if (connection.responseCode !in 200..299) return false
-            if (tile.style == MapStyle.OSM) {
-                // OSM：只要 2xx + 真图片（前两字节是 PNG/JPEG 魔数）就算通；
-                // 它不会像高德那样回「200 的空白瓦片」，不用解像素。
+            if (tile.style != MapStyle.AMAP_VECTOR) {
+                // ESRI / OSM：只要 2xx + 真图片（前两字节是 PNG/JPEG 魔数）就算通；
+                // 它们不会像高德那样回「200 的空白瓦片」，不用解像素。
                 val head = connection.inputStream.use { input -> ByteArray(2).also { input.read(it) } }
                 val png = head[0] == 0x89.toByte() && head[1] == 'P'.code.toByte()
                 val jpeg = head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte()
@@ -101,8 +105,11 @@ object UnknownBasemapProbeRunner {
         }
     }.getOrDefault(false)
 
-    private fun tileUrl(tile: UnknownBasemap.ProbeTile): String =
-        if (tile.style == MapStyle.OSM) tile.osmUrl else tile.amapUrl
+    private fun tileUrl(tile: UnknownBasemap.ProbeTile): String = when (tile.style) {
+        MapStyle.ESRI -> tile.esriUrl
+        MapStyle.OSM -> tile.osmUrl
+        else -> tile.amapUrl
+    }
 
     /** 缩到 [TileBlank.SAMPLE_SIDE]² 再取像素（最近邻，不做插值），与运行期同一套判据。 */
     private fun sampleContent(bitmap: Bitmap): TileContent {
@@ -137,7 +144,7 @@ object UnknownBasemapProbeRunner {
 /**
  * 未知态探测结果。
  *
- * @param source 选中的源；null = 两块都没内容 → 界面显示「底图不可用」（不降级）
+ * @param source 选中的源；null = 三块都没内容 → 界面显示「底图不可用」（不降级）
  * @param elapsedMillis 实际耗时（诊断/报告用）
  * @param detail 一句话结论，例如 `OSM 先返回（430ms）`
  */

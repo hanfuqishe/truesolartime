@@ -193,6 +193,8 @@ internal object DiagReport {
         buildList {
             add("===== ⑦ 地图底图 =====")
             addAll(MapFallbackDiagnostics.lines(plan, zoomPlan, state, System.currentTimeMillis()))
+            // 未知态（定位不可用）的 z3 快路径：显示实际会用的那个源（缓存/探测结果都写在这里）。
+            add("未知态底图 = ${settings.unknownMapSource?.label ?: "无（还没成功过）"}")
         }
     }.getOrElse { listOf("===== ⑦ 地图底图 =====", "读取失败: ${DiagStore.describe(it)}") }
 
