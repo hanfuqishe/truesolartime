@@ -189,7 +189,11 @@ final class WeatherStore {
                         self.keepOldData(place: place, failure: failure.displayText, completion: completion)
                         return
                     }
-                    self.fetchOpenMeteoAfterWeatherKit(place: place, completion: completion)
+                    // 自动模式：清掉本轮状态后**重入现有链路**（Open-Meteo → 7Timer），
+                    // 不复制取数逻辑；`weatherKitAttempted` 保证不会再次尝试 WeatherKit。
+                    self.inFlight = false
+                    self.attemptStartedAt = nil
+                    _ = self.requestRefresh(place: place, force: true, completion: completion)
                 }
             }
             return true
