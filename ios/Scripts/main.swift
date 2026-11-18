@@ -1746,15 +1746,11 @@ let zhongshanDecision = BasemapProbe.decide(
     preferred: zhongshanPreferred
 )
 expect(
-    "南极中山站端到端：高德全空白 + OSM 有内容 → 源 OSM、级别 z12（不降级到 z3）",
-    zhongshanDecision.source == .osm && zhongshanDecision.zoom == 12,
+    "南极中山站端到端（真实预设 cn）：偏好高德 → 高德在南极空白 → 换源 OSM z12（不降级到 z3）",
+    zhongshanPreferred == .amapVector
+        && zhongshanDecision.source == .osm
+        && zhongshanDecision.zoom == 12,
     "preferred=\(zhongshanPreferred) decision=\(zhongshanDecision)"
-)
-expect(
-    "南极中山站若标 cn（偏好高德）：仍是 OSM z12（换源优先于降级）",
-    BasemapProbe.decide(osm: [12: true, 3: true], amap: [12: false, 10: false, 3: false], preferred: .amapVector)
-        == zhongshanDecision,
-    "decision=\(zhongshanDecision)"
 )
 
 print("== 首屏地图：逐个返回、渐进升级 ==")
@@ -2772,10 +2768,17 @@ expect(
     "得到 \(TimeFormat.utcOffsetLabel(seconds: murmansk?.standardOffsetSeconds ?? 0))"
 )
 expect(
-    "中山站国家码 aq → UTC+8（南极站按北京时间，不是按 76°E 近似的 +5）",
-    zhongshan?.countryCode == "aq"
+    "中山站国家码 cn（与 Android / 鸿蒙一致）→ UTC+8（不是按 76°E 近似的 +5）",
+    zhongshan?.countryCode == "cn"
         && TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0) == "UTC+8",
-    "得到 \(TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0))"
+    "得到 \(String(describing: zhongshan?.countryCode)) / \(TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0))"
+)
+expect(
+    "中山站法定偏移两条路径一致：cn 国家码 480、坐标站点匹配也是 480",
+    CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: "cn") == 480
+        && CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: nil) == 480,
+    "cn=\(CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: "cn")) "
+        + "nil=\(CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: nil))"
 )
 expect(
     "没有 aq 覆盖时会退成 +5（说明这条覆盖是必要的）",
@@ -2809,10 +2812,12 @@ let murmanskWinter = SolarTimeSnapshot.compute(
     date: date("2026-12-21T12:00:00Z"), latitude: 68.97, longitude: 33.08, countryCode: "ru"
 )
 let zhongshanJune = SolarTimeSnapshot.compute(
-    date: date("2026-06-21T12:00:00Z"), latitude: -69.37, longitude: 76.38, countryCode: "aq"
+    date: date("2026-06-21T12:00:00Z"), latitude: -69.37, longitude: 76.38,
+    countryCode: zhongshan?.countryCode
 )
 let zhongshanDecember = SolarTimeSnapshot.compute(
-    date: date("2026-12-21T12:00:00Z"), latitude: -69.37, longitude: 76.38, countryCode: "aq"
+    date: date("2026-12-21T12:00:00Z"), latitude: -69.37, longitude: 76.38,
+    countryCode: zhongshan?.countryCode
 )
 expect("摩尔曼斯克 6 月极昼", murmanskSummer.polar == .midnightSun, "得到 \(murmanskSummer.polar)")
 expect("摩尔曼斯克 12 月极夜", murmanskWinter.polar == .polarNight, "得到 \(murmanskWinter.polar)")

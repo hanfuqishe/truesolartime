@@ -98,10 +98,13 @@ struct Place: Equatable {
         Place(latitude: 28.6139, longitude: 77.2090, source: .manual, label: "", presetKey: "city.newdelhi", countryCode: "in"),
         Place(latitude: 35.6762, longitude: 139.6503, source: .manual, label: "", presetKey: "city.tokyo", countryCode: "jp"),
         Place(latitude: 1.3521, longitude: 103.8198, source: .manual, label: "", presetKey: "city.singapore", countryCode: "sg"),
-        // 南极圈内（69.37°S）：中山站。南极没有民用时区，国内各站按北京时间，
-        // 所以国家码给 "aq" 并在 `ZoneTable` 里显式定成 UTC+8（否则按 76.38°E 近似会得到 +5）。
+        // 南极圈内（69.37°S）：中山站。南极没有民用时区，中国各站按北京时间（UTC+8）。
+        // **国家码给 "cn"**：`countryCode` 表达的是「该地法定标准时间归属」，中山站属中国规则；
+        // 与 Android / 鸿蒙保持一致（三端需同步修改，别单独改这一端）。两条路径都得到 +8：
+        // ① `GeoRegion.isInChina(countryCode: "cn")` → 480 分钟；
+        // ② `CivicTime.isChinaAntarcticStation` 的坐标匹配（50 km 内的中国站）→ 480 分钟。
         // 南半球季节相反：北半球夏至时它极夜、冬至时它极昼。
-        Place(latitude: -69.37, longitude: 76.38, source: .manual, label: "", presetKey: "city.zhongshan", countryCode: "aq"),
+        Place(latitude: -69.37, longitude: 76.38, source: .manual, label: "", presetKey: "city.zhongshan", countryCode: "cn"),
         Place(latitude: -33.8688, longitude: 151.2093, source: .manual, label: "", presetKey: "city.sydney", countryCode: "au"),
     ]
 
