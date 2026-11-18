@@ -46,6 +46,7 @@
 "map.probeIn" = "%d 秒後";
 "map.loading" = "正在載入底圖…";
 "location.unavailable" = "定位不可用";
+"map.diagMapTitle" = "地圖";
 
 /* 設定頁 */
 "settings.title" = "位置與提醒";

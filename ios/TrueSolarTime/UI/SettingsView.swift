@@ -159,6 +159,12 @@ struct SettingsView: View {
                                     value: BasemapController.shared.diagnosticsSummary()
                                 )
                                 diagnosticLine(title: "", value: BasemapController.shared.diagnosticsDetail())
+                                // 地图**自证**行：未知态/正常态 · 中心 · 跨度 · 缩放 · 标记数 · 源。
+                                // 用户截图一眼就能判断是「视口没动」还是「标记没清」。
+                                diagnosticLine(
+                                    title: L("map.diagMapTitle"),
+                                    value: BasemapController.shared.mapDiagnostics
+                                )
                             }
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)

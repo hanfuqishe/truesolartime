@@ -1850,6 +1850,46 @@ expect(
     )
 )
 print("== 定位不可用（未知态）==")
+// 诊断自证行：未知态的中心 / 跨度 / 标记数必须能一眼看出「视口有没有动」「标记有没有清」。
+let unknownMapDebug = BasemapMapDebug(
+    isUnknown: true,
+    centerLatitude: 20.0,
+    centerLongitude: 0.0,
+    latitudeDelta: 90,
+    longitudeDelta: 120,
+    zoom: 3,
+    markerCount: 0,
+    source: .osm
+)
+expect(
+    "地图诊断行（未知态）：模式 / 中心 / 跨度 / 缩放 / 标记数 / 源 全都在",
+    unknownMapDebug.text.contains("未知态")
+        && unknownMapDebug.text.contains("中心 20.0,0.0")
+        && unknownMapDebug.text.contains("跨度 90×120")
+        && unknownMapDebug.text.contains("缩放 3")
+        && unknownMapDebug.text.contains("标记 0 个")
+        && unknownMapDebug.text.contains(unknownMapDebug.source.label),
+    "actual=\(unknownMapDebug.text)"
+)
+let normalMapDebug = BasemapMapDebug(
+    isUnknown: false,
+    centerLatitude: -69.37,
+    centerLongitude: 76.38,
+    latitudeDelta: 0.11,
+    longitudeDelta: 0.2,
+    zoom: 12,
+    markerCount: 1,
+    source: .amapVector
+)
+expect(
+    "地图诊断行（正常态）：模式是「正常态」、标记数 1、缩放 12",
+    normalMapDebug.text.contains("正常态")
+        && normalMapDebug.text.contains("标记 1 个")
+        && normalMapDebug.text.contains("缩放 12")
+        && normalMapDebug.text.contains("中心 -69.4,76.4"),
+    "actual=\(normalMapDebug.text)"
+)
+
 // 未知态昼夜：按**系统时钟的钟点**（06:00 ≤ 小时 < 18:00 → 白天），不看太阳高度角。
 func unknownDay(_ elapsedOfDay: Int, offsetHours: Int) -> Bool {
     LocationUnknown.isDaytime(epochSeconds: elapsedOfDay, systemOffsetSeconds: offsetHours * 3_600)

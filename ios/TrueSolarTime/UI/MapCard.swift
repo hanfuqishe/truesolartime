@@ -50,6 +50,10 @@ struct MapCard: View {
                     // **地图按探测结论出生**：只有 `uiState.ready`（或 6 秒兜底）之后才创建 MKMapView。
                     // 先按默认源建好再切源会让 MapKit 取消在飞请求、旧缓存清掉后不重发 → 一直转圈。
                     MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState, hidesMarker: isLocationUnknown)
+                        // **`.id` 随状态变化 → SwiftUI 直接销毁旧 MKMapView、新建一个**。
+                        // 之前只改 region 却仍复用旧的 mapView：旧 region / 旧 annotation / 旧 overlay 都可能残留，
+                        // 现象就是「进入未知态后地图还停在上一个地点」。重建一次是廉价的（只在切换时发生）。
+                        .id(mapIdentity)
                         .aspectRatio(4.0 / 3.0, contentMode: .fit)
 
                     if basemap.uiState.unavailable {
@@ -82,6 +86,19 @@ struct MapCard: View {
         // 只靠 `.onChange(of: place)` 永远不会触发，地图就会停在上一个地点。
         .onChange(of: isLocationUnknown) { _ in configure() }
         .task(id: basemap.uiState.ready) { await runLoadingState() }
+    }
+
+    /// MKMapView 的身份：**未知态 / 地点（4 位小数）/ 底图样式 / 源 / 缩放**任一变化就重建。
+    private var mapIdentity: String {
+        String(
+            format: "%d|%.4f|%.4f|%@|%d|%d",
+            isLocationUnknown ? 1 : 0,
+            place.latitude,
+            place.longitude,
+            resolvedStyle.rawValue,
+            basemap.uiState.source == .osm ? 1 : 0,
+            basemap.uiState.zoom ?? -1
+        )
     }
 
     private var showsMap: Bool {

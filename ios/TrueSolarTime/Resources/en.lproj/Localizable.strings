@@ -45,6 +45,7 @@
 "map.probeIn" = "in %d s";
 "map.loading" = "Loading basemap…";
 "location.unavailable" = "Location unavailable";
+"map.diagMapTitle" = "Map";
 
 /* Settings */
 "settings.title" = "Location & reminders";

@@ -222,6 +222,34 @@ final class BasemapController: ObservableObject {
         }
     }
 
+    /// 地图的实际运行状态（诊断行用）：中心 / 跨度 / 标记数由 `Coordinator` 回灌。
+    private var mapDebug: BasemapMapDebug?
+
+    /// `Coordinator` 每次视口 / 标记变化后回灌一次（**不发布**，避免因为诊断信息触发界面重组）。
+    func recordMapDebug(
+        centerLatitude: Double,
+        centerLongitude: Double,
+        latitudeDelta: Double,
+        longitudeDelta: Double,
+        markerCount: Int
+    ) {
+        mapDebug = BasemapMapDebug(
+            isUnknown: isUnknownMode,
+            centerLatitude: centerLatitude,
+            centerLongitude: centerLongitude,
+            latitudeDelta: latitudeDelta,
+            longitudeDelta: longitudeDelta,
+            zoom: uiState.zoom ?? 0,
+            markerCount: markerCount,
+            source: uiState.source
+        )
+    }
+
+    /// 诊断行：`未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 OSM`。
+    var mapDiagnostics: String {
+        mapDebug?.text ?? "—"
+    }
+
     /// 诊断用：当前是不是「自动」。
     var isAuto: Bool { configuredStyle == .auto }
 
