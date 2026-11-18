@@ -92,14 +92,17 @@ enum SunPathGeometry {
 
     // MARK: - 标签参数（UI 与自检共用同一组常量）
 
-    /// 太阳点**实心核心**半径：与时间轴「现在」圆点的核心**一样大**（`NowDotStyle.shared.radius`，5.5pt）。
-    static var sunRadius: CGFloat { NowDotStyle.shared.radius }
-    /// 太阳点**光晕**外沿半径：与时间轴柔光圆同外沿（7.5pt）⇒ 两者整体直径一致。
+    /// 太阳点**实心核心**半径：时间轴「现在」圆点核心的**一半**（`SunHaloStyle.coreRadius`，2.75pt）。
+    ///
+    /// 真机上「5.5pt 核心 + 平铺柔光」偏大且没有渐变，所以太阳点单独缩到一半、外加径向渐变柔光；
+    /// 时间轴那个点保持原样，两者**故意不同**。
+    static var sunRadius: CGFloat { SunHaloStyle.coreRadius }
+    /// 太阳点**柔光**外沿半径：核心的 2 倍（5.5pt）⇒ 整体直径 11pt。
     static var sunGlowRadius: CGFloat { SunHaloStyle.shared.endRadius }
     /// 太阳点光晕的起点半径 = 核心半径（光从核心边缘开始，不从圆心）。
     static var sunHaloStartRadius: CGFloat { SunHaloStyle.shared.startRadius }
     /// 地平线以下那个点：半径 = 核心半径（同尺寸），描边细一点（`sunHollowLineWidth`）。
-    static var sunHollowRadius: CGFloat { NowDotStyle.shared.radius }
+    static var sunHollowRadius: CGFloat { SunHaloStyle.coreRadius }
     /// 地平线以下空心圈的描边宽度：1pt（不抢戏，也不留一道粗硬边）。
     static let sunHollowLineWidth: CGFloat = 1
     /// 日出 / 日落标签：锚点离交点 10pt、比交点抬高 10pt（让延伸的地平线从字下面过去）。

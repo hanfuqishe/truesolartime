@@ -1,27 +1,30 @@
 import Foundation
 
-/// 圆盘太阳点的**光晕**怎么画：独立的一圈径向渐变（画在核心之前）。
+/// 圆盘太阳点怎么画：**小实心核心 + 径向渐变柔光**（两笔，核心画在光晕之后）。
 ///
-/// | 项 | 值 | 说明 |
+/// | 层 | 半径 | 画法 |
 /// |---|---|---|
-/// | 起点半径 | **5.5pt** = `NowDotStyle.radius` | 从核心边缘开始，**不从圆心**开始 |
-/// | 外沿半径 | **7.5pt** = `NowDotStyle.glowRadius` | 与时间轴柔光圆同外沿 ⇒ 整体直径一致 |
-/// | alpha | **0.35 → 0** | 线性收到透明 |
+/// | 实心核心 | **2.75pt**（= 时间轴那个点 5.5pt 的一半） | 纯色 `#D9AC1C` / 夜间 `#F5D68A`，alpha 1.0 |
+/// | 柔光 | **2.75 → 5.5pt** | 同色径向渐变，alpha **0.35 → 0** |
 ///
-/// 为什么和时间轴的柔光（平铺 0.28 一层）不一样：时间轴的点画在橙色卡片上、用深色，
-/// 平铺柔光就够；太阳点是**亮金画在米白卡片**上，平铺 0.28 会在核心外面糊成一大片淡雾，
-/// 所以改用「从核心半径起、0.35 收到 0」的渐变 —— 核心边界干净，柔光只在外面薄薄一层。
+/// 为什么核心只有一半：真机上「5.5pt 核心 + 外扩 2pt 的平铺柔光」看起来点偏大、而且外圈是
+/// 一层半透明实心环 —— 是硬边、没有渐变。现在整体直径 11pt（原 15pt），外面从核心边缘
+/// （**startRadius = 核心半径，不是 0**）一路渐隐到 5.5pt，才有真正的「柔光」。
 ///
-/// 尺寸仍与时间轴共用（`NowDotStyle`），所以「太阳点整体直径 ≈ 时间轴圆点」这个关系不变。
+/// 时间轴上的「现在」圆点**故意不同**（`NowDotStyle`：5.5pt 核心 + 外扩 2pt / 0.28）——
+/// 那个点画在橙色卡片上，尺寸与画法都保持原样，不要跟着改。
 struct SunHaloStyle: Equatable {
 
-    /// 光晕起点的 alpha（到 `endRadius` 收成 0）。
+    /// 太阳点实心核心半径：时间轴「现在」圆点核心的一半。
+    static let coreRadius: CGFloat = 2.75
+
+    /// 柔光起点的 alpha（到 `endRadius` 收成 0）。
     let alpha: Double
 
-    /// 光晕起点半径 = 核心半径。
-    var startRadius: CGFloat { NowDotStyle.shared.radius }
-    /// 光晕外沿半径 = 时间轴柔光圆半径。
-    var endRadius: CGFloat { NowDotStyle.shared.glowRadius }
+    /// 柔光渐变起点半径 = **核心半径**（不是 0）：光只从核心外面开始，核心本身不被冲淡。
+    var startRadius: CGFloat { Self.coreRadius }
+    /// 柔光渐变外沿半径 = 核心的 2 倍（5.5pt）：整体直径 11pt。
+    var endRadius: CGFloat { Self.coreRadius * 2 }
 
     /// 渐变的两档 alpha（location 0 → 1，作用范围是 `startRadius`…`endRadius`）。
     var stops: [(alpha: Double, location: Double)] {

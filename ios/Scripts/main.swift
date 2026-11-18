@@ -1234,25 +1234,28 @@ expect(
     "axis=\(axisDot.radius)/+\(axisDot.glowInset)/\(axisDot.glowAlpha)"
 )
 expect(
-    "太阳点核心半径 == 时间轴核心半径（都 5.5pt）",
-    sunCoreRadius == axisDot.radius && sunCoreRadius == 5.5,
+    "太阳核心半径 = 2.75pt（正好是时间轴核心 5.5 的一半）",
+    sunCoreRadius == 2.75
+        && sunCoreRadius == axisDot.radius / 2,
     "sun=\(sunCoreRadius) axis=\(axisDot.radius)"
 )
 expect(
-    "太阳点整体外沿 == 时间轴柔光外沿（都 7.5pt）⇒ 视觉大小一致",
-    sunGlowRadius == axisDot.glowRadius && sunGlowRadius == 7.5,
-    "sunGlow=\(sunGlowRadius) axisGlow=\(axisDot.glowRadius)"
+    "太阳点整体外沿 = 5.5pt（核心的 2 倍）⇒ 直径 11pt（原 15pt）",
+    sunGlowRadius == 5.5
+        && sunGlowRadius == sunCoreRadius * 2
+        && sunGlowRadius == axisDot.radius,
+    "sunGlow=\(sunGlowRadius)"
 )
 expect(
-    "太阳点光晕：从核心半径 5.5pt 到 7.5pt（起点不是 0）",
+    "太阳点柔光渐变：startRadius = 2.75（= 核心半径，不是 0）、endRadius = 5.5",
     halo.startRadius == sunCoreRadius
-        && halo.startRadius == 5.5
-        && halo.endRadius == 7.5
+        && halo.startRadius == 2.75
+        && halo.endRadius == 5.5
         && SunPathGeometry.sunHaloStartRadius == halo.startRadius,
     "halo=\(halo.startRadius)…\(halo.endRadius)"
 )
 expect(
-    "太阳点光晕 alpha：0.35 → 0（两档，location 0 / 1）",
+    "太阳点柔光 alpha：0.35 → 0（起点在核心边缘、外沿完全透明）",
     halo.alpha == 0.35
         && halo.stops.count == 2
         && halo.stops[0].alpha == 0.35

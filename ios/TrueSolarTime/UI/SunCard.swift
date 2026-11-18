@@ -246,7 +246,7 @@ struct SunCard: View {
 /// `palette.onSurfaceVariant` / `palette.surface`），两套主题各用自己的一档，**不碰系统色**
 /// （系统 `.orange` / `.secondary` 在强制主题下会串色）。
 /// 弧与点各单独一档：白天弧淡金细线（只作路径示意）、太阳点是**纯色核心 + 独立光晕**
-/// （尺寸与时间轴「现在」圆点一致：核心 5.5pt、外沿 7.5pt）；地平线 / 箭头仍是灰。
+/// （核心 2.75pt + 径向渐变柔光到 5.5pt；时间轴那个点仍 5.5pt + 外扩 2pt，两者故意不同）；地平线 / 箭头仍是灰。
 private struct SunDialCanvas: View {
 
     @Environment(\.palette) private var palette
@@ -415,11 +415,11 @@ private struct SunDialCanvas: View {
 
     private func drawSun(_ context: inout GraphicsContext) {
         let sun = path.sunPoint
-        // **纯色核心 + 独立光晕**（尺寸与时间轴那个点一致，画法各自适合各自底色）：
-        //   ① 光晕（先画，在核心后面）：从**核心半径** 5.5pt 到 7.5pt 的径向渐变，alpha 0.35 → 0；
-        //   ② 核心（后画）：5.5pt 纯色实心，alpha 1.0 —— 不用渐变，边界干净。
-        // 时间轴的点是「实心 + 0.28 平铺柔光」两笔（`NowDotStyle`）；这里只共用**尺寸**
-        // （核心半径、整体外沿），光晕用渐变收边：亮金画在米白卡上，平铺柔光会散成光斑。
+        // **小实心核心 + 径向渐变柔光**（`SunHaloStyle`）：
+        //   ① 光晕（先画，在核心后面）：从**核心半径** 2.75pt 到 5.5pt 的径向渐变，alpha 0.35 → 0；
+        //   ② 核心（后画）：2.75pt 纯色实心，alpha 1.0 —— 不用渐变，边界干净。
+        // 时间轴那个「现在」圆点仍是 5.5pt 核心 + 外扩 2pt / 0.28 的平铺柔光（`NowDotStyle`），
+        // 两者**故意不同**：那个点画在橙色卡片上，这里要的是白卡上的小点 + 柔光。
         // 地平线、箭头仍用次要色（灰），不跟着变。
         let halo = SunHaloStyle.shared
         let core = SunPathGeometry.sunRadius
