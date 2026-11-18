@@ -198,6 +198,10 @@ struct Index {
   @State mapAppliedZoom: number = DEFAULT_ZOOM;
   @State mapUnavailable: boolean = false;
   @State mapDegraded: boolean = false;
+  /** 探测/首屏加载态：120ms 防闪，6 秒兜底收起。 */
+  @State mapShowLoading: boolean = false;
+  private mapLoadingTimer: number = -1;
+  private mapLoadingFallbackTimer: number = -1;
   @State mapCenterLat: number = 0;
   @State mapCenterLon: number = 0;
   /** 设置页里选的底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
@@ -558,9 +562,11 @@ struct Index {
     if (this.mapWpx <= 0 || this.mapHpx <= 0) {
       return;
     }
+    this.startMapLoading();
     MapTileService.load(this.place, this.mapStyleKey, this.countryCodeOfPlace(), this.mapCenterLat,
       this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx, viewportChanged)
       .then((result: MapLoadResult) => {
+        this.stopMapLoading();
         // 有效 plan 快照没变就什么都不做：失败/空白计数变化不触发 UI 更新，杜绝自激刷新。
         if (sameUiState(this.lastMapUi, result.uiState)) {
           return;
@@ -572,8 +578,36 @@ struct Index {
         this.mapUnavailable = result.unavailable;
         this.mapDegraded = result.degraded;
       }).catch((error: BusinessError) => {
+        this.stopMapLoading();
         console.warn(`map load failed: ${error.code} ${error.message}`);
       });
+  }
+
+  /** 加载态：120ms 后才显示（快请求不闪），6 秒兜底强制收起。 */
+  private startMapLoading(): void {
+    this.clearMapLoadingTimers();
+    this.mapLoadingTimer = setTimeout(() => {
+      this.mapShowLoading = true;
+    }, 120);
+    this.mapLoadingFallbackTimer = setTimeout(() => {
+      this.mapShowLoading = false;
+    }, 6000);
+  }
+
+  private stopMapLoading(): void {
+    this.clearMapLoadingTimers();
+    this.mapShowLoading = false;
+  }
+
+  private clearMapLoadingTimers(): void {
+    if (this.mapLoadingTimer >= 0) {
+      clearTimeout(this.mapLoadingTimer);
+      this.mapLoadingTimer = -1;
+    }
+    if (this.mapLoadingFallbackTimer >= 0) {
+      clearTimeout(this.mapLoadingFallbackTimer);
+      this.mapLoadingFallbackTimer = -1;
+    }
   }
 
   private zoomMapBy(delta: number): void {
@@ -1243,6 +1277,19 @@ struct Index {
         // `.position()` 不会更新，旧瓦片留在旧偏移上 —— 表现为地图中间出现一条空白带。
       }, (tile: MapTile) => `${tile.url}|${Math.round(tile.leftPx)}|${Math.round(tile.topPx)}`)
         // z3 全球底图也没有内容：明确写出来，不留一块纯空白。
+        if (this.mapShowLoading) {
+          Column() {
+            Text('正在载入底图…')
+              .fontSize(11)
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(11))
+              .fontColor(this.palette.subtle)
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.palette.chip)
+        }
         if (this.mapUnavailable) {
           Text('底图不可用')
             .fontSize(12)

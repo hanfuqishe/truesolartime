@@ -11,13 +11,21 @@
 import { image } from '@kit.ImageKit';
 import { MapLayer, MapStyle, MapTile, MapTilesLogic } from '../core/MapTiles';
 import {
+  AmapProbe,
   MapFallback,
   MapFallbackState,
   MapTileLogic,
   MapTilePlan,
   MapUiState,
   MapZoomPlan,
+  ProbeCache,
+  ProbeDecision,
   TileContent,
+  applyDecision,
+  cacheKey,
+  decide,
+  needsProbe,
+  tileOf,
   uiStateOf
 } from '../core/MapFallback';
 import { Place } from '../core/Place';
@@ -47,10 +55,13 @@ export class MapTileService {
   private static probing: boolean = false;
 
   private static readonly TIMEOUT_MILLIS: number = 6000;
+  private static readonly PROBE_TIMEOUT_MILLIS: number = 2500;
   private static readonly USER_AGENT: string = 'TrueSolarTime-HarmonyOS/1.0 (map tiles)';
+  private static probeCache: ProbeCache = new ProbeCache();
 
   static reset(): void {
     MapTileService.state = new MapFallbackState();
+    MapTileService.probeCache = new ProbeCache();
     MapTileService.lastUnavailable = false;
     MapTileService.lastDegraded = false;
   }
@@ -69,7 +80,14 @@ export class MapTileService {
       MapTileService.state = MapFallback.markViewportSettling(MapTileService.state, Date.now());
     }
     const style: MapStyle = MapTilesLogic.styleFromKey(styleKey);
+    await MapTileService.probeIfNeeded(style, place);
     await MapTileService.probeIfDue();
+    // 探测已定级 → 不再逐块下载整屏做空白分析（那会把首屏拖回几十秒）：
+    // 直接把瓦片 URL 交给 Image，依靠刚探测出的源与级别。
+    if (!needsProbe(style, cacheKey(place.latitude, place.longitude), MapTileService.probeCache, Date.now())) {
+      return MapTileService.buildFastResult(style, place, countryCode, centerLatitude, centerLongitude,
+        requestedZoom, widthPx, heightPx);
+    }
     let attempts: number = 0;
     while (attempts < 5) {
       attempts++;
@@ -162,6 +180,86 @@ export class MapTileService {
     return fallbackResult;
   }
 
+  /**
+   * 首屏探测：**并行**发 4 块单瓦片（OSM z3、高德 z12/z10/z3），总超时 4 秒、
+   * 已知高德有内容时 2 秒提前收工；结果直接定级并写 5 分钟缓存。
+   */
+  private static async probeIfNeeded(style: MapStyle, place: Place): Promise<void> {
+    const key: string = cacheKey(place.latitude, place.longitude);
+    if (!needsProbe(style, key, MapTileService.probeCache, Date.now())) {
+      return;
+    }
+    const amap: AmapProbe = new AmapProbe();
+    const osmPromise: Promise<boolean> = MapTileService.probeTicket(
+      tileOf(MapStyle.OSM, place.latitude, place.longitude, MapFallback.MIN_ZOOM), false);
+    const z12Promise: Promise<boolean> = MapTileService.probeTicket(
+      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 12), true)
+      .then((ok: boolean) => { amap.z12 = ok; return ok; });
+    const z10Promise: Promise<boolean> = MapTileService.probeTicket(
+      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, 10), true)
+      .then((ok: boolean) => { amap.z10 = ok; return ok; });
+    const z3Promise: Promise<boolean> = MapTileService.probeTicket(
+      tileOf(MapStyle.AMAP_VECTOR, place.latitude, place.longitude, MapFallback.MIN_ZOOM), true)
+      .then((ok: boolean) => { amap.z3 = ok; return ok; });
+    const all: Promise<ProbeDecision> = Promise.all([osmPromise, z12Promise, z10Promise, z3Promise])
+      .then((results: boolean[]) => decide(results[0], amap));
+    const early: Promise<ProbeDecision> = new Promise<ProbeDecision>((resolve: (value: ProbeDecision) => void) => {
+      setTimeout(() => {
+        if (amap.z12 || amap.z10 || amap.z3) {
+          resolve(decide(false, amap));
+        }
+      }, MapFallback.PROBE_EARLY_EXIT_MILLIS);
+    });
+    const hardTimeout: Promise<ProbeDecision> = new Promise<ProbeDecision>(
+      (resolve: (value: ProbeDecision) => void) => {
+        setTimeout(() => resolve(decide(false, amap)), MapFallback.PROBE_TOTAL_TIMEOUT_MILLIS);
+      });
+    const decision: ProbeDecision = await Promise.race([all, early, hardTimeout]);
+    MapTileService.state = applyDecision(MapTileService.state, decision, Date.now());
+    MapTileService.probeCache.key = key;
+    MapTileService.probeCache.millis = Date.now();
+    MapTileService.probeCache.decision = decision;
+  }
+
+  /** 单块探测：魔数校验；高德的块还要解像素判空白（空白不算有内容）。 */
+  private static async probeTicket(url: string, checkBlank: boolean): Promise<boolean> {
+    const bytes: Uint8Array | null = await HttpUtil.getBytes(url,
+      { 'User-Agent': MapTileService.USER_AGENT }, MapTileService.PROBE_TIMEOUT_MILLIS);
+    if (bytes === null || !MapTileService.looksLikeImage(bytes)) {
+      return false;
+    }
+    if (!checkBlank) {
+      return true;
+    }
+    const content: TileContent | null = await MapTileService.decodeContent(bytes);
+    return content !== null && !content.isBlank;
+  }
+
+  /** 探测结果新鲜时的快速路径：只算 plan/zoom + 瓦片 URL，不做整屏下载与空白分析。 */
+  private static buildFastResult(style: MapStyle, place: Place, countryCode: string, centerLatitude: number,
+      centerLongitude: number, requestedZoom: number, widthPx: number, heightPx: number): MapLoadResult {
+    const plan: MapTilePlan = MapFallback.plan(style, place.latitude, place.longitude, countryCode,
+      MapTileService.state);
+    const zoomPlan: MapZoomPlan = MapFallback.zoomPlan(plan, requestedZoom, MapTileService.state);
+    const result: MapLoadResult = new MapLoadResult();
+    result.zoom = zoomPlan.zoom;
+    result.degraded = zoomPlan.degraded;
+    result.unavailable = zoomPlan.unavailable;
+    result.fellBack = plan.fellBack;
+    result.attribution = MapTileService.attributionFor(plan);
+    result.uiState = uiStateOf(plan, zoomPlan);
+    MapTileService.lastAppliedZoom = zoomPlan.zoom;
+    MapTileService.lastDegraded = zoomPlan.degraded;
+    MapTileService.lastUnavailable = zoomPlan.unavailable;
+    if (!zoomPlan.unavailable) {
+      const layer: MapLayer = MapTilesLogic.layerForStyle(plan.effective, place.latitude, place.longitude,
+        countryCode);
+      result.tiles = MapTilesLogic.visibleTiles(layer, centerLatitude, centerLongitude, zoomPlan.zoom,
+        widthPx, heightPx);
+    }
+    return result;
+  }
+
   /** 下载一块瓦片并做像素分析；网络失败 / 非图片 / 解码失败都返回 null。 */
   private static async fetchContent(url: string): Promise<TileContent | null> {
     const bytes: Uint8Array | null = await HttpUtil.getBytes(url,
@@ -169,6 +267,11 @@ export class MapTileService {
     if (bytes === null || !MapTileService.looksLikeImage(bytes)) {
       return null;
     }
+    return MapTileService.decodeContent(bytes);
+  }
+
+  /** 已下载的字节 → 256×256 像素 → 32×32 采样 → 空白判定。 */
+  private static async decodeContent(bytes: Uint8Array): Promise<TileContent | null> {
     try {
       const source: image.ImageSource = image.createImageSource(bytes.buffer as ArrayBuffer);
       const pixelMap: image.PixelMap = await source.createPixelMap({

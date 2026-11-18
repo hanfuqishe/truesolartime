@@ -13,7 +13,7 @@
  * [MapTileAnalysis.analyze]；本文件只吃颜色数组。
  */
 
-import { MapStyle } from './MapTiles';
+import { MapLayer, MapStyle, MapTilesLogic } from './MapTiles';
 import { SolarTimeMath } from './SolarTimeMath';
 
 /** 一块瓦片的像素分析结果。 */
@@ -379,6 +379,14 @@ export class MapFallback {
   /** 全球底图探测用的 z3 瓦片（任何地区都在，体积小）。 */
   static readonly PROBE_URL: string = 'https://tile.openstreetmap.org/3/4/3.png';
 
+  /** 首屏探测：4 块并行总超时 4 秒；已知高德有内容时 2 秒提前收工。 */
+  static readonly PROBE_TOTAL_TIMEOUT_MILLIS: number = 4000;
+  static readonly PROBE_EARLY_EXIT_MILLIS: number = 2000;
+  /** 探测结果缓存：地点指纹（约 100m）+ 5 分钟。 */
+  static readonly PROBE_CACHE_MILLIS: number = 5 * 60 * 1000;
+  /** 地点指纹的经纬度精度：0.001° ≈ 111m，够区分「换城市」。 */
+  static readonly PROBE_KEY_DIGITS: number = 3;
+
   /** 按地区算首选底图：境内高德、境外 OSM。 */
   static preferredStyle(style: MapStyle, latitude: number, longitude: number, countryCode: string): MapStyle {
     if (style !== MapStyle.AUTO) {
@@ -525,4 +533,114 @@ export class MapFallback {
     next.lastFailureMillis = nowMillis;
     return next;
   }
+}
+
+/** 高德三档探测的命中情况（z12 / z10 / z3 哪一级有内容）。 */
+export class AmapProbe {
+  z12: boolean = false;
+  z10: boolean = false;
+  z3: boolean = false;
+}
+
+/** 首屏探测的最终决定：走哪个源、哪一级、是否「底图不可用」。 */
+export class ProbeDecision {
+  source: MapStyle = MapStyle.OSM;
+  zoom: number = MapFallback.DEFAULT_ZOOM;
+  unavailable: boolean = false;
+
+  constructor(source: MapStyle = MapStyle.OSM, zoom: number = MapFallback.DEFAULT_ZOOM,
+      unavailable: boolean = false) {
+    this.source = source;
+    this.zoom = zoom;
+    this.unavailable = unavailable;
+  }
+}
+
+/** 探测结果缓存（地点指纹 + 时间戳）。 */
+export class ProbeCache {
+  key: string = '';
+  millis: number = -1;
+  decision: ProbeDecision = new ProbeDecision();
+}
+
+/** 纯函数：OSM 可达 → OSM + z12；否则高德有内容的最高级别（z12 > z10 > z3）；都没有 → 不可用。 */
+export function decide(osmReachable: boolean, amap: AmapProbe): ProbeDecision {
+  if (osmReachable) {
+    return new ProbeDecision(MapStyle.OSM, MapFallback.DEFAULT_ZOOM, false);
+  }
+  if (amap.z12) {
+    return new ProbeDecision(MapStyle.AMAP_VECTOR, 12, false);
+  }
+  if (amap.z10) {
+    return new ProbeDecision(MapStyle.AMAP_VECTOR, 10, false);
+  }
+  if (amap.z3) {
+    return new ProbeDecision(MapStyle.AMAP_VECTOR, 3, false);
+  }
+  return new ProbeDecision(MapStyle.AMAP_VECTOR, MapFallback.DEFAULT_ZOOM, true);
+}
+
+/** 选中级别之上的所有级别（12/11/10 里比它高的那些；要标「无内容」，一步落位）。 */
+export function zoomsAbove(zoom: number): number[] {
+  const levels: number[] = [];
+  for (const level of [12, 11, 10]) {
+    if (level > zoom) {
+      levels.push(level);
+    }
+  }
+  return levels;
+}
+
+/** 地点指纹（约 100m）：`纬度,经度` 各保留 3 位小数。 */
+export function cacheKey(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(MapFallback.PROBE_KEY_DIGITS)},${longitude.toFixed(MapFallback.PROBE_KEY_DIGITS)}`;
+}
+
+/** 这次要不要探测：只有自动模式、且地点指纹变了 / 缓存过期才探。 */
+export function shouldProbe(style: MapStyle, key: string, cache: ProbeCache, nowMillis: number): boolean {
+  return needsProbe(style, key, cache, nowMillis);
+}
+
+/** 同 [shouldProbe]：手动选择底图不探测。 */
+export function needsProbe(style: MapStyle, key: string, cache: ProbeCache, nowMillis: number): boolean {
+  if (style !== MapStyle.AUTO) {
+    return false;
+  }
+  if (cache.millis < 0 || cache.key !== key) {
+    return true;
+  }
+  return nowMillis - cache.millis > MapFallback.PROBE_CACHE_MILLIS;
+}
+
+/** 单块探测瓦片的 URL（纯函数）：OSM / 高德在该级别、该坐标所在的那一块。 */
+export function tileOf(source: MapStyle, latitude: number, longitude: number, zoom: number): string {
+  const layer: MapLayer = MapTilesLogic.layerForStyle(source, latitude, longitude);
+  const point: number[] = MapTilesLogic.tilePoint(latitude, longitude, zoom);
+  return MapTilesLogic.tileUrl(layer, zoom, Math.floor(point[0]), Math.floor(point[1]));
+}
+
+/** 把探测决定落到状态上：一步定级，并把选中级别之上的级别标「无内容」。 */
+export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
+    nowMillis: number): MapFallbackState {
+  if (decision.unavailable) {
+    let next: MapFallbackState = state.copy();
+    for (const level of [12, 11, 10, 3]) {
+      next = next.markZoom(MapStyle.AMAP_VECTOR, level, false);
+    }
+    next.lastReboundMillis = nowMillis;
+    return next;
+  }
+  if (decision.source === MapStyle.OSM) {
+    return state.recovered(nowMillis);
+  }
+  let next: MapFallbackState = state.copy();
+  for (const level of zoomsAbove(decision.zoom)) {
+    next = next.markZoom(MapStyle.AMAP_VECTOR, level, false);
+  }
+  next = next.markZoom(MapStyle.AMAP_VECTOR, decision.zoom, true);
+  next.fellBack = true;
+  next.fallbackFailures = MapFallback.FAILURE_THRESHOLD;
+  next.probeAtMillis = nowMillis + MapFallback.PROBE_INTERVAL_MILLIS;
+  next.lastReboundMillis = nowMillis;
+  return next;
 }

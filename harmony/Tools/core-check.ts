@@ -23,13 +23,23 @@ import { SunDialColors } from './core/SunDialColors';
 import { ZoneTable } from './core/ZoneTable';
 import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
 import {
+  AmapProbe,
   MapFallback,
   MapFallbackState,
   MapTileLogic,
   MapTilePlan,
   MapUiState,
+  ProbeCache,
+  ProbeDecision,
+  applyDecision,
+  cacheKey,
+  decide,
+  needsProbe,
   sameUiState,
-  uiStateOf
+  shouldProbe,
+  tileOf,
+  uiStateOf,
+  zoomsAbove
 } from './core/MapFallback';
 
 let passed = 0;
@@ -1245,6 +1255,59 @@ for (const item of equationCases) {
   const countedFailure = MapFallback.onTileFailed(MapStyle.AUTO, 51.5074, -0.1278, 'gb', 12,
     viewportSettling, now + 2_500);
   check('failures after the settle window are counted', countedFailure.osmFailures === 1);
+
+  // ---- 首屏并行探测：decide / zoomsAbove / cacheKey / shouldProbe / tileOf ----
+  const amap = new AmapProbe();
+  equal('osm reachable wins with z12', MapStyle.OSM, decide(true, amap).source);
+  equal('osm reachable keeps z12', 12, decide(true, amap).zoom);
+  amap.z12 = true;
+  const z12Decision = decide(false, amap);
+  check('amap z12 is preferred when osm is down',
+    z12Decision.source === MapStyle.AMAP_VECTOR && z12Decision.zoom === 12 && !z12Decision.unavailable);
+  amap.z12 = false;
+  amap.z10 = true;
+  equal('amap falls back to z10', 10, decide(false, amap).zoom);
+  amap.z10 = false;
+  amap.z3 = true;
+  equal('amap falls back to z3', 3, decide(false, amap).zoom);
+  amap.z3 = false;
+  check('all probes blank means unavailable', decide(false, amap).unavailable);
+
+  equal('zooms above 12 is empty', '', zoomsAbove(12).join(','));
+  equal('zooms above 10', '12,11', zoomsAbove(10).join(','));
+  equal('zooms above 3', '12,11,10', zoomsAbove(3).join(','));
+
+  equal('cache key groups points within 100m', cacheKey(31.2304, 121.4737), cacheKey(31.23041, 121.47372));
+  check('cache key changes between cities', cacheKey(31.2304, 121.4737) !== cacheKey(35.6812, 139.7671));
+
+  const emptyCache = new ProbeCache();
+  check('manual choice never probes', !shouldProbe(MapStyle.AMAP_VECTOR, 'k', emptyCache, now));
+  check('auto probes when cache is empty', shouldProbe(MapStyle.AUTO, 'k', emptyCache, now));
+  const freshCache = new ProbeCache();
+  freshCache.key = 'k';
+  freshCache.millis = now;
+  check('fresh cache skips probing', !needsProbe(MapStyle.AUTO, 'k', freshCache, now + 1000));
+  check('expired cache probes again',
+    needsProbe(MapStyle.AUTO, 'k', freshCache, now + MapFallback.PROBE_CACHE_MILLIS + 1));
+  check('changed place invalidates the cache', needsProbe(MapStyle.AUTO, 'other', freshCache, now));
+
+  check('osm probe tile is a z3 osm tile',
+    tileOf(MapStyle.OSM, 51.5074, -0.1278, 3).indexOf('tile.openstreetmap.org/3/') > 0);
+  check('amap probe tile carries the zoom',
+    tileOf(MapStyle.AMAP_VECTOR, 51.5074, -0.1278, 12).indexOf('&z=12') > 0);
+
+  const z10Applied = applyDecision(new MapFallbackState(),
+    new ProbeDecision(MapStyle.AMAP_VECTOR, 10, false), now);
+  check('decision marks higher zooms unavailable',
+    z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12) &&
+      z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 11) &&
+      !z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 10));
+  check('decision sets the five minute rebound cooldown', z10Applied.lastReboundMillis === now);
+  const unavailableApplied = applyDecision(new MapFallbackState(),
+    new ProbeDecision(MapStyle.AMAP_VECTOR, 12, true), now);
+  check('unavailable decision marks every probed zoom',
+    unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12) &&
+      unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 3));
 }
 
 // ---- 太阳卡圆盘几何（core/SunPath；逐条对齐 Android SunPathGeometryTest 的 18 项口径）----
