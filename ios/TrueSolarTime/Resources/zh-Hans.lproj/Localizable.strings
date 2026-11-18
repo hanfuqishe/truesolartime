@@ -47,6 +47,7 @@
 "location.unavailable" = "定位不可用";
 "map.diagMapTitle" = "地图";
 "map.diagMapPending" = "尚未回灌（地图还没建好）";
+"map.appleBasemap" = "Apple 地图（系统底图）";
 
 /* 设置页 */
 "settings.title" = "位置与提醒";

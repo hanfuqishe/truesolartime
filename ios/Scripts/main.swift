@@ -1851,9 +1851,15 @@ expect(
 )
 print("== 定位不可用（未知态）==")
 expect(
+    "未知态诊断的源是「Apple（系统底图）」（不再显示探测源 OSM/高德）",
+    BasemapMapDebug.unknownDefault(source: .amapVector, zoom: 3).text.contains("Apple")
+        && !BasemapMapDebug.unknownDefault(source: .amapVector, zoom: 3).text.contains(BasemapSource.amapVector.label)
+        && !BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text.contains(BasemapSource.osm.label)
+)
+expect(
     "未知态默认诊断：中心 20.0,0.0 / 跨度 90×120 / z3 / 标记 0 / 源 OSM（字段齐全，含「源」）",
     BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text
-        == "未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 \(BasemapSource.osm.label)",
+        == "未知态 · 中心 20.0,0.0 · 跨度 90×120 · 缩放 3 · 标记 0 个 · 源 Apple（系统底图）",
     "actual=\(BasemapMapDebug.unknownDefault(source: .osm, zoom: 3).text)"
 )
 expect(
@@ -1882,7 +1888,7 @@ expect(
         && unknownMapDebug.text.contains("跨度 90×120")
         && unknownMapDebug.text.contains("缩放 3")
         && unknownMapDebug.text.contains("标记 0 个")
-        && unknownMapDebug.text.contains(unknownMapDebug.source.label),
+        && unknownMapDebug.text.contains("Apple"),
     "actual=\(unknownMapDebug.text)"
 )
 let normalMapDebug = BasemapMapDebug(

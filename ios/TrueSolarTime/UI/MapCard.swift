@@ -46,10 +46,17 @@ struct MapCard: View {
             }
 
             ZStack {
-                if showsMap {
+                if isLocationUnknown {
+                    // **未知态专用：纯 Apple 地图**（不挂 overlay、不加标记、不设 delegate、不做探测）。
+                    // 结构上与正常态是**不同视图类型**，SwiftUI 必然销毁旧的 MapViewRepresentable，
+                    // 「停在旧地点 / 旧标记残留」在结构上不可能发生。
+                    UnknownWorldMap()
+                        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                        .id("unknown-world-map")
+                } else if showsMap {
                     // **地图按探测结论出生**：只有 `uiState.ready`（或 6 秒兜底）之后才创建 MKMapView。
                     // 先按默认源建好再切源会让 MapKit 取消在飞请求、旧缓存清掉后不重发 → 一直转圈。
-                    MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState, hidesMarker: isLocationUnknown)
+                    MapViewRepresentable(place: place, style: resolvedStyle, plan: basemap.uiState)
                         // **`.id` 随状态变化 → SwiftUI 直接销毁旧 MKMapView、新建一个**。
                         // 之前只改 region 却仍复用旧的 mapView：旧 region / 旧 annotation / 旧 overlay 都可能残留，
                         // 现象就是「进入未知态后地图还停在上一个地点」。重建一次是廉价的（只在切换时发生）。
@@ -141,6 +148,8 @@ struct MapCard: View {
 
     /// 署名跟随**实际使用的**瓦片源；自动模式回退过会追加「OSM 不可达，已回退高德」。
     private var attributionText: String {
+        // 未知态用的是**系统底图**（Apple），不再是我们探测出来的源，署名跟着换。
+        if isLocationUnknown { return L("map.appleBasemap") }
         let suffix = L("map.autoNote")
         return mapStyle == .auto
             ? "\(basemap.attribution) · \(suffix)"
@@ -150,6 +159,33 @@ struct MapCard: View {
 
 // MARK: - MKMapView 包装
 
+// MARK: - 未知态：纯 Apple 地图
+
+/// 未知态专用地图：**不挂任何 `MKTileOverlay`、不加任何 annotation、不设 delegate、不读 plan**。
+///
+/// 为什么这条路不可能再「停在旧地点」：它和正常态的 `MapViewRepresentable` 是**两个不同的视图类型**，
+/// SwiftUI 切换分支时必然销毁旧视图（连同旧 `MKMapView` 的 region / annotation / overlay），
+/// 新视图 `makeUIView` 里只做一件事 —— 设一次全球视口。`updateUIView` **刻意什么都不做**：
+/// 之前所有「视口被覆盖 / 停在旧地点」的 bug 都来自 update 路径互相覆盖。
+private struct UnknownWorldMap: UIViewRepresentable {
+
+    static let region = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 20, longitude: 0),
+        span: MKCoordinateSpan(latitudeDelta: 90, longitudeDelta: 120)
+    )
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView()
+        map.isRotateEnabled = false
+        map.isPitchEnabled = false
+        map.pointOfInterestFilter = .includingAll
+        map.setRegion(Self.region, animated: false)
+        return map
+    }
+
+    /// **什么都不做**（关键）：不存在任何可以和用户手势 / 状态发布互相覆盖的写入路径。
+    func updateUIView(_ map: MKMapView, context: Context) {}
+}
 private struct MapViewRepresentable: UIViewRepresentable {
 
     let place: Place
@@ -157,11 +193,6 @@ private struct MapViewRepresentable: UIViewRepresentable {
     /// 有效 plan 快照（源 / 缩放 / 不可用）：**只有它变了才重建 overlay**。
     /// 计数（OSM 失败次数 / 空白判定次数）不在里面，所以不会因为「又失败一块瓦片」而重组地图。
     let plan: BasemapUiState
-    /// 未知态：不画标记（只有全球底图）。
-    ///
-    /// 注意：**必须放在 `plan` 之后** —— memberwise init 的实参顺序要和声明顺序一致，
-    /// 调用点是 `place:style:plan:hidesMarker:`（之前顺序写反，CI 直接编译不过）。
-    let hidesMarker: Bool
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -220,19 +251,14 @@ private struct MapViewRepresentable: UIViewRepresentable {
             mapView.addOverlay(overlay, level: .aboveLabels)
 
             // 重建 overlay 不代表地点变了：把标记放回上次的坐标，别让它留在 (0,0)。
-            if hidesMarker {
-                // 未知态：**显式清掉**已有标记（不是"不添加"就完事，旧标记会留在旧位置）。
-                mapView.removeAnnotations(mapView.annotations)
-                annotation = nil
-            } else {
-                let point = MKPointAnnotation()
-                if let viewport = appliedViewport {
-                    point.coordinate = viewport.mapCoordinate
-                    point.title = viewport.label
-                }
-                mapView.addAnnotation(point)
-                annotation = point
+            // 未知态不进这个视图（它走 `UnknownWorldMap`），所以这里总是加标记，没有要清的残留。
+            let point = MKPointAnnotation()
+            if let viewport = appliedViewport {
+                point.coordinate = viewport.mapCoordinate
+                point.title = viewport.label
             }
+            mapView.addAnnotation(point)
+            annotation = point
 
             tileOverlay = overlay
             currentStyle = style
@@ -254,31 +280,6 @@ private struct MapViewRepresentable: UIViewRepresentable {
             )
         }
 
-        /// 未知态：**z3 全球底图**（跨约 90°×120°）。不画标记、也不跟随地点。
-        static let unknownRegion = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 20, longitude: 0),
-            span: MKCoordinateSpan(latitudeDelta: 90, longitudeDelta: 120)
-        )
-
-        /// 未知态视口是否已经落过（避免每次状态发布都 setRegion）。
-        private var appliedUnknownViewport = false
-
-        /// 视口入口（**唯一**）：未知态 → 全球 z3；正常态 → 按地点落一次。
-        ///
-        /// 进入未知态时把 `appliedViewport` 清空，退出时才能按当前地点重新落一次；
-        /// 标记的显隐由 `hidesMarker` 在 `attach` 里处理。
-        func updateViewport(isUnknown: Bool, place: Place, style: MapStyle, on mapView: MKMapView) {
-            if isUnknown {
-                guard !appliedUnknownViewport else { return }
-                appliedUnknownViewport = true
-                appliedViewport = nil
-                BasemapController.shared.noteViewportChanged()
-                mapView.setRegion(Self.unknownRegion, animated: false)
-                recordDebugState(on: mapView)
-            }
-            appliedUnknownViewport = false
-            applyViewportIfNeeded(to: place, style: style, on: mapView)
-        }
 
         /// 正常态：一次 `setRegion` 同时给 center + span（只在「地点 / 样式」变化时动）。
         ///
@@ -286,9 +287,6 @@ private struct MapViewRepresentable: UIViewRepresentable {
         /// （安卓那边就是这样停在半路、标记不居中的）。地点没变就直接返回，因此
         /// 底图状态变化（回退 / 降级）不会把用户的平移缩放顶回去。
         func applyViewportIfNeeded(to place: Place, style: MapStyle, on mapView: MKMapView) {
-            // 未知态只允许 `updateViewport` 改视口；这里直接早退，
-            // 否则「先 setRegion(全球) → 再按旧地点 setRegion」会把全球视口覆盖掉。
-            guard !appliedUnknownViewport else { return }
             let last = appliedViewport
             let sameSpot = last.map {
                 abs($0.latitude - place.latitude) < 1e-6

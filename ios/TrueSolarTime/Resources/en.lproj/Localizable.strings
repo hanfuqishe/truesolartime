@@ -47,6 +47,7 @@
 "location.unavailable" = "Location unavailable";
 "map.diagMapTitle" = "Map";
 "map.diagMapPending" = "Not recorded yet";
+"map.appleBasemap" = "Apple Maps (system basemap)";
 
 /* Settings */
 "settings.title" = "Location & reminders";
