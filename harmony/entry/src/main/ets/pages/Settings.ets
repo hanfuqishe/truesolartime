@@ -192,6 +192,11 @@ struct Settings {
     return city === null ? '' : city.name;
   }
 
+  /** 设置页也按「跟随意图 + 还没有 GPS fix」判断未知态，坐标统一显示 `--`。 */
+  private isUnknownLocation(): boolean {
+    return AppStore.gpsIntent() && this.place.source !== PlaceSource.GPS;
+  }
+
   private applyPlace(place: Place, leave: boolean = false): void {
     // 换地点（含手动坐标）：先把旧区划名清掉，反查回来前显示 `-`，绝不残留上一个城市。
     if (!place.sameLocation(this.place)) {
@@ -409,7 +414,8 @@ struct Settings {
           // 当前位置
           Column() {
             this.sectionTitle('当前位置')
-            Text(`${this.placeName}　${TimeFormat.coordinates(this.place.latitude, this.place.longitude)}`)
+            Text(`${this.isUnknownLocation() ? '定位不可用' : this.placeName}　${
+              TimeFormat.coordinates(this.place.latitude, this.place.longitude, this.isUnknownLocation())}`)
               .fontSize(12)
               .fontColor(this.palette.text)
               .margin({ top: 8 })

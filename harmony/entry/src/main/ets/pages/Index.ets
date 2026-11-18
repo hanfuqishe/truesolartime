@@ -1161,8 +1161,10 @@ struct Index {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        if (this.coordinatesFit(this.dateTail(), TimeFormat.coordinates(this.place.latitude, this.place.longitude))) {
-          Text(this.shortText(TimeFormat.coordinates(this.place.latitude, this.place.longitude)))
+        if (this.coordinatesFit(this.dateTail(),
+          TimeFormat.coordinates(this.place.latitude, this.place.longitude, this.locationUnknown))) {
+          Text(this.shortText(TimeFormat.coordinates(this.place.latitude, this.place.longitude,
+            this.locationUnknown)))
             .fontSize(this.cs(10))
             .fontFamily(this.cardFont(FontWeight.Normal))
             .lineHeight(this.cardLineHeight(this.cs(10)))
@@ -1416,7 +1418,7 @@ struct Index {
           .lineHeight(this.cardLineHeight(13))
           .fontColor(this.palette.subtle)
           .layoutWeight(1)
-        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude))
+        Text(TimeFormat.coordinates(this.place.latitude, this.place.longitude, this.locationUnknown))
           .fontSize(11)
           .fontFamily(this.cardFont(FontWeight.Normal))
           .lineHeight(this.cardLineHeight(11))

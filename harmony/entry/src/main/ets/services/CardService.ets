@@ -128,7 +128,9 @@ export class CardService {
     // 卡片底色跟着「主题模式」走：自动＝按太阳，亮色/暗色＝强制（与首页大卡片同一套判定）。
     data.isDay = ThemeMode.isLight(AppStore.themeMode(), snapshot.isDay());
     data.solarTime = TimeFormat.clock(snapshot.trueSolarSeconds);
-    data.coords = TimeFormat.coordinates(place.latitude, place.longitude);
+    // 未知态（意图跟随 GPS 但还没有 fix）：卡片坐标也必须是 `--`，不能显示旧地点。
+    const unknownLocation: boolean = AppStore.gpsIntent() && place.source !== PlaceSource.GPS;
+    data.coords = TimeFormat.coordinates(place.latitude, place.longitude, unknownLocation);
     // 左栏标签要和 Android 一致显示 UTC 偏移：这里必须用**法定时区**的偏移，
     // 不是下面那个 trueSolarOffset（那是真太阳时相对当地标准时的差，北京会算出 +8:01）。
     const zoneSeconds: number = CivicTimeLogic.standardOffsetSeconds(

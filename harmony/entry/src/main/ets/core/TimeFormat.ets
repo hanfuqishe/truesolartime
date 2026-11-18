@@ -113,7 +113,15 @@ export class TimeFormat {
     return `${MONTHS_EN[month - 1]} ${day} ${WEEKDAYS_EN[weekday].slice(0, 3)}`;
   }
 
-  /** 例如 "39.9042°N  116.4074°E"。 */  static coordinates(latitude: number, longitude: number): string {
+  /**
+   * 例如 "39.9042°N  116.4074°E"。
+   *
+   * @param unknown 定位不可用（未知态）：统一返回半角 `--`，不再显示上一个地点的真实坐标。
+   */
+  static coordinates(latitude: number, longitude: number, unknown: boolean = false): string {
+    if (unknown) {
+      return '--';
+    }
     const lat: string = `${Math.abs(latitude).toFixed(4)}°${latitude >= 0 ? 'N' : 'S'}`;
     const lon: string = `${Math.abs(longitude).toFixed(4)}°${longitude >= 0 ? 'E' : 'W'}`;
     return `${lat}  ${lon}`;

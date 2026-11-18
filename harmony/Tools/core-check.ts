@@ -222,6 +222,8 @@ for (const item of equationCases) {
   equal('countdown', '01:23:45', TimeFormat.countdown(5025));
   equal('coordinates', '39.9042°N  116.4074°E', TimeFormat.coordinates(39.9042, 116.4074));
   equal('coordinates south west', '33.4500°S  70.6700°W', TimeFormat.coordinates(-33.45, -70.67));
+  equal('unknown location coordinates become a dash', '--',
+    TimeFormat.coordinates(39.9042, 116.4074, true));
 }
 
 // ---- 城市索引 ----
