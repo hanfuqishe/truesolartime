@@ -1953,6 +1953,27 @@ for (const item of equationCases) {
     `${zhongshanEn === null ? 'null' : zhongshanEn.name}`);
 }
 
+// ---- 夜间弧必须与白天弧互补，不能把整圈重画一遍 ----
+{
+  const daySweep: number = 181.6;
+  const nightSweep: number = SunPathGeometry.nightSweepDegrees(daySweep);
+  near('night arc length is 360 minus the day arc', 178.4, nightSweep, 1e-6);
+  near('day plus night fills the circle', 360, Math.abs(daySweep) + nightSweep, 1e-6);
+  near('southern night arc has the same length', 178.4,
+    SunPathGeometry.nightSweepDegrees(-daySweep), 1e-6);
+  equal('polar day has no night arc', 0, SunPathGeometry.nightSweepDegrees(360));
+  equal('polar night is a full circle of night', 360, SunPathGeometry.nightSweepDegrees(0));
+  equal('northern night ends at start plus 360', 360, SunPathGeometry.nightEndDegrees(0, false));
+  equal('southern night ends at start minus 360', -360, SunPathGeometry.nightEndDegrees(0, true));
+  const start: number = -180.8;
+  const nightStart: number = start + daySweep;
+  near('night arc really starts at the sunset point', 0.8, nightStart, 1e-6);
+  near('night arc ends at the sunrise point after a full turn', 179.2,
+    SunPathGeometry.nightEndDegrees(start, false), 1e-6);
+  near('night arc span from those endpoints', 178.4,
+    SunPathGeometry.nightEndDegrees(start, false) - nightStart, 1e-6);
+}
+
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const failure of failures) {

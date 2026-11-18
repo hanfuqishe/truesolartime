@@ -1645,8 +1645,9 @@ struct Index {
       const start: number = span.startDegrees * Math.PI / 180;
       const sweep: number = span.sweepDegrees * Math.PI / 180;
       const anticlockwise: boolean = sweep < 0;
-      // 夜晚弧顺着同一个方向补完整圈：北半球到 start+2π，南半球到 start−2π。
-      const nightEnd: number = start + (anticlockwise ? sweep - full : sweep + full);
+      // 夜晚弧「从日落点绕回日出点」：北半球到 start+2π、南半球到 start−2π。
+      // 这样弧长 = 2π − |sweep|；写成 `sweep ± full` 会让弧长恒等于 2π，整圈虚线压在白天的金色实线上。
+      const nightEnd: number = start + (anticlockwise ? -full : full);
       ctx.beginPath();
       ctx.arc(path.centerX, path.centerY, path.radius, start, start + sweep, anticlockwise);
       ctx.strokeStyle = arcColor;

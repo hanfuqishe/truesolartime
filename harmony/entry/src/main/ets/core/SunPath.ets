@@ -181,6 +181,21 @@ export class SunPathGeometry {
   /** 白天弧两端各外扩的角度（度）：起点 -0.8°、扫角 +1.6°，让弧端略穿过地平线。 */
   static readonly ARC_END_EXTENSION_DEGREES: number = 0.8;
 
+  /** 夜间弧的扫角（度）：`360 − |白天扫角|`，为 0 时不画（极昼）。 */
+  static nightSweepDegrees(daySweepDegrees: number): number {
+    return Math.max(0, 360 - Math.abs(daySweepDegrees));
+  }
+
+  /**
+   * 夜间弧的终点角度（度）：从外扩后的日落点绕回日出点。
+   *
+   * 北半球 `start + 360`、南半球 `start − 360`；与起点 `start + daySweep` 之间的弧长
+   * 恰为 `360 − |daySweep|`，不会把整圈再画一遍。
+   */
+  static nightEndDegrees(startDegrees: number, southernHemisphere: boolean): number {
+    return startDegrees + (southernHemisphere ? -360 : 360);
+  }
+
   private static readonly HOURS_PER_DAY: number = 24;
 
   /** 真太阳时 [hour] 对应的角度（弧度）：`θ = (hour − 12) / 24 × 2π`。 */
