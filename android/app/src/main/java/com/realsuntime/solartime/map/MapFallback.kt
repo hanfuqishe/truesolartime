@@ -82,7 +82,9 @@ object MapFallback {
 
     /** 一次底图选择的结果：Composable 与诊断页都只读它。 */
     fun plan(style: MapStyle, latitude: Double, longitude: Double, state: MapFallbackState): MapTilePlan {
-        val preferred = style.effective(latitude, longitude)
+        // 境内/境外按「中国时区」口径判（国家码优先，其次 73–135°E / 18–54°N），
+        // 不能用 GCJ-02 的边界 —— 那会把新加坡/马来西亚等整片判成境内。
+        val preferred = style.effective(latitude, longitude, state.countryCode)
         if (style != MapStyle.AUTO) {
             // 手动选择：不参与回退与探测，失败就显示原样。
             return MapTilePlan(
@@ -246,7 +248,7 @@ object MapFallback {
     ): MapFallbackState {
         if (style != MapStyle.AUTO) return state
         // 境内（首选高德）不消费探测结果：本来就能 1 秒内出图，探测只会白等。
-        if (style.effective(latitude, longitude) == MapStyle.AMAP_VECTOR) return state
+        if (style.effective(latitude, longitude, state.countryCode) == MapStyle.AMAP_VECTOR) return state
         val choice = result.choice
         val base = state.copy(
             probeKey = cacheKey,
@@ -464,6 +466,11 @@ data class MapFallbackState(
     val lastFailedAtMillis: Long? = null,
     /** 最近一次借「全球底图出图」把降级链弹回去的时刻（冷却用，避免来回跳）。 */
     val lastRecoveryAtMillis: Long? = null,
+    /**
+     * 观测点的国家码（ISO 3166-1 alpha-2）；境内/境外判定以它为准
+     * （见 [com.realsuntime.solartime.solar.SolarTimeMath.isInChinaRegion]）。
+     */
+    val countryCode: String? = null,
     /** 首屏并行探测用过的地点指纹（[BasemapProbe.cacheKey]）；null = 还没探过。 */
     val probeKey: String? = null,
     /** 首屏并行探测完成时刻（保鲜期判定用）。 */
@@ -724,6 +731,11 @@ class MapFallbackTracker(
     /** 该地点的探测结果是否还在保鲜期内（同地点 + 5 分钟）。 */
     fun probeFresh(cacheKey: String): Boolean =
         MapFallback.probeFresh(snapshot(), cacheKey, clock())
+
+    /** 换地点时同步国家码：境内/境外判定、探测偏好都靠它。 */
+    fun setCountryCode(countryCode: String?) {
+        update { if (it.countryCode == countryCode) it else it.copy(countryCode = countryCode) }
+    }
 
     /** 渐进升级：设置当前正在用的「源 + 级别」（null = 交回 plan / zoomPlan）。 */
     fun setProbeChoice(choice: BasemapProbe.AppliedChoice?) {

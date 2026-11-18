@@ -54,11 +54,12 @@ object BasemapProbeRunner {
     suspend fun probe(
         latitude: Double,
         longitude: Double,
+        countryCode: String? = null,
         onTile: (BasemapProbe.ProbeTile, Long) -> Unit = { _, _ -> },
     ): BasemapProbeResult {
         val startedAt = System.currentTimeMillis()
         // 区域偏好只决定「同级时选谁」；两个源都要探。
-        val preferred = MapStyle.AUTO.effective(latitude, longitude)
+        val preferred = MapStyle.AUTO.effective(latitude, longitude, countryCode)
         val amapZooms = BasemapProbe.AMAP_PROBE_ZOOMS.toList()
         val osmZooms = BasemapProbe.OSM_PROBE_ZOOMS.toList()
         val esriZooms = BasemapProbe.ESRI_PROBE_ZOOMS.toList()

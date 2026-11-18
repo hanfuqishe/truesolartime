@@ -95,6 +95,32 @@ class MapFallbackTest {
         assertEquals("底图 © Esri, HERE, Garmin, © OpenStreetMap contributors", plan.effective.attribution)
     }
 
+    /**
+     * 选源看「国家码 / 中国包围盒」，不看 GCJ-02 边界：
+     * 新加坡（1.35°N）曾被 GCJ 边界（纬度 ≥0.83°）误判成境内，一路降级到 z3 全球图。
+     */
+    @Test
+    fun planUsesTheStateCountryCodeNotTheGcjBoundary() {
+        val singapore = 1.3521 to 103.8198
+        // 有 sg → ESRI
+        val sg = trackerWithCountryCode("sg")
+        assertEquals(MapStyle.ESRI, sg.planAt(MapStyle.AUTO, singapore).effective)
+        assertEquals(12, sg.zoomPlan(sg.planAt(MapStyle.AUTO, singapore), 12).zoom)
+        assertFalse(sg.zoomPlan(sg.planAt(MapStyle.AUTO, singapore), 12).unavailable)
+
+        // 无国家码 → 按 73–135°E / 18–54°N 包围盒：新加坡在框外 → ESRI
+        val unknown = newTracker()
+        assertEquals(MapStyle.ESRI, unknown.planAt(MapStyle.AUTO, singapore).effective)
+
+        // 香港带 hk → 高德
+        assertEquals(
+            MapStyle.AMAP_VECTOR,
+            trackerWithCountryCode("hk").planAt(MapStyle.AUTO, 22.32 to 114.17).effective,
+        )
+    }
+
+    private fun trackerWithCountryCode(code: String) = newTracker().also { it.setCountryCode(code) }
+
     // ------------------------------------------------------------ 回退与记忆
 
     @Test

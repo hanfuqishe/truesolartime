@@ -248,8 +248,14 @@ object BasemapProbe {
      * 只有首选是「外网源」（境外：Esri / OSM）才值得并行探测；境内用高德本来就能 1 秒内出图，
      * 探测只会白等一个超时。
      */
-    fun needsProbe(style: MapStyle, latitude: Double, longitude: Double): Boolean =
-        style == MapStyle.AUTO && style.effective(latitude, longitude) != MapStyle.AMAP_VECTOR
+    fun needsProbe(
+        style: MapStyle,
+        latitude: Double,
+        longitude: Double,
+        countryCode: String? = null,
+    ): Boolean =
+        style == MapStyle.AUTO &&
+            style.effective(latitude, longitude, countryCode) != MapStyle.AMAP_VECTOR
 
     /**
      * 该级别之上的「肯定没内容」的级别（用于把降级链直接推到探测选中的级别）。

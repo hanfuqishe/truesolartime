@@ -1,5 +1,6 @@
 package com.realsuntime.solartime.map
 
+import com.realsuntime.solartime.solar.SolarTimeMath
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.MapTileIndex
@@ -7,8 +8,14 @@ import org.osmdroid.util.MapTileIndex
 /**
  * 底图选择。
  *
- * AUTO 按坐标判断：境内用高德（中文地名、路网更细），境外用 **Esri 街道图**
+ * AUTO 按「境内 / 境外」判断：境内用高德（中文地名、路网更细），境外用 **Esri 街道图**
  * （国内可直连；OSM 的 tile.openstreetmap.org 在部分网络被污染/不可达）。
+ *
+ * 「境内」用的是与**中国时区**同一套口径（[com.realsuntime.solartime.solar.SolarTimeMath.isInChinaRegion]：
+ * 国家码 cn/hk/mo/tw，或没有国家码时 73–135°E / 18–54°N 的包围盒），
+ * **不能**用 `CoordinateTransform.isInChina` —— 那是 GCJ-02 偏移的边界（纬度下限 0.83°），
+ * 会把新加坡、马来西亚、印尼北部、菲律宾整片误判成境内。
+ *
  * 高德的栅格瓦片无需 API Key，但内容为 GCJ-02 坐标，叠加 WGS-84 数据时需要偏移修正。
  */
 enum class MapStyle(val label: String) {
@@ -19,9 +26,14 @@ enum class MapStyle(val label: String) {
     AMAP_SATELLITE("高德卫星"),
     ;
 
-    fun effective(latitude: Double, longitude: Double): MapStyle = when {
+    /**
+     * 自动模式下该用哪个源。
+     *
+     * @param countryCode 观测点国家码（ISO 3166-1 alpha-2）；有值就以它为准，null 才退回包围盒。
+     */
+    fun effective(latitude: Double, longitude: Double, countryCode: String? = null): MapStyle = when {
         this != AUTO -> this
-        CoordinateTransform.isInChina(latitude, longitude) -> AMAP_VECTOR
+        SolarTimeMath.isInChinaRegion(latitude, longitude, countryCode) -> AMAP_VECTOR
         else -> ESRI
     }
 

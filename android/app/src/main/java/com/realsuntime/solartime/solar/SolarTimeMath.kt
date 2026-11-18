@@ -127,6 +127,25 @@ object SolarTimeMath {
     fun isInChinaBbox(latitude: Double, longitude: Double): Boolean =
         longitude in 73.0..135.0 && latitude in 18.0..54.0
 
+    /** 中国（含港澳台）的 ISO 3166-1 alpha-2 代码。 */
+    private val CHINA_COUNTRY_CODES = setOf("cn", "hk", "mo", "tw")
+
+    /**
+     * 「是不是中国境内」的**统一口径**（时区、底图选源都用它，别再各写一套）：
+     *
+     * * 有国家码 → 只有 [CHINA_COUNTRY_CODES] 才算境内（新加坡 `sg`、马来西亚 `my` 一律境外，
+     *   哪怕它们的坐标落在 [isInChinaBbox] 里也不影响）；
+     * * 没国家码 → 退回 [isInChinaBbox]（73–135°E / 18–54°N）。
+     *
+     * 注意：**不要**拿 `CoordinateTransform.isInChina` 来判断境内 —— 那是 GCJ-02 偏移的适用边界
+     * （纬度下限只有 0.83°，把整个东南亚都包了进去），只该用于坐标转换。
+     */
+    fun isInChinaRegion(latitude: Double, longitude: Double, countryCode: String?): Boolean {
+        val code = countryCode?.trim()?.lowercase().orEmpty()
+        if (code.length == 2) return code in CHINA_COUNTRY_CODES
+        return isInChinaBbox(latitude, longitude)
+    }
+
     /**
      * 观测点所在地的**标准时区偏移**（相对 UTC，秒），不含夏令时。
      *

@@ -26,8 +26,6 @@ object CivicTime {
     /** 中国官方标准时间：UTC+8，单位分钟。 */
     const val CHINA_MINUTES = 480
 
-    private val CHINA_CODES = setOf("cn", "hk", "mo", "tw")
-
     /**
      * 中国南极考察站（站名仅用于排查）。坐标取各站生活区/主楼附近，
      * 判定半径 [STATION_HALF_SPAN_DEG]（0.5°，约 55 km）足以覆盖站区与周边作业点。
@@ -86,11 +84,8 @@ object CivicTime {
      * 有国家码时**以国家码为准**（新德里在包围盒里，但不是中国）；没有国家码才退回包围盒。
      * 与鸿蒙 `SolarTimeMath.isInChina`、iOS `GeoRegion.isInChina` 同一套规则。
      */
-    fun isChina(latitude: Double, longitude: Double, countryCode: String?): Boolean {
-        val code = countryCode?.trim()?.lowercase().orEmpty()
-        if (code.length == 2) return code in CHINA_CODES
-        return SolarTimeMath.isInChinaBbox(latitude, longitude)
-    }
+    fun isChina(latitude: Double, longitude: Double, countryCode: String?): Boolean =
+        SolarTimeMath.isInChinaRegion(latitude, longitude, countryCode)
 
     /** 是否落在中国南极考察站附近（站务时间按北京时间，与 tzdata 的 Antarctica 各区域时区无关）。 */
     fun isChineseAntarcticStation(latitude: Double, longitude: Double): Boolean =

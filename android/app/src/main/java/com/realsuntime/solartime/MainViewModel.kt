@@ -227,6 +227,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var storedPlaceTrusted = true
 
     init {
+        // 境内/境外判定（底图选源、探测偏好）以国家码为准：先同步一次当前地点。
+        mapFallback.setCountryCode(settings.place.countryCode)
         viewModelScope.launch {
             while (isActive) {
                 _now.value = Instant.now()
@@ -542,8 +544,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 否则刚在手动高德下看过的失败计数会被带进自动模式（反之亦然）。
         if (style != previous) {
             mapFallback.reset()
+            mapFallback.setCountryCode(_place.value.countryCode)
             startLoading()
-            _mapReady.value = !BasemapProbe.needsProbe(style, _place.value.latitude, _place.value.longitude)
+            _mapReady.value = !BasemapProbe.needsProbe(
+                style,
+                _place.value.latitude,
+                _place.value.longitude,
+                _place.value.countryCode,
+            )
             // 切回自动 = 重新给探测一次机会（用户明确换了模式，别拿旧结论糊弄他）。
             maybeProbeBasemap(force = true)
         }
@@ -639,7 +647,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val style = _mapStyle.value
         // 未知态没有坐标：它有自己的快路径（[enterUnknownBasemap]），不走「给具体地点定源定级」的探测。
         if (_locationUnknown.value) return
-        if (!BasemapProbe.needsProbe(style, place.latitude, place.longitude)) return
+        if (!BasemapProbe.needsProbe(style, place.latitude, place.longitude, place.countryCode)) return
         val key = BasemapProbe.cacheKey(place.latitude, place.longitude)
         if (!force && mapFallback.probeFresh(key)) return
         probeJob?.cancel()
@@ -661,7 +669,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         probeJob = viewModelScope.launch(Dispatchers.IO) {
             // 探测自身出异常时不改状态：让运行期的失败统计兜底，别凭一次异常就判「不可用」。
             val result = runCatching {
-                BasemapProbeRunner.probe(place.latitude, place.longitude) { tile, elapsed ->
+                BasemapProbeRunner.probe(place.latitude, place.longitude, place.countryCode) { tile, elapsed ->
                     onProbeTile(session, tile, elapsed, preferred)
                 }
             }.getOrNull() ?: run {
@@ -794,13 +802,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _place.value = place
         // 立刻进入加载态，并（境外）并发探测底图：首屏不再干等串行超时 + 逐级降级。
         startLoading()
-        _mapReady.value = !BasemapProbe.needsProbe(_mapStyle.value, place.latitude, place.longitude)
+        _mapReady.value = !BasemapProbe.needsProbe(
+            _mapStyle.value,
+            place.latitude,
+            place.longitude,
+            place.countryCode,
+        )
         maybeProbeBasemap()
         // 用户重新选了地点：自动模式下的回退记忆跟着地点走 —— 换城市就重新给 OSM 一次机会。
         // GPS 漂移（不是用户选择）不算，否则每分钟的定位刷新都会把回退清掉、白折腾一遍瓦片。
         if (userChosen && _mapStyle.value == MapStyle.AUTO) {
             mapFallback.reset()
         }
+        // 换地点后同步国家码（reset 会把 state 换新，必须放在它之后）。
+        mapFallback.setCountryCode(place.countryCode)
         // 换地点后旧区划名立即失效：查不到新名字之前，卡片上不显示城市
         _districtName.value = DistrictResolver.cachedNameFor(getApplication(), place)
         // 换地点后时区可能整个变掉（例如从上海切到纽约），当拍就跟上，不必等下一秒的 tick。
