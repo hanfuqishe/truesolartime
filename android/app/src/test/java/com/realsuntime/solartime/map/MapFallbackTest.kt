@@ -411,8 +411,11 @@ class MapFallbackTest {
             paris.second,
             key,
             BasemapProbeResult(
-                osmReachable = true,
-                amap = emptyList(),
+                preferred = MapStyle.OSM,
+                tiles = listOf(
+                    BasemapProbe.ProbeTile(MapStyle.OSM, 3, hasContent = true),
+                    BasemapProbe.ProbeTile(MapStyle.OSM, 12, hasContent = true),
+                ),
                 elapsedMillis = 300,
             ),
         )
@@ -428,11 +431,13 @@ class MapFallbackTest {
             paris.second,
             key,
             BasemapProbeResult(
-                osmReachable = false,
-                amap = listOf(
-                    BasemapProbe.AmapProbe(12, hasContent = false, colorKinds = 1, fetched = true),
-                    BasemapProbe.AmapProbe(10, hasContent = true, colorKinds = 42, fetched = true),
-                    BasemapProbe.AmapProbe(3, hasContent = true, colorKinds = 6, fetched = true),
+                preferred = MapStyle.OSM,
+                tiles = listOf(
+                    BasemapProbe.ProbeTile(MapStyle.OSM, 3, hasContent = false),
+                    BasemapProbe.ProbeTile(MapStyle.OSM, 12, hasContent = false),
+                    BasemapProbe.ProbeTile(MapStyle.AMAP_VECTOR, 12, hasContent = false),
+                    BasemapProbe.ProbeTile(MapStyle.AMAP_VECTOR, 10, hasContent = true),
+                    BasemapProbe.ProbeTile(MapStyle.AMAP_VECTOR, 3, hasContent = true),
                 ),
                 elapsedMillis = 900,
             ),
@@ -450,9 +455,11 @@ class MapFallbackTest {
             paris.second,
             key,
             BasemapProbeResult(
-                osmReachable = false,
-                amap = BasemapProbe.AMAP_PROBE_ZOOMS.map {
-                    BasemapProbe.AmapProbe(it, hasContent = false, colorKinds = 1, fetched = true)
+                preferred = MapStyle.OSM,
+                tiles = listOf(3, 12).map {
+                    BasemapProbe.ProbeTile(MapStyle.OSM, it, hasContent = false)
+                } + BasemapProbe.AMAP_PROBE_ZOOMS.map {
+                    BasemapProbe.ProbeTile(MapStyle.AMAP_VECTOR, it, hasContent = false)
                 },
                 elapsedMillis = 800,
             ),
@@ -466,7 +473,7 @@ class MapFallbackTest {
     @Test
     fun probeResultIsIgnoredInsideChinaAndInManualMode() {
         val key = BasemapProbe.cacheKey(beijing.first, beijing.second)
-        val choice = BasemapProbeResult(false, emptyList(), elapsedMillis = 100)
+        val choice = BasemapProbeResult(MapStyle.OSM, emptyList(), elapsedMillis = 100)
 
         // 境内：首选就是高德，探测结论不该改任何东西（尤其不该把 z12 标成没内容）
         val tracker = newTracker()
@@ -494,7 +501,11 @@ class MapFallbackTest {
             paris.first,
             paris.second,
             key,
-            BasemapProbeResult(osmReachable = true, amap = emptyList(), elapsedMillis = 200),
+            BasemapProbeResult(
+                preferred = MapStyle.OSM,
+                tiles = listOf(BasemapProbe.ProbeTile(MapStyle.OSM, 12, hasContent = true)),
+                elapsedMillis = 200,
+            ),
         )
         assertTrue("同地点刚探过 → 缓存命中", tracker.probeFresh(key))
         assertFalse("换城市 → 必须重探", tracker.probeFresh(BasemapProbe.cacheKey(beijing.first, beijing.second)))

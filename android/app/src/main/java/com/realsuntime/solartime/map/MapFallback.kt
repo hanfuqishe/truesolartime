@@ -239,6 +239,9 @@ object MapFallback {
             probeSummary = choice.summary + "（${result.elapsedMillis}ms）",
             lastFailedZoom = null,
             zoomFailures = 0,
+            // 探测会话结束：把「渐进升级」的临时选择交还给正式 plan / zoomPlan
+            // （下面已经按最终 choice 种好了降级链与回退标记）。
+            probeChoice = null,
         )
         if (choice.source == MapStyle.OSM && !choice.unavailable) {
             // OSM 通：清掉之前学到的降级记忆，直接回到默认级别。
@@ -361,6 +364,16 @@ object MapFallback {
         )
     }
 
+    /** 设置渐进升级「当前正在用的源 + 级别」（null = 交回 plan / zoomPlan）。纯函数。 */
+    fun withProbeChoice(
+        state: MapFallbackState,
+        choice: BasemapProbe.AppliedChoice?,
+    ): MapFallbackState = if (state.probeChoice == choice) state else state.copy(probeChoice = choice)
+
+    /** 诊断用：只更新那句话（不动其它状态）。 */
+    fun withProbeSummary(state: MapFallbackState, summary: String): MapFallbackState =
+        if (state.probeSummary == summary) state else state.copy(probeSummary = summary)
+
     /** 清空会话记忆（切到「自动」或重新选地点时调用）。 */
     fun reset(): MapFallbackState = MapFallbackState()
 }
@@ -410,6 +423,13 @@ data class MapFallbackState(
     val probeFinishedAtMillis: Long? = null,
     /** 首屏并行探测的一句话结论（诊断页展示）。 */
     val probeSummary: String? = null,
+    /**
+     * 渐进升级当前正在用的「源 + 级别」（见 [BasemapProbe.nextApplied]）。
+     *
+     * 非 null 时 [MapUiState.of] 直接用它，压过 plan / zoomPlan —— 探测会话期间
+     * 「先到先用、更好的才升级」全靠它驱动；会话结束、用户手动平移、或换成手动底图时清掉。
+     */
+    val probeChoice: BasemapProbe.AppliedChoice? = null,
 ) {
     /** 该底图在这个级别上是否已被判定「没有瓦片」。 */
     fun zoomUnavailable(style: MapStyle, zoom: Int): Boolean = zoom in unavailableZooms[style].orEmpty()
@@ -500,6 +520,19 @@ data class MapUiState(
         /** 由「设置 + 地点 + 会话状态」算出 UI 状态（纯函数，单测直接盯相等性）。 */
         fun of(style: MapStyle, latitude: Double, longitude: Double, state: MapFallbackState): MapUiState {
             val plan = MapFallback.plan(style, latitude, longitude, state)
+            // 渐进升级：探测会话期间「先到先用、更好的才升级」，这里直接采用当前选择，
+            // 压过 plan / zoomPlan（否则第一块 z3 会被降级链又算回 z12）。
+            val applied = state.probeChoice
+            if (applied != null && plan.requested == MapStyle.AUTO) {
+                return MapUiState(
+                    requested = plan.requested,
+                    source = applied.source,
+                    zoom = applied.zoom,
+                    degraded = applied.zoom != MapFallback.DEFAULT_ZOOM,
+                    unavailable = false,
+                    fellBack = applied.source == MapStyle.AMAP_VECTOR && plan.preferred == MapStyle.OSM,
+                )
+            }
             val zoomPlan = MapFallback.zoomPlan(plan, MapFallback.DEFAULT_ZOOM, state)
             return MapUiState(
                 requested = plan.requested,
@@ -644,6 +677,16 @@ class MapFallbackTracker(
     /** 该地点的探测结果是否还在保鲜期内（同地点 + 5 分钟）。 */
     fun probeFresh(cacheKey: String): Boolean =
         MapFallback.probeFresh(snapshot(), cacheKey, clock())
+
+    /** 渐进升级：设置当前正在用的「源 + 级别」（null = 交回 plan / zoomPlan）。 */
+    fun setProbeChoice(choice: BasemapProbe.AppliedChoice?) {
+        update { MapFallback.withProbeChoice(it, choice) }
+    }
+
+    /** 诊断：写入渐进升级那句话（如 `首图 z3 @312ms，升级 z12 @1830ms`）。 */
+    fun noteProbeSummary(summary: String) {
+        update { MapFallback.withProbeSummary(it, summary) }
+    }
 
     /** 切到「自动」或重新选地点时清空记忆。 */
     fun reset() {

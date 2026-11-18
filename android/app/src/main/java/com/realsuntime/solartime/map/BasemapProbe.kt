@@ -2,40 +2,33 @@ package com.realsuntime.solartime.map
 
 /**
  * 首屏「并行探测」：切城市 / 换地点时**同时**发几块单瓦片（每块几 KB），
- * 用「有内容的最高精度」直接决定用哪个源、哪个级别，而不是串行地
- * 「OSM 失败 3 次 → 回退高德 → 判空白 3 次 → z12→z11→z10→z3 逐级下探」。
+ * 而不是串行地「OSM 失败 3 次 → 回退高德 → 判空白 3 次 → z12→z11→z10→z3 逐级下探」。
  *
- * 串行那套在境外要几十秒（HTTP 超时 + 3 次失败 + 每级 3 次空白），首屏体验极差；
- * 并行探测把这段时间压到一个整体超时（[OVERALL_TIMEOUT_MILLIS]）内。
+ * 串行那套在境外要几十秒（HTTP 超时 + 3 次失败 + 每级 3 次空白），首屏体验极差。
  *
  * 本文件**只放纯函数**（不碰 Android / 网络），便于单测；真正发请求的是
  * `BasemapProbeRunner`。
  *
- * 选择规则（与产品定义一致）：
- * 1. OSM 的 z3 拿到真图片 → 用 OSM，缩放用默认级别（z12）；
- * 2. 否则看高德：z12 > z10 > z3 里**有内容（非空白）的最高级别**；
- * 3. 都失败或都空白 → 「底图不可用」（保留现有的 5 分钟重探测）。
+ * 选择规则（**渐进升级**，取代旧的「早退 + 一次定级」）：
+ * 1. 每块瓦片一出结论就尝试应用：**第一块有内容的立刻出图**（通常是 z3，几百毫秒就能看到东西）；
+ * 2. 后续只有比当前**更好**的才升级：先比源（OSM > 高德），同源再比级别（z12 > z10 > z3）；
+ * 3. 冻结（不再改图）：已经 `OSM z12` / 用户手动平移缩放过 / 首次出图后超过 [UPGRADE_WINDOW_MILLIS]；
+ * 4. 4 秒内一块有内容的都没有 → 「底图不可用」；**只要出过图就永远不再显示不可用**
+ *    （[OVERALL_TIMEOUT_MILLIS] 只用于这个判定，不再用来截断升级）。
  */
 object BasemapProbe {
 
-    /** 整体封顶：并行探测最多等这么久，超时的一律按失败算。 */
+    /** 什么都没有返回时的硬超时：超过就判「底图不可用」。只要出过图就不再受它限制。 */
     const val OVERALL_TIMEOUT_MILLIS = 4_000L
 
-    /** 单块请求自己的超时（比整体略短，保证整体超时前大部分都有结论）。 */
+    /** 单块请求自己的超时。 */
     const val TILE_TIMEOUT_MILLIS = 2_500L
-
-    /**
-     * 提前收工的**最早时刻**：到这个时刻之后，只要「有内容的最高档」之上都已经有结论就收工
-     * （判定见 [shouldEarlyExit]；更高精度的档还在飞时会继续等，不再为了快而丢掉精度）。
-     *
-     * OSM 被墙时它的 DNS/连接会一直挂到超时（几秒），而高德通常 1 秒内就有结论；
-     * 死等 OSM 会让首屏白等好几秒。慢到 2 秒还没回的 OSM，本来也不适合当首屏底图
-     * （5 分钟后的重探还会把它切回来）。
-     */
-    const val EARLY_EXIT_MILLIS = 2_000L
 
     /** 高德侧要探的级别：默认级别、降 2 级、以及全球底图。 */
     val AMAP_PROBE_ZOOMS = intArrayOf(MapFallback.DEFAULT_ZOOM, 10, MapFallback.MIN_ZOOM)
+
+    /** OSM 侧要探的级别：全球底图（判可达）+ 默认级别（判高精度有没有内容）。 */
+    val OSM_PROBE_ZOOMS = intArrayOf(MapFallback.MIN_ZOOM, MapFallback.DEFAULT_ZOOM)
 
     /** 同一个地点 + 同一个会话内，探测结果的保鲜期（与 OSM 重探间隔一致）。 */
     const val CACHE_MILLIS = 5 * 60_000L
@@ -51,6 +44,14 @@ object BasemapProbe {
         val fetched: Boolean = false,
     )
 
+    /**
+     * 渐进升级用的「一块瓦片出结论」事件：Runner 每拿到一块就回调一次。
+     *
+     * OSM 侧只探一块 z3 判可达性，成功后按默认级别上报（`zoom = DEFAULT_ZOOM`，与 decide 一致）；
+     * 高德侧是 z12 / z10 / z3。
+     */
+    data class ProbeTile(val source: MapStyle, val zoom: Int, val hasContent: Boolean)
+
     /** 探测的最终选择。 */
     data class Choice(
         val source: MapStyle,
@@ -61,49 +62,63 @@ object BasemapProbe {
         val summary: String,
     )
 
+    /** 探测级别，从高到低（选择时按这个顺序扫）。 */
+    val PROBE_ZOOMS_DESC = listOf(MapFallback.DEFAULT_ZOOM, 10, MapFallback.MIN_ZOOM)
+
     /**
-     * 纯决策：给定 OSM 是否可用、高德三块瓦片的结论，选出源与级别。
+     * 纯决策：给定所有探测瓦片的结论与「偏好源」，按**先换源、再降级**选出源与级别。
      *
-     * @param osmReachable OSM z3 探测是否成功（2xx + 真图片）。
-     * @param amap 高德 z12/z10/z3 的探测结论（缺的当失败）。
+     * 顺序：z12 → z10 → z3；同一级别优先 [preferred]（区域偏好只决定同精度时选谁），
+     * 偏好源在该级空白/失败、另一个源有内容 → 用另一个源。
+     *
+     * @param tiles 两个源各自的探测结论（OSM z3/z12、高德 z12/z10/z3）
+     * @param preferred 区域偏好源（境内高德、境外 OSM；见 [MapStyle.effective]）
      */
-    fun decide(osmReachable: Boolean, amap: List<AmapProbe>): Choice {
-        if (osmReachable) {
-            return Choice(
-                source = MapStyle.OSM,
-                zoom = MapFallback.DEFAULT_ZOOM,
-                unavailable = false,
-                summary = "OSM 可用（z${MapFallback.DEFAULT_ZOOM}）",
-            )
-        }
-        val best = amap
-            .filter { it.hasContent }
-            .maxByOrNull { it.zoom }
-        val detail = AMAP_PROBE_ZOOMS.joinToString(" / ") { zoom ->
-            val probe = amap.firstOrNull { it.zoom == zoom }
-            val verdict = when {
-                probe == null || !probe.fetched -> "失败"
-                probe.hasContent -> "有内容"
-                else -> "空白"
+    fun decide(tiles: List<ProbeTile>, preferred: MapStyle): Choice {
+        val picked = choose(tiles, preferred)
+        val detail = PROBE_ZOOMS_DESC.joinToString(" / ") { zoom ->
+            val parts = listOf(MapStyle.OSM, MapStyle.AMAP_VECTOR).mapNotNull { source ->
+                val tile = tiles.firstOrNull { it.source == source && it.zoom == zoom } ?: return@mapNotNull null
+                val verdict = if (tile.hasContent) "有内容" else "空白"
+                "${sourceShort(source)} z$zoom $verdict"
             }
-            "z$zoom $verdict"
+            if (parts.isEmpty()) "z$zoom 未探" else parts.joinToString("、")
         }
-        return if (best != null) {
+        return if (picked != null) {
             Choice(
-                source = MapStyle.AMAP_VECTOR,
-                zoom = best.zoom,
+                source = picked.source,
+                zoom = picked.zoom,
                 unavailable = false,
-                summary = "OSM 不通；高德 $detail",
+                summary = "偏好 ${sourceShort(preferred)}；$detail",
             )
         } else {
             Choice(
                 source = MapStyle.AMAP_VECTOR,
                 zoom = MapFallback.MIN_ZOOM,
                 unavailable = true,
-                summary = "OSM 不通；高德 $detail",
+                summary = "两源都无内容；$detail",
             )
         }
     }
+
+    /**
+     * 取第一个命中：级别从高到低，同一级别优先 [preferred] 源。
+     *
+     * 例：境内（偏好高德）+ 高德 z12 空白 + OSM z12 有内容 → 返回 OSM z12（不是降级到 z10）。
+     */
+    fun choose(tiles: List<ProbeTile>, preferred: MapStyle): ProbeTile? {
+        val content = tiles.filter { it.hasContent }
+        for (zoom in PROBE_ZOOMS_DESC) {
+            val atZoom = content.filter { it.zoom == zoom }
+            if (atZoom.isEmpty()) continue
+            return atZoom.firstOrNull { it.source == preferred } ?: atZoom.first()
+        }
+        return null
+    }
+
+    /** 诊断用的源简称。 */
+    fun sourceShort(source: MapStyle): String =
+        if (source == MapStyle.OSM) "OSM" else "高德"
 
     /**
      * 探测缓存键：同一地点（~100 m 粒度）+ 同一模式算「同一个」。换城市就变，因此缓存自动失效。
@@ -131,20 +146,82 @@ object BasemapProbe {
     }
 
     /**
-     * 提前收工判定（纯函数）：已经探到「有内容」的瓦片后，**比它精度更高的档都已有结论**才允许早退。
+     * 渐进升级（取代「早退 + 一次定级」）。
      *
-     * 之前的实现是「任意一档有内容就早退」：z3 先回、z12 还在飞，2 秒一到就退，[decide] 只能看到 z3，
-     * 于是选了个低精度 —— 与「取有内容的最高精度」自相矛盾。这里必须等到 z12 / z10 都出结论
-     * （拿到但空白、网络失败都算结论，只要它已经进了 [amap]）。
+     * 每有一块瓦片出结论就调一次；**先到先用**（第一块有内容的立刻出图），
+     * 后续只有「更好」的才升级：**先看级别**（z12 > z10 > z3），
+     * 同级再看源（区域偏好源优先）—— 这就是「先换源、再降级」。
      *
-     * @param amap 已经出结论的档（键 = zoom）；**还在飞的档不能出现在这里**。
-     * @param zooms 本次要探的所有档（见 [AMAP_PROBE_ZOOMS]）。
-     * @return true = 可以立刻收工；false = 还有更高精度的档在飞，或暂时没有任何有内容的档。
+     * 冻结条件（任一满足就不再改图）：已经是「偏好源 z12」；用户手动平移/缩放过；
+     * 距首次出图超过 [UPGRADE_WINDOW_MILLIS]。
      */
-    fun shouldEarlyExit(amap: Map<Int, AmapProbe>, zooms: List<Int>): Boolean {
-        val best = amap.values.filter { it.hasContent }.maxByOrNull { it.zoom } ?: return false
-        // 比 best 更高的档只要还没进 map（还在飞），就继续等它出结论。
-        return zooms.none { it > best.zoom && !amap.containsKey(it) }
+    data class AppliedChoice(val source: MapStyle, val zoom: Int)
+
+    /** 渐进升级窗口：从**首次出图**起最多再升级这么久，之后冻结，避免地图长时间抖动。 */
+    const val UPGRADE_WINDOW_MILLIS = 10_000L
+
+    /**
+     * 候选 (source, zoom) 是否严格优于 [current]；[current] 为 null 时任何有内容的候选都更好。
+     *
+     * 顺序按「先换源、再降级」：**级别优先**（z12 > z10 > z3），同级才看源 ——
+     * 同一级别里 [preferred] 源更好；当前已是偏好源时同级不换。
+     */
+    fun isBetter(
+        current: AppliedChoice?,
+        source: MapStyle,
+        zoom: Int,
+        preferred: MapStyle,
+    ): Boolean {
+        if (current == null) return true
+        if (zoom != current.zoom) return zoom > current.zoom
+        if (source == current.source) return false
+        return source == preferred
+    }
+
+    /** 已经是最优：偏好源的默认级别（z12）。 */
+    fun isBest(choice: AppliedChoice, preferred: MapStyle): Boolean =
+        choice.zoom == MapFallback.DEFAULT_ZOOM && choice.source == preferred
+
+    /**
+     * 是否已经冻结（不再接受升级）。
+     *
+     * @param elapsedSinceFirstPaintMillis 距首次出图的毫秒数；null = 还没出过图。
+     */
+    fun isFrozen(
+        current: AppliedChoice?,
+        elapsedSinceFirstPaintMillis: Long?,
+        userMoved: Boolean,
+        preferred: MapStyle,
+    ): Boolean {
+        if (current == null) return false
+        if (isBest(current, preferred)) return true
+        if (userMoved) return true
+        val elapsed = elapsedSinceFirstPaintMillis ?: return false
+        return elapsed >= UPGRADE_WINDOW_MILLIS
+    }
+
+    /**
+     * 渐进升级的核心（纯函数）：一块新瓦片出结论后，现在应该用哪个「源 + 级别」。
+     *
+     * @param current 当前正在用的（null = 还没出图）
+     * @param firstPaintAtMillis 首次出图那一刻的 elapsed（与 [elapsedMillis] 同一时钟）
+     * @param preferred 区域偏好源（同级时选它）
+     * @return null = 还没出过图且这块没内容；否则返回应用后的选择（可能与 [current] 相同 = 忽略）
+     */
+    fun nextApplied(
+        current: AppliedChoice?,
+        source: MapStyle,
+        zoom: Int,
+        hasContent: Boolean,
+        elapsedMillis: Long,
+        firstPaintAtMillis: Long?,
+        userMoved: Boolean,
+        preferred: MapStyle,
+    ): AppliedChoice? {
+        if (!hasContent) return current
+        val sinceFirst = firstPaintAtMillis?.let { elapsedMillis - it }
+        if (isFrozen(current, sinceFirst, userMoved, preferred)) return current
+        return if (isBetter(current, source, zoom, preferred)) AppliedChoice(source, zoom) else current
     }
 
     /**
@@ -184,15 +261,15 @@ object BasemapProbe {
 
 /** 一次并行探测的原始结果（纯数据，不含网络）。 */
 data class BasemapProbeResult(
-    /** OSM z3 是否可用。 */
-    val osmReachable: Boolean,
-    /** 高德 z12 / z10 / z3 的结论。 */
-    val amap: List<BasemapProbe.AmapProbe>,
+    /** 区域偏好源（境内高德 / 境外 OSM），只用于同级取舍。 */
+    val preferred: MapStyle,
+    /** 两块 OSM（z3 / z12）与三块高德（z12 / z10 / z3）的结论；没回来的不在列表里。 */
+    val tiles: List<BasemapProbe.ProbeTile>,
     /** 探测整体耗时（毫秒，报告用）。 */
     val elapsedMillis: Long,
     /** 是否因为整体超时被截断（没来得及出结论的当失败）。 */
     val timedOut: Boolean = false,
 ) {
     /** 选择结果（纯函数转发，便于单测与日志共用同一份判定）。 */
-    val choice: BasemapProbe.Choice get() = BasemapProbe.decide(osmReachable, amap)
+    val choice: BasemapProbe.Choice get() = BasemapProbe.decide(tiles, preferred)
 }

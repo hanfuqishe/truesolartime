@@ -51,7 +51,7 @@ class CityIndexTest {
         // 极圈城市也走同一张城市表：预设按钮与卡片地名都靠它取名。
         assertEquals("摩尔曼斯克", CityIndex.nearest(68.97, 33.08, "zh")?.name)
         assertEquals("Murmansk", CityIndex.nearest(68.97, 33.08, "en")?.name)
-        assertEquals("中山站", CityIndex.nearest(-69.37, 76.38, "zh")?.name)
-        assertEquals("Zhongshan Station", CityIndex.nearest(-69.37, 76.38, "en")?.name)
+        assertEquals("南极中山站", CityIndex.nearest(-69.37, 76.38, "zh")?.name)
+        assertEquals("Zhongshan Station, Antarctica", CityIndex.nearest(-69.37, 76.38, "en")?.name)
     }
 }

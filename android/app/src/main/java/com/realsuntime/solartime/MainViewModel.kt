@@ -139,6 +139,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 首屏并行探测的任务（换城市就取消上一次，避免旧结论盖掉新地点）。 */
     private var probeJob: kotlinx.coroutines.Job? = null
 
+    // ---- 渐进升级会话（见 BasemapProbe.nextApplied）----
+    // Runner 在 IO 线程回调，这几个字段用 @Volatile；状态机自己带锁。
+    @Volatile private var probeSession = 0
+    @Volatile private var probeFirstPaintAtMillis: Long? = null
+    @Volatile private var probeUserMoved = false
+    @Volatile private var probeFirstPaintLabel: String? = null
+    @Volatile private var probeUpgradeLabel: String? = null
+
     /**
      * **未知态**全球底图快路径（见 [UnknownBasemap]）：选定的源；null = 还没结论。
      *
@@ -614,8 +622,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 首屏并行探测（见 [BasemapProbe]）：境外（自动 + 首选 OSM）时并发取 4 块单瓦片，
-     * 用「有内容的最高精度」直接定源与级别，避免串行等三次超时 + 逐级降级。
+     * 首屏并行探测（见 [BasemapProbe]）：境外（自动 + 首选 OSM）时并发取 4 块单瓦片。
+     *
+     * **渐进升级**：每块瓦片一出结论就尝试应用 —— 第一块有内容的立刻出图（通常 z3，几百毫秒），
+     * 后续只有更好的（OSM 优于高德、同源高精度优先）才升级；已经 OSM z12 / 用户动过地图 /
+     * 距首图超过 [BasemapProbe.UPGRADE_WINDOW_MILLIS] 时冻结。
      *
      * 缓存：同地点 + 5 分钟内只探一次（[MapFallbackState.probeKey]）。
      * 境内（首选高德）与手动选择都不探测。
@@ -630,21 +641,93 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!force && mapFallback.probeFresh(key)) return
         probeJob?.cancel()
         if (!mapFallback.probeFresh(key)) {
-            // 要探测：先把地图藏起来等结论（骨架已经在显示），MapView 直接按选定的源/级别出生。
+            // 要探测：先把地图藏起来等结论（骨架已经在显示），第一块有内容的瓦片一到就放出来。
             _mapReady.value = false
         }
+        // 新会话：清掉上一轮的渐进选择与计时；旧 job 的迟到回调用 session 号挡掉。
+        val session = ++probeSession
+        probeFirstPaintAtMillis = null
+        probeUserMoved = false
+        probeFirstPaintLabel = null
+        probeUpgradeLabel = null
+        mapFallback.setProbeChoice(null)
+        // 区域偏好（境内高德 / 境外 OSM）：只决定「同级时选谁」，两个源都会探。
+        val preferred = MapStyle.AUTO.effective(place.latitude, place.longitude)
         probeJob = viewModelScope.launch(Dispatchers.IO) {
             // 探测自身出异常时不改状态：让运行期的失败统计兜底，别凭一次异常就判「不可用」。
             val result = runCatching {
-                BasemapProbeRunner.probe(place.latitude, place.longitude)
+                BasemapProbeRunner.probe(place.latitude, place.longitude) { tile, elapsed ->
+                    onProbeTile(session, tile, elapsed, preferred)
+                }
             }.getOrNull() ?: run {
                 _mapReady.value = true // 探测失败也要把地图放出来（走运行期兜底）
                 return@launch
             }
-            mapFallback.onProbeResult(style, place.latitude, place.longitude, key, result)
+            if (session != probeSession) return@launch
+            // 用户没动过：把最终结论正式写进状态机（源/级别 + 降级链），并释放临时选择。
+            if (!probeUserMoved) {
+                mapFallback.onProbeResult(style, place.latitude, place.longitude, key, result)
+            }
+            // 诊断：首图耗时 / 是否升级。用户动过就不覆盖那句「用户移动后冻结」。
+            val first = probeFirstPaintLabel
+            if (first != null && !probeUserMoved) {
+                val summary = first + (probeUpgradeLabel?.let { "，$it" } ?: "，无升级")
+                mapFallback.noteProbeSummary(summary)
+            }
             _mapReady.value = true
         }
     }
+
+    /**
+     * 渐进升级：一块瓦片出结论就尝试应用（先到先用、更好的才升级）。
+     *
+     * 线程：Runner 在 IO 线程回调；这里只改 [@Volatile] 字段，状态更新交给带锁的状态机。
+     */
+    private fun onProbeTile(
+        session: Int,
+        tile: BasemapProbe.ProbeTile,
+        elapsedMillis: Long,
+        preferred: MapStyle,
+    ) {
+        if (session != probeSession) return
+        // 失败没有信息量（只有「有内容」才会被选中）。
+        if (!tile.hasContent) return
+        val current = mapFallback.snapshot().probeChoice
+        val next = BasemapProbe.nextApplied(
+            current = current,
+            source = tile.source,
+            zoom = tile.zoom,
+            hasContent = tile.hasContent,
+            elapsedMillis = elapsedMillis,
+            firstPaintAtMillis = probeFirstPaintAtMillis,
+            userMoved = probeUserMoved,
+            preferred = preferred,
+        )
+        if (next == null || next == current) return
+        if (current == null) {
+            probeFirstPaintAtMillis = elapsedMillis
+            probeFirstPaintLabel = "首图 ${choiceLabel(next)} @${elapsedMillis}ms"
+            _mapReady.value = true
+            _mapLoading.value = false
+        } else {
+            probeUpgradeLabel = "升级 ${choiceLabel(next)} @${elapsedMillis}ms"
+        }
+        mapFallback.setProbeChoice(next)
+        mapFallback.noteProbeSummary(
+            probeFirstPaintLabel.orEmpty() + (probeUpgradeLabel?.let { "，$it" } ?: "，无升级"),
+        )
+    }
+
+    /** 用户手动平移 / 缩放过地图：立刻冻结渐进升级，别把他的视图顶回去。 */
+    fun onMapUserGesture() {
+        if (probeFirstPaintAtMillis == null) return
+        probeUserMoved = true
+        val first = probeFirstPaintLabel ?: return
+        mapFallback.noteProbeSummary("$first，用户移动后冻结")
+    }
+
+    private fun choiceLabel(choice: BasemapProbe.AppliedChoice): String =
+        "${if (choice.source == MapStyle.OSM) "OSM" else "高德"} z${choice.zoom}"
 
     fun setKeepScreenOn(enabled: Boolean) {
         settings.keepScreenOn = enabled

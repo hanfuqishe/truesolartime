@@ -68,7 +68,7 @@
     <string name="city_singapore">新加坡</string>
     <string name="city_sydney">雪梨</string>
     <string name="city_murmansk">莫曼斯克</string>
-    <string name="city_zhongshan">中山站</string>
+    <string name="city_zhongshan">南極中山站</string>
     <string name="map_style_auto">自動</string>
     <string name="map_style_osm">OpenStreetMap</string>
     <string name="map_style_amap_vector">高德向量</string>

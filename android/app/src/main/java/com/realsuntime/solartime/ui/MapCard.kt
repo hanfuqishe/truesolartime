@@ -103,6 +103,11 @@ fun MapCard(
     isZoomUnavailable: (Int) -> Boolean,
     onTileEvent: (TileEvent) -> Unit,
     onViewportApplied: (Int) -> Unit,
+    /**
+     * 用户**手动**平移 / 缩放过地图：渐进升级据此冻结（不把用户的视图顶回去）。
+     * 程序化的 setCenter / setZoom 不会触发它。
+     */
+    onUserMapGesture: () -> Unit,
     modifier: Modifier = Modifier,
     mapAspectRatio: Float = 4f / 3f,
 ) {
@@ -175,6 +180,7 @@ fun MapCard(
                                 showMarker = !locationUnknown,
                                 watcher = blankWatcher,
                                 onTileEvent = { event -> latestTileEvent.value(event) },
+                                onUserGesture = onUserMapGesture,
                             ).also { mapView = it }
                         },
                         update = { view -> syncMap(view, place, style, showMarker = !locationUnknown) },
@@ -340,10 +346,14 @@ private fun createMapView(
     showMarker: Boolean,
     watcher: TileBlankWatcher,
     onTileEvent: (TileEvent) -> Unit,
+    /** 用户手动平移 / 缩放（不是程序化改视口）时回调。 */
+    onUserGesture: () -> Unit,
 ): MapView {
     MapConfig.init(context)
     val (latitude, longitude) = markerPointOf(place, style)
     val center = GeoPoint(latitude, longitude)
+    // 手势判定：按下后移动超过系统 touchSlop、或出现第二根手指（缩放）就算「用户动过」。
+    val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
     return MapView(context).apply {
         setTileSource(MapTileSources.tileSourceOf(style))
         setMultiTouchControls(true)
@@ -355,12 +365,31 @@ private fun createMapView(
         controller.setCenter(center)
         if (showMarker) overlays.add(newMarker(this, place, style))
         // 地图嵌在可滚动列表中：手势落在图上时由地图接管，避免父级滚动抢夺。
+        // 同时判定「用户真的平移/缩放过」——只有这种情况才冻结渐进升级；程序化改视口不经过这里。
+        var downX = 0f
+        var downY = 0f
+        var moved = false
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    moved = false
                     view.parent?.requestDisallowInterceptTouchEvent(true)
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> moved = true
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount > 1) {
+                        moved = true
+                    } else if (kotlin.math.hypot(event.x - downX, event.y - downY) > touchSlop) {
+                        moved = true
+                    }
+                    view.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.parent?.requestDisallowInterceptTouchEvent(false)
+                    if (moved) onUserGesture()
+                }
             }
             false
         }

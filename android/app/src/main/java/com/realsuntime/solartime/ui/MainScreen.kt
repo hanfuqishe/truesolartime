@@ -472,6 +472,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             isZoomUnavailable = viewModel::isMapZoomUnavailable,
                             onTileEvent = viewModel::onMapTileEvent,
                             onViewportApplied = viewModel::onMapZoomApplied,
+                            onUserMapGesture = viewModel::onMapUserGesture,
                             mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
                         )
                     }

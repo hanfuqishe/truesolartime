@@ -128,6 +128,19 @@ class SmallRowLayoutTest {
     }
 
     @Test
+    fun longerAntarcticNameStillFitsTierZeroInChinese() {
+        // 真实卡片：334dp 宽 − 左右各 16dp 内边距 = 302dp 的标签行，左右两半各 151dp。
+        // 中文「南极中山站」5 字 ≈ 60dp：UTC(34) + 间距(8) + 地区(60) = 102 ≤ 151 → 档 0，不会被截断。
+        val row = 302f
+        val utc = 34f
+        val gap = 8f
+        assertEquals(0, SmallRowLayout.cityRowTier(utc, 60f, 52f, 24f, row, gap))
+        // 英文「Zhongshan Station, Antarctica」≈176dp：档 0 的左半放不下（34+176+8 > 151），
+        // 但整行放得下（34+176+24+16 = 250 ≤ 302）→ 退到档 1，靠换档而不是省略号。
+        assertEquals(1, SmallRowLayout.cityRowTier(utc, 176f, 52f, 24f, row, gap))
+    }
+
+    @Test
     fun cityRowHalvesAreEqualAndSumToTheRow() {
         // 档 0 的左右两半与下面两列等宽：各占整行一半
         val (left, right) = SmallRowLayout.cityRowHalves(400f)

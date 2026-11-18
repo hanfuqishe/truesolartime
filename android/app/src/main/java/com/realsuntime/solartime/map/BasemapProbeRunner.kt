@@ -10,28 +10,30 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 并行探测的「跑腿」部分：**同时**取 4 块单瓦片（OSM z3 + 高德 z12/z10/z3），
- * 每块自己带短超时，整体再套一个 [BasemapProbe.OVERALL_TIMEOUT_MILLIS] 的**硬**封顶。
+ * 并行探测的「跑腿」部分：**同时**取 5 块单瓦片（OSM z3/z12 + 高德 z12/z10/z3），
+ * 每块自己带短超时，整体再套一个硬封顶。
+ *
+ * 为什么两个源都探：「先换源、再降级」要求知道另一个源在同精度有没有内容
+ * （典型：南极中山站高德全空白，OSM 有海岸线）。
  *
  * 为什么要一个独立的 [CoroutineScope]：`HttpURLConnection` 的 connect/read 是阻塞调用，
  * **不响应协程取消**。之前把请求放在 `coroutineScope { async { … } }` 里，结构化的父子关系
  * 让整个探测等最慢的那一个跑完 —— 实测「4.5 秒封顶」实际花了 **7 秒**（connect 3.5s + read 3.5s）。
- * 现在请求跑在独立 scope 上，调用方只等到「四块都有结论」或整体超时，然后取消还在飞的请求
+ * 现在请求跑在独立 scope 上，调用方只等到「五块都有结论」或升级窗口结束，然后取消还在飞的请求
  * （它们的 socket 会按自身超时收尾，不再拖住返回）。
  *
- * 判定逻辑全在纯函数 [BasemapProbe.decide] 里；这里只负责「发请求 + 解图片 + 交给 [TileBlank] 判空白」。
+ * 判定逻辑全在纯函数 [BasemapProbe.decide] / [BasemapProbe.choose] 里；这里只负责
+ * 「发请求 + 解图片 + 交给 [TileBlank] 判空白」。
  */
 object BasemapProbeRunner {
 
     private const val USER_AGENT = "com.realsuntime.solartime (basemap probe)"
 
-    /** OSM 的 z3 全球瓦片（任何地区都在，体积几 KB）。 */
-    private const val OSM_PROBE_URL = "https://tile.openstreetmap.org/3/4/3.png"
+    /** OSM 单块瓦片模板（z3 判可达性 + z12 判高精度；都走同一个 host）。 */
+    private const val OSM_TILE_URL = "https://tile.openstreetmap.org"
 
     /** 与 [MapTileSources] 里高德矢量用的模板一致（探测只要一块，取第一个 host 即可）。 */
     private const val AMAP_TILE_URL =
@@ -43,64 +45,88 @@ object BasemapProbeRunner {
     /**
      * 跑一次并行探测（**阻塞**，调用方保证在后台线程）。
      *
-     * 整体超时后立刻返回：没来得及出结论的瓦片按「失败」算（[BasemapProbeResult.timedOut] = true）。
+     * 每块瓦片一出结论就通过 [onTile] 回调（渐进升级：先到先用，更好的才升级）；
+     * 没来得及出结论的按「失败」算（[BasemapProbeResult.timedOut] = true）。
+     *
+     * 等待策略：**出过图**就等到升级窗口结束（或全部出结论）；一块有内容的都没有才在
+     * [BasemapProbe.OVERALL_TIMEOUT_MILLIS] 处放弃 —— 那个 4 秒只用于判「底图不可用」，不再截断升级。
      */
-    suspend fun probe(latitude: Double, longitude: Double): BasemapProbeResult {
+    suspend fun probe(
+        latitude: Double,
+        longitude: Double,
+        onTile: (BasemapProbe.ProbeTile, Long) -> Unit = { _, _ -> },
+    ): BasemapProbeResult {
         val startedAt = System.currentTimeMillis()
-        val zooms = BasemapProbe.AMAP_PROBE_ZOOMS.toList()
-        val amap = ConcurrentHashMap<Int, BasemapProbe.AmapProbe>()
-        val osmReachable = AtomicBoolean(false)
-        val pending = AtomicInteger(1 + zooms.size)
+        // 区域偏好只决定「同级时选谁」；两个源都要探。
+        val preferred = MapStyle.AUTO.effective(latitude, longitude)
+        val amapZooms = BasemapProbe.AMAP_PROBE_ZOOMS.toList()
+        val osmZooms = BasemapProbe.OSM_PROBE_ZOOMS.toList()
+        val tiles = java.util.Collections.synchronizedList(mutableListOf<BasemapProbe.ProbeTile>())
+        val pending = AtomicInteger(osmZooms.size + amapZooms.size)
+        fun elapsed(): Long = System.currentTimeMillis() - startedAt
+        fun record(tile: BasemapProbe.ProbeTile) {
+            tiles.add(tile)
+            onTile(tile, elapsed())
+        }
 
         // 独立 scope：阻塞请求不响应取消，不能挂在调用方的结构化并发树上。
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        scope.launch {
-            try {
-                osmReachable.set(probeOsm())
-            } finally {
-                pending.decrementAndGet()
-            }
-        }
-        zooms.forEach { zoom ->
+        osmZooms.forEach { zoom ->
             scope.launch {
                 try {
-                    amap[zoom] = probeAmap(latitude, longitude, zoom)
+                    record(
+                        BasemapProbe.ProbeTile(
+                            source = MapStyle.OSM,
+                            zoom = zoom,
+                            hasContent = probeOsmTile(latitude, longitude, zoom),
+                        ),
+                    )
+                } finally {
+                    pending.decrementAndGet()
+                }
+            }
+        }
+        amapZooms.forEach { zoom ->
+            scope.launch {
+                try {
+                    val probe = probeAmap(latitude, longitude, zoom)
+                    record(BasemapProbe.ProbeTile(MapStyle.AMAP_VECTOR, zoom, probe.hasContent))
                 } finally {
                     pending.decrementAndGet()
                 }
             }
         }
 
-        val finished = withTimeoutOrNull(BasemapProbe.OVERALL_TIMEOUT_MILLIS) {
+        val finished = withTimeoutOrNull(
+            BasemapProbe.UPGRADE_WINDOW_MILLIS + BasemapProbe.TILE_TIMEOUT_MILLIS,
+        ) {
             while (pending.get() > 0) {
-                // 提前收工：已经探到「有内容」，**并且比它精度更高的档都已有结论**（空白 / 失败也算），
-                // 才允许停。之前的「任意一档有内容就退」会让 z3 先回来、z12 还在飞时立刻收工，
-                // decide 只看到 z3 → 选低精度。
-                // 另外，OSM 已经通了的话高德结果根本不会被采用（decide 先判 OSM），不必再等高精度档。
-                val earlyEnough = System.currentTimeMillis() - startedAt >= BasemapProbe.EARLY_EXIT_MILLIS &&
-                    (osmReachable.get() || BasemapProbe.shouldEarlyExit(amap, zooms))
-                if (earlyEnough) break
+                // 出过图：等到升级窗口结束；一块内容都没有：4 秒就判不可用。
+                val anyContent = synchronized(tiles) { tiles.any { it.hasContent } }
+                val limit = if (anyContent) {
+                    startedAt + BasemapProbe.UPGRADE_WINDOW_MILLIS
+                } else {
+                    startedAt + BasemapProbe.OVERALL_TIMEOUT_MILLIS
+                }
+                if (System.currentTimeMillis() >= limit) break
                 delay(WAIT_STEP_MILLIS)
             }
             true
         } != null
         scope.cancel() // 还在飞的请求：取消（socket 会按自身超时收尾）
 
-        val elapsed = System.currentTimeMillis() - startedAt
-        val probes = zooms.map { zoom ->
-            amap[zoom] ?: BasemapProbe.AmapProbe(zoom = zoom, hasContent = false, fetched = false)
-        }
         return BasemapProbeResult(
-            osmReachable = osmReachable.get(),
-            amap = probes,
-            elapsedMillis = elapsed,
+            preferred = preferred,
+            tiles = synchronized(tiles) { tiles.toList() },
+            elapsedMillis = elapsed(),
             timedOut = !finished,
         )
     }
 
-    /** OSM：2xx + 真图片（前两字节是 PNG/JPEG 魔数）就算通。 */
-    private fun probeOsm(): Boolean = runCatching {
-        val connection = open(OSM_PROBE_URL)
+    /** OSM 单块瓦片：2xx + 真图片（前两字节是 PNG/JPEG 魔数）就算有内容。 */
+    private fun probeOsmTile(latitude: Double, longitude: Double, zoom: Int): Boolean = runCatching {
+        val (x, y) = BasemapProbe.tileOf(latitude, longitude, zoom)
+        val connection = open("$OSM_TILE_URL/$zoom/$x/$y.png")
         try {
             if (connection.responseCode !in 200..299) return false
             val head = connection.inputStream.use { input ->
