@@ -39,11 +39,11 @@ enum class MapStyle(val label: String) {
         fun fromName(name: String?): MapStyle = entries.firstOrNull { it.name == name } ?: AUTO
 
         /**
-         * 设置页「底图」里可以手动选的项。
+         * 设置页「底图」里可以手动选的项（顺序即界面顺序）。
          *
-         * [ESRI] 只作为**境外自动**的偏好源，不单独提供手动选项（避免设置页变复杂）。
+         * [ESRI] 既是境外自动的偏好源，也允许手动选：手动选它时只走 ESRI，不探测 / 不回退 / 不降级。
          */
-        val manualOptions: List<MapStyle> = listOf(AUTO, OSM, AMAP_VECTOR, AMAP_SATELLITE)
+        val manualOptions: List<MapStyle> = listOf(AUTO, ESRI, OSM, AMAP_VECTOR, AMAP_SATELLITE)
     }
 }
 

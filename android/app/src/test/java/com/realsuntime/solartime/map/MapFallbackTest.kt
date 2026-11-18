@@ -220,6 +220,54 @@ class MapFallbackTest {
         assertEquals(0, probes)
     }
 
+    /** 手动选 ESRI：不探测、不回退、不降级；真拿不到瓦片就显示「底图不可用」，出图自动恢复。 */
+    @Test
+    fun manualEsriNeverFallsBackButShowsUnavailableOnFailure() {
+        val tracker = newTracker()
+        val style = MapStyle.ESRI
+        var plan = tracker.planAt(style, paris)
+        assertEquals(MapStyle.ESRI, plan.effective)
+        assertFalse(plan.fellBack)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+        assertFalse(tracker.zoomPlan(plan, 12).unavailable)
+
+        // 连续失败：源不变、级别不降，只落「底图不可用」
+        tracker.failTiles(threshold, style = style, zoom = 12)
+        plan = tracker.planAt(style, paris)
+        assertEquals(MapStyle.ESRI, plan.effective)
+        assertFalse(plan.fellBack)
+        val offline = tracker.zoomPlan(plan, 12)
+        assertEquals(12, offline.zoom)
+        assertFalse("手动模式不降级", offline.degraded)
+        assertTrue("真拿不到瓦片要显示「底图不可用」", offline.unavailable)
+
+        // 又出图了：标记被清掉，地图回来
+        tracker.loadTiles(style = style, zoom = 12)
+        assertFalse(tracker.zoomPlan(tracker.planAt(style, paris), 12).unavailable)
+
+        // 全程不探测
+        now += MapFallback.PROBE_INTERVAL_MILLIS * 2
+        assertFalse(tracker.probeIfDue())
+    }
+
+    /** 设置页手动选项：自动 → ESRI → OSM → 高德矢量 → 高德卫星（ESRI 紧跟自动）。 */
+    @Test
+    fun manualOptionsPutEsriRightAfterAuto() {
+        assertEquals(
+            listOf(
+                MapStyle.AUTO,
+                MapStyle.ESRI,
+                MapStyle.OSM,
+                MapStyle.AMAP_VECTOR,
+                MapStyle.AMAP_SATELLITE,
+            ),
+            MapStyle.manualOptions,
+        )
+        // 手动 ESRI 不探测（境内境外都不探）
+        assertFalse(BasemapProbe.needsProbe(MapStyle.ESRI, paris.first, paris.second))
+        assertFalse(BasemapProbe.needsProbe(MapStyle.ESRI, beijing.first, beijing.second))
+    }
+
     @Test
     fun manualAmapAlwaysStaysAmap() {
         val tracker = newTracker()
@@ -593,7 +641,8 @@ class MapFallbackTest {
         val zoom = tracker.zoomPlan(plan, 15)
         assertEquals(15, zoom.zoom)
         assertFalse(zoom.degraded)
-        assertFalse(zoom.unavailable)
+        // 手动模式不降级，但这一级真拿不到瓦片时要显示「底图不可用」（不再永远留白）。
+        assertTrue(zoom.unavailable)
     }
 
     @Test
@@ -711,8 +760,9 @@ class MapFallbackTest {
         val zoom = tracker.zoomPlan(plan, 15)
         assertEquals(15, zoom.zoom)
         assertFalse(zoom.degraded)
-        assertFalse(zoom.unavailable)
-        // 手动模式不参与失败统计，但诊断上仍要看得出「见过空白瓦片」
+        // 整屏空白是确定性判据：手动模式也判「底图不可用」（只是不换源、不降级）。
+        assertTrue(zoom.unavailable)
+        // 手动模式不参与回退统计，但诊断上仍要看得出「见过空白瓦片」
         assertEquals(0, tracker.snapshot().zoomFailures)
         assertEquals(0, tracker.snapshot().osmFailures)
         assertEquals(10, tracker.snapshot().blankTileCount)

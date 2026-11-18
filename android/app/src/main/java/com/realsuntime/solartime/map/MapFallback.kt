@@ -115,7 +115,14 @@ object MapFallback {
     fun zoomPlan(plan: MapTilePlan, requestedZoom: Int, state: MapFallbackState): MapZoomPlan {
         val requested = requestedZoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
         if (plan.requested != MapStyle.AUTO) {
-            return MapZoomPlan(requested = requested, zoom = requested, degraded = false, unavailable = false)
+            // 手动选择：不降级（用户选的级别就是他要看的），但这一级真拿不到瓦片时
+            // 仍然要显示「底图不可用」，而不是留一块永远空着的地图。
+            return MapZoomPlan(
+                requested = requested,
+                zoom = requested,
+                degraded = false,
+                unavailable = state.zoomUnavailable(plan.effective, requested),
+            )
         }
         for (step in 0..MAX_DEGRADE_STEPS) {
             val zoom = (requested - step).coerceAtLeast(MIN_ZOOM)
@@ -146,7 +153,10 @@ object MapFallback {
         state: MapFallbackState,
         nowMillis: Long,
     ): MapFallbackState {
-        if (style != MapStyle.AUTO) return state
+        if (style != MapStyle.AUTO) {
+            // 手动选择：出图就清掉该级别的「没瓦片」标记，避免一次断网把「底图不可用」永久钉住。
+            return state.markZoom(style, zoom, available = true)
+        }
         val plan = plan(style, latitude, longitude, state)
         var next = state
             .markZoom(plan.effective, zoom, available = true)
@@ -192,7 +202,10 @@ object MapFallback {
         state: MapFallbackState,
         nowMillis: Long,
     ): MapFallbackState {
-        if (style != MapStyle.AUTO) return state
+        if (style != MapStyle.AUTO) {
+            // 手动选择：不探测、不回退、不降级；但连续失败要能落到「底图不可用」。
+            return countManualFailure(style, zoom, state, nowMillis, blank = false)
+        }
         // 刚切过源：这些失败多半属于切换前就发出去的请求，丢了不算。
         if (state.isSettling(nowMillis)) return state
         // 刚程序化改过视口（切城市 / 降级）：那是我们主动取消了在飞的请求，失败不算。
@@ -316,9 +329,40 @@ object MapFallback {
             lastBlankZoom = zoom,
             lastBlankColorKinds = colorKinds,
         )
-        // 手动选择底图：只留诊断痕迹，不改源、不降级。
-        if (style != MapStyle.AUTO) return counted
+        // 手动选择底图：不改源、不降级；但整块空白就判这级别没内容 → 「底图不可用」。
+        if (style != MapStyle.AUTO) {
+            return countManualFailure(style, zoom, counted, nowMillis, blank = true)
+        }
         return registerFailure(style, latitude, longitude, zoom, counted, nowMillis, blank = true)
+    }
+
+    /**
+     * 手动底图的失败记账：只累计「同一级别连续失败」，够了就把该级别标成「没瓦片」。
+     *
+     * 手动模式**不换源、不降级**（用户选的就是他要的）；标出来的「没瓦片」只用于
+     * [zoomPlan] 显示「底图不可用」。空白瓦片是确定性判据，1 次就够。
+     */
+    private fun countManualFailure(
+        style: MapStyle,
+        zoom: Int,
+        state: MapFallbackState,
+        nowMillis: Long,
+        blank: Boolean,
+    ): MapFallbackState {
+        val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
+        val threshold = if (blank) 1 else FAILURE_THRESHOLD
+        var next = state.copy(
+            lastFailedZoom = zoom,
+            zoomFailures = streak,
+            lastFailedAtMillis = nowMillis,
+        )
+        if (streak >= threshold) {
+            next = next
+                .markZoom(style, zoom, available = false)
+                .copy(lastFailedZoom = null, zoomFailures = 0)
+            if (blank) next = next.markBlankZoom(style, zoom)
+        }
+        return next
     }
 
     /** 真实失败与空白瓦片共用的迁移：先看是不是在 OSM，再决定「回退」还是「这一级没瓦片」。 */
