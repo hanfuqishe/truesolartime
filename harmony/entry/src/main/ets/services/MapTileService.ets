@@ -17,6 +17,7 @@ import {
   MapTilePlan,
   MapUiState,
   MapZoomPlan,
+  ManualTileTracker,
   ProbeCache,
   ProbeDecision,
   ProgressiveProbe,
@@ -63,6 +64,7 @@ export class MapTileService {
   private static readonly PROBE_TIMEOUT_MILLIS: number = 2500;
   private static readonly USER_AGENT: string = 'TrueSolarTime-HarmonyOS/1.0 (map tiles)';
   private static probeCache: ProbeCache = new ProbeCache();
+  private static manualTracker: ManualTileTracker = new ManualTileTracker();
   private static probeSession: ProgressiveProbe | null = null;
   private static probeListener: ((decision: ProbeDecision) => void) | null = null;
   private static lastCenterLat: number = 0;
@@ -73,6 +75,7 @@ export class MapTileService {
   static reset(): void {
     MapTileService.state = new MapFallbackState();
     MapTileService.probeCache = new ProbeCache();
+    MapTileService.manualTracker = new ManualTileTracker();
     MapTileService.lastUnavailable = false;
     MapTileService.lastDegraded = false;
   }
@@ -95,6 +98,11 @@ export class MapTileService {
       MapTileService.state = MapFallback.markViewportSettling(MapTileService.state, Date.now());
     }
     const style: MapStyle = MapTilesLogic.styleFromKey(styleKey);
+    if (style !== MapStyle.AUTO) {
+      // 手动选择：不探测、不回退、不降级；同级别连续失败 3 次 → 「底图不可用」。
+      return MapTileService.loadManual(style, place, countryCode, centerLatitude, centerLongitude,
+        requestedZoom, widthPx, heightPx);
+    }
     const firstDecision: ProbeDecision | null = await MapTileService.probeIfNeeded(style, place, countryCode);
     await MapTileService.probeIfDue();
     if (firstDecision !== null) {
@@ -317,6 +325,39 @@ export class MapTileService {
     }
     const content: TileContent | null = await MapTileService.decodeContent(bytes);
     return content !== null && !content.isBlank;
+  }
+
+  /** 手动底图：直接按用户选择的源与级别取瓦片；不探测、不回退、不降级。 */
+  private static async loadManual(style: MapStyle, place: Place, countryCode: string, centerLatitude: number,
+      centerLongitude: number, requestedZoom: number, widthPx: number, heightPx: number): Promise<MapLoadResult> {
+    const layer: MapLayer = MapTilesLogic.layerForStyle(style, place.latitude, place.longitude, countryCode);
+    const zoom: number = MapTilesLogic.clampZoom(requestedZoom);
+    const tiles: MapTile[] = MapTilesLogic.visibleTiles(layer, centerLatitude, centerLongitude, zoom,
+      widthPx, heightPx);
+    let anyOk: boolean = false;
+    for (const tile of tiles) {
+      const content: TileContent | null = await MapTileService.fetchContent(tile.url);
+      const ok: boolean = content !== null && !(layer.name === 'amap-vector' && content.isBlank);
+      MapTileService.manualTracker.onResult(ok);
+      if (ok) {
+        anyOk = true;
+      }
+    }
+    const result: MapLoadResult = new MapLoadResult();
+    result.zoom = zoom;
+    result.attribution = layer.attribution;
+    result.unavailable = !anyOk && MapTileService.manualTracker.unavailable;
+    result.uiState = new MapUiState();
+    result.uiState.requestedZoom = zoom;
+    result.uiState.source = style;
+    result.uiState.zoom = zoom;
+    result.uiState.unavailable = result.unavailable;
+    if (!result.unavailable) {
+      result.tiles = tiles;
+    }
+    MapTileService.lastAppliedZoom = zoom;
+    MapTileService.lastUnavailable = result.unavailable;
+    return result;
   }
 
   /** 未知态地图：z3 全球底图；有缓存零探测，否则并行探 2 块 z3（2 秒封顶），都失败 → 不可用。 */

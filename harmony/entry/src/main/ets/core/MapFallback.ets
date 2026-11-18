@@ -168,6 +168,25 @@ export class MapTileLogic {
   }
 }
 
+/** 手动底图的失败跟踪：同一级别连续失败 3 次 → 不可用；任意一块成功即恢复。 */
+export class ManualTileTracker {
+  static readonly FAILURE_THRESHOLD: number = 3;
+  failures: number = 0;
+  unavailable: boolean = false;
+
+  onResult(ok: boolean): void {
+    if (ok) {
+      this.failures = 0;
+      this.unavailable = false;
+      return;
+    }
+    this.failures++;
+    if (this.failures >= ManualTileTracker.FAILURE_THRESHOLD) {
+      this.unavailable = true;
+    }
+  }
+}
+
 /** 一次底图选择：实际用哪个源、是不是回退出来的。 */
 export class MapTilePlan {
   requested: MapStyle;

@@ -54,6 +54,7 @@ export class MapStyleOption {
 /** 顺序与 Android 设置面板一致。 */
 export const MAP_STYLE_OPTIONS: MapStyleOption[] = [
   new MapStyleOption('auto', '自动', MapStyle.AUTO),
+  new MapStyleOption('esri', 'Esri 街道图', MapStyle.ESRI),
   new MapStyleOption('osm', 'OpenStreetMap', MapStyle.OSM),
   new MapStyleOption('amap-vector', '高德矢量', MapStyle.AMAP_VECTOR),
   new MapStyleOption('amap-satellite', '高德卫星', MapStyle.AMAP_SATELLITE)
@@ -127,6 +128,19 @@ export class MapTilesLogic {
       }
     }
     return MapStyle.AUTO;
+  }
+
+  /** 设置页选项文案：Esri 按三语显示，其余沿用固定文案。 */
+  static optionLabel(option: MapStyleOption, language: string): string {
+    if (option.style !== MapStyle.ESRI) {
+      return option.label;
+    }
+    if (language.startsWith('en')) {
+      return 'Esri Street Map';
+    }
+    const traditional: boolean = language.startsWith('zh') &&
+      (language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 || language.indexOf('HK') >= 0);
+    return traditional ? 'Esri 街道圖' : 'Esri 街道图';
   }
 
   /**

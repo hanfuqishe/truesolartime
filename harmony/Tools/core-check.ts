@@ -36,6 +36,7 @@ import {
   MapTileLogic,
   MapTilePlan,
   MapUiState,
+  ManualTileTracker,
   ProbeCache,
   ProbeDecision,
   ProgressiveProbe,
@@ -1088,9 +1089,12 @@ for (const item of equationCases) {
   // 设置页可选的底图：自动按位置判断，其余三种强制指定。
   check('style key auto', MapTilesLogic.styleFromKey('auto') === MapStyle.AUTO);
   check('style key satellite', MapTilesLogic.styleFromKey('amap-satellite') === MapStyle.AMAP_SATELLITE);
+  check('style key esri', MapTilesLogic.styleFromKey('esri') === MapStyle.ESRI);
   check('unknown style key falls back to auto', MapTilesLogic.styleFromKey('nope') === MapStyle.AUTO);
-  check('option keys match styles', MAP_STYLE_OPTIONS.length === 4
-    && MapTilesLogic.styleFromKey(MAP_STYLE_OPTIONS[2].key) === MapStyle.AMAP_VECTOR);
+  check('option keys match styles', MAP_STYLE_OPTIONS.length === 5
+    && MapTilesLogic.styleFromKey(MAP_STYLE_OPTIONS[3].key) === MapStyle.AMAP_VECTOR);
+  equal('map style option order', 'AUTO,ESRI,OSM,AMAP_VECTOR,AMAP_SATELLITE',
+    MAP_STYLE_OPTIONS.map((option): string => MapStyle[option.style]).join(','));
   const forcedOsm = MapTilesLogic.layerForStyle(MapStyle.OSM, 31.2304, 121.4737);
   check('osm forced inside china', forcedOsm.datum === MapDatum.WGS84 && forcedOsm.name === 'osm');
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
@@ -1433,6 +1437,17 @@ for (const item of equationCases) {
 
   const emptyCache = new ProbeCache();
   check('manual choice never probes', !shouldProbe(MapStyle.AMAP_VECTOR, 'k', emptyCache, now));
+  check('manual esri never probes', !needsProbe(MapStyle.ESRI, 'k', emptyCache, now));
+  // 手动底图：连续失败 3 次 → 不可用；成功一块即恢复。
+  const manualTiles = new ManualTileTracker();
+  manualTiles.onResult(false);
+  manualTiles.onResult(false);
+  check('two manual failures are not unavailable', !manualTiles.unavailable);
+  manualTiles.onResult(false);
+  check('three manual failures become unavailable', manualTiles.unavailable);
+  manualTiles.onResult(true);
+  check('a successful tile recovers the manual map',
+    !manualTiles.unavailable && manualTiles.failures === 0);
   check('auto probes when cache is empty', shouldProbe(MapStyle.AUTO, 'k', emptyCache, now));
   const freshCache = new ProbeCache();
   freshCache.key = 'k';

@@ -10,7 +10,7 @@ import { formInfo, formProvider } from '@kit.FormKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
-import { MAP_STYLE_OPTIONS, MapStyleOption } from '../core/MapTiles';
+import { MAP_STYLE_OPTIONS, MapStyleOption, MapTilesLogic } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
@@ -523,7 +523,7 @@ struct Settings {
               .width('100%')
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(MAP_STYLE_OPTIONS, (option: MapStyleOption) => {
-                Text(option.label)
+                Text(MapTilesLogic.optionLabel(option, DistrictService.language()))
                   .fontSize(12)
                   .fontColor(option.key === this.mapStyleKey ? this.palette.onAccent : this.palette.text)
                   .backgroundColor(option.key === this.mapStyleKey ? this.palette.accent : this.palette.chip)
