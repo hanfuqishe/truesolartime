@@ -87,9 +87,16 @@ enum WeatherKitProvider {
     }
 
     /// `WeatherCondition` → 现有 WMO 代码：**按描述文字匹配**，不引用枚举成员。
+    ///
+    /// 参数故意写成 **`WeatherKit.WeatherCondition`** 全名：本模块里也有一个
+    /// `WeatherCondition`（`TrueSolarTime.WeatherCondition`），不加模块名会被它遮蔽，
+    /// 于是把 WeatherKit 的实例传进来就会报「cannot convert ... to expected argument type
+    /// 'TrueSolarTime.WeatherCondition'」（build 82 的两个错误就是这么来的）。
+    /// 下面再用一个**显式标注的中间变量**把意图钉死：以后误用会直接编译失败。
     @available(iOS 16.0, *)
-    static func wmoCode(for condition: WeatherCondition) -> Int {
-        wmoCode(forDescription: String(describing: condition))
+    static func wmoCode(for condition: WeatherKit.WeatherCondition) -> Int {
+        let wkCondition: WeatherKit.WeatherCondition = condition
+        return wmoCode(forDescription: String(describing: wkCondition))
     }
 
     /// 纯字符串映射（便于自检，也不会被 SDK 成员改名影响）。

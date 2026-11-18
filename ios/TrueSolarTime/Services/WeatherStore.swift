@@ -180,13 +180,13 @@ final class WeatherStore {
                 switch result {
                 case .success(let snapshot):
                     self.weatherKitFailure = nil
-                    self.finish(place: place, snapshot: snapshot, completion: completion)
+                    self.finish(place: place, completion: completion, snapshot: snapshot)
                 case .failure(let failure):
                     self.weatherKitFailure = failure.displayText
                     self.lastErrorDescription = Lf("weather.diagWeatherKitFailureFormat", failure.displayText)
                     // 手动 WeatherKit：不回退（保留旧数据），直接收工；自动模式下继续走 Open-Meteo。
                     if WeatherChain.nextSource(after: .weatherKit, setting: setting) == nil {
-                        self.keepOldData(place: place, completion: completion)
+                        self.keepOldData(place: place, failure: failure.displayText, completion: completion)
                         return
                     }
                     self.fetchOpenMeteoAfterWeatherKit(place: place, completion: completion)
