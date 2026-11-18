@@ -886,7 +886,7 @@ for (const item of equationCases) {
   const murmanskName = CityIndex.nearest(murmansk.latitude, murmansk.longitude, 'zh');
   equal('murmansk name', '摩尔曼斯克', murmanskName === null ? 'null' : murmanskName.name);
   const zhongshanName = CityIndex.nearest(zhongshan.latitude, zhongshan.longitude, 'zh');
-  equal('zhongshan name', '中山站', zhongshanName === null ? 'null' : zhongshanName.name);
+  equal('zhongshan name', '南极中山站', zhongshanName === null ? 'null' : zhongshanName.name);
 
   // 极昼／极夜：卡片上「日出 / 日落」两格没有时刻，显示 "--:--"，下方另行提示极昼／极夜。
   const december = Date.UTC(2026, 11, 21, 12, 0, 0);
@@ -1875,6 +1875,18 @@ for (const item of equationCases) {
   equal('night sun glow stays gold', '#59F5D68A,#00F5D68A',
     SunDialColors.sunGlowColors(SunDialColors.NIGHT_SUN_DOT).join(','));
   equal('night arc stays gold', '#F5D68A', SunDialColors.NIGHT_ARC);
+}
+
+// ---- 预设城市「南极中山站」的显示名（中文 / 英文两列）----
+{
+  const zhongshanZh = CityIndex.nearest(-69.37, 76.38, 'zh-Hans');
+  const zhongshanEn = CityIndex.nearest(-69.37, 76.38, 'en-US');
+  check('zhongshan station keeps the new chinese name',
+    zhongshanZh !== null && zhongshanZh.name === '南极中山站',
+    `${zhongshanZh === null ? 'null' : zhongshanZh.name}`);
+  check('zhongshan station keeps the new english name',
+    zhongshanEn !== null && zhongshanEn.name === 'Zhongshan Station, Antarctica',
+    `${zhongshanEn === null ? 'null' : zhongshanEn.name}`);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
