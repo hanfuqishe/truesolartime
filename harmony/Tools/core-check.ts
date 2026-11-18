@@ -1381,11 +1381,14 @@ for (const item of equationCases) {
   near('southern 00:00 still at bottom', centerY + radius, southMidnight.sunY, 0.5);
   check('southern flag propagated', southNoon.southernHemisphere && !equinox.southernHemisphere);
   near('southern horizon equals northern', equinox.horizonY, southNoon.horizonY, 0.001);
-  // 白天弧：北半球从左（−180°）顺时针扫 180°，南半球从右（0°）逆时针扫 −180°。
+  // 白天弧：北半球从左（−180°）顺时针扫 180°，南半球从右（0°）逆时针扫 −180°；
+  // 两端各外扩 0.8°，所以起点各挪 0.8°、扫角各多 1.6°。
   const southArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(6.0, 18.0, true);
   check('southern day arc exists', southArc !== null);
-  near('southern arc starts at 0', 0, southArc === null ? -999 : southArc.startDegrees, 1e-3);
-  near('southern arc sweeps -180', -180, southArc === null ? -999 : southArc.sweepDegrees, 1e-3);
+  near('southern arc starts at +0.8 after extension', 0.8,
+    southArc === null ? -999 : southArc.startDegrees, 1e-3);
+  near('southern arc sweeps -181.6 after extension', -181.6,
+    southArc === null ? -999 : southArc.sweepDegrees, 1e-3);
 
   // 6c. 运动方向箭头：圆内侧 0.72R 的 30° 短弧，北半球顺时针、南半球逆时针。
   const arrowNorth: MotionArrow = SunPathGeometry.motionArrow(equinox, 12.0);
@@ -1451,19 +1454,25 @@ for (const item of equationCases) {
   near('chord y = sunrise y',
     SunPathGeometry.hourY(chordPath.centerY, chordPath.radius, 4.99), chordPath.horizonY, 0.5);
 
-  // 9. 白天弧扫角 = 昼长比例；跨 24:00 时补 2π，扫角仍为正。
+  // 9. 白天弧扫角 = 昼长比例；跨 24:00 时补 2π；两端各外扩 0.8°（起点 -0.8°、扫角 +1.6°）。
   const twelveHourArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(6.0, 18.0);
   check('twelve hour arc exists', twelveHourArc !== null);
-  near('twelve hour arc starts at -180', -180,
+  near('twelve hour arc starts 0.8 degrees early', -180.8,
     twelveHourArc === null ? -999 : twelveHourArc.startDegrees, 1e-3);
-  near('twelve hour arc sweeps 180', 180,
+  near('twelve hour arc sweeps 181.6', 181.6,
     twelveHourArc === null ? -999 : twelveHourArc.sweepDegrees, 1e-3);
   const summerArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(4.99, 19.01);
-  near('summer arc sweep', 14.02 / 24 * 360,
+  near('summer arc sweep includes the extension', 14.02 / 24 * 360 + 1.6,
     summerArc === null ? -999 : summerArc.sweepDegrees, 0.1);
   const wrappedArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(3.0, 0.5);
-  near('wrapped arc sweep', 21.5 / 24 * 360,
+  near('wrapped arc sweep includes the extension', 21.5 / 24 * 360 + 1.6,
     wrappedArc === null ? -999 : wrappedArc.sweepDegrees, 0.1);
+  // 昼长接近 24 小时：扫角封顶 360°，留给夜晚的扫角 ≥ 0。
+  const nearlyWholeArc: SunArcSpan | null = SunPathGeometry.dayArcSpan(0.0, 23.999);
+  const nearlySweep: number = nearlyWholeArc === null ? -999 : Math.abs(nearlyWholeArc.sweepDegrees);
+  check('near polar day arc is capped at 360', nearlySweep <= 360 + 1e-6, `${nearlySweep}`);
+  check('night sweep stays non-negative', 360 - nearlySweep >= -1e-6, `${360 - nearlySweep}`);
+  check('arc extension constant is 0.8 degrees', SunPathGeometry.ARC_END_EXTENSION_DEGREES === 0.8);
 
   // ---- 标签锚点：画布比例取卡片真实值 294×194，间距按 UI 的 dp（1dp = 1 单位）----
   const dialWidth: number = 294;

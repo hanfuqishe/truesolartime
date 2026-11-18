@@ -1415,10 +1415,9 @@ struct Index {
     const ctx: CanvasRenderingContext2D = this.sunCtx;
     const width: number = this.sunDialW;
     const height: number = this.sunDialH;
-    const accent: string = this.palette.accent;
     const outline: string = this.palette.subtle;
     // 白天弧专用色：白天是淡金色（仅作路径示意），夜间仍是金色实色。
-    // 地平线 / 运动箭头 / 刻度点都不用它，保持原来的 subtle / accent。
+    // 地平线 / 运动箭头都不用 arcColor，保持 subtle；日出日落交点不再画刻度点。
     const arcColor: string = this.palette.sunArc;
     const full: number = Math.PI * 2;
     ctx.clearRect(0, 0, width, height);
@@ -1455,14 +1454,18 @@ struct Index {
       ctx.lineCap = 'round';
       ctx.setLineDash([]);
       ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, nightEnd, anticlockwise);
-      ctx.strokeStyle = outline;
-      ctx.lineWidth = SunDialColors.NIGHT_ARC_WIDTH;
-      ctx.lineCap = 'butt';
-      ctx.setLineDash([SunDialColors.NIGHT_DASH_LENGTH, SunDialColors.NIGHT_DASH_LENGTH]);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // 夜晚弧从外扩后的终点接上：夜晚扫角 = 360 − 白天扫角（为 0 时不画）。
+      const nightSweep: number = full - Math.abs(sweep);
+      if (nightSweep > 1e-4) {
+        ctx.beginPath();
+        ctx.arc(path.centerX, path.centerY, path.radius, start + sweep, nightEnd, anticlockwise);
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = SunDialColors.NIGHT_ARC_WIDTH;
+        ctx.lineCap = 'butt';
+        ctx.setLineDash([SunDialColors.NIGHT_DASH_LENGTH, SunDialColors.NIGHT_DASH_LENGTH]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     // 地平线：固定长度的一条横线（画布左右各内缩 4vp），高度由日出时刻决定。
@@ -1516,18 +1519,7 @@ struct Index {
       ctx.fill();
     }
 
-    // 日出 / 日落刻度：正好落在地平线与圆的交点上。
-    const sunriseHour: number | null = this.sunriseDialHour();
-    const sunsetHour: number | null = this.sunsetDialHour();
-    if (span !== null && sunriseHour !== null && sunsetHour !== null) {
-      for (const hour of [sunriseHour, sunsetHour]) {
-        ctx.beginPath();
-        ctx.fillStyle = accent;
-        ctx.arc(SunPathGeometry.hourX(path.centerX, path.radius, hour, southern),
-          SunPathGeometry.hourY(path.centerY, path.radius, hour), 2.5, 0, full);
-        ctx.fill();
-      }
-    }
+    // 日出 / 日落交点不再画刻度圆点：白天弧已外扩 0.8° 略穿过地平线（与安卓一致）。
 
     // 当前太阳点：纯色核心 + 独立光晕。
     //   ① 光晕：从核心半径 2.5vp 到 5.5vp 的独立径向渐变（alpha 0.35 → 0），先画；

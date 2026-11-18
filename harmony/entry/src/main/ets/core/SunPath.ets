@@ -178,6 +178,9 @@ export class SunPathGeometry {
   /** 极昼 / 极夜时地平线离圆心的距离（半径的倍数），必须 > 1。 */
   static readonly POLAR_HORIZON_RATIO: number = 1.25;
 
+  /** 白天弧两端各外扩的角度（度）：起点 -0.8°、扫角 +1.6°，让弧端略穿过地平线。 */
+  static readonly ARC_END_EXTENSION_DEGREES: number = 0.8;
+
   private static readonly HOURS_PER_DAY: number = 24;
 
   /** 真太阳时 [hour] 对应的角度（弧度）：`θ = (hour − 12) / 24 × 2π`。 */
@@ -265,6 +268,9 @@ export class SunPathGeometry {
   /**
    * 白天弧的起止角度；日出或日落缺一个（极昼 / 极夜）时返回 null，按整圆处理。
    * 日落越过 24:00 时按下一圈补 2π，保证扫角大小正确；南半球扫角取负（逆时针）。
+   *
+   * 弧端外扩 [ARC_END_EXTENSION_DEGREES]：起点往前挪 0.8°、扫角加 1.6°，让弧端略穿过地平线
+   * （R≈73.7 时约 1dp）；扫角封顶 360°，接近极昼时不会绕过头。
    */
   static dayArcSpan(sunriseHour: number | null, sunsetHour: number | null,
     southernHemisphere: boolean = false): SunArcSpan | null {
@@ -279,10 +285,16 @@ export class SunPathGeometry {
     while (sweep > 2.0 * Math.PI) {
       sweep -= 2.0 * Math.PI;
     }
-    return new SunArcSpan(
-      SunPathGeometry.toDegrees(SunPathGeometry.arcAngleOfDayHour(sunriseHour, southernHemisphere)),
-      SunPathGeometry.toDegrees(southernHemisphere ? -sweep : sweep)
-    );
+    const baseStart: number = SunPathGeometry.toDegrees(
+      SunPathGeometry.arcAngleOfDayHour(sunriseHour, southernHemisphere));
+    let signedSweep: number = SunPathGeometry.toDegrees(southernHemisphere ? -sweep : sweep);
+    const direction: number = signedSweep >= 0 ? 1 : -1;
+    const startDegrees: number = baseStart - direction * SunPathGeometry.ARC_END_EXTENSION_DEGREES;
+    signedSweep = signedSweep + direction * SunPathGeometry.ARC_END_EXTENSION_DEGREES * 2;
+    if (Math.abs(signedSweep) > 360) {
+      signedSweep = direction * 360;
+    }
+    return new SunArcSpan(startDegrees, signedSweep);
   }
 
   /**
