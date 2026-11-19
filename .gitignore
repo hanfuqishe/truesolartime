@@ -42,3 +42,6 @@ harmony/.sign/
 docs/store-shots/**/*.png
 docs/store-shots/**/*.jpg
 docs/store-shots/**/*.jpeg
+
+# 验证用截图不入库（体积大、一次性）
+harmony/screenshots/
