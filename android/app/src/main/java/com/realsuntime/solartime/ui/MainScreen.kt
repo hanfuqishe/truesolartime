@@ -530,43 +530,46 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
  */
 @Composable
 private fun Header(badge: String?, onOpenSettings: () -> Unit) {
-    Row(
+    // 第一行：标题 + GPS 徽标 + 齿轮；第二行：副标题**单独占整行**。
+    // 早先副标题和标题挤在同一列里，只有 574px（≈191dp）宽，被挤成两行、末行只剩一个字；
+    // 而徽标/齿轮只占第一行高度，它们下方那片区域白白空着。移出来后就占满卡片内容宽度。
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 标题与右侧地名都要限宽：地名是不定宽文本，早先它按内容取宽，长地址（例如
-        // "Donghuamen Subdistrict, Dongcheng District"）会把左边的标题挤成一字一行。
-        // 两者都给权重，地名右对齐、超出省略，标题至少拿 60% 宽度。
-        Column(Modifier.weight(1.5f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 标题与右侧徽标都要限宽：地名是不定宽文本，长地址会把左边的标题挤成一字一行。
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = stringResource(R.string.screen_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (badge != null) {
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.padding(start = 8.dp, end = 6.dp),
+                )
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
+            }
         }
-        if (badge != null) {
-            Text(
-                text = badge,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 8.dp, end = 6.dp),
-            )
-        }
-        IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
-        }
+        Text(
+            text = stringResource(R.string.screen_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
