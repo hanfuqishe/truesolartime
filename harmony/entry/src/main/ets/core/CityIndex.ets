@@ -277,12 +277,12 @@ const RAW: string = `
 蒙特利尔|45.50|-73.57|Montreal
 墨西哥城|19.43|-99.13|Mexico City
 圣保罗|-23.55|-46.63|Sao Paulo
-里约热内卢|-22.91|-43.17|Rio de Janeiro
+里约热内卢|-22.9068|-43.1729|Rio de Janeiro
 布宜诺斯艾利斯|-34.60|-58.38|Buenos Aires
 圣地亚哥|-33.45|-70.67|Santiago
 利马|-12.05|-77.04|Lima
 波哥大|4.71|-74.07|Bogota
-开罗|30.04|31.24|Cairo
+开罗|30.0444|31.2357|Cairo
 开普敦|-33.92|18.42|Cape Town
 约翰内斯堡|-26.20|28.05|Johannesburg
 内罗毕|-1.29|36.82|Nairobi
@@ -324,8 +324,24 @@ export class CityIndex {
     if (best === null || bestKm > MAX_DISTANCE_KM) {
       return null;
     }
-    const name: string = language.startsWith('zh') ? best.nameZh : best.nameEn;
+    const name: string = language.startsWith('zh') ? CityIndex.traditionalName(best.nameZh, language) : best.nameEn;
     return new NearbyCity(name, bestKm);
+  }
+
+  /** 繁体环境下的城市名：目前只给新增的开罗 / 里约热内卢补了繁体字形，其余沿用简体。 */
+  static traditionalName(nameZh: string, language: string): string {
+    const traditional: boolean = language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 ||
+      language.indexOf('HK') >= 0;
+    if (!traditional) {
+      return nameZh;
+    }
+    if (nameZh === '开罗') {
+      return '開羅';
+    }
+    if (nameZh === '里约热内卢') {
+      return '里約熱內盧';
+    }
+    return nameZh;
   }
 
   static size(): number {

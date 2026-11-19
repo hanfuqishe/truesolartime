@@ -66,7 +66,10 @@ export class Place {
     new Place(68.9700, 33.0800, PlaceSource.MANUAL, '', '', 'ru'),
     // 中山站（69.37°S 76.38°E）：中国南极考察站，南极圈内；显式用 cn → UTC+8
     //（站上按中国站务惯例使用北京时间；ZoneTable 没有 aq 条目，写 aq 会按经度取整成 +5）。
-    new Place(-69.3700, 76.3800, PlaceSource.MANUAL, '', '', 'cn')
+    new Place(-69.3700, 76.3800, PlaceSource.MANUAL, '', '', 'cn'),
+    // 三端同步补到 24 个（4 列 × 6 行整）：开罗、里约热内卢，坐标与 Android 逐位一致。
+    new Place(30.0444, 31.2357, PlaceSource.MANUAL, '', '', 'eg'),
+    new Place(-22.9068, -43.1729, PlaceSource.MANUAL, '', '', 'br')
   ];
 
   static readonly MIN_LATITUDE: number = -90.0;

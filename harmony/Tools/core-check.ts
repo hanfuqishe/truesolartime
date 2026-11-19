@@ -840,7 +840,7 @@ for (const item of equationCases) {
 // ---- 观测点 ----
 {
   check('default place is Beijing', Place.DEFAULT.labelKey === 'city_beijing' && Place.DEFAULT.latitude === 39.9042);
-  equal('twenty two presets', 22, Place.PRESETS.length);
+  equal('twenty four presets', 24, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
 
@@ -2335,6 +2335,31 @@ for (const item of equationCases) {
     MapTilesLogic.shouldResetForPlace(39.9042, 116.4074, -33.8688, 151.2093));
   check('the same place does not reset the map',
     !MapTilesLogic.shouldResetForPlace(39.9042, 116.4074, 39.9042, 116.4074));
+}
+
+// ---- 常用城市补到 24 个：开罗 / 里约热内卢 ----
+{
+  equal('preset count is 24', 24, Place.PRESETS.length);
+  const cairo: Place = Place.PRESETS[22];
+  const rio: Place = Place.PRESETS[23];
+  check('cairo coordinates match android exactly',
+    cairo.latitude === 30.0444 && cairo.longitude === 31.2357 && cairo.countryCode === 'eg');
+  check('rio coordinates match android exactly',
+    rio.latitude === -22.9068 && rio.longitude === -43.1729 && rio.countryCode === 'br');
+  equal('cairo timezone is UTC+2', 7200,
+    CivicTimeLogic.standardOffsetSeconds(cairo.latitude, cairo.longitude, cairo.countryCode));
+  equal('rio timezone is UTC-3', -10800,
+    CivicTimeLogic.standardOffsetSeconds(rio.latitude, rio.longitude, rio.countryCode));
+  equal('cairo uses esri in auto mode', MapStyle.ESRI,
+    MapFallback.preferredStyle(MapStyle.AUTO, cairo.latitude, cairo.longitude, cairo.countryCode));
+  equal('rio uses esri in auto mode', MapStyle.ESRI,
+    MapFallback.preferredStyle(MapStyle.AUTO, rio.latitude, rio.longitude, rio.countryCode));
+  equal('cairo label zh', '开罗', CityIndex.nearest(cairo.latitude, cairo.longitude, 'zh-CN')?.name ?? '');
+  equal('cairo label zh-Hant', '開羅', CityIndex.nearest(cairo.latitude, cairo.longitude, 'zh-Hant')?.name ?? '');
+  equal('cairo label en', 'Cairo', CityIndex.nearest(cairo.latitude, cairo.longitude, 'en-US')?.name ?? '');
+  equal('rio label zh', '里约热内卢', CityIndex.nearest(rio.latitude, rio.longitude, 'zh-CN')?.name ?? '');
+  equal('rio label zh-Hant', '里約熱內盧', CityIndex.nearest(rio.latitude, rio.longitude, 'zh-Hant')?.name ?? '');
+  equal('rio label en', 'Rio de Janeiro', CityIndex.nearest(rio.latitude, rio.longitude, 'en-US')?.name ?? '');
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
