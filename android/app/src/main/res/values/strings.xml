@@ -16,7 +16,6 @@
     <string name="sun_polar_night">Polar night</string>
     <string name="version_label">Version %1$s</string>
     <string name="location_map_title">Location map</string>
-    <string name="map_auto_selected">auto-selected by region</string>
     <string name="settings_title">Location &amp; alerts</string>
     <string name="settings_current_location">Current location</string>
     <string name="action_use_gps">Follow GPS</string>
@@ -80,7 +79,6 @@
     <string name="map_attribution_osm">Map data © OpenStreetMap contributors</string>
     <string name="map_attribution_esri">Base map © Esri, HERE, Garmin, © OpenStreetMap contributors</string>
     <string name="map_attribution_amap">Tiles © AMap</string>
-    <string name="map_auto_fallback">OSM unreachable, fell back to AMap</string>
     <string name="map_unavailable">Base map unavailable</string>
     <string name="map_loading">Loading base map…</string>
     <string name="widget_label">True Solar Time</string>

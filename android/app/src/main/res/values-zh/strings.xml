@@ -16,7 +16,6 @@
     <string name="sun_polar_night">极夜</string>
     <string name="version_label">版本 %1$s</string>
     <string name="location_map_title">位置地图</string>
-    <string name="map_auto_selected">按所在地区自动选择</string>
     <string name="settings_title">位置与提醒</string>
     <string name="settings_current_location">当前位置</string>
     <string name="action_use_gps">实时跟随GPS</string>
@@ -78,9 +77,8 @@
     <string name="map_style_amap_vector">高德矢量</string>
     <string name="map_style_amap_satellite">高德卫星</string>
     <string name="map_attribution_osm">地图数据 © OpenStreetMap 贡献者</string>
-    <string name="map_attribution_esri">底图 © Esri, HERE, Garmin, © OpenStreetMap contributors</string>
+    <string name="map_attribution_esri">底图 © Esri, HERE, Garmin, © OpenStreetMap 贡献者</string>
     <string name="map_attribution_amap">底图 © 高德地图</string>
-    <string name="map_auto_fallback">OSM 不可达，已回退高德</string>
     <string name="map_unavailable">底图不可用</string>
     <string name="map_loading">正在载入底图…</string>
     <string name="widget_label">真太阳时</string>

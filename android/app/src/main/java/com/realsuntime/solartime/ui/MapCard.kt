@@ -36,7 +36,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realsuntime.solartime.data.MapConfig
 import com.realsuntime.solartime.R
@@ -197,8 +199,14 @@ fun MapCard(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = attributionText(context, ui),
-                style = cardTextStyle(MaterialTheme.typography.bodySmall, FontWeight.Normal),
+                // 署名只占一行：Esri 那条完整署名（含 3 个汉字）在 302dp 卡宽里 11sp 会截断，
+                // 缩到 10sp 才能一行放下；再长的语言用省略号兜底，绝不换行（与鸿蒙一致）。
+                style = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Normal)
+                    .copy(fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -272,14 +280,15 @@ fun MapCard(
     }
 }
 
-/** 底图署名必须跟着**实际使用的源**走：回退到高德就署高德，自动模式再补一句为什么。 */
+/**
+ * 底图署名：**只署实际使用的源**（回退到高德就署高德）。
+ *
+ * 为什么删掉以前的「· 按所在地区自动选择 / · OSM 不可达，已回退高德」：一行放不下、观感啰嗦，
+ * 与鸿蒙统一成「只留署名」；回退 / 降级这些状态在诊断页「地图底图」段里都有
+ * （`高德（外网源失败 N 次后回退）`、`地图缩放 = 10（已降级：请求 12）`）。
+ */
 private fun attributionText(context: Context, ui: MapUiState): String =
-    if (ui.requested == MapStyle.AUTO) {
-        val hint = if (ui.fellBack) R.string.map_auto_fallback else R.string.map_auto_selected
-        MapText.attribution(context, ui.source) + " · " + context.getString(hint)
-    } else {
-        MapText.attribution(context, ui.source)
-    }
+    MapText.attribution(context, ui.source)
 
 @Composable
 private fun MapUnavailableLabel() {
