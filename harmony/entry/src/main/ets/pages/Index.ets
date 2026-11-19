@@ -996,45 +996,52 @@ struct Index {
 
   @Builder
   header() {
-    Row() {
-      Column() {
+    // 结构要点：**副标题独占一行、横跨整个页头宽度**。
+    // 之前把副标题放在「标题那一列」里，那一列的可用宽度 = 整个 Row 减去右侧的 GPS/齿轮，
+    // 窄屏 / 大字号下副标题会换行、右端还空着一大片（Android 红米已实测踩过同样的坑）。
+    Column() {
+      Row() {
         Text('真太阳时时钟')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-        Text('以太阳经过当地子午线的时刻为正午')
-          .fontSize(12)
-          .fontColor(this.palette.subtle)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 2 })
+          // 标题吃剩余宽度；右边的「GPS」徽标只在跟随 GPS 时才条件渲染 ——
+          // 预设城市 / 手动坐标不显示任何位置标识，也不留占位空隙，标题自然变宽。
+          // （规则见 core/PlaceBadge，与 Android HeaderBadge 一致。）
+          .layoutWeight(1)
+        if (this.showsGpsBadge()) {
+          Text(PlaceBadgeLogic.GPS_TEXT)
+            .fontSize(12)
+            .fontColor(this.palette.accent)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .textAlign(TextAlign.End)
+            .constraintSize({ maxWidth: '40%' })
+            .margin({ right: 6 })
+        }
+        // 与 Android 一致：齿轮图标按钮，不再用「设置」文字
+        SymbolGlyph($r('sys.symbol.gearshape_fill'))
+          .fontSize(22)
+          .fontColor([this.palette.text])
+          .padding(6)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
+              console.warn(`open settings failed: ${error.code} ${error.message}`);
+            });
+          })
       }
-      .alignItems(HorizontalAlign.Start)
-      // 标题列吃剩余宽度；右边的「GPS」徽标只在跟随 GPS 时才条件渲染 ——
-      // 预设城市 / 手动坐标不显示任何位置标识，也不留占位空隙，标题自然变宽。
-      // （规则见 core/PlaceBadge，与 Android HeaderBadge 一致。）
-      .layoutWeight(1)
-      if (this.showsGpsBadge()) {
-        Text(PlaceBadgeLogic.GPS_TEXT)
-          .fontSize(12)
-          .fontColor(this.palette.accent)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .textAlign(TextAlign.End)
-          .constraintSize({ maxWidth: '40%' })
-          .margin({ right: 6 })
-      }
-      // 与 Android 一致：齿轮图标按钮，不再用「设置」文字
-      SymbolGlyph($r('sys.symbol.gearshape_fill'))
-        .fontSize(22)
-        .fontColor([this.palette.text])
-        .padding(6)
-        .onClick(() => {
-          router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
-            console.warn(`open settings failed: ${error.code} ${error.message}`);
-          });
-        })
+      .width('100%')
+
+      Text('以太阳经过当地子午线的时刻为正午')
+        .fontSize(12)
+        .fontColor(this.palette.subtle)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+        .width('100%')
+        .textAlign(TextAlign.Start)
     }
+    .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
   }
