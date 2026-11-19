@@ -155,42 +155,55 @@ struct ContentView: View {
     }
 
     private var header: some View {
-        // 结构要点：**副标题必须独占一行、横跨整个页头宽度**。
-        // 之前把副标题放在「标题那一列」里，那一列的可用宽度 = 整个 Row 减去右侧的 GPS/齿轮，
-        // 于是窄屏 / 大字号下副标题会换行、右端还空着一大片（Android 红米已实测踩过同样的坑）。
+        // 结构（与 Android / 鸿蒙一致）：
+        // 1. 标题行：标题 + Spacer + 齿轮（齿轮独占标题行右侧，HStack 用 `.bottom` 对齐，
+        //    让标题底边与行底边齐平、齿轮作为「高个子」向上溢出 —— 这样标题与副标题只有 2pt 间距）；
+        // 2. 副标题行：副标题（不缩字号、直接截断）+ Spacer + GPS 徽标 ——
+        //    GPS 放在一个与齿轮**同宽（32pt）的定宽槽位**里居中，于是它与齿轮同一垂直中轴；
+        //    不显示 GPS 时**保留空槽位**，副标题宽度恒定、不会因徽标出现/消失而抖动。
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .bottom, spacing: 12) {
                 Text(L("app.name"))
                     .font(.system(size: 26, weight: .semibold))
+                    .layoutPriority(1)
 
                 Spacer(minLength: 8)
 
-                // 右侧：跟随 GPS 时先显示「GPS」，再是设置齿轮；整体与标题**上边缘**对齐。
-                HStack(alignment: .center, spacing: 4) {
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20, weight: .regular))
+                        .frame(width: 32, height: 32, alignment: .center)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("common.settings"))
+                .frame(width: 32, alignment: .center)
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                Text(L("app.tagline"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.onSurfaceVariant)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 6)
+
+                // 与齿轮**同宽 32pt 的槽位**：槽内居中 → GPS 中心与齿轮中心同一垂直中轴；
+                // 不显示 GPS 时保留空槽，副标题宽度不抖动。
+                ZStack {
                     if model.trackingGps && !model.isLocationUnknown {
                         Text(L("gps.badge"))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(palette.onSurfaceVariant)
+                            .lineLimit(1)
                     }
-
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 20, weight: .regular))
-                            .frame(width: 32, height: 32, alignment: .center)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("common.settings"))
                 }
-                .padding(.top, 1)
-            }
+                .frame(width: 32, alignment: .center)
 
-            Text(L("app.tagline"))
-                .font(.system(size: 12))
-                .foregroundStyle(palette.onSurfaceVariant)
-                .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
