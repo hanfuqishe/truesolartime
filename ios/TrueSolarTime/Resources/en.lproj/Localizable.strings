@@ -275,3 +275,5 @@
 "district.geoInFlight" = "in flight";
 "district.geoNotYet" = "not yet";
 "district.geoSucceededAgo" = "last success %d min ago";
+
+"settings.diagAttribution" = "Weather attribution";

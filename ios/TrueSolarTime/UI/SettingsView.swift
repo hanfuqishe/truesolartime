@@ -171,6 +171,7 @@ struct SettingsView: View {
                                 diagnosticLine(title: L("settings.diagHourly"), value: WeatherStore.shared.hourlyDiagnostics())
                                 diagnosticLine(title: L("settings.weatherDiagSource"), value: WeatherStore.shared.weatherKitSummary())
                                 diagnosticLine(title: L("settings.diagLastFailure"), value: WeatherStore.shared.failureSummary())
+                                diagnosticLine(title: L("settings.diagAttribution"), value: WeatherAttributionStore.shared.diagnosticsSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
                                 diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
                                 // 地图底图：实际源（含「OSM 失败 3 次后回退」）、状态、缩放降级、
@@ -203,6 +204,8 @@ struct SettingsView: View {
                     ThemedDivider()
 
                     section(title: L("settings.sectionAbout")) {
+                        // 署名标识图按需加载（进程内只拉一次；失败退化成文字）。
+                        let _ = WeatherAttributionStore.shared.loadIfNeeded()
                         Text(L("settings.aboutBody"))
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)

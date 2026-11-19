@@ -34,9 +34,16 @@ final class WeatherAttributionStore: ObservableObject {
     private var loading = false
     /// 拉过一次就置 true，避免反复重试。
     private var attempted = false
+    /// 加载状态（诊断一行用）。
+    private(set) var status: WeatherAttributionStatus = .notRequested
 
     private init() {
         loadFromDisk()
+    }
+
+    /// 诊断一行：状态 + 是否有标识图 URL。
+    func diagnosticsSummary() -> String {
+        status.summary(hasMarkURL: lightURL != nil || darkURL != nil)
     }
 
     private func loadFromDisk() {
@@ -80,10 +87,14 @@ final class WeatherAttributionStore: ObservableObject {
                 self?.lightURL = attribution.combinedMarkLightURL.absoluteString
                 self?.darkURL = attribution.combinedMarkDarkURL.absoluteString
                 self?.legalURL = attribution.legalPageURL.absoluteString
+                self?.status = .loaded
                 self?.saveToDisk()
                 self?.objectWillChange.send()
             } catch {
-                // 静默：退化成文字署名（Apple 允许）。
+                // 静默：退化成文字署名（Apple 允许），但把原因记进诊断。
+                let ns = error as NSError
+                self?.status = .failed("\(ns.domain) \(ns.code)")
+                self?.objectWillChange.send()
             }
         }
         #endif

@@ -10,6 +10,25 @@ import Foundation
 /// 1. `source == .weatherKit` 且拿到了标识图 → `.mark(light/dark + legal)`；
 /// 2. 拿到了 WeatherKit 但**标识图不可用**（网络失败 / 未取到）→ 退化成 `.text(Apple 文案 + legal)`（Apple 允许）；
 /// 3. Open-Meteo / 7Timer → 沿用 CC BY 4.0 文字，无链接。
+/// 署名加载状态（诊断用，纯函数格式化）。
+enum WeatherAttributionStatus: Equatable {
+    case notRequested
+    case loaded
+    case failed(String)
+
+    /// 诊断一行：`标识图已加载 · 标识 URL = 有` / `标识图不可用（文字退化）· 标识 URL = 无 · Apple -1001`。
+    func summary(hasMarkURL: Bool) -> String {
+        let urlText = hasMarkURL ? "标识 URL = 有" : "标识 URL = 无"
+        switch self {
+        case .notRequested:
+            return "未请求 · \(urlText)"
+        case .loaded:
+            return "标识图已加载 · \(urlText)"
+        case .failed(let reason):
+            return "标识图不可用（文字退化）· \(urlText) · \(reason)"
+        }
+    }
+}
 enum WeatherAttributionPresentation: Equatable {
     /// 标识图 + 法律声明页链接。
     case mark(lightURL: String, darkURL: String, legalURL: String)

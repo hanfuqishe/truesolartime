@@ -2852,6 +2852,14 @@ expect(
     wkMark.markURL(isDark: false) == "https://example/light.png"
         && wkMark.markURL(isDark: true) == "https://example/dark.png"
 )
+expect(
+    "署名诊断三态：未请求 / 已加载 / 不可用（含原因）+ 标识 URL 有无",
+    WeatherAttributionStatus.notRequested.summary(hasMarkURL: false).contains("未请求")
+        && WeatherAttributionStatus.loaded.summary(hasMarkURL: true).contains("标识图已加载")
+        && WeatherAttributionStatus.loaded.summary(hasMarkURL: true).contains("有")
+        && WeatherAttributionStatus.failed("Apple -1001").summary(hasMarkURL: false).contains("不可用")
+        && WeatherAttributionStatus.failed("Apple -1001").summary(hasMarkURL: false).contains("无")
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

@@ -276,3 +276,5 @@
 "district.geoInFlight" = "在飛";
 "district.geoNotYet" = "尚未反查";
 "district.geoSucceededAgo" = "上次成功 %d 分鐘前";
+
+"settings.diagAttribution" = "天氣署名";

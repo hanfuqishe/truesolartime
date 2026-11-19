@@ -64,6 +64,8 @@ final class AppModel: ObservableObject {
         applyKeepScreenOn()
         startClock()
         refreshData()
+        // 天气署名（WeatherKit 官方标识图）只拉一次；失败静默、由诊断记录原因。
+        Task { @MainActor in WeatherAttributionStore.shared.loadIfNeeded() }
         rescheduleReminders()
     }
 
