@@ -134,7 +134,7 @@ struct SunCard: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                     .foregroundColor(palette.onSurface),
                 at: sunrise.point,
-                alignment: .trailing
+                alignment: Self.swiftUIAlignment(sunrise.alignment)
             )
         }
         if let sunset = dialLabels.sunset {
@@ -146,7 +146,7 @@ struct SunCard: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
                     .foregroundColor(palette.onSurface),
                 at: sunset.point,
-                alignment: .leading
+                alignment: Self.swiftUIAlignment(sunset.alignment)
             )
         }
         if let noon = dialLabels.noon {
@@ -177,6 +177,19 @@ struct SunCard: View {
     /// 用 0×0 的 frame 承载文字：`frame(width: 0, height: 0, alignment: .trailing)` 会让文字
     /// 以**右边界**贴住这个 0×0 框，`.position` 再把该框的中心放到锚点上 —— 于是文字右边界正好落在锚点、
     /// 垂直居中；`.fixedSize()` 保证文字按自然宽度排版，不会被压缩或截断。
+    /// `Core` 给的对齐方式 → SwiftUI 的 `Alignment`。
+    ///
+    /// **必须用几何层的 `alignment`**，不能按半球写死：南半球日出在右（文字要向右展开）、日落在左（向左展开），
+    /// 写死 `.trailing` / `.leading` 会让南半球的文字朝**圆内**展开、压在弧线上（2026-11 修）。
+    private static func swiftUIAlignment(_ alignment: SunPathLabelAlignment) -> Alignment {
+        switch alignment {
+        case .leading: return .leading
+        case .trailing: return .trailing
+        case .center: return .center
+        case .bottom: return .bottom
+        }
+    }
+
     private func anchored(_ text: Text, at point: CGPoint, alignment: Alignment) -> some View {
         text
             .fixedSize()
