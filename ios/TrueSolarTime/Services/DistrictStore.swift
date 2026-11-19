@@ -1,6 +1,4 @@
 import CoreLocation
-        geocodeRequestCount += 1
-        if geocodeRequestedAt == nil { geocodeRequestedAt = now }
 import Foundation
 
 /// 把经纬度反查成「区县 + 市 + 州/省」。
@@ -25,6 +23,10 @@ final class DistrictStore {
 
     private let defaults = UserDefaults.standard
     private let geocoder = CLGeocoder()
+    /// 本轮地点变化后实际发出的反查请求数（诊断用）。
+    private var geocodeRequestCount: Int = 0
+    /// 本轮第一次发出反查请求的时刻（算耗时用）。
+    private var geocodeRequestedAt: Date?
     /// OSM 兜底用的会话：12 秒超时（与 Android 的 12 s 一致）、允许等网络。
     private let nominatimSession: URLSession = {
         let config = URLSessionConfiguration.default
