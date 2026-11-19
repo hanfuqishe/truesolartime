@@ -1004,7 +1004,7 @@ struct Index {
       // 于是标题与副标题间距仍是 ~2vp（不会被齿轮撑开）。
       Row() {
         Text('真太阳时时钟')
-          .fontSize(28)
+          .fontSize(21)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
           .maxLines(1)
@@ -1016,9 +1016,9 @@ struct Index {
           SymbolGlyph($r('sys.symbol.gearshape'))
             .fontSize(22)
             .fontColor([this.palette.text])
-            // 只保留顶部 padding：字形贴到行底，视觉底边不再比标题高 6vp；
-            // 触控热区仍由这个 34×34 的盒子的点击事件保证。
             .padding({ top: 12, bottom: 0, left: 6, right: 6 })
+            // 标题缩到 21fp 后墨迹底边上移，齿轮再上提少量像素对齐墨迹底边（不改行高）。
+            .offset({ x: 0, y: -2.25 })
             .onClick(() => {
               router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
                 console.warn(`open settings failed: ${error.code} ${error.message}`);
