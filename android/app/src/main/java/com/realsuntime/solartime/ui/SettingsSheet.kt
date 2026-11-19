@@ -2,6 +2,10 @@ package com.realsuntime.solartime.ui
 
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
@@ -223,39 +227,51 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(4.dp))
-            // 常用城市：**等宽网格**（与 iOS 一致）—— 同一行各列等宽、行行对齐。
-            // 列数按**屏幕宽度**判断（不用 BoxWithConstraints / SubcomposeLayout：项目硬性约束，
-            // 首页宽屏分支在 IntrinsicSize.Max 里，测量型 Composable 会崩）。
-            // 手机（P30 内容宽 ~256–320dp）用 3 列，保证「南极中山站 / 摩尔曼斯克」完整显示；
-            // 平板（≥440dp）用 4 列。
-            val columns = if (LocalConfiguration.current.screenWidthDp >= 440) 4 else 3
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 常用城市：**等宽网格**（同一行各列等宽、行行对齐），列数按「最长城市名」自适应：
+            // 可用宽度下从 5 列往 3 列试，取第一个能让最长名 + 两侧内边距放得下的列数。
+            // 不用 BoxWithConstraints / SubcomposeLayout（项目硬性约束，IntrinsicSize.Max 下会崩），
+            // 屏幕宽度直接读 Configuration，再减掉卡片左右内边距（24dp × 2）。
+            val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
+            val contentWidthDp = (screenWidthDp - 2 * 24f).coerceAtLeast(0f)
+            val longestNameWidthDp = Place.PRESETS.maxOf { preset ->
+                PresetGrid.estimateTextWidthDp(TimeText.placeLabel(context, preset))
+            }
+            val columns = PresetGrid.columnCount(contentWidthDp, longestNameWidthDp)
+            Column(verticalArrangement = Arrangement.spacedBy(PresetGrid.ROW_GAP_DP.dp)) {
                 Place.PRESETS.chunked(columns).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(PresetGrid.GAP_DP.dp)) {
                         row.forEach { preset ->
-                            AssistChip(
+                            // 自绘 chip：内边距收到 10dp、高度 34dp，外形/点击涟漪与 AssistChip 一致
+                            // （AssistChip 没法单独调水平内边距，做不到「文字占比更高」）。
+                            Surface(
                                 onClick = {
                                     onSelectPreset(preset)
                                     onDismiss()
                                 },
-                                modifier = Modifier.weight(1f),
-                                label = {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = TimeText.placeLabel(context, preset),
-                                            // 11sp：5 个汉字也能放进 1/3 列宽里。
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
-                                },
-                            )
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(PresetGrid.CHIP_HEIGHT_DP.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = PresetGrid.CHIP_PADDING_DP.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = TimeText.placeLabel(context, preset),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontSize = PresetGrid.TEXT_SIZE_SP.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                            }
                         }
                         // 最后一行不满时补空位，保证与上面各列对齐。
                         repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
