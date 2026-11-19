@@ -2,6 +2,106 @@ import Foundation
 
 /// 反查结果的两级写法：`full` 带上级（如「上海市宝山区」/「Huangpu District, Shanghai」），
 /// `short` 只有区县。小组件与卡片那一行放不下长名字时退到 `short`。
+/// 地名反查的**节流与缓存键**（纯函数，可离线断言）。
+///
+/// 背景：CLGeocoder 有「每次用户操作最多一个请求」的硬性要求，发太频繁会返回
+/// `kCLErrorNetwork` / `-1001`（与网络错误无法区分）。所以必须：
+///   1. 按**约 100 m 网格**去重（经纬度各 3 位小数）；
+///   2. 全局串行 + 两次请求之间至少 **3 秒**；
+///   3. 失败沿用时按距离判断（≤ 50 km 可用）。
+enum PlaceNameThrottle {
+
+    /// 缓存键的小数位（3 位 ≈ 111 m）。
+    static let cacheKeyDecimals = 3
+    /// 两次请求的最小间隔（秒）。
+    static let minRequestIntervalSeconds: Double = 3
+    /// 失败时允许沿用上次地名的最大距离（公里）。
+    static let reuseMaxDistanceKm: Double = 50
+
+    /// 坐标 → 缓存键：`31.312,121.379`（同一网格内视为同一地点）。
+    static func cacheKey(latitude: Double, longitude: Double) -> String {
+        String(format: "%.\(cacheKeyDecimals)f,%.\(cacheKeyDecimals)f", latitude, longitude)
+    }
+
+    /// 现在该不该发请求：同一键缓存过 → 不发；距上次请求不足 3 秒 → 不发。
+    static func shouldRequest(
+        key: String,
+        cachedKeys: Set<String>,
+        lastRequestAt: Double?,
+        now: Double
+    ) -> Bool {
+        if cachedKeys.contains(key) { return false }
+        guard let last = lastRequestAt else { return true }
+        return now - last >= minRequestIntervalSeconds
+    }
+
+    /// 失败时能不能沿用上次成功的地名（按距离；没有上次 → 不能）。
+    static func canReuseLast(
+        lastLatitude: Double?,
+        lastLongitude: Double?,
+        latitude: Double,
+        longitude: Double
+    ) -> Bool {
+        guard let lastLatitude, let lastLongitude else { return false }
+        let km = DistrictNaming.distanceKm(latitude, longitude, lastLatitude, lastLongitude)
+        return km <= reuseMaxDistanceKm
+    }
+}
+/// 地名反查的**来源决策**（纯函数，可离线断言）。
+///
+/// 背景：悉尼那台机器上 `CLGeocoder` 报 `-1001`（超时）、Nominatim 又被墙 → 地名变「暫無」。
+/// 规则：**Apple 优先**（CLGeocoder 是系统服务、国内可用）；**超时类错误先退避重试**，
+/// 期间沿用上一次成功的地名；只有明确「查不到 / 不可用」才转 OSM；OSM 也失败才放弃。
+enum PlaceNameSource {
+
+    enum Outcome: Equatable {
+        case ok
+        case notFound
+        /// 超时（`NSURLErrorTimedOut` / -1001）：**不代表地名不存在**，应重试。
+        case timeout
+        case unavailable
+        case failed
+    }
+
+    /// 错误分类：只有「明确查不到」才算终局，其它一律保守当可重试。
+    enum ErrorKind: Equatable { case retryable, terminal }
+
+    enum Action: Equatable {
+        case useCLGeocoder
+        case retryCLGeocoder
+        /// 重试也没拿到：**沿用上一次成功的地名**（不要显示「暫無」）。
+        case useCached
+        case fallbackOSM
+        case giveUp
+    }
+
+    /// 重试间隔（秒）：最多 2 次（1 秒、3 秒），与 `retryDelays` 一一对应。
+    static let retryDelays: [Double] = [1, 3]
+
+    static func errorKind(_ outcome: Outcome) -> ErrorKind {
+        switch outcome {
+        case .notFound: return .terminal
+        // 超时 / 不可用 / 其它：保守当可重试（网络抖动很常见，不该一次就判死）。
+        case .timeout, .unavailable, .failed: return .retryable
+        case .ok: return .terminal
+        }
+    }
+
+    /// 决策：`clGeocoder` 决定主路径；`hasCachedName` 表示缓存里有没有该地点附近成功过的地名。
+    static func pick(clGeocoder: Outcome, osm: Outcome, hasCachedName: Bool = false) -> Action {
+        switch clGeocoder {
+        case .ok:
+            return .useCLGeocoder
+        case .timeout:
+            // 超时 → 先重试；调用方重试完仍超时、且缓存里有地名 → 沿用缓存名（`useCached`）。
+            return hasCachedName ? .useCached : .retryCLGeocoder
+        case .notFound, .unavailable, .failed:
+            return osm == .ok ? .fallbackOSM : (hasCachedName ? .useCached : .giveUp)
+        }
+    }
+}
+
+
 struct DistrictNames: Equatable {
     let full: String
     let short: String

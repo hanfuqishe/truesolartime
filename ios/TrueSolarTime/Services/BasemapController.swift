@@ -601,11 +601,13 @@ final class BasemapController: ObservableObject {
     /// 诊断第一行：实际源 · 状态 · 缩放（降级时带标记）。
     func diagnosticsSummary() -> String {
         let suffix = state.isDegraded ? L("map.degraded") : ""
+        // Apple 系统底图没有缩放级别：显示「—」，不要显示成 z0。
+        let zoomText = state.active.isSystemBasemap ? "—" : String(uiState.zoom ?? 0)
         return Lf(
             "map.diagSummary",
             activeSource.label,
             statusText(),
-            uiState.zoom ?? 0,
+            zoomText,
             suffix
         )
     }

@@ -2486,6 +2486,77 @@ expect(
     "诊断串：六格时刻带「现在」标记",
     WeatherParsing.slotTimesLabel(labelSlot, zoneOffsetSeconds: 0).hasPrefix("现在(22:00),23:00")
 )
+// 容差：10 分钟常量 + 四种距离的行为
+let tol = WeatherParsing.slotMatchToleranceSeconds
+func pointAt(_ epoch: Int) -> [WeatherHour] { [WeatherHour(epochSeconds: epoch, temperatureC: 9, code: 0)] }
+let baseHour = 1_700_000_000 - (1_700_000_000 % 3_600)
+expect(
+    "容差常量 = 600 秒（10 分钟）",
+    tol == 600
+)
+expect(
+    "差 5 分钟 → 命中；差 25 分钟 → **不命中**；差 59 秒 → 命中",
+    WeatherParsing.nearestPoint(to: baseHour + 300, in: pointAt(baseHour), step: 3_600) != nil
+        && WeatherParsing.nearestPoint(to: baseHour + 1_500, in: pointAt(baseHour), step: 3_600) == nil
+        && WeatherParsing.nearestPoint(to: baseHour + 59, in: pointAt(baseHour), step: 3_600) != nil
+)
+expect(
+    "3 小时源（step=10800）容差仍是 600 秒（不是 5400）",
+    WeatherParsing.nearestPoint(to: baseHour + 3_600, in: pointAt(baseHour), step: 10_800) == nil
+        && WeatherParsing.nearestPoint(to: baseHour + 300, in: pointAt(baseHour), step: 10_800) != nil
+)
+// 地名来源决策：超时先重试，明确失败才备援
+expect(
+    "错误分类：notFound → terminal；timeout / 其它 → retryable（保守）",
+    PlaceNameSource.errorKind(.notFound) == .terminal
+        && PlaceNameSource.errorKind(.timeout) == .retryable
+        && PlaceNameSource.errorKind(.failed) == .retryable
+        && PlaceNameSource.errorKind(.unavailable) == .retryable
+)
+expect(
+    "重试策略：最多 2 次、间隔 1s / 3s",
+    PlaceNameSource.retryDelays == [1, 3],
+    "actual=\(PlaceNameSource.retryDelays)"
+)
+expect(
+    "CLGeocoder 超时 + 缓存里已有地名 → 沿用缓存（不显示「暫無」）",
+    PlaceNameSource.pick(clGeocoder: .timeout, osm: .unavailable, hasCachedName: true) == .useCached
+        && PlaceNameSource.pick(clGeocoder: .timeout, osm: .unavailable, hasCachedName: false) == .retryCLGeocoder
+)
+expect(
+    "CLGeocoder 查不到 + OSM 可用 → 备援 OSM；两边都没结果 → 放弃",
+    PlaceNameSource.pick(clGeocoder: .notFound, osm: .ok) == .fallbackOSM
+        && PlaceNameSource.pick(clGeocoder: .notFound, osm: .unavailable) == .giveUp
+        && PlaceNameSource.pick(clGeocoder: .ok, osm: .unavailable) == .useCLGeocoder
+)
+// 地名节流：网格键 / 缓存命中 / 最小间隔 / 沿用距离
+expect(
+    "缓存键 3 位小数：(31.3118,121.3792) 与 (31.3121,121.3794) → 同一个键",
+    PlaceNameThrottle.cacheKey(latitude: 31.3118, longitude: 121.3792)
+        == PlaceNameThrottle.cacheKey(latitude: 31.3121, longitude: 121.3794),
+    "a=\(PlaceNameThrottle.cacheKey(latitude: 31.3118, longitude: 121.3792)) b=\(PlaceNameThrottle.cacheKey(latitude: 31.3121, longitude: 121.3794))"
+)
+let throttleKey = PlaceNameThrottle.cacheKey(latitude: 31.3118, longitude: 121.3792)
+expect(
+    "同一键已缓存 → shouldRequest == false（永不重复请求）",
+    !PlaceNameThrottle.shouldRequest(key: throttleKey, cachedKeys: [throttleKey], lastRequestAt: nil, now: 100)
+)
+expect(
+    "最小间隔 3 秒：距上次 1 秒不请求、4 秒才请求",
+    !PlaceNameThrottle.shouldRequest(key: throttleKey, cachedKeys: [], lastRequestAt: 100, now: 101)
+        && PlaceNameThrottle.shouldRequest(key: throttleKey, cachedKeys: [], lastRequestAt: 100, now: 104)
+)
+expect(
+    "沿用上次地名：30 km 内沿用、60 km 不沿用",
+    PlaceNameThrottle.canReuseLast(lastLatitude: 31.2304, lastLongitude: 121.4737, latitude: 31.5, longitude: 121.4737)
+        && !PlaceNameThrottle.canReuseLast(lastLatitude: 31.2304, lastLongitude: 121.4737, latitude: 31.9, longitude: 121.4737)
+)
+expect(
+    "限流/超时类错误（-1001）不算终态：保守 retryable",
+    PlaceNameSource.errorKind(.timeout) == .retryable
+        && PlaceNameSource.errorKind(.failed) == .retryable
+        && PlaceNameSource.errorKind(.notFound) == .terminal
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

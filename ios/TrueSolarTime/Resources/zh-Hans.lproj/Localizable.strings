@@ -40,7 +40,7 @@
 "map.statusUnavailable" = "底图不可用";
 "map.degraded" = "（已降级）";
 "map.diagBasemap" = "地图底图";
-"map.diagSummary" = "实际源 %@ · %@ · z%d%@";
+"map.diagSummary" = "实际源 %@ · %@ · 缩放 %@%@";
 "map.diagDetail" = "首选 %@ · OSM 失败 %d 次 · 空白判定 %d 次 · 下次探测 %@";
 "map.probeIn" = "%d 秒后";
 "map.loading" = "正在载入底图…";

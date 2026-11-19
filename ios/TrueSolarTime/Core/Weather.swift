@@ -510,6 +510,13 @@ enum WeatherParsing {
     /// （旧文档的 `time` 字段、镜像站的残项），槽位就会停在一条不存在的读数上 ——
     /// 界面上看起来是「这个点的标签对应另一个点的温度」。落点只允许在半步长内，
     /// 这样既不会跳过缺口、也不会把 6 格压短成 5 格。
+    /// 槽位与采样点的最大匹配容差（秒）：**10 分钟**。
+    ///
+    /// 为什么不是半个步长：1 小时源用 ±30 分钟时，22:30 那一格会把 23:00 的点吸过来
+    /// （只差 30 分钟），显示成「22 点的标签 + 23 点的数据」。10 分钟足够吸收「点半 / 秒级误差」，
+    /// 又不会跨到相邻小时。3 小时源同样只用 600 秒（不是 5400 秒）。
+    static let slotMatchToleranceSeconds = 10 * 60
+
     /// 诊断：六格**真实槽位时刻**（本地 HH:mm），带「现在」标记 —— 与 `hourlyPointsLabel` 并列即可判断
     /// 「槽位整体错一格」还是「时区换算错」。
     static func slotTimesLabel(_ slots: [WeatherSlot], zoneOffsetSeconds: Int) -> String {
@@ -550,7 +557,8 @@ enum WeatherParsing {
     /// 容差取**半个步长**：1 小时源 = ±1800 秒，正好覆盖「整点 / 半点和 1 秒误差」两种情况，
     /// 又不会把相邻小时的读数串到这一格（相邻两点相差 3600 秒 > 容差）。
     static func nearestPoint(to epoch: Int, in points: [WeatherHour], step: Int) -> WeatherHour? {
-        let tolerance = max(step, 1) / 2
+        // **分钟级容差**：最多 ±10 分钟（不是半个步长——1 小时源 ±30 分钟会把相邻小时的点串进来）。
+        let tolerance = min(max(step, 1) / 2, slotMatchToleranceSeconds)
         var best: WeatherHour?
         var bestDelta = Int.max
         for point in points {

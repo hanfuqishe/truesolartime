@@ -40,7 +40,7 @@
 "map.statusUnavailable" = "unavailable";
 "map.degraded" = " (degraded)";
 "map.diagBasemap" = "Basemap";
-"map.diagSummary" = "source %@ · %@ · z%d%@";
+"map.diagSummary" = "source %@ · %@ · zoom %@%@";
 "map.diagDetail" = "preferred %@ · OSM failures %d · blank tiles %d · next probe %@";
 "map.probeIn" = "in %d s";
 "map.loading" = "Loading basemap…";
