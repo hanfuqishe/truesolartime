@@ -2629,6 +2629,27 @@ expect(
     DistrictNaming.cardCityText(district: nil, place: presetPlace, isQuerying: true) == presetPlace.displayLabel
         && DistrictNaming.cardCityText(district: nil, place: presetPlace, isQuerying: false) == presetPlace.displayLabel
 )
+// 「尚未开始」也必须是 `--`（用户原话），失败后才是 `-`。
+let gridKey = PlaceNameThrottle.cacheKey(latitude: 31.3118, longitude: 121.3792)
+expect(
+    "GPS/手工 + 未开始（不在飞、无缓存、未失败）→ `--`",
+    PlaceNamePhase.isQuerying(didFail: false, inFlight: false, key: gridKey, cachedKeys: [])
+        && DistrictNaming.cardCityText(
+            district: nil, place: gpsPlace,
+            isQuerying: PlaceNamePhase.isQuerying(didFail: false, inFlight: false, key: gridKey, cachedKeys: [])
+        ) == PlaceNamePhase.dash
+)
+expect(
+    "同场景 + 已失败 → `-`；同场景 + 有缓存 → 缓存名",
+    !PlaceNamePhase.isQuerying(didFail: true, inFlight: false, key: gridKey, cachedKeys: [])
+        && DistrictNaming.cardCityText(district: nil, place: gpsPlace, isQuerying: false) == "-"
+        && !PlaceNamePhase.isQuerying(didFail: false, inFlight: false, key: gridKey, cachedKeys: [gridKey])
+)
+expect(
+    "在飞一定算查询中；没算过网格也算查询中",
+    PlaceNamePhase.isQuerying(didFail: false, inFlight: true, key: gridKey, cachedKeys: [gridKey])
+        && PlaceNamePhase.isQuerying(didFail: false, inFlight: false, key: nil, cachedKeys: [])
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

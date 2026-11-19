@@ -64,11 +64,9 @@ final class DistrictStore {
     private var nominatimTimer: DispatchWorkItem?
     /// Apple 已经覆盖过的网格（同一网格只覆盖一次，避免来回抖）。
     private var appleCoveredKeys: Set<String> = []
-    /// 当前反查的网格键（`requestRefresh` 入口更新），供 `isQuerying` 判断「尚未开始」。
     /// 这一轮是否已经有终局失败（失败后不再显示查询中的 `--`）。
     private(set) var didFail = false
 
-    /// 地名是否处于「查询中」（首帧 / 在飞且还没失败）——View 用它决定显示 `--` 还是 `-`。
     /// 当前查询是否仍在进行（界面据此显示 `--` 占位）。
     ///
     /// 三种「还没名字但仍在等」的情形都算查询中：
@@ -157,7 +155,6 @@ final class DistrictStore {
         //  1) 命中网格缓存 → 直接用缓存名，不发请求；
         //  2) 在飞 / 未到 3 秒间隔 → 记下原因并返回（不排队堆积，下次触发再发）。
         let throttleKey = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
-        currentThrottleKey = throttleKey
         // 记下当前网格键：`isQuerying` 用它判断「该网格是否已有缓存」→ 决定界面显示 `--` 还是真名字。
         currentThrottleKey = throttleKey
         if let cached = geocodeCache[throttleKey] {
