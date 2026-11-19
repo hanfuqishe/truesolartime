@@ -909,12 +909,12 @@ if let sunrise = northernLabels.sunrise, let sunset = northernLabels.sunset {
 }
 if let sunrise = southernLabels.sunrise, let sunset = southernLabels.sunset {
     expect(
-        "南半球：日出标签在圆心右侧（左对齐）",
+    "南半球：日出标签在圆心右侧（贴右内边距、文字向内：.trailing）",
         sunrise.point.x > canvasCenter.x && sunrise.alignment == .leading,
         labelText(sunrise)
     )
     expect(
-        "南半球：日落标签在圆心左侧（右对齐）",
+    "南半球：日落标签在圆心左侧（贴左内边距、文字向内：.leading）",
         sunset.point.x < canvasCenter.x && sunset.alignment == .trailing,
         labelText(sunset)
     )
@@ -2649,6 +2649,141 @@ expect(
     "在飞一定算查询中；没算过网格也算查询中",
     PlaceNamePhase.isQuerying(didFail: false, inFlight: true, key: gridKey, cachedKeys: [gridKey])
         && PlaceNamePhase.isQuerying(didFail: false, inFlight: false, key: nil, cachedKeys: [])
+)
+// 近极昼（南极中山站 11 月）：三个标签必须两两不相交。
+let zhongshanNov = SolarTimeSnapshot.compute(
+    date: date("2026-11-20T12:00:00Z"), latitude: -69.37, longitude: 76.38, countryCode: "cn"
+)
+let zhongshanPath = SunPathGeometry.compute(
+    size: dialCanvas,
+    sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
+    isPolarDay: zhongshanNov.polar == .midnightSun,
+    isPolarNight: zhongshanNov.polar == .polarNight,
+    southernHemisphere: true
+)
+let zhongshanLabels = SunPathGeometry.labels(path: zhongshanPath, size: dialCanvas, dayLengthHours: 18)
+let estW = SunPathGeometry.estimatedLabelWidth(characters: 9)
+let estN = SunPathGeometry.estimatedLabelWidth(characters: 7)
+let zsRects: [CGRect] = [
+    zhongshanLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
+    zhongshanLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
+    zhongshanLabels.noon.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estN) },
+].compactMap { $0 }
+expect(
+    "近极昼（中山站）：三个标签矩形两两不相交",
+    zsRects.count >= 2 && !SunPathGeometry.labelsOverlap(zsRects),
+    "rects=\(zsRects)"
+)
+let realPath = SunPathGeometry.compute(
+    size: dialCanvas, sunriseHour: 0.35, sunsetHour: 23.65, trueSolarHour: 12,
+    isPolarDay: false, isPolarNight: false, southernHemisphere: true
+)
+let realLabels = SunPathGeometry.labels(path: realPath, size: dialCanvas, dayLengthHours: 22.7)
+let realEstW = SunPathGeometry.estimatedLabelWidth(characters: 9)
+let realEstN = SunPathGeometry.estimatedLabelWidth(characters: 7)
+let realRects: [CGRect] = [
+    realLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
+    realLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
+    realLabels.noon.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstN) },
+].compactMap { $0 }
+expect(
+    "南半球近极昼（22.7h）：三个标签矩形两两不相交，且都在画布内",
+    realRects.count == 3
+        && !SunPathGeometry.labelsOverlap(realRects)
+        && realRects.allSatisfy { $0.minX >= -1 && $0.maxX <= dialCanvas.width + 1 },
+    "rects=\(realRects)"
+)
+expect(
+    "南半球：日出在右侧（x > 圆心）、日落在左侧（x < 圆心），两者分居两侧",
+    realLabels.sunrise != nil && realLabels.sunset != nil
+        && realLabels.sunrise!.point.x > realPath.center.x
+        && realLabels.sunset!.point.x < realPath.center.x,
+    "sunrise=\(realLabels.sunrise?.point ?? .zero) sunset=\(realLabels.sunset?.point ?? .zero) cx=\(realPath.center.x)"
+)
+expect(
+    "上中天仍在圆顶上方",
+    realLabels.noon != nil && realLabels.noon!.point.y < realPath.center.y - realPath.radius,
+    "noon=\(realLabels.noon?.point ?? .zero)"
+)
+for (name, dayLen) in [("摩尔曼斯克", 21.0), ("斯德哥尔摩", 18.5)] {
+    let pth = SunPathGeometry.compute(
+        size: dialCanvas, sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
+        isPolarDay: false, isPolarNight: false, southernHemisphere: false
+    )
+    let lbl = SunPathGeometry.labels(path: pth, size: dialCanvas, dayLengthHours: dayLen)
+    let rects: [CGRect] = [
+        lbl.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
+        lbl.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
+        lbl.noon.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstN) },
+    ].compactMap { $0 }
+    expect("\\(name) 昼长 \\(dayLen)h：标签不重叠", !SunPathGeometry.labelsOverlap(rects), "rects=\\(rects)")
+}
+let beijingPath = SunPathGeometry.compute(
+    size: dialCanvas, sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
+    isPolarDay: false, isPolarNight: false
+)
+let beijingLabels = SunPathGeometry.labels(path: beijingPath, size: dialCanvas, dayLengthHours: 12)
+let beijingChord = SunPathGeometry.horizonChord(path: beijingPath)
+expect(
+    "正常日（北京）锚点与旧值完全一致：x = 交点 ± 10pt、y = 地平线 − 10pt",
+    beijingLabels.sunrise != nil && beijingLabels.sunset != nil && beijingChord != nil
+        && abs(beijingLabels.sunrise!.point.x - (beijingChord!.start.x - 10)) < 1e-6
+        && abs(beijingLabels.sunset!.point.x - (beijingChord!.end.x + 10)) < 1e-6
+        && abs(beijingLabels.sunrise!.point.y - (beijingPath.horizonY - 10)) < 1e-6
+)
+// 极昼 / 极夜仍不产出日出日落标签。
+let polarPath = SunPathGeometry.compute(
+    size: dialCanvas, sunriseHour: nil, sunsetHour: nil, trueSolarHour: 12,
+    isPolarDay: true, isPolarNight: false
+)
+let polarLabels = SunPathGeometry.labels(path: polarPath, size: dialCanvas, dayLengthHours: 24)
+expect(
+    "极昼 / 极夜不产出日出日落标签（只留「极昼/极夜」一行）",
+    polarLabels.sunrise == nil && polarLabels.sunset == nil && polarLabels.polar != nil
+)
+// 南半球：标签在地平线下方；北半球维持上方。
+let southPath = SunPathGeometry.compute(
+    size: dialCanvas, sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
+    isPolarDay: false, isPolarNight: false, southernHemisphere: true
+)
+let southLabels = SunPathGeometry.labels(path: southPath, size: dialCanvas, dayLengthHours: 13.9)
+expect(
+    "南半球（悉尼 13.9h）：两标签在地平线**下方**，日出在右、日落在左，且不相交",
+    southLabels.sunrise != nil && southLabels.sunset != nil
+        && southLabels.sunrise!.point.y > southPath.horizonY
+        && southLabels.sunset!.point.y > southPath.horizonY
+        && southLabels.sunrise!.point.x > southPath.center.x
+        && southLabels.sunset!.point.x < southPath.center.x
+        && !SunPathGeometry.labelsOverlap([
+            SunPathGeometry.labelRect(point: southLabels.sunrise!.point, alignment: southLabels.sunrise!.alignment, width: SunPathGeometry.estimatedLabelWidth(characters: 9)),
+            SunPathGeometry.labelRect(point: southLabels.sunset!.point, alignment: southLabels.sunset!.alignment, width: SunPathGeometry.estimatedLabelWidth(characters: 9)),
+        ]),
+    "sunrise=\(southLabels.sunrise?.point ?? .zero) sunset=\(southLabels.sunset?.point ?? .zero) horizon=\(southPath.horizonY)"
+)
+let northPath = SunPathGeometry.compute(
+    size: dialCanvas, sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
+    isPolarDay: false, isPolarNight: false
+)
+let northLabels = SunPathGeometry.labels(path: northPath, size: dialCanvas, dayLengthHours: 10.5)
+expect(
+    "北半球（北京 10.5h）：两标签在地平线**上方**，日出在左、日落在右（与改动前一致）",
+    northLabels.sunrise != nil && northLabels.sunset != nil
+        && northLabels.sunrise!.point.y < northPath.horizonY
+        && northLabels.sunset!.point.y < northPath.horizonY
+        && northLabels.sunrise!.point.x < northPath.center.x
+        && northLabels.sunset!.point.x > northPath.center.x
+)
+expect(
+    "南极中山站（22.7h）：两标签在地平线下方、以交点为基准偏移 ≤ 40% 卡宽、且不相交",
+    realLabels.sunrise != nil && realLabels.sunset != nil
+        && realLabels.sunrise!.point.y > realPath.horizonY
+        && realLabels.sunset!.point.y > realPath.horizonY
+        && abs(realLabels.sunrise!.point.x - realPath.center.x) <= dialCanvas.width * 0.4
+        && abs(realLabels.sunset!.point.x - realPath.center.x) <= dialCanvas.width * 0.4
+        && !SunPathGeometry.labelsOverlap([
+            SunPathGeometry.labelRect(point: realLabels.sunrise!.point, alignment: realLabels.sunrise!.alignment, width: realEstW),
+            SunPathGeometry.labelRect(point: realLabels.sunset!.point, alignment: realLabels.sunset!.alignment, width: realEstW),
+        ])
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]

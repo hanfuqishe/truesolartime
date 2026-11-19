@@ -395,12 +395,32 @@ enum SunPathGeometry {
             sunriseAnchorX = sunriseSideX + sunriseOutward
             sunsetAnchorX = sunsetSideX + sunsetOutward
         } else {
-            labelY = path.horizonY - labelOffsetY
+            // **南半球放地平线下方**（夜弧在下方，几何上不会压到昼弧）；北半球维持上方。
+            labelY = southern ? path.horizonY + labelOffsetY : path.horizonY - labelOffsetY
             sunriseAnchorX = sunriseSideX + sunriseOutward
             sunsetAnchorX = sunsetSideX + sunsetOutward
         }
 
         // 标签永远放在交点的**外侧**：北半球日出在左（右对齐）、南半球日出在右（左对齐）。
+        // 重叠检测：近极昼时日出 / 日落 / 上中天会挤到圆顶同一处，改用边缘退让布局。
+        let estSunrise = estimatedLabelWidth(characters: 9)
+        let estSunset = estimatedLabelWidth(characters: 9)
+        let estNoon = estimatedLabelWidth(characters: 7)
+        let baseRects = [
+            labelRect(point: CGPoint(x: sunriseAnchorX, y: labelY), alignment: southern ? .leading : .trailing, width: estSunrise),
+            labelRect(point: CGPoint(x: sunsetAnchorX, y: labelY), alignment: southern ? .trailing : .leading, width: estSunset),
+            labelRect(point: CGPoint(x: center.x, y: center.y - path.radius - noonGap), alignment: .bottom, width: estNoon),
+        ]
+        // 南半球：近极昼时两个交点几乎重合 → 分别贴左右内边距，避免标签叠在一起。
+        let tooClose = southern && abs(sunriseAnchorX - sunsetAnchorX) < size.width * 0.2
+        if labelsOverlap(baseRects) || tooClose {
+            return SunPathLabels(
+                sunrise: fallbackLabelAnchors(path: path, size: size, sunriseWidth: estSunrise, sunsetWidth: estSunset, noonWidth: estNoon).sunrise,
+                sunset: fallbackLabelAnchors(path: path, size: size, sunriseWidth: estSunrise, sunsetWidth: estSunset, noonWidth: estNoon).sunset,
+                noon: fallbackLabelAnchors(path: path, size: size, sunriseWidth: estSunrise, sunsetWidth: estSunset, noonWidth: estNoon).noon,
+                polar: nil
+            )
+        }
         return SunPathLabels(
             sunrise: SunPathLabel(
                 point: CGPoint(x: sunriseAnchorX, y: labelY),
@@ -416,6 +436,75 @@ enum SunPathGeometry {
     }
 
     /// 把「锚点 + 对齐 + 预算尺寸」还原成矩形：自检用它断「不压圆 / 不越界 / 互不重叠」。
+    // MARK: - Label overlap detection / edge fallback
+
+    static let labelFontSize: CGFloat = 11
+    static let labelWidthPerChar: CGFloat = 0.6
+    static let labelPadding: CGFloat = 4
+    static let labelHeight: CGFloat = 15
+    static let edgeInset: CGFloat = 4
+
+    static func estimatedLabelWidth(characters: Int) -> CGFloat {
+        CGFloat(max(characters, 1)) * labelFontSize * labelWidthPerChar + labelPadding * 2
+    }
+
+    static func labelRect(point: CGPoint, alignment: SunPathLabelAlignment, width: CGFloat) -> CGRect {
+        let h = labelHeight
+        switch alignment {
+        case .trailing: return CGRect(x: point.x - width, y: point.y - h / 2, width: width, height: h)
+        case .leading: return CGRect(x: point.x, y: point.y - h / 2, width: width, height: h)
+        case .bottom: return CGRect(x: point.x - width / 2, y: point.y - h, width: width, height: h)
+        default: return CGRect(x: point.x - width / 2, y: point.y - h / 2, width: width, height: h)
+        }
+    }
+
+    static func labelsOverlap(_ rects: [CGRect]) -> Bool {
+        for i in 0..<rects.count {
+            for j in (i + 1)..<rects.count where rects[i].intersects(rects[j]) { return true }
+        }
+        return false
+    }
+
+    static func fallbackLabelAnchors(
+        path: SunPath,
+        size: CGSize,
+        sunriseWidth: CGFloat,
+        sunsetWidth: CGFloat,
+        noonWidth: CGFloat
+    ) -> (sunrise: SunPathLabel, sunset: SunPathLabel, noon: SunPathLabel?) {
+        let center = path.center
+        let southern = path.isSouthernHemisphere
+        let y = southern ? path.horizonY + labelOffsetY : path.horizonY - labelOffsetY
+        let dy = Double(path.horizonY - center.y)
+        let radius = Double(path.radius)
+        let halfChord: CGFloat = abs(dy) <= radius ? CGFloat((radius * radius - dy * dy).squareRoot()) : 0
+        let leftX = center.x - halfChord - labelOffsetX
+        let rightX = center.x + halfChord + labelOffsetX
+        let need = max(sunriseWidth, sunsetWidth) + 8
+        let push = max(0, (need - (rightX - leftX)) / 2)
+        let minX = sunsetWidth + edgeInset
+        let maxX = size.width - sunriseWidth - edgeInset
+        var left = max(minX, min(leftX - push, maxX))
+        var right = min(maxX, max(rightX + push, minX))
+        if right - left < need {
+            left = sunsetWidth + edgeInset
+            right = size.width - sunriseWidth - edgeInset
+        }
+        let sunrise = SunPathLabel(point: CGPoint(x: southern ? right : left, y: y), alignment: southern ? .trailing : .leading)
+        let sunset = SunPathLabel(point: CGPoint(x: southern ? left : right, y: y), alignment: southern ? .leading : .trailing)
+        var noonPoint = CGPoint(x: center.x, y: center.y - path.radius - noonGap)
+        if !path.isPolarNight {
+            let sunriseRect = labelRect(point: sunrise.point, alignment: sunrise.alignment, width: sunriseWidth)
+            let sunsetRect = labelRect(point: sunset.point, alignment: sunset.alignment, width: sunsetWidth)
+            let noonRect = labelRect(point: noonPoint, alignment: .bottom, width: noonWidth)
+            if noonRect.intersects(sunriseRect) || noonRect.intersects(sunsetRect) {
+                noonPoint.y = edgeInset + labelHeight
+            }
+        }
+        let noon: SunPathLabel? = path.isPolarNight ? nil : SunPathLabel(point: noonPoint, alignment: .bottom)
+        return (sunrise, sunset, noon)
+    }
+
     static func rect(for label: SunPathLabel, size: CGSize) -> CGRect {
         switch label.alignment {
         case .trailing:
