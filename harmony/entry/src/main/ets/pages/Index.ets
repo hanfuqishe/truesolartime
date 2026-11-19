@@ -1007,20 +1007,7 @@ struct Index {
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-          // 标题吃剩余宽度；右边的「GPS」徽标只在跟随 GPS 时才条件渲染 ——
-          // 预设城市 / 手动坐标不显示任何位置标识，也不留占位空隙，标题自然变宽。
-          // （规则见 core/PlaceBadge，与 Android HeaderBadge 一致。）
           .layoutWeight(1)
-        if (this.showsGpsBadge()) {
-          Text(PlaceBadgeLogic.GPS_TEXT)
-            .fontSize(12)
-            .fontColor(this.palette.accent)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .textAlign(TextAlign.End)
-            .constraintSize({ maxWidth: '40%' })
-            .margin({ right: 6 })
-        }
         // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
         SymbolGlyph($r('sys.symbol.gearshape_fill'))
           .fontSize(22)
@@ -1035,14 +1022,28 @@ struct Index {
       .width('100%')
       .alignItems(VerticalAlign.Bottom)
 
-      Text('以太阳经过当地子午线的时刻为正午')
-        .fontSize(12)
-        .fontColor(this.palette.subtle)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
-        .width('100%')
-        .textAlign(TextAlign.Start)
+      Row() {
+        Text('以太阳经过当地子午线的时刻为正午')
+          .fontSize(12)
+          .fontColor(this.palette.subtle)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .textAlign(TextAlign.Start)
+        if (this.showsGpsBadge()) {
+          Text(PlaceBadgeLogic.GPS_TEXT)
+            .fontSize(12)
+            .fontColor(this.palette.accent)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .textAlign(TextAlign.End)
+            .constraintSize({ maxWidth: '40%' })
+            .margin({ left: 8 })
+        }
+      }
+      .width('100%')
+      .margin({ top: 2 })
+      .alignItems(VerticalAlign.Bottom)
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
