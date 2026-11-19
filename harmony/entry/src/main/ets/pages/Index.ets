@@ -1008,16 +1008,21 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
           .layoutWeight(1)
-        // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
-        SymbolGlyph($r('sys.symbol.gearshape_fill'))
-          .fontSize(22)
-          .fontColor([this.palette.text])
-          .padding(6)
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
-              console.warn(`open settings failed: ${error.code} ${error.message}`);
-            });
-          })
+        // 右侧定宽槽位（22fp 图标 + 6×2 padding = 34vp）：齿轮居中。
+        Row() {
+          // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
+          SymbolGlyph($r('sys.symbol.gearshape_fill'))
+            .fontSize(22)
+            .fontColor([this.palette.text])
+            .padding(6)
+            .onClick(() => {
+              router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
+                console.warn(`open settings failed: ${error.code} ${error.message}`);
+              });
+            })
+        }
+        .width(this.cs(34))
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
       .alignItems(VerticalAlign.Bottom)
@@ -1030,16 +1035,18 @@ struct Index {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
           .textAlign(TextAlign.Start)
-        if (this.showsGpsBadge()) {
-          Text(PlaceBadgeLogic.GPS_TEXT)
-            .fontSize(12)
-            .fontColor(this.palette.accent)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .textAlign(TextAlign.End)
-            .constraintSize({ maxWidth: '40%' })
-            .margin({ left: 8 })
+        // 与齿轮同宽同轴的槽位：GPS 居中；不显示时保留空槽，副标题宽度不抖动。
+        Row() {
+          if (this.showsGpsBadge()) {
+            Text(PlaceBadgeLogic.GPS_TEXT)
+              .fontSize(12)
+              .fontColor(this.palette.accent)
+              .maxLines(1)
+              .textAlign(TextAlign.Center)
+          }
         }
+        .width(this.cs(34))
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
       .margin({ top: 2 })
