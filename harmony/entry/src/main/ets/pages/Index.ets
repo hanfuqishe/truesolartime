@@ -1587,7 +1587,7 @@ struct Index {
         )
       )
 
-      Text(`${this.mapAttribution} · ${this.mapAppliedZoom} 级${this.mapDegraded ? '（已降级）' : ''} · 双指缩放`)
+      Text(MapTilesLogic.localizedAttribution(this.mapAttribution, this.language))
         .fontSize(10)
         .fontFamily(this.cardFont(FontWeight.Normal))
         .lineHeight(this.cardLineHeight(10))

@@ -131,6 +131,16 @@ export class MapTilesLogic {
     return MapStyle.AUTO;
   }
 
+  /** 底图署名本地化：中文把 contributors 译成「贡献者」/「貢獻者」。 */
+  static localizedAttribution(attribution: string, language: string): string {
+    if (attribution.length === 0 || language.startsWith('en')) {
+      return attribution;
+    }
+    const traditional: boolean = language.startsWith('zh') &&
+      (language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 || language.indexOf('HK') >= 0);
+    return attribution.replace('contributors', traditional ? '貢獻者' : '贡献者');
+  }
+
   /** 设置页「自动」说明：境内高德、境外 ESRI，兜底 OSM → 高德。 */
   static autoHint(language: string): string {
     if (language.startsWith('en')) {

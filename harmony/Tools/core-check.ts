@@ -1108,6 +1108,15 @@ for (const item of equationCases) {
     MapTilesLogic.autoHint('en-US'));
   const forcedOsm = MapTilesLogic.layerForStyle(MapStyle.OSM, 31.2304, 121.4737);
   check('osm forced inside china', forcedOsm.datum === MapDatum.WGS84 && forcedOsm.name === 'osm');
+  const esriAttribution: string = MapTilesLogic.layerForStyle(MapStyle.ESRI, 31.2304, 121.4737).attribution;
+  equal('esri attribution localized to chinese',
+    '底图 © Esri, HERE, Garmin, © OpenStreetMap 贡献者',
+    MapTilesLogic.localizedAttribution(esriAttribution, 'zh-CN'));
+  equal('esri attribution localized to traditional chinese',
+    '底图 © Esri, HERE, Garmin, © OpenStreetMap 貢獻者',
+    MapTilesLogic.localizedAttribution(esriAttribution, 'zh-Hant'));
+  equal('esri attribution stays english in english ui', esriAttribution,
+    MapTilesLogic.localizedAttribution(esriAttribution, 'en-US'));
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
   check('satellite forced outside china', forcedSatellite.datum === MapDatum.GCJ02
     && forcedSatellite.name === 'amap-satellite');
