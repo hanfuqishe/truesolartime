@@ -491,6 +491,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _followGps.value = true
         updatePlace(Place(location.latitude, location.longitude, PlaceSource.GPS, accuracy))
         refreshLocationUnknown()
+        // 首次 fix / 换城市：缓存里没有可用名字、或已离上次反查点 >5 km 时**立刻反查**（绕过节流）。
+        // 以前这条路径只在用户手动选城市时触发，跟随 GPS 的第一次 fix 根本不会请求，界面就一直空着。
+        DistrictResolver.requestRefresh(getApplication(), _place.value)
 
         if (!announcedFirstFix) {
             announcedFirstFix = true

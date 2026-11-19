@@ -71,14 +71,23 @@ object DistrictResolver {
     /** 缓存有效期。 */
     private const val MAX_AGE_MILLIS = 30L * 24 * 60 * 60 * 1000
 
-    /** 单次查询的最长等待，超时后放弃本次（下一分钟再试）。 */
-    private const val TIMEOUT_MILLIS = 10_000L
 
     /** 非中文界面下用来查英文地名（OSM）。遵守其使用条款：可识别的 UA + 结果缓存。 */
     private const val NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
     private val USER_AGENT = "TrueSolarTime-Android/" + BuildConfig.VERSION_NAME
 
-    private val inFlight = AtomicBoolean(false)
+    /**
+     * 查询「换代」计数：每来一个新地点就 +1。旧一代的回调看到代数不匹配直接丢弃，
+     * **不互相阻塞** —— 上一次查询卡住（比如境外 Nominatim 12 秒超时）不影响新地点立刻发起查询。
+     */
+    @Volatile private var generation = 0
+
+    /** 上一次发起查询的地点指纹（同一地点在 [LOOKUP_TIMEOUT_MILLIS] 内不重复发）。 */
+    @Volatile private var lastPlaceKey: String? = null
+    @Volatile private var lastRequestAtMillis = 0L
+
+    /** 正在进行的 Nominatim 连接：换地点时主动断开它（拿不到取消接口也能靠 generation 丢弃结果）。 */
+    @Volatile private var activeConnection: java.net.HttpURLConnection? = null
 
     // 懒加载：纯逻辑（pickName）可在 JVM 单测里直接调用，不依赖 Android Looper。
     private val handler by lazy { Handler(Looper.getMainLooper()) }
@@ -86,7 +95,22 @@ object DistrictResolver {
     // 网络查询（Nominatim）用的后台线程。
     private val ioExecutor by lazy { Executors.newSingleThreadExecutor() }
 
-    private const val LOOKUP_TIMEOUT_MILLIS = 20_000L
+    /**
+     * 同一地点两次反查的最小间隔，也是「旧一代回调」的最长等待（**6 秒**）。
+     *
+     * 以前是 20 秒：境外一次 Nominatim 卡住（12 秒超时）就会把后续一分钟内的请求全部静默拒掉，
+     * 用户看到的就是「跟随 GPS 后区划名半天不出来」。现在到点就放开，下一次采样还能再试。
+     */
+    const val LOOKUP_TIMEOUT_MILLIS = 6_000L
+
+    /** 高德 regeo 自己的超时：5 秒没回调就改走 OSM 兜底，不再干等。 */
+    const val AMAP_TIMEOUT_MILLIS = 5_000L
+
+    // ---- 诊断用（进程内统计；持久化的「上次成功」时间在 prefs 里）----
+    @Volatile private var requestCount = 0
+    @Volatile private var lastDurationMillis = -1L
+    @Volatile private var lastSkipReason: String? = null
+    private var lookupStartedAtMillis = 0L
 
     /**
      * 反查结果的两级写法：[full] 带上级（如「上海市宝山区」），[short] 只有区县（如「宝山区」）。
@@ -182,26 +206,131 @@ object DistrictResolver {
     internal fun shouldQuery(movedKm: Double, ageMillis: Long): Boolean =
         movedKm > MOVE_THRESHOLD_KM || ageMillis !in 0..MAX_AGE_MILLIS
 
-    /** 需要时发起一次查询，成功后重绘小组件。必须在主线程调用（高德 SDK 的限制）。 */
+    /**
+     * 要不要**绕过节流**立即反查（纯函数）：
+     *
+     * * 当前没有可用区划名（首次 fix / 换城市后缓存对不上）→ 必须立刻查，否则界面一直空着；
+     * * 与上次反查点相距 > [MOVE_THRESHOLD_KM] → 也算「换地方了」，立即查。
+     *
+     * 距离未知（NaN，例如缓存里没有坐标）也按「立刻查」处理。
+     */
+    fun shouldBypassThrottle(hasName: Boolean, movedKm: Double): Boolean =
+        !hasName || movedKm.isNaN() || movedKm > MOVE_THRESHOLD_KM
+
+    /**
+     * 这次要不要**真的发请求**（纯函数）。
+     *
+     * * 换了地点（[samePlace] == false）→ **总是发**，不因上一次还卡着而拒绝；
+     * * 同一地点：只有距上次请求 ≥ [LOOKUP_TIMEOUT_MILLIS] 才重发（6 秒内去重）。
+     */
+    fun shouldStartNewRequest(
+        currentGen: Int,
+        newGen: Int,
+        samePlace: Boolean = false,
+        elapsedMillis: Long = Long.MAX_VALUE,
+    ): Boolean {
+        if (!samePlace) return true
+        if (newGen <= currentGen) return false
+        return elapsedMillis >= LOOKUP_TIMEOUT_MILLIS
+    }
+
+    /** 回调里的结果是不是「当前这一代」的（纯函数）；旧一代直接丢弃，不覆盖新地点的名字。 */
+    fun shouldAcceptResult(myGen: Int, currentGen: Int): Boolean = myGen == currentGen
+
+    /** 地点指纹（~11 m 粒度）：同一地点在超时窗口内重复触发时用它去重。 */
+    internal fun placeKey(place: Place): String =
+        "%.4f,%.4f".format(Locale.US, place.latitude, place.longitude)
+
+    /** 当前点与「上次反查所用坐标」的距离（km）；缓存里没有坐标时返回 null。 */
+    fun distanceFromLastQuery(context: Context, place: Place): Double? {
+        val prefs = prefs(context)
+        val lat = prefs.getFloat(KEY_LAT, Float.NaN).toDouble()
+        val lon = prefs.getFloat(KEY_LON, Float.NaN).toDouble()
+        if (lat.isNaN() || lon.isNaN()) return null
+        return CityIndex.distanceKm(lat, lon, place.latitude, place.longitude)
+    }
+
+    /**
+     * 诊断页那一行（与 iOS / 鸿蒙对齐）：
+     * `行政区名 = 上海市黄浦区 · 耗时 = 0.4s · 请求次数 = 1 · 距上次反查 1.2 km · 上次成功 3 分钟前`
+     *
+     * 拿不到名字时显示跳过原因：`行政区名 = 暫無 · 跳过：在飞` / `… · 跳过：5 km 内沿用`。
+     */
+    fun diagnosticLine(context: Context, place: Place): String {
+        val names = cachedNamesFor(context, place)
+        val prefs = prefs(context)
+        val distance = distanceFromLastQuery(context, place)
+        val distanceText = distance?.let { "%.1f km".format(Locale.US, it) } ?: "未知"
+        val lastAt = prefs.getLong(KEY_TIME, 0L)
+        val agoText = if (lastAt <= 0L) {
+            "从未"
+        } else {
+            val minutes = ((System.currentTimeMillis() - lastAt) / 60_000L).coerceAtLeast(0L)
+            when {
+                minutes < 1L -> "不到 1 分钟前"
+                minutes < 60L -> "$minutes 分钟前"
+                else -> "${minutes / 60} 小时前"
+            }
+        }
+        if (names == null) {
+            return "行政区名 = 暫無 · 跳过：${lastSkipReason ?: "尚未查询"}"
+        }
+        val duration = if (lastDurationMillis >= 0L) {
+            "%.1fs".format(Locale.US, lastDurationMillis / 1000.0)
+        } else {
+            "—"
+        }
+        return "行政区名 = ${names.full} · 耗时 = $duration · 请求次数 = $requestCount · " +
+            "距上次反查 $distanceText · 上次成功 $agoText"
+    }
+
+    /**
+     * 需要时发起一次查询，成功后重绘小组件。必须在主线程调用（高德 SDK 的限制）。
+     *
+     * **没有名字就永远立即查**（[shouldBypassThrottle]）：首次 fix / 换城市后缓存里没有可用名字时，
+     * 5 km / 30 天那套节流会让界面一直空着，所以这里直接绕过它。
+     */
     fun requestRefresh(context: Context, place: Place) {
         // 取地名只是「锦上添花」，任何失败都不该影响小组件刷时间，所以整体兜住 Throwable。
         runCatching {
-            if (!needsRefresh(context, place)) return
-            if (!inFlight.compareAndSet(false, true)) return
+            val hasName = cachedNamesFor(context, place) != null
+            val movedKm = distanceFromLastQuery(context, place) ?: Double.NaN
+            val bypass = shouldBypassThrottle(hasName, movedKm)
+            if (!bypass && !needsRefresh(context, place)) {
+                lastSkipReason = "5 km 内沿用"
+                return
+            }
+
+            // 换代：新地点总是发新请求，不因上一次还卡着而拒绝（同一地点 6 秒内才去重）。
+            val key = placeKey(place)
+            val samePlace = key == lastPlaceKey
+            val elapsed = System.currentTimeMillis() - lastRequestAtMillis
+            if (!shouldStartNewRequest(generation, generation + 1, samePlace, elapsed)) {
+                lastSkipReason = "同地点查询中"
+                return
+            }
+            generation += 1
+            val myGen = generation
+            lastPlaceKey = key
+            lastRequestAtMillis = System.currentTimeMillis()
+            requestCount += 1
+            lookupStartedAtMillis = lastRequestAtMillis
+            lastSkipReason = null
+
+            // 换地点：先断掉还在飞的 Nominatim 连接（高德 SDK 没有取消接口，靠 generation 丢结果）。
+            runCatching { activeConnection?.disconnect() }
+            activeConnection = null
+
             val app = context.applicationContext
-            // 兜底：任何一步卡住（后台线程没回调）都不要让 inFlight 一直是 true。
-            handler.postDelayed({ inFlight.set(false) }, LOOKUP_TIMEOUT_MILLIS)
-            // 中文界面优先高德（区县名更细），但高德只认真实中国境内的坐标；
-            // 境外城市用它必然查不到，于是永远不显示区划名 —— 这种情况改走 OSM。
+            // 查询方由**地点**决定，不看上一次用了谁：中文界面 + 中国境内走高频高德，其余走 OSM。
             val inChina = LocalZone.isInChina(app, place)
             if (prefersChineseNames(app) && inChina) {
-                if (!startAmap(app, place)) inFlight.set(false)
+                startAmap(app, place, myGen)
             } else {
-                startNominatim(app, place)
+                startNominatim(app, place, myGen)
             }
         }.onFailure {
-            inFlight.set(false)
-            Log.w(TAG, "district lookup skipped", it)
+            Log.w(TAG, "district lookup failed", it)
         }
     }
 
@@ -228,24 +357,23 @@ object DistrictResolver {
     private fun currentLanguage(context: Context): String = uiLocale(context).language
 
     /** 非中文界面：查 OSM 的本地语言地名，失败再退回高德的中文名。 */
-    private fun startNominatim(app: Context, place: Place) {
+    private fun startNominatim(app: Context, place: Place, myGen: Int) {
         ioExecutor.execute {
             // 境外网络偶发抖动：失败就再试一次，仍失败才回退高德/留空
             val names = runCatching { queryNominatim(place, currentLanguage(app)) }.getOrNull()
                 ?: runCatching { queryNominatim(place, currentLanguage(app)) }.getOrNull()
             handler.post {
+                // 过期结果（地点已经换了）直接丢弃，不覆盖新地点的名字。
+                if (!shouldAcceptResult(myGen, generation)) return@post
                 if (names != null) {
                     save(app, place, names)
                     WidgetUpdater.refreshAll(app)
-                    inFlight.set(false)
                     return@post
                 }
                 // 境外坐标绝不能回退到高德：它对国外点会返回毫不相干的中国地名
                 // （实测纽约坐标拿到了「哈尔滨市松北区」）。中国境内才走高德兜底。
                 val inChina = LocalZone.isInChina(app, place)
-                if (!inChina || !startAmap(app, place)) {
-                    inFlight.set(false)
-                }
+                if (inChina) startAmap(app, place, myGen)
             }
         }
     }
@@ -271,6 +399,7 @@ object DistrictResolver {
             setRequestProperty("User-Agent", USER_AGENT)
             setRequestProperty("Accept", "application/json")
         }
+        activeConnection = connection
         try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return null
             val body = connection.inputStream.bufferedReader().use { it.readText() }
@@ -279,6 +408,7 @@ object DistrictResolver {
             return names.copy(countryCode = cleanCountryCode(address.optString("country_code")))
         } finally {
             connection.disconnect()
+            if (activeConnection === connection) activeConnection = null
         }
     }
 
@@ -308,8 +438,9 @@ object DistrictResolver {
     }
 
     /** @return 是否真的发起了高德查询（没配 key 时返回 false）。 */
-    private fun startAmap(app: Context, place: Place): Boolean {
+    private fun startAmap(app: Context, place: Place, myGen: Int): Boolean {
         if (BuildConfig.AMAP_API_KEY.isBlank()) return false
+        val answered = AtomicBoolean(false)
         handler.post {
             try {
                 ServiceSettings.updatePrivacyShow(app, true, true)
@@ -320,17 +451,16 @@ object DistrictResolver {
                 val search = GeocodeSearch(app)
                 search.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
                     override fun onRegeocodeSearched(result: RegeocodeResult?, code: Int) {
-                        try {
-                            if (code == AMapException.CODE_AMAP_SUCCESS) {
-                                val address = result?.regeocodeAddress
-                                val names = pickNames(address?.district, address?.city, address?.province)
-                                if (names != null) {
-                                    save(app, place, names.copy(countryCode = countryCodeOf(address)))
-                                    WidgetUpdater.refreshAll(app)
-                                }
+                        answered.set(true)
+                        // 过期结果（地点已经换了）直接丢弃。
+                        if (!shouldAcceptResult(myGen, generation)) return
+                        if (code == AMapException.CODE_AMAP_SUCCESS) {
+                            val address = result?.regeocodeAddress
+                            val names = pickNames(address?.district, address?.city, address?.province)
+                            if (names != null) {
+                                save(app, place, names.copy(countryCode = countryCodeOf(address)))
+                                WidgetUpdater.refreshAll(app)
                             }
-                        } finally {
-                            inFlight.set(false)
                         }
                     }
 
@@ -343,12 +473,15 @@ object DistrictResolver {
                 // 这里必须兜住 Throwable：高德 SDK 带 native 库，在 16 KB page size 或
                 // ABI 不匹配的新机型上会抛 UnsatisfiedLinkError（属于 Error 而非 Exception），
                 // 漏出去就会把 provider 进程带崩，桌面只能显示「小组件加载失败」。
-                inFlight.set(false)
                 return@post
             }
 
-            // SDK 没回调时兜底放开，避免一直卡在「查询中」。
-            handler.postDelayed({ inFlight.set(false) }, TIMEOUT_MILLIS)
+            // 高德 5 秒没回调：**改走 OSM 兜底**，而不是干等到整体超时。
+            handler.postDelayed({
+                if (answered.compareAndSet(false, true) && shouldAcceptResult(myGen, generation)) {
+                    startNominatim(app, place, myGen)
+                }
+            }, AMAP_TIMEOUT_MILLIS)
         }
         return true
     }
@@ -500,6 +633,9 @@ object DistrictResolver {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private fun save(context: Context, place: Place, names: DistrictNames) {
+        if (lookupStartedAtMillis > 0L) {
+            lastDurationMillis = System.currentTimeMillis() - lookupStartedAtMillis
+        }
         prefs(context).edit()
             .putString(KEY_NAME, names.full)
             .putString(KEY_SHORT, names.short)

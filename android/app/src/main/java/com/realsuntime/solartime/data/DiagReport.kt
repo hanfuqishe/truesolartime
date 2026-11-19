@@ -212,6 +212,8 @@ internal object DiagReport {
             add("名称 = ${names?.full ?: place.label}")
             add("时区偏移 = ${TimeFormat.utcOffsetLabel(zoneOffset)}")
             add("区划缓存 = ${if (names != null) "有（${names.full}）" else "无"}")
+            // 行政区名反查的诊断行（与 iOS / 鸿蒙对齐）：名字 + 耗时 + 请求次数 + 距离 + 上次成功 / 跳过原因。
+            add(DistrictResolver.diagnosticLine(context, place))
             add("天气缓存 = ${if (weather != null) "有" else "无"}")
             add("天气来源 = ${WeatherRepository.source(context).id}")
             add("天气步长 = ${WeatherRepository.stepHours(context)} 小时")

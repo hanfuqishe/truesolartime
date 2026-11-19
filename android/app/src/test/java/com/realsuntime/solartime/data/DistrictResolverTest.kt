@@ -25,6 +25,53 @@ class DistrictResolverTest {
         assertTrue(DistrictResolver.shouldQuery(movedKm = 0.0, ageMillis = -1L))
     }
 
+    /**
+     * 换地点必须立刻发新请求（**不因上一次还卡着而被拒绝**）；
+     * 同一地点在 6 秒窗口内重复触发才去重。
+     */
+    @Test
+    fun newPlaceAlwaysStartsANewRequest() {
+        // 换了地点：代数不同 → 总是发（不管上一次是不是还在飞）
+        assertTrue(DistrictResolver.shouldStartNewRequest(currentGen = 1, newGen = 2))
+        assertTrue(DistrictResolver.shouldStartNewRequest(currentGen = 7, newGen = 8, samePlace = false))
+        // 同一地点、6 秒内：去重
+        assertFalse(
+            DistrictResolver.shouldStartNewRequest(
+                currentGen = 3,
+                newGen = 4,
+                samePlace = true,
+                elapsedMillis = DistrictResolver.LOOKUP_TIMEOUT_MILLIS - 1,
+            ),
+        )
+        // 同一地点、超过窗口：重发
+        assertTrue(
+            DistrictResolver.shouldStartNewRequest(
+                currentGen = 3,
+                newGen = 4,
+                samePlace = true,
+                elapsedMillis = DistrictResolver.LOOKUP_TIMEOUT_MILLIS,
+            ),
+        )
+    }
+
+    /** 过期结果（旧一代）必须丢弃，只有当前一代的回调才能写缓存。 */
+    @Test
+    fun staleResultsAreDiscarded() {
+        assertTrue(DistrictResolver.shouldAcceptResult(myGen = 5, currentGen = 5))
+        assertFalse(DistrictResolver.shouldAcceptResult(myGen = 4, currentGen = 5))
+        assertFalse(DistrictResolver.shouldAcceptResult(myGen = 6, currentGen = 5))
+    }
+
+    /** 卡死窗口必须 ≤ 6 秒；高德单独超时更短（5 秒后走 OSM 兜底）。 */
+    @Test
+    fun lookupTimeoutIsShortEnough() {
+        assertTrue(DistrictResolver.LOOKUP_TIMEOUT_MILLIS <= 6_000L)
+        assertTrue(
+            "高德超时要比整体窗口短",
+            DistrictResolver.AMAP_TIMEOUT_MILLIS < DistrictResolver.LOOKUP_TIMEOUT_MILLIS,
+        )
+    }
+
     @Test
     fun cachedCountryCodeIsOnlyTrustedNearTheCachedCoordinates() {
         // 同城多走几公里：缓存里的国家码照样算数
