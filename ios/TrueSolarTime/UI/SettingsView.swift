@@ -331,7 +331,6 @@ struct SettingsView: View {
         dismiss()
     }
 
-    @ViewBuilder
     /// 设置页「关于」里的天气署名（与卡片页脚同源：`WeatherAttributionStore`）。
     @ViewBuilder private var weatherAttributionAbout: some View {
         let presentation = WeatherAttributionStore.shared.presentation(
