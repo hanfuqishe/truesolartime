@@ -12,6 +12,8 @@
     <string name="sun_label_sunrise">日出</string>
     <string name="sun_label_sunset">日落</string>
     <string name="sun_label_noon">上中天</string>
+    <string name="sun_due_south">正南</string>
+    <string name="sun_due_north">正北</string>
     <string name="sun_polar_day">極晝</string>
     <string name="sun_polar_night">極夜</string>
     <string name="version_label">版本 %1$s</string>
@@ -70,7 +72,7 @@
     <string name="city_singapore">新加坡</string>
     <string name="city_sydney">雪梨</string>
     <string name="city_murmansk">莫曼斯克</string>
-    <string name="city_zhongshan">南極中山站</string>
+    <string name="city_kunlun">崑崙站</string>
     <string name="city_cairo">開羅</string>
     <string name="city_rio">里約熱內盧</string>
     <string name="map_style_auto">自動</string>

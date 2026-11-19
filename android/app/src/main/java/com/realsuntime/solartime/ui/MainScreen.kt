@@ -1438,7 +1438,15 @@ private fun SunDial(
     // 圆盘标签带文字说明：日出 06:24 / 日落 16:54 / 上中天 11:39（文案走 strings.xml，三语）。
     val sunriseText = stringResource(R.string.sun_label_sunrise) + " " + TimeFormat.clock(snapshot.sunriseLocal)
     val sunsetText = stringResource(R.string.sun_label_sunset) + " " + TimeFormat.clock(snapshot.sunsetLocal)
-    val noonText = stringResource(R.string.sun_label_noon) + " " + TimeFormat.clock(snapshot.solarNoonLocal)
+    // 上中天补方位后缀：圆盘是「面朝赤道」的竖直平面投影，北半球面朝南、南半球面朝北，
+    // 直接把上中天时的方位标出来，用户就不会把日出方向看反。
+    val noonText = SunLabelText.noonLabel(
+        prefix = stringResource(R.string.sun_label_noon),
+        time = TimeFormat.clock(snapshot.solarNoonLocal),
+        latitude = snapshot.latitude,
+        dueSouth = stringResource(R.string.sun_due_south),
+        dueNorth = stringResource(R.string.sun_due_north),
+    )
     val polarText = stringResource(if (polarDay) R.string.sun_polar_day else R.string.sun_polar_night)
 
     val measurer = rememberTextMeasurer()

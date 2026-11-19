@@ -11,7 +11,9 @@
     <string name="sun_daylight_line">Daylight %1$s</string>
     <string name="sun_label_sunrise">Sunrise</string>
     <string name="sun_label_sunset">Sunset</string>
-    <string name="sun_label_noon">Solar noon</string>
+    <string name="sun_label_noon">Transit</string>
+    <string name="sun_due_south">S</string>
+    <string name="sun_due_north">N</string>
     <string name="sun_polar_day">Polar day</string>
     <string name="sun_polar_night">Polar night</string>
     <string name="version_label">Version %1$s</string>
@@ -70,7 +72,7 @@
     <string name="city_singapore">Singapore</string>
     <string name="city_sydney">Sydney</string>
     <string name="city_murmansk">Murmansk</string>
-    <string name="city_zhongshan">Zhongshan Station, Antarctica</string>
+    <string name="city_kunlun">Kunlun Station</string>
     <string name="city_cairo">Cairo</string>
     <string name="city_rio">Rio de Janeiro</string>
     <string name="map_style_auto">Auto</string>

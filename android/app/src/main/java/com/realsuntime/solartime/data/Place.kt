@@ -49,10 +49,11 @@ data class Place(
             // 摩尔曼斯克（68.97°N 33.08°E）：俄罗斯，北极圈内，夏季极昼、冬季极夜。
             //   时区按 `ru` + 经度分段（33.08°E < 40°E）→ UTC+3（莫斯科时间）。
             Place(68.9700, 33.0800, PlaceSource.MANUAL, "", "city_murmansk", "ru"),
-            // 中山站（69.37°S 76.38°E）：中国南极考察站，南极圈内，南半球夏季极昼、冬季极夜。
-            //   时区显式用 `cn` → UTC+8：中山站按中国站务惯例使用北京时间；ZoneTable 没有
+            // 昆仑站（80.4169°S 77.1161°E）：中国距南极点最近的考察站，南极圈内，
+            //   南半球夏季（11–2 月）极昼、冬季极夜。
+            //   时区显式用 `cn` → UTC+8：站上按中国站务惯例使用北京时间；ZoneTable 没有
             //   `aq` 条目，若写 aq 会退回「按经度取整」得到 +5，与站上实际使用的 UTC+8 不符。
-            Place(-69.3700, 76.3800, PlaceSource.MANUAL, "", "city_zhongshan", "cn"),
+            Place(-80.4169, 77.1161, PlaceSource.MANUAL, "", "city_kunlun", "cn"),
             // 开罗（30.04°N 31.24°E）：埃及，UTC+2 且无夏令时（ZoneTable: eg → +120）。
             Place(30.0444, 31.2357, PlaceSource.MANUAL, "", "city_cairo", "eg"),
             // 里约热内卢（22.91°S 43.17°W）：巴西，America/Sao_Paulo = UTC−3

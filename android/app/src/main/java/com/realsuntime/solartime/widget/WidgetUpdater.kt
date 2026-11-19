@@ -1293,12 +1293,23 @@ object WidgetUpdater {
         views.setTextViewTextSize(R.id.widget_solar_colon, TypedValue.COMPLEX_UNIT_PX, halfPx)
         views.setTextViewTextSize(R.id.widget_solar_sec, TypedValue.COMPLEX_UNIT_PX, halfPx)
         // Chronometer 的文本是「M:SS」，把宽度限成两位数字再配合右对齐，只露出秒数。
-        val secondsMaxWidth =
-            (halfPx * secondsRatio * bold + SECOND_WIDTH_SLACK_DP * density).toInt().coerceAtLeast(1)
+        // **必须严格小于「两位数字 + 冒号」**：早先按「两位数字 + 2dp 余量」算，2dp 足以让自带的
+        // 冒号完整露出来，于是和静态冒号叠成 `::37`（真太阳时那侧就中招了）。这里用实测的数字宽
+        // 与冒号宽，余量强制压到冒号宽以内。两边共用同一个值，标准时间那侧同样安全。
+        val scale = if (probePx > 0f) halfPx / probePx else 0f
+        val digitPx = paint.measureText("0") * scale * bold
+        val colonPx = paint.measureText(":") * scale * bold
+        val secondsMaxWidth = ClockWidthMath.secondsMaxWidthPx(
+            digitWidthPx = digitPx,
+            colonWidthPx = colonPx,
+            slackPx = SECOND_WIDTH_SLACK_DP * density,
+        )
         views.setInt(R.id.widget_solar_sec, "setMaxWidth", secondsMaxWidth)
         diag?.apply {
             add("主时钟 mainPx" to mainPx.toInt().toString())
             add("秒 setMaxWidth(px)" to secondsMaxWidth.toString())
+            add("秒数字宽(px)" to digitPx.toInt().toString())
+            add("秒冒号宽(px)" to colonPx.toInt().toString())
             add("clockSafetyFactor" to clockSafetyFactor(context, metrics).toString())
             add("boldWidthFactor" to bold.toString())
             add("renderDensity" to density.toString())

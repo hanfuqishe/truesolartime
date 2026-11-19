@@ -341,7 +341,7 @@ class SunPathGeometryTest {
     // 带文字说明的新标签：「日出 06:24」≈ 2 汉字 + 空格 + 5 字符；「上中天 11:39」更长。
     private val sunriseLabelWidth = 55f
     private val sunsetLabelWidth = 55f
-    private val noonLabelWidth = 66f
+    private val noonLabelWidth = 100f
 
     private fun dial(
         sunriseHour: Double?,
@@ -634,6 +634,52 @@ class SunPathGeometryTest {
     }
 
     /** 极昼/极夜没有日出日落：不做任何南半球处理，锚点与旧版一致（UI 本来就不画这两个标签）。 */
+    /**
+     * 上中天标签现在带方位后缀（`上中天 11:39 · 正南`），宽度从 66dp 涨到约 100dp：
+     * 各种昼长（0.5h / 3h / 6h / 12h）下三个标签矩形仍然两两不相交；
+     * 24h 是极昼，不画日出/日落标签（只留极昼文字）。
+     */
+    /** 上中天标签的方位后缀：北半球「正南」、南半球「正北」；英文是单字母 S / N。 */
+    @Test
+    fun noonLabelEndsWithTheDueDirection() {
+        val beijing = SunLabelText.noonLabel("上中天", "11:39", 39.9042, "正南", "正北")
+        assertEquals("上中天 11:39 · 正南", beijing)
+        assertTrue(beijing.endsWith("正南"))
+
+        val kunlun = SunLabelText.noonLabel("上中天", "11:39", -80.4169, "正南", "正北")
+        assertEquals("上中天 11:39 · 正北", kunlun)
+        assertTrue(kunlun.endsWith("正北"))
+
+        assertTrue(SunLabelText.noonLabel("Transit", "11:39", 39.9042, "S", "N").endsWith("· S"))
+        assertTrue(SunLabelText.noonLabel("Transit", "11:39", -80.4169, "S", "N").endsWith("· N"))
+        // 赤道按北半球处理（与圆盘「不镜像」一致）。
+        assertTrue(SunLabelText.noonLabel("Transit", "11:39", 0.0, "S", "N").endsWith("· S"))
+    }
+
+    @Test
+    fun labeledDialKeepsTheThreeRectanglesApartAtEveryDaylightLength() {
+        for (daylightHours in listOf(0.5, 3.0, 6.0, 12.0)) {
+            val sunrise = 12.0 - daylightHours / 2.0
+            val sunset = 12.0 + daylightHours / 2.0
+            for (southern in listOf(false, true)) {
+                val path = dial(sunrise, sunset, southernHemisphere = southern)
+                val a = anchorsWithSizes(path, sunrise, sunset)
+                val rs = rects(path, a)
+                for (i in rs.indices) {
+                    for (j in i + 1 until rs.size) {
+                        assertFalse(
+                            "daylight=${daylightHours}h southern=$southern 标签相交：${rs[i]} / ${rs[j]}",
+                            rs[i].overlaps(rs[j]),
+                        )
+                    }
+                }
+            }
+        }
+        // 24h：极昼，不画日出/日落标签（UI 只渲染「极昼」一行）。
+        val polar = dial(null, null, isPolarDay = true)
+        assertTrue(polar.isPolarDay)
+    }
+
     @Test
     fun polarDaysKeepTheOldAnchors() {
         val path = dial(null, null, isPolarDay = true)

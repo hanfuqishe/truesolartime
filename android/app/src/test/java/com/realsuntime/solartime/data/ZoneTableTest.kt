@@ -3,8 +3,10 @@ package com.realsuntime.solartime.data
 import com.realsuntime.solartime.solar.SolarTimeMath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class ZoneTableTest {
 
@@ -84,9 +86,9 @@ class ZoneTableTest {
         // −180 分钟
         assertEquals(-180 * 60, ZoneTable.offsetSeconds(rio.countryCode, rio.longitude, fallback))
 
-        // 两个都在「南极中山站」之后，且都在预设表末尾。
+        // 两个都在「昆仑站」之后，且都在预设表末尾。
         val tail = Place.PRESETS.takeLast(3).map { it.labelResName }
-        assertEquals(listOf("city_zhongshan", "city_cairo", "city_rio"), tail)
+        assertEquals(listOf("city_kunlun", "city_cairo", "city_rio"), tail)
     }
 
     @Test
@@ -97,7 +99,7 @@ class ZoneTableTest {
             assertTrue("${preset.countryCode} 不在表里", ZoneTable.knows(preset.countryCode))
         }
         // 24 个常用城市：前 10 个是中国境内（含香港）；第 11 个起是境外城市，
-        // 末尾四个依次是极圈城市（摩尔曼斯克 / 中山站）与新增的开罗 / 里约热内卢。
+        // 末尾四个依次是极圈城市（摩尔曼斯克 / 昆仑站）与新增的开罗 / 里约热内卢。
         assertEquals(24, Place.PRESETS.size)
         val expected = listOf(
             -10 * 3600, // 檀香山
@@ -111,7 +113,7 @@ class ZoneTableTest {
             8 * 3600,   // 新加坡
             10 * 3600,  // 悉尼
             3 * 3600,   // 摩尔曼斯克：ru + 经度 33.08°E < 40°E → UTC+3
-            8 * 3600,   // 中山站：国家码 cn → UTC+8（站上惯例，不用经度取整的 +5）
+            8 * 3600,   // 昆仑站：国家码 cn → UTC+8（站上惯例，不用经度取整的 +5）
             2 * 3600,   // 开罗：eg → +120 分钟（无夏令时）
             -3 * 3600,  // 里约：br，经度 −43.17° → America/Sao_Paulo = −180 分钟
         )
@@ -134,12 +136,17 @@ class ZoneTableTest {
         // 摩尔曼斯克在北极圈内，但不在俄罗斯的「+4 及以上」经度段：仍是莫斯科时间 UTC+3。
         assertEquals(3 * 3600, ZoneTable.offsetSeconds(murmansk.countryCode, murmansk.longitude, fallback))
 
-        val zhongshan = Place.PRESETS.first { it.labelResName == "city_zhongshan" }
-        assertEquals(-69.37, zhongshan.latitude, 1e-9)
-        assertEquals(76.38, zhongshan.longitude, 1e-9)
-        // 显式用 cn：中山站按中国站务惯例使用 UTC+8；若按经度取整会得到 +5。
-        assertEquals("cn", zhongshan.countryCode)
-        assertEquals(8 * 3600, ZoneTable.offsetSeconds(zhongshan.countryCode, zhongshan.longitude, fallback))
-        assertEquals(5 * 3600, SolarTimeMath.standardZoneOffsetSeconds(zhongshan.latitude, zhongshan.longitude))
+        val kunlun = Place.PRESETS.first { it.labelResName == "city_kunlun" }
+        assertEquals(-80.4169, kunlun.latitude, 1e-9)
+        assertEquals(77.1161, kunlun.longitude, 1e-9)
+        // 显式用 cn：昆仑站按中国站务惯例使用 UTC+8；若按经度取整会得到 +5。
+        assertEquals("cn", kunlun.countryCode)
+        assertEquals(8 * 3600, ZoneTable.offsetSeconds(kunlun.countryCode, kunlun.longitude, fallback))
+        assertEquals(5 * 3600, SolarTimeMath.standardZoneOffsetSeconds(kunlun.latitude, kunlun.longitude))
+        // 2026-11-19 是南半球夏季：昆仑站应为极昼，不出现日出/日落。
+        val times = SolarTimeMath.sunTimes(LocalDate.of(2026, 11, 19), kunlun.latitude, kunlun.longitude)
+        assertEquals(SolarTimeMath.PolarState.MIDNIGHT_SUN, times.polar)
+        assertNull(times.sunrise)
+        assertNull(times.sunset)
     }
 }
