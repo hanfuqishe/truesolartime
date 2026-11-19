@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -568,9 +569,14 @@ private fun Header(badge: String?, onOpenSettings: () -> Unit) {
                 contentAlignment = Alignment.BottomCenter,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Settings,
+                    imageVector = Icons.Outlined.Settings,
                     contentDescription = stringResource(R.string.action_settings),
-                    modifier = Modifier.size(34.dp),
+                    // 线框图标墨迹比实心小一圈：36dp 看着与实心 34dp 相当，仍贴底居中。
+                    // 36 × 72/90 ≈ 28.8 → 29dp：线框墨迹高度与标题墨迹（26sp ≈ 72px）齐平。
+                    // 线框墨迹底边比盒子底边略高：上移 3dp 让两者墨迹底边齐平。
+                    modifier = Modifier
+                        .size(29.dp)
+                        .offset(y = (-3).dp),
                 )
             }
         }
