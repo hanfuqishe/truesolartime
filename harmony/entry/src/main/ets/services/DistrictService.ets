@@ -6,6 +6,7 @@
 import { geoLocationManager } from '@kit.LocationKit';
 import { i18n } from '@kit.LocalizationKit';
 import { CityIndex } from '../core/CityIndex';
+import { DistrictLookupPolicy } from '../core/DistrictLookup';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { PlaceNamePolicy } from '../core/PlaceNamePolicy';
 import { Place } from '../core/Place';
@@ -30,6 +31,12 @@ export class DistrictService {
   private static requestCount: number = 0;
   private static lastDurationMillis: number = 0;
   private static lastDistanceKm: number = -1;
+  /** 按地点换代：每次新地点 +1，旧一代回调直接丢弃。 */
+  private static generation: number = 0;
+  private static lastAttemptLat: number = NaN;
+  private static lastAttemptLon: number = NaN;
+  private static lastAttemptMillis: number = 0;
+  private static lastSkipReason: string = '';
 
   /** 每反查到一次新名字就 +1，供界面判断「区划名换了」。 */
   private static revisionCount: number = 0;
@@ -114,15 +121,36 @@ export class DistrictService {
 
   /** 需要时反查一次；force = 换城市 / 手输坐标时绕过 5 km。 */
   static async refreshIfNeeded(place: Place, force: boolean = false): Promise<boolean> {
-    if (DistrictService.inFlight || (!force && !DistrictService.needsRefresh(place))) {
+    if (!force && !DistrictService.needsRefresh(place)) {
+      DistrictService.lastSkipReason = '无需刷新（5 km 内且未过期）';
       return false;
     }
+    const now: number = Date.now();
+    const samePlace: boolean = !isNaN(DistrictService.lastAttemptLat) &&
+      CityIndex.distanceKm(DistrictService.lastAttemptLat, DistrictService.lastAttemptLon,
+        place.latitude, place.longitude) < 0.01;
+    if (DistrictLookupPolicy.shouldSkipDuplicate(samePlace, now - DistrictService.lastAttemptMillis)) {
+      DistrictService.lastSkipReason = '同一地点去重（6 秒内）';
+      return false;
+    }
+    // 新地点直接换代并发请求：上一次卡住不影响这一次。
+    DistrictService.generation++;
+    const myGen: number = DistrictService.generation;
+    DistrictService.lastAttemptLat = place.latitude;
+    DistrictService.lastAttemptLon = place.longitude;
+    DistrictService.lastAttemptMillis = now;
     DistrictService.inFlight = true;
-    const started: number = Date.now();
+    DistrictService.lastSkipReason = '';
+    const started: number = now;
     try {
       const language: string = DistrictService.language();
       const names: DistrictNames | null = await DistrictService.resolve(place, language);
       DistrictService.lastDurationMillis = Date.now() - started;
+      // 过期结果（期间已换地点）直接丢弃，不覆盖新地点的名字。
+      if (!DistrictLookupPolicy.shouldAcceptResult(myGen, DistrictService.generation)) {
+        DistrictService.lastSkipReason = '过期结果已丢弃（地点已换代）';
+        return false;
+      }
       if (names === null) {
         return false;
       }
@@ -137,7 +165,9 @@ export class DistrictService {
       DistrictService.revisionCount++;
       return true;
     } finally {
-      DistrictService.inFlight = false;
+      if (myGen === DistrictService.generation) {
+        DistrictService.inFlight = false;
+      }
     }
   }
 
@@ -148,7 +178,7 @@ export class DistrictService {
     const seconds: string = (DistrictService.lastDurationMillis / 1000).toFixed(1);
     const distance: string = DistrictService.lastDistanceKm < 0
       ? '未知' : `${DistrictService.lastDistanceKm.toFixed(1)} km`;
-    return `行政区名 ${label} · 耗时 = ${seconds}s · 请求次数 = ${DistrictService.requestCount} · 距上次反查 ${distance}`;
+    return `行政区名 ${label} · 耗时 = ${seconds}s · 请求次数 = ${DistrictService.requestCount} · 距上次反查 ${distance} · 跳过原因 = ${DistrictService.lastSkipReason.length > 0 ? DistrictService.lastSkipReason : '无'}`;
   }
 
   /** 强制反查（用户换城市后立刻更新名字）。 */

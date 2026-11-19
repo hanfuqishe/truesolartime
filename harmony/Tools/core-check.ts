@@ -16,6 +16,7 @@ import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
 import { DistrictLayoutPlan, DistrictLayoutSolver, DistrictLayoutTier } from './core/DistrictLayout';
 import { DialLabels } from './core/DialLabels';
+import { DistrictLookupPolicy } from './core/DistrictLookup';
 import { PlaceNamePolicy } from './core/PlaceNamePolicy';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
@@ -1146,6 +1147,16 @@ for (const item of equationCases) {
     MapTilesLogic.aboutLink(MapStyle.ESRI).indexOf('arcgisonline') >= 0);
   check('osm about link is present',
     MapTilesLogic.aboutLink(MapStyle.OSM).indexOf('openstreetmap.org') >= 0);
+  check('a new generation always starts a request',
+    DistrictLookupPolicy.shouldStartNewRequest(3, 4));
+  check('only the current generation result is accepted',
+    DistrictLookupPolicy.shouldAcceptResult(4, 4) && !DistrictLookupPolicy.shouldAcceptResult(3, 4));
+  check('the same place is deduplicated inside the timeout',
+    DistrictLookupPolicy.shouldSkipDuplicate(true, 1000) &&
+      !DistrictLookupPolicy.shouldSkipDuplicate(true, 7000));
+  check('different places are never deduplicated',
+    !DistrictLookupPolicy.shouldSkipDuplicate(false, 1000));
+  check('lookup timeout is at most 6 seconds', DistrictLookupPolicy.LOOKUP_TIMEOUT_MILLIS <= 6000);
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
   check('satellite forced outside china', forcedSatellite.datum === MapDatum.GCJ02
     && forcedSatellite.name === 'amap-satellite');
