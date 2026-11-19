@@ -2785,6 +2785,25 @@ expect(
             SunPathGeometry.labelRect(point: realLabels.sunset!.point, alignment: realLabels.sunset!.alignment, width: realEstW),
         ])
 )
+// 圆盘标签文案：「说明 + 半角空格 + 时间」，三语走 L()。
+func dialLabelText(_ prefix: String, hour: Double) -> String {
+    let totalMinutes = Int((hour * 60).rounded())
+    let hh = (totalMinutes / 60) % 24
+    let mm = totalMinutes % 60
+    return "\(prefix) " + String(format: "%02d:%02d", hh, mm)
+}
+expect(
+    "三个标签文案格式：说明 + 空格 + HH:mm（三语前缀）",
+    dialLabelText(L("sun.sunrise"), hour: 6.4) == "\(L("sun.sunrise")) 06:24"
+        && dialLabelText(L("sun.sunset"), hour: 16.9) == "\(L("sun.sunset")) 16:54"
+        && dialLabelText(L("sun.noon"), hour: 11.65) == "\(L("sun.noon")) 11:39"
+)
+expect(
+    "标签宽度按新文案估算：日照/日落 ≈ 2 汉字 + 空格 + 5 字符，上中天更长",
+    SunPathGeometry.estimatedLabelWidth(characters: 9) > SunPathGeometry.labelFontSize * 5
+        && SunPathGeometry.estimatedLabelWidth(characters: 12)
+            > SunPathGeometry.estimatedLabelWidth(characters: 9)
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
