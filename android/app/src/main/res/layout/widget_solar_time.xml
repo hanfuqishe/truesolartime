@@ -18,6 +18,7 @@
         android:paddingEnd="14dp"
         android:paddingBottom="10dp">
 
+
     <!-- 顶部标签行：整行一个逻辑单元（UTC · 地区 · 真太阳时 · 时辰），四档退化见
          WidgetUpdater.planCityLabel，两个容器的可见性由 WidgetUpdater 按档位二选一：
            * 档 0 用 widget_top_row_default —— 整行分左右两半（各占一半，与下面两列等宽一致）：
@@ -647,6 +648,7 @@
                 android:id="@+id/widget_hour2_cond_5"
                 style="@style/WidgetHourCond" />
         </LinearLayout>    </LinearLayout>
+
 
 
 

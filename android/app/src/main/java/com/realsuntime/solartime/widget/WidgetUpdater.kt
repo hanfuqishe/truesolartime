@@ -250,7 +250,13 @@ object WidgetUpdater {
     /** 主时钟行盒 = 1.2em（字体 ascent 0.9 + descent 0.3）。 */
     private const val CLOCK_LINE_BOX_EM = 1.2f
     /** 时钟行的宽度安全系数：给「桌面实际字宽与 Paint 量测的偏差」留余量，避免秒被挤掉一位。 */
-    private const val CLOCK_ROW_SAFETY = 0.90f
+    /**
+     * 时钟行宽度安全系数：沿用首页大卡片的 `CLOCK_FIT_SAFETY = 0.97`。
+     *
+     * 以前这里取 0.90（更保守），桌面卡片因此比首页**小约 7%**，整块内容也矮一截，
+     * `center_vertical` 居中后就显得上下留白偏大。两边用同一个比例，观感才一致。
+     */
+    private const val CLOCK_ROW_SAFETY = 0.97f
     /** 主字号 ≈ 栏宽 × 这个比例（实测 0.27~0.29，只为估算竖向预算，不参与最终字号）。 */
     private const val CLOCK_EM_PER_COLUMN = 0.28f
     /** 密度的合理区间：任何 ROM 给出 0 / 极小 / 荒谬的 density 都不许让字号、宽度塌成 0。 */
@@ -548,6 +554,9 @@ object WidgetUpdater {
                 "setBackgroundResource",
                 if (isDay) R.drawable.widget_background_day else R.drawable.widget_background_night,
             )
+            // 竖向富余先用来放大时钟（上限：宽度拟合值 / 时钟行占满可用高度），
+            // 还有剩再均分给上下内边距。空间不足时 growDp 为 0，仍走原来的压缩逻辑。
+            val roomDp = (if (effectiveHeightDp > 0f) effectiveHeightDp else availableDp)
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             val mainPx = applyClockSizing(
                 context = context,
@@ -557,8 +566,28 @@ object WidgetUpdater {
                 compact = compact,
                 views = this,
                 clockRowBudgetDp = clockRowBudgetDp,
+                clockRowGrowDp = 0f,
                 diag = diag,
             )
+            // 与首页大卡片同一套字号/行距（时钟字号只由宽度拟合决定），
+            // 多出来的高度**平均分给上下**，内容垂直居中；放不下则维持原压缩逻辑。
+            val clockRowNowDp = CLOCK_LINE_BOX_EM * mainPx / renderMetrics(context).density
+            // 一行 logcat 方便 adb 直接核对：可用/内容高度、时钟字号、有没有撞宽度上限。
+            Log.d(
+                TAG,
+                "clock fit: avail=${roomDp}dp content=${(CONTENT_FIXED_DP + clockRowNowDp).toInt()}dp " +
+                    "clockPx=${mainPx.toInt()} widthLimited=${clockRowBudgetDp == 0f}",
+            )
+            val (topPaddingDp, bottomPaddingDp) = if (!compressPadding && !singleRow) {
+                WidgetVerticalPadding.paddingDp(
+                    availableDp = roomDp,
+                    contentDp = CONTENT_FIXED_DP + clockRowNowDp,
+                    basePaddingDp = 10f,
+                )
+            } else {
+                10f to 10f
+            }
+            val extraPaddingDp = 0f
             diag?.apply {
                 add("单行版面 singleRow" to singleRow.toString())
                 add("紧凑版面 compact" to denseLayout.toString())
@@ -577,6 +606,13 @@ object WidgetUpdater {
                 val side = (if (compact) COMPACT_SIDE_PADDING_DP else SIDE_PADDING_DP) * d
                 val v = 4f * d
                 setViewPadding(R.id.widget_content, side.toInt(), v.toInt(), side.toInt(), v.toInt())
+            } else if (extraPaddingDp > 0.5f) {
+                // 竖向富余均分：上下各加同样的值，内容自然垂直居中（左右内边距不变）。
+                val d = renderMetrics(context).density
+                val side = (if (compact) COMPACT_SIDE_PADDING_DP else SIDE_PADDING_DP) * d
+                val v = (10f + extraPaddingDp) * d
+                setViewPadding(R.id.widget_content, side.toInt(), v.toInt(), side.toInt(), v.toInt())
+                diag?.add("竖向富余/侧(dp)" to "%.1f".format(Locale.US, extraPaddingDp))
             }
             if (showAxis) {
                 bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
@@ -1227,6 +1263,8 @@ object WidgetUpdater {
         compact: Boolean,
         views: RemoteViews,
         clockRowBudgetDp: Float = 0f,
+        /** 竖向富余时，允许把主字号放大到「时钟行占满这么多 dp」为止（0 = 不放大）。 */
+        clockRowGrowDp: Float = 0f,
         diag: MutableList<Pair<String, String>>? = null,
     ): Float {
         val metrics = renderMetrics(context)
@@ -1282,6 +1320,17 @@ object WidgetUpdater {
                 mainPx = cap.coerceAtLeast(dpToPx(MIN_MAIN_TEXT_DP, metrics) / 2f)
             }
         }
+        // 竖向富余：把主字号往上顶，直到「时钟行占满可用高度」或「碰到宽度拟合值」。
+        // 两列共用同一个 mainPx（下面分别下发同一字号），所以左右永远同步放大。
+        if (clockRowGrowDp > 0f) {
+            val heightCapPx = clockRowGrowDp * density / CLOCK_LINE_BOX_EM
+            val widthCapPx = fittedPx.coerceAtLeast(mainPx)
+            val grown = minOf(heightCapPx, widthCapPx).coerceAtLeast(mainPx)
+            if (grown > mainPx) {
+                Log.d(TAG, "clock grow: ${mainPx}px -> ${grown}px (heightCap=${heightCapPx}px)")
+                mainPx = grown
+            }
+        }
         val halfPx = mainPx / 2f
 
         views.setTextViewTextSize(R.id.widget_civil_time, TypedValue.COMPLEX_UNIT_PX, mainPx)
@@ -1305,6 +1354,7 @@ object WidgetUpdater {
             slackPx = SECOND_WIDTH_SLACK_DP * density,
         )
         views.setInt(R.id.widget_solar_sec, "setMaxWidth", secondsMaxWidth)
+
         diag?.apply {
             add("主时钟 mainPx" to mainPx.toInt().toString())
             add("秒 setMaxWidth(px)" to secondsMaxWidth.toString())
