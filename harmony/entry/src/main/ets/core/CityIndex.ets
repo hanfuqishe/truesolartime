@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 由经纬度查出所在城市。
  *
  * 内置一张主要城市表（省会与常见地级市、各国主要城市），按球面距离取最近的一个：
@@ -289,7 +289,7 @@ const RAW: string = `
 拉各斯|6.52|3.38|Lagos
 卡萨布兰卡|33.57|-7.59|Casablanca
 摩尔曼斯克|68.97|33.08|Murmansk
-南极中山站|-69.37|76.38|Zhongshan Station, Antarctica
+昆仑站|-80.4169|77.1161|Kunlun Station
 `;
 
 const ENTRIES: CityEntry[] = RAW.split('\n')
@@ -340,6 +340,9 @@ export class CityIndex {
     }
     if (nameZh === '里约热内卢') {
       return '里約熱內盧';
+    }
+    if (nameZh === '昆仑站') {
+      return '崑崙站';
     }
     return nameZh;
   }

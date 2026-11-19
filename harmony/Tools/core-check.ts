@@ -863,7 +863,7 @@ for (const item of equationCases) {
     ZoneTable.offsetSeconds(Place.PRESETS[8].countryCode, Place.PRESETS[8].longitude, 0));
 
   // 第 11 个起是境外城市：前 10 个大致按 UTC 偏移从西到东（檀香山 −10 … 悉尼 +10），
-  // 末尾两个是极圈城市（摩尔曼斯克 +3、中山站 +8），用来验证极昼／极夜。
+  // 末尾两个是极圈城市（摩尔曼斯克 +3、昆仑站 +8），用来验证极昼／极夜。
   const overseasMinutes: number[] = [-600, -480, -300, 0, 60, 240, 330, 540, 480, 600, 180, 480];
   let overseasOffsetsOk: boolean = true;
   let overseasNamesOk: boolean = true;
@@ -880,22 +880,35 @@ for (const item of equationCases) {
   check('overseas presets resolve by country code', overseasOffsetsOk);
   check('overseas presets have a city name', overseasNamesOk);
 
-  // 极圈城市：摩尔曼斯克（68.97°N 33.08°E，ru → UTC+3）与中山站（69.37°S 76.38°E，cn → UTC+8）。
+  // 极圈城市：摩尔曼斯克（68.97°N 33.08°E，ru → UTC+3）与昆仑站（69.37°S 77.1161°E，cn → UTC+8）。
   // 名字和按钮文案一样走 CityIndex；时区靠国家码，不依赖逆地理编码。
   const murmansk: Place = Place.PRESETS[20];
-  const zhongshan: Place = Place.PRESETS[21];
+  const kunlun: Place = Place.PRESETS[21];
   equal('murmansk latitude', 68.97, murmansk.latitude);
   equal('murmansk longitude', 33.08, murmansk.longitude);
-  equal('zhongshan latitude', -69.37, zhongshan.latitude);
-  equal('zhongshan longitude', 76.38, zhongshan.longitude);
+  equal('kunlun latitude', -80.4169, kunlun.latitude);
+  equal('kunlun longitude', 77.1161, kunlun.longitude);
   equal('murmansk zone is utc+3', 3 * 3600,
     ZoneTable.offsetSeconds(murmansk.countryCode, murmansk.longitude, 0));
-  equal('zhongshan zone is utc+8', 8 * 3600,
-    ZoneTable.offsetSeconds(zhongshan.countryCode, zhongshan.longitude, 0));
+  equal('kunlun zone is utc+8', 8 * 3600,
+    ZoneTable.offsetSeconds(kunlun.countryCode, kunlun.longitude, 0));
   const murmanskName = CityIndex.nearest(murmansk.latitude, murmansk.longitude, 'zh');
   equal('murmansk name', '摩尔曼斯克', murmanskName === null ? 'null' : murmanskName.name);
-  const zhongshanName = CityIndex.nearest(zhongshan.latitude, zhongshan.longitude, 'zh');
-  equal('zhongshan name', '南极中山站', zhongshanName === null ? 'null' : zhongshanName.name);
+  const kunlunName = CityIndex.nearest(kunlun.latitude, kunlun.longitude, 'zh');
+  equal('kunlun name', '昆仑站', kunlunName === null ? 'null' : kunlunName.name);
+  equal('preset 21 is kunlun station', 'city_kunlun', kunlun.labelKey);
+  equal('kunlun country code', 'cn', kunlun.countryCode);
+  equal('kunlun standard offset is +480', 480,
+    CivicTimeLogic.standardOffsetSeconds(kunlun.latitude, kunlun.longitude, kunlun.countryCode) / 60);
+  check('no zhongshan station preset remains',
+    Place.PRESETS.every((preset: Place): boolean => preset.labelKey !== 'city_zhongshan') &&
+      CityIndex.nearest(-69.37, 76.38, 'zh-CN')?.name !== '南极中山站');
+  // 2026-11-19 南半球夏季：昆仑站应是极昼，没有日出日落标签。
+  const kunlunNovember: SolarSnapshot = SolarTimeSnapshot.compute(
+    Date.UTC(2026, 10, 19, 12, 0, 0), kunlun.latitude, kunlun.longitude, 'zh-CN', 8 * 3600, kunlun.countryCode);
+  equal('kunlun 2026-11-19 is midnight sun', PolarState.MIDNIGHT_SUN, kunlunNovember.polar);
+  check('kunlun november has no sunrise or sunset',
+    !kunlunNovember.hasSunrise() && !kunlunNovember.hasSunset());
 
   // 极昼／极夜：卡片上「日出 / 日落」两格没有时刻，显示 "--:--"，下方另行提示极昼／极夜。
   const december = Date.UTC(2026, 11, 21, 12, 0, 0);
@@ -904,11 +917,11 @@ for (const item of equationCases) {
   equal('murmansk december is polar night', PolarState.POLAR_NIGHT, murmanskWinter.polar);
   equal('murmansk sunrise shows dash', '--:--', TimeFormat.clock(murmanskWinter.sunriseLocalSeconds));
   equal('murmansk sunset shows dash', '--:--', TimeFormat.clock(murmanskWinter.sunsetLocalSeconds));
-  const zhongshanSummer: SolarSnapshot = SolarTimeSnapshot.compute(
-    december, zhongshan.latitude, zhongshan.longitude, 'zh-CN', 8 * 3600, zhongshan.countryCode);
-  equal('zhongshan december is midnight sun', PolarState.MIDNIGHT_SUN, zhongshanSummer.polar);
-  equal('zhongshan sunrise shows dash', '--:--', TimeFormat.clock(zhongshanSummer.sunriseLocalSeconds));
-  equal('zhongshan sunset shows dash', '--:--', TimeFormat.clock(zhongshanSummer.sunsetLocalSeconds));
+  const kunlunSummer: SolarSnapshot = SolarTimeSnapshot.compute(
+    december, kunlun.latitude, kunlun.longitude, 'zh-CN', 8 * 3600, kunlun.countryCode);
+  equal('kunlun december is midnight sun', PolarState.MIDNIGHT_SUN, kunlunSummer.polar);
+  equal('kunlun sunrise shows dash', '--:--', TimeFormat.clock(kunlunSummer.sunriseLocalSeconds));
+  equal('kunlun sunset shows dash', '--:--', TimeFormat.clock(kunlunSummer.sunsetLocalSeconds));
 }
 
 // ---- 「是不是中国境内」：国家码优先，没有国家码才退回包围盒 ----
@@ -986,8 +999,8 @@ for (const item of equationCases) {
     CivicTimeLogic.standardOffsetMinutes(43.8256, 87.6168, 'cn'));
   equal('beijing uses china standard time', 480,
     CivicTimeLogic.standardOffsetMinutes(39.9042, 116.4074, 'cn'));
-  equal('zhongshan uses china standard time', 480,
-    CivicTimeLogic.standardOffsetMinutes(-69.37, 76.38, 'aq'));
+  equal('kunlun uses china standard time', 480,
+    CivicTimeLogic.standardOffsetMinutes(-80.4169, 77.1161, 'aq'));
   equal('great wall station uses china standard time', 480,
     CivicTimeLogic.standardOffsetMinutes(-62.22, -58.96, 'aq'));
   equal('kunlun station uses china standard time', 480,
@@ -1458,15 +1471,15 @@ for (const item of equationCases) {
     downgrade.consider(MapStyle.OSM, 12, true, 900));
   equal('downgrade chain ends at z12', 12, downgrade.zoom);
 
-  // 南极中山站：countryCode=cn → 偏好高德，但高德 z12 空白、OSM z12 有内容 → OSM z12。
-  const zhongshanPreferred = MapFallback.preferredStyle(MapStyle.AUTO, -69.37, 76.38, 'cn');
-  equal('zhongshan is region-preferred to amap', MapStyle.AMAP_VECTOR, zhongshanPreferred);
-  const zhongshanProbe = new ProgressiveProbe(0, zhongshanPreferred);
-  check('zhongshan amap z12 blank is skipped',
-    !zhongshanProbe.consider(MapStyle.AMAP_VECTOR, 12, false, 200));
-  check('zhongshan osm z12 wins', zhongshanProbe.consider(MapStyle.OSM, 12, true, 400));
-  equal('zhongshan end-to-end source', MapStyle.OSM, zhongshanProbe.source);
-  equal('zhongshan end-to-end zoom', 12, zhongshanProbe.zoom);
+  // 昆仑站：countryCode=cn → 偏好高德，但高德 z12 空白、OSM z12 有内容 → OSM z12。
+  const kunlunPreferred = MapFallback.preferredStyle(MapStyle.AUTO, -80.4169, 77.1161, 'cn');
+  equal('kunlun is region-preferred to amap', MapStyle.AMAP_VECTOR, kunlunPreferred);
+  const kunlunProbe = new ProgressiveProbe(0, kunlunPreferred);
+  check('kunlun amap z12 blank is skipped',
+    !kunlunProbe.consider(MapStyle.AMAP_VECTOR, 12, false, 200));
+  check('kunlun osm z12 wins', kunlunProbe.consider(MapStyle.OSM, 12, true, 400));
+  equal('kunlun end-to-end source', MapStyle.OSM, kunlunProbe.source);
+  equal('kunlun end-to-end zoom', 12, kunlunProbe.zoom);
 
   // ---- ESRI：境外自动偏好源；三源按级别 + 优先级选择 ----
   equal('abroad auto prefers esri', MapStyle.ESRI,
@@ -2052,16 +2065,16 @@ for (const item of equationCases) {
   equal('night arc stays gold', '#F5D68A', SunDialColors.NIGHT_ARC);
 }
 
-// ---- 预设城市「南极中山站」的显示名（中文 / 英文两列）----
+// ---- 预设城市「昆仑站」的显示名（中文 / 英文两列）----
 {
-  const zhongshanZh = CityIndex.nearest(-69.37, 76.38, 'zh-Hans');
-  const zhongshanEn = CityIndex.nearest(-69.37, 76.38, 'en-US');
-  check('zhongshan station keeps the new chinese name',
-    zhongshanZh !== null && zhongshanZh.name === '南极中山站',
-    `${zhongshanZh === null ? 'null' : zhongshanZh.name}`);
-  check('zhongshan station keeps the new english name',
-    zhongshanEn !== null && zhongshanEn.name === 'Zhongshan Station, Antarctica',
-    `${zhongshanEn === null ? 'null' : zhongshanEn.name}`);
+  const kunlunZh = CityIndex.nearest(-80.4169, 77.1161, 'zh-Hans');
+  const kunlunEn = CityIndex.nearest(-80.4169, 77.1161, 'en-US');
+  check('kunlun station keeps the new chinese name',
+    kunlunZh !== null && kunlunZh.name === '昆仑站',
+    `${kunlunZh === null ? 'null' : kunlunZh.name}`);
+  check('kunlun station keeps the new english name',
+    kunlunEn !== null && kunlunEn.name === 'Kunlun Station',
+    `${kunlunEn === null ? 'null' : kunlunEn.name}`);
 }
 
 // ---- 夜间弧必须与白天弧互补，不能把整圈重画一遍 ----
@@ -2159,32 +2172,32 @@ for (const item of equationCases) {
       SunPathGeometry.rectOf(sydneyAnchors.sunriseX, sydneyAnchors.sunriseY, labelWidth, labelHeight, false),
       SunPathGeometry.rectOf(sydneyAnchors.sunsetX, sydneyAnchors.sunsetY, labelWidth, labelHeight, true)));
 
-  // 南极中山站（22.7h / 00:21 / 23:39，近极昼）：以交点为基准，仅最小推开。
-  const zhongshan: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
-  const zhongshanAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(zhongshan, 0.35, 23.65,
+  // 昆仑站（22.7h / 00:21 / 23:39，近极昼）：以交点为基准，仅最小推开。
+  const kunlun: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
+  const kunlunAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(kunlun, 0.35, 23.65,
     10, 8, 18, 10);
-  const zhongshanChord: number = SunPathGeometry.horizonHalfChord(zhongshan);
-  const sunrisePoint: number = zhongshan.centerX + zhongshanChord;
-  const sunsetPoint: number = zhongshan.centerX - zhongshanChord;
-  check('zhongshan labels sit below the horizon',
-    zhongshanAnchors.sunriseY > zhongshan.horizonY &&
-      zhongshanAnchors.sunsetY > zhongshan.horizonY);
-  check('zhongshan sunrise stays within 40% of the card',
-    Math.abs(zhongshanAnchors.sunriseX - sunrisePoint) <= 294 * 0.4);
-  check('zhongshan sunset stays within 40% of the card',
-    Math.abs(zhongshanAnchors.sunsetX - sunsetPoint) <= 294 * 0.4);
-  const zhongshanRects: number[][] = [
-    SunPathGeometry.rectOf(zhongshanAnchors.sunriseX, zhongshanAnchors.sunriseY, labelWidth,
+  const kunlunChord: number = SunPathGeometry.horizonHalfChord(kunlun);
+  const sunrisePoint: number = kunlun.centerX + kunlunChord;
+  const sunsetPoint: number = kunlun.centerX - kunlunChord;
+  check('kunlun labels sit below the horizon',
+    kunlunAnchors.sunriseY > kunlun.horizonY &&
+      kunlunAnchors.sunsetY > kunlun.horizonY);
+  check('kunlun sunrise stays within 40% of the card',
+    Math.abs(kunlunAnchors.sunriseX - sunrisePoint) <= 294 * 0.4);
+  check('kunlun sunset stays within 40% of the card',
+    Math.abs(kunlunAnchors.sunsetX - sunsetPoint) <= 294 * 0.4);
+  const kunlunRects: number[][] = [
+    SunPathGeometry.rectOf(kunlunAnchors.sunriseX, kunlunAnchors.sunriseY, labelWidth,
       labelHeight, false),
-    SunPathGeometry.rectOf(zhongshanAnchors.sunsetX, zhongshanAnchors.sunsetY, labelWidth,
+    SunPathGeometry.rectOf(kunlunAnchors.sunsetX, kunlunAnchors.sunsetY, labelWidth,
       labelHeight, true),
-    SunPathGeometry.rectOf(zhongshanAnchors.noonX, zhongshanAnchors.noonY, labelWidth,
+    SunPathGeometry.rectOf(kunlunAnchors.noonX, kunlunAnchors.noonY, labelWidth,
       labelHeight, false, true)
   ];
-  check('zhongshan three labels are pairwise disjoint',
-    !SunPathGeometry.rectsOverlap(zhongshanRects[0], zhongshanRects[1]) &&
-      !SunPathGeometry.rectsOverlap(zhongshanRects[0], zhongshanRects[2]) &&
-      !SunPathGeometry.rectsOverlap(zhongshanRects[1], zhongshanRects[2]));
+  check('kunlun three labels are pairwise disjoint',
+    !SunPathGeometry.rectsOverlap(kunlunRects[0], kunlunRects[1]) &&
+      !SunPathGeometry.rectsOverlap(kunlunRects[0], kunlunRects[2]) &&
+      !SunPathGeometry.rectsOverlap(kunlunRects[1], kunlunRects[2]));
 
   // 极端极昼：日出=日落=同一个点，允许退到边缘，但间距仍 ≥ 60% 卡片宽。
   const samePoint: SunPath = SunPathGeometry.compute(294, 194, 12, 12, 12, false, false, true);
@@ -2250,9 +2263,9 @@ for (const item of equationCases) {
   const sydneyScene: SunPath = SunPathGeometry.compute(294, 194, 6.0, 18.0, 12, false, false, true);
   check('sydney three labels disjoint with descriptions', noOverlap(layoutOf(sydneyScene, 6, 18)));
   check('sydney three labels stay inside the canvas', inside(layoutOf(sydneyScene, 6, 18)));
-  const zhongshanScene: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
-  check('zhongshan three labels disjoint with descriptions', noOverlap(layoutOf(zhongshanScene, 0.35, 23.65)));
-  check('zhongshan three labels stay inside the canvas', inside(layoutOf(zhongshanScene, 0.35, 23.65)));
+  const kunlunScene: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
+  check('kunlun three labels disjoint with descriptions', noOverlap(layoutOf(kunlunScene, 0.35, 23.65)));
+  check('kunlun three labels stay inside the canvas', inside(layoutOf(kunlunScene, 0.35, 23.65)));
 }
 
 // ---- 顶部标签行：左右两半的四档 ----
