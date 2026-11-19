@@ -338,12 +338,18 @@ class SunPathGeometryTest {
     /** labelSmall 的行高。 */
     private val labelHeight = 16f
 
+    // 带文字说明的新标签：「日出 06:24」≈ 2 汉字 + 空格 + 5 字符；「上中天 11:39」更长。
+    private val sunriseLabelWidth = 55f
+    private val sunsetLabelWidth = 55f
+    private val noonLabelWidth = 66f
+
     private fun dial(
         sunriseHour: Double?,
         sunsetHour: Double?,
         trueSolarHour: Double = 12.0,
         isPolarDay: Boolean = false,
         isPolarNight: Boolean = false,
+        southernHemisphere: Boolean = false,
     ): SunPath = SunPathGeometry.compute(
         width = dialWidth,
         height = dialHeight,
@@ -352,6 +358,7 @@ class SunPathGeometryTest {
         trueSolarHour = trueSolarHour,
         isPolarDay = isPolarDay,
         isPolarNight = isPolarNight,
+        southernHemisphere = southernHemisphere,
     )
 
     private fun anchors(path: SunPath, sunriseHour: Double?, sunsetHour: Double?): SunLabelAnchors =
@@ -495,6 +502,144 @@ class SunPathGeometryTest {
     }
 
     /** 五个场景的标签都不越出画布左右两侧（各留 ≥8dp），竖直方向也不出画布。 */
+    // ---- 重叠退让（近极昼：日出/日落/上中天挤到一起） ----
+
+    /** 带「真实标签尺寸」的锚点计算（与 UI 传参一致）。 */
+    private fun anchorsWithSizes(
+        path: SunPath,
+        sunriseHour: Double?,
+        sunsetHour: Double?,
+        sunriseWidth: Float = sunriseLabelWidth,
+        sunsetWidth: Float = sunsetLabelWidth,
+        noonWidth: Float = noonLabelWidth,
+    ): SunLabelAnchors = SunPathGeometry.labelAnchors(
+        path = path,
+        sunriseHour = sunriseHour,
+        sunsetHour = sunsetHour,
+        sideGap = sideGap,
+        noonGap = noonGap,
+        minLabelDrop = labelDrop,
+        sideLabelRise = labelRise,
+        sunriseWidth = sunriseWidth,
+        sunsetWidth = sunsetWidth,
+        noonWidth = noonWidth,
+        labelHeight = labelHeight,
+        edgeInset = sideInset,
+        canvasWidth = dialWidth,
+    )
+
+    private data class Rect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+        fun overlaps(o: Rect): Boolean =
+            left < o.right && o.left < right && top < o.bottom && o.top < bottom
+    }
+
+    /** 按 UI 的对齐规则把锚点还原成矩形：日出/日落锚点是挨着圆的边，上中天是中心 + 底边。 */
+    private fun rects(
+        path: SunPath,
+        a: SunLabelAnchors,
+        sunriseW: Float = sunriseLabelWidth,
+        sunsetW: Float = sunsetLabelWidth,
+        noonW: Float = noonLabelWidth,
+    ): List<Rect> {
+        fun side(x: Float, y: Float, width: Float): Rect {
+            val left = if (x > path.centerX) x else x - width
+            return Rect(left, y - labelHeight / 2f, left + width, y + labelHeight / 2f)
+        }
+        return listOf(
+            side(a.sunriseX, a.sunriseY, sunriseW),
+            side(a.sunsetX, a.sunsetY, sunsetW),
+            Rect(a.noonX - noonW / 2f, a.noonY - labelHeight, a.noonX + noonW / 2f, a.noonY),
+        )
+    }
+
+    /**
+     * 南极中山站（69.37°S，近极昼：日落 02:01 / 日出 03:18，昼长 22.7h）：
+     * 标签在**交点正下方**，只做最小必要外推（偏移 ≤ 40% 卡片宽），三者矩形两两不相交。
+     */
+    @Test
+    fun nearPolarDayKeepsLabelsUnderTheIntersectionsAndApart() {
+        val path = dial(3.3, 2.02, trueSolarHour = 9.7, southernHemisphere = true)
+        val a = anchorsWithSizes(path, 3.3, 2.02)
+        val sunrisePoint = SunPathGeometry.hourX(path.centerX, path.radius, 3.3, southernHemisphere = true)
+        val sunsetPoint = SunPathGeometry.hourX(path.centerX, path.radius, 2.02, southernHemisphere = true)
+
+        // 地平线下方
+        assertTrue("日出标签应在地平线下方：${a.sunriseY} vs ${path.horizonY}", a.sunriseY > path.horizonY)
+        assertTrue("日落标签应在地平线下方", a.sunsetY > path.horizonY)
+        // 仍以交点为基准：偏移不超过卡片宽 40%
+        assertTrue(
+            "日出标签偏移过大：${a.sunriseX} vs 交点 $sunrisePoint",
+            kotlin.math.abs(a.sunriseX - sunrisePoint) <= dialWidth * 0.4f,
+        )
+        assertTrue(
+            "日落标签偏移过大：${a.sunsetX} vs 交点 $sunsetPoint",
+            kotlin.math.abs(a.sunsetX - sunsetPoint) <= dialWidth * 0.4f,
+        )
+        // 间距够放得下较宽的那个标签
+        assertTrue("两个标签间距不足：${a.sunriseX - a.sunsetX}", a.sunriseX - a.sunsetX >= sunriseLabelWidth + 8f)
+        // 三者两两不相交
+        val (sr, ss, noon) = rects(path, a)
+        assertFalse("日出标签不能与日落标签相交", sr.overlaps(ss))
+        assertFalse("日出标签不能与上中天相交", sr.overlaps(noon))
+        assertFalse("日落标签不能与上中天相交", ss.overlaps(noon))
+    }
+
+    /** 南半球普通日（悉尼）：标签 x **就是交点 x**（偏移 0），在地平线下方、左右不重叠。 */
+    @Test
+    fun southernHemisphereLabelsSitDirectlyUnderTheIntersections() {
+        val path = dial(6.0, 18.0, southernHemisphere = true)
+        val a = anchorsWithSizes(path, 6.0, 18.0)
+        assertEquals(
+            "日出标签 x 应等于交点 x",
+            SunPathGeometry.hourX(path.centerX, path.radius, 6.0, southernHemisphere = true),
+            a.sunriseX,
+            0.01f,
+        )
+        assertEquals(
+            "日落标签 x 应等于交点 x",
+            SunPathGeometry.hourX(path.centerX, path.radius, 18.0, southernHemisphere = true),
+            a.sunsetX,
+            0.01f,
+        )
+        assertTrue("日出标签在地平线下方", a.sunriseY > path.horizonY)
+        assertTrue("日落标签在地平线下方", a.sunsetY > path.horizonY)
+        assertTrue("南半球日出在右", a.sunriseX > path.centerX)
+        assertTrue("南半球日落在左", a.sunsetX < path.centerX)
+        val (sr, ss, noon) = rects(path, a)
+        assertFalse(sr.overlaps(ss))
+        assertFalse(sr.overlaps(noon))
+        assertFalse(ss.overlaps(noon))
+    }
+
+    /** 极端近极昼（日出=日落同点）：退到画布边缘布局，横向间距 ≥ 卡片宽 60%。 */
+    @Test
+    fun coincidentIntersectionsFallBackToTheCanvasEdges() {
+        val path = dial(2.02, 2.02, trueSolarHour = 0.0, southernHemisphere = true)
+        val a = anchorsWithSizes(path, 2.02, 2.02)
+        assertEquals(dialWidth - sunriseLabelWidth, a.sunriseX, 0.5f)
+        assertEquals(sunsetLabelWidth, a.sunsetX, 0.5f)
+        assertTrue("间距应 ≥ 60% 卡片宽：${a.sunriseX - a.sunsetX}", a.sunriseX - a.sunsetX >= dialWidth * 0.6f)
+        assertTrue("仍在地平线下方", a.sunriseY > path.horizonY && a.sunsetY > path.horizonY)
+        val (sr, ss, noon) = rects(path, a)
+        assertFalse(sr.overlaps(ss))
+        assertFalse(sr.overlaps(noon))
+        assertFalse(ss.overlaps(noon))
+    }
+
+    /** 北半球（北京）：传了标签尺寸也与改动前**完全一致**（逐字段相等）。 */
+    @Test
+    fun northernHemisphereKeepsTheExactOldAnchors() {
+        val beijing = dial(6.2, 17.8)
+        assertEquals(anchors(beijing, 6.2, 17.8), anchorsWithSizes(beijing, 6.2, 17.8))
+    }
+
+    /** 极昼/极夜没有日出日落：不做任何南半球处理，锚点与旧版一致（UI 本来就不画这两个标签）。 */
+    @Test
+    fun polarDaysKeepTheOldAnchors() {
+        val path = dial(null, null, isPolarDay = true)
+        assertEquals(anchors(path, null, null), anchorsWithSizes(path, null, null))
+        assertTrue(path.hasTransitLabel)
+    }
     @Test
     fun labelAnchorsStayInsideTheCanvasOnSmallCards() {
         // 最小的常见卡片：320dp 宽 − 20×2 内边距 = 280dp；高度不变。
@@ -637,13 +782,17 @@ class SunPathGeometryTest {
         assertTrue("极昼两边都是整圆", polarNorth.isWholeCircleDay && polarSouth.isWholeCircleDay)
     }
 
-    /** 南半球日出标签锚点在**右**、日落在**左**（北半球相反），上下位置不变。 */
+    /**
+     * 南半球日出标签锚点在**右**、日落在**左**（北半球相反）；
+     * 南半球统一放到地平线**下方**（北半球仍在地平线上方）。
+     */
     @Test
     fun southernHemisphereSwapsSunriseAndSunsetLabels() {
         val north = dial(4.99, 19.01)
         val northAnchors = anchors(north, 4.99, 19.01)
         assertTrue("北半球日出标签在左", northAnchors.sunriseX < north.centerX)
         assertTrue("北半球日落标签在右", northAnchors.sunsetX > north.centerX)
+        assertTrue("北半球标签在地平线上方", northAnchors.sunriseY < north.horizonY)
 
         val south = dialSouth(4.99, 19.01)
         assertTrue("路径要记住这是南半球", south.southernHemisphere)
@@ -653,12 +802,8 @@ class SunPathGeometryTest {
             southAnchors.sunriseX > south.centerX,
         )
         assertTrue("南半球日落标签应在圆心左侧", southAnchors.sunsetX < south.centerX)
-        // 上下不变、左右镜像。
-        assertEquals(northAnchors.sunriseY, southAnchors.sunriseY, 0.5f)
-        assertEquals(northAnchors.sunsetY, southAnchors.sunsetY, 0.5f)
-        assertEquals(northAnchors.noonY, southAnchors.noonY, 0.5f)
-        assertEquals(2 * north.centerX - northAnchors.sunriseX, southAnchors.sunriseX, 0.5f)
-        assertEquals(2 * north.centerX - northAnchors.sunsetX, southAnchors.sunsetX, 0.5f)
+        assertTrue("南半球日出标签在地平线下方", southAnchors.sunriseY > south.horizonY)
+        assertTrue("南半球日落标签在地平线下方", southAnchors.sunsetY > south.horizonY)
     }
 
     /** 地平线只由昼长决定：同一昼长下南北半球的 horizonY 与地平线跨度完全相同。 */

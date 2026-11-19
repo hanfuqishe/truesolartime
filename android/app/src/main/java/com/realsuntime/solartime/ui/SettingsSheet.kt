@@ -2,9 +2,10 @@ package com.realsuntime.solartime.ui
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,7 +38,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -215,15 +219,43 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Place.PRESETS.forEach { preset ->
-                    AssistChip(
-                        onClick = {
-                            onSelectPreset(preset)
-                            onDismiss()
-                        },
-                        label = { Text(TimeText.placeLabel(context, preset)) },
-                    )
+            // 常用城市：**等宽网格**（与 iOS 一致）—— 同一行各列等宽、行行对齐。
+            // 列数按**屏幕宽度**判断（不用 BoxWithConstraints / SubcomposeLayout：项目硬性约束，
+            // 首页宽屏分支在 IntrinsicSize.Max 里，测量型 Composable 会崩）。
+            // 手机（P30 内容宽 ~256–320dp）用 3 列，保证「南极中山站 / 摩尔曼斯克」完整显示；
+            // 平板（≥440dp）用 4 列。
+            val columns = if (LocalConfiguration.current.screenWidthDp >= 440) 4 else 3
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Place.PRESETS.chunked(columns).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { preset ->
+                            AssistChip(
+                                onClick = {
+                                    onSelectPreset(preset)
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = TimeText.placeLabel(context, preset),
+                                            // 11sp：5 个汉字也能放进 1/3 列宽里。
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                        // 最后一行不满时补空位，保证与上面各列对齐。
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
             }
 
@@ -241,7 +273,6 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // ESRI 只做「境外自动」的偏好源，不单独给手动选项（设置了也没意义：境外自动已经用它）。
                 MapStyle.manualOptions.forEach { style ->
                     FilterChip(
                         selected = style == mapStyle,

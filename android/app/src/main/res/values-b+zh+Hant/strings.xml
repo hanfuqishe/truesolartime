@@ -9,6 +9,9 @@
     <string name="solar_noon">上中天</string>
     <string name="sunset">日落</string>
     <string name="sun_daylight_line">白晝 %1$s</string>
+    <string name="sun_label_sunrise">日出</string>
+    <string name="sun_label_sunset">日落</string>
+    <string name="sun_label_noon">上中天</string>
     <string name="sun_polar_day">極晝</string>
     <string name="sun_polar_night">極夜</string>
     <string name="version_label">版本 %1$s</string>

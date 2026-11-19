@@ -1435,9 +1435,10 @@ private fun SunDial(
 
     val labelStyle = cardTextStyle(MaterialTheme.typography.labelSmall, FontWeight.Medium)
     val dataColor = MaterialTheme.colorScheme.onSurface
-    val sunriseText = TimeFormat.clock(snapshot.sunriseLocal)
-    val sunsetText = TimeFormat.clock(snapshot.sunsetLocal)
-    val noonText = TimeFormat.clock(snapshot.solarNoonLocal)
+    // 圆盘标签带文字说明：日出 06:24 / 日落 16:54 / 上中天 11:39（文案走 strings.xml，三语）。
+    val sunriseText = stringResource(R.string.sun_label_sunrise) + " " + TimeFormat.clock(snapshot.sunriseLocal)
+    val sunsetText = stringResource(R.string.sun_label_sunset) + " " + TimeFormat.clock(snapshot.sunsetLocal)
+    val noonText = stringResource(R.string.sun_label_noon) + " " + TimeFormat.clock(snapshot.solarNoonLocal)
     val polarText = stringResource(if (polarDay) R.string.sun_polar_day else R.string.sun_polar_night)
 
     val measurer = rememberTextMeasurer()
@@ -1666,6 +1667,19 @@ private fun SunDial(
                 noonGap = noonGapPx,
                 minLabelDrop = dropPx,
                 sideLabelRise = risePx,
+                // 把量出来的真实宽高交给纯几何：接近极昼时三个标签会挤在一起，由它决定要不要边缘退让。
+                sunriseWidth = sunriseLabel.size.width.toFloat(),
+                sunsetWidth = sunsetLabel.size.width.toFloat(),
+                noonWidth = noonLabel.size.width.toFloat(),
+                labelHeight = maxOf(
+                    sunriseLabel.size.height,
+                    sunsetLabel.size.height,
+                    noonLabel.size.height,
+                ).toFloat(),
+                edgeInset = sideInsetPx.toFloat(),
+                canvasWidth = dialPx.width.toFloat(),
+                // 南半球把两个标签放到地平线下方，偏移量与「北半球抬升」同一档。
+                labelBelowOffset = risePx,
             )
             // 夹进画布：左右各留 sideInset，竖直方向不出画布（极端昼长时标签会顶到边上）。
             fun placed(x: Float, y: Float, w: Int, h: Int): IntOffset {

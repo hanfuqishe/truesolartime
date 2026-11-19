@@ -156,6 +156,14 @@ data class MotionArrow(
     val tipY: Float,
 )
 
+/**
+ * 估算的标签矩形（像素）：只用于「三个时间标签会不会叠在一起」的检测，不参与绘制。
+ */
+private data class LabelRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+    fun overlaps(other: LabelRect): Boolean =
+        left < other.right && other.left < right && top < other.bottom && other.top < bottom
+}
+
 /** 圆盘几何的唯一入口：纯 Kotlin，不依赖 Android 绘图 API。 */
 object SunPathGeometry {
 
@@ -182,6 +190,9 @@ object SunPathGeometry {
     const val MOTION_ARROW_SPAN_DEG = 30f
 
     private const val HOURS_PER_DAY = 24.0
+
+    /** 南半球日出/日落两个标签之间的最小水平间距（= 较宽者 + 8dp 的 8dp）。 */
+    private const val SOUTHERN_LABEL_GAP = 8f
 
     /**
      * 真太阳时 [hour]（0–24，允许越界：23:30 之后接着写 24.5 仍然连续）对应的角度，
@@ -406,6 +417,13 @@ object SunPathGeometry {
      * [sideLabelRise] 把日出／日落标签从交点往上抬一点，于是**延伸后的地平线可以从标签底下穿过去**
      * （不抬的话那条线会正好压过文字）。
      *
+     * **重叠退让**：三个标签的实际宽高由调用方传进来（[sunriseWidth] / [sunsetWidth] / [noonWidth] /
+     * [labelHeight]）。接近极昼时日出、日落两个交点都贴近圆顶/圆底，算出来的锚点会挤到圆心正上方（或正下方），
+     * 和上中天标签叠在一起。这时启用**边缘退让**：日出/日落贴画布左右内边距（[edgeInset]，南北半球按镜像摆）、
+     * 竖直位置取「地平线 − [sideLabelRise]」；上中天仍在圆顶上方，若仍相交再上移到画布顶部内边距。
+     *
+     * 宽度都传 0 时**不做检测**，输出与旧版逐像素一致（普通日不受影响，老调用方也不用改）。
+     *
      * 极昼 / 极夜（[sunriseHour] / [sunsetHour] 为 null）时没有交点，日出／日落锚点退到圆的
      * 最左 / 最右（06:00 与 18:00 的位置，南北半球按 [SunPath.southernHemisphere] 镜像）；
      * UI 在这两种情况下不画这两个标签，只用 [SunLabelAnchors.polarX] / [SunLabelAnchors.polarY]
@@ -419,6 +437,13 @@ object SunPathGeometry {
         noonGap: Float,
         minLabelDrop: Float,
         sideLabelRise: Float,
+        sunriseWidth: Float = 0f,
+        sunsetWidth: Float = 0f,
+        noonWidth: Float = 0f,
+        labelHeight: Float = 0f,
+        edgeInset: Float = 0f,
+        canvasWidth: Float = path.centerX * 2f,
+        labelBelowOffset: Float = sideLabelRise,
     ): SunLabelAnchors {
         val cx = path.centerX
         val cy = path.centerY
@@ -436,15 +461,113 @@ object SunPathGeometry {
 
         // 北半球：日出在左（-1）、日落在右（+1）；南半球镜像（日出在右、日落在左）。
         val sunriseSign = if (path.southernHemisphere) 1f else -1f
-        val (sunriseX, sunriseY) = side(sunriseHour, sunriseSign)
-        val (sunsetX, sunsetY) = side(sunsetHour, -sunriseSign)
+        var (sunriseX, sunriseY) = side(sunriseHour, sunriseSign)
+        var (sunsetX, sunsetY) = side(sunsetHour, -sunriseSign)
+        var noonY = cy - r - noonGap
+
+        // 只有拿得到「标签尺寸」且真有日出日落时才做重叠检测；宽度为 0 = 老行为（零变化）。
+        val hasSizes = labelHeight > 0f && (sunriseWidth > 0f || sunsetWidth > 0f || noonWidth > 0f)
+        if (path.southernHemisphere && sunriseHour != null && sunsetHour != null) {
+            // 南半球：太阳从右往左走，日出/日落交点贴近圆底 —— 标签放到**地平线下方**（不压轨迹线），
+            // 并且 **x 直接取交点 x**（左标签右对齐、右标签左对齐，各自向圆外延伸），
+            // 只有两个矩形会相交 / 间距不足时才以交点为基准等量外推；推不开才退到画布内边距。
+            val y = path.horizonY + labelBelowOffset
+            sunriseY = y
+            sunsetY = y
+            val sunrisePointX = hourX(cx, r, sunriseHour, southernHemisphere = true)
+            val sunsetPointX = hourX(cx, r, sunsetHour, southernHemisphere = true)
+            sunriseX = sunrisePointX
+            sunsetX = sunsetPointX
+            if (hasSizes && sunriseWidth > 0f && sunsetWidth > 0f) {
+                val required = maxOf(sunriseWidth, sunsetWidth) + SOUTHERN_LABEL_GAP
+                val gap = sunrisePointX - sunsetPointX
+                if (gap < 1f) {
+                    // 极端近极昼：两个交点几乎重合（日出=日落同点）→ 直接退到画布左右边缘，
+                    // 间距 = 画布宽 − 两个标签宽（≥ 卡片宽 60%）。
+                    sunriseX = canvasWidth - sunriseWidth
+                    sunsetX = sunsetWidth
+                } else if (gap < required) {
+                    // 以交点为基准等量推开：日出往右、日落往左，各推一半。
+                    val push = (required - gap) / 2f
+                    val maxSunriseX = canvasWidth - edgeInset - sunriseWidth
+                    val minSunsetX = edgeInset + sunsetWidth
+                    val pushedSunrise = (sunrisePointX + push).coerceAtMost(maxSunriseX)
+                    val pushedSunset = (sunsetPointX - push).coerceAtLeast(minSunsetX)
+                    if (pushedSunrise - pushedSunset >= required) {
+                        sunriseX = pushedSunrise
+                        sunsetX = pushedSunset
+                    } else {
+                        // 推到内边距仍不够（两交点几乎重合且贴着边）：才退到画布左右边缘布局。
+                        sunriseX = maxSunriseX
+                        sunsetX = minSunsetX
+                    }
+                }
+            }
+        } else if (hasSizes && sunriseHour != null && sunsetHour != null) {
+            // 矩形按 UI 的真实摆法来估：锚点 → 左边缘 → **夹进画布**（左右各留 edgeInset），
+            // 窄卡/宽字时夹取会把两侧标签推向中间，这才是真机上「叠在一起」的来源。
+            fun placedLeft(rawLeft: Float, width: Float): Float {
+                val maxLeft = (canvasWidth - width - edgeInset).coerceAtLeast(edgeInset)
+                return rawLeft.coerceIn(edgeInset, maxLeft)
+            }
+
+            fun sideRect(anchorX: Float, centerY: Float, width: Float): LabelRect {
+                // 锚点在哪一侧，就由它向那一侧展开（与 UI 的 left/right 对齐一致）。
+                val rawLeft = if (anchorX > cx) anchorX else anchorX - width
+                val left = placedLeft(rawLeft, width)
+                return LabelRect(left, centerY - labelHeight / 2f, left + width, centerY + labelHeight / 2f)
+            }
+
+            val sunriseRect = sideRect(sunriseX, sunriseY, sunriseWidth)
+            val sunsetRect = sideRect(sunsetX, sunsetY, sunsetWidth)
+            val noonLeft = placedLeft(cx - noonWidth / 2f, noonWidth)
+            val noonRect = LabelRect(
+                noonLeft,
+                noonY - labelHeight,
+                noonLeft + noonWidth,
+                noonY,
+            )
+            val overlaps = sunriseRect.overlaps(sunsetRect) ||
+                sunriseRect.overlaps(noonRect) ||
+                sunsetRect.overlaps(noonRect)
+            if (overlaps) {
+                // 边缘退让：日出/日落贴各自那一侧的内边距，竖直取地平线往上一点。
+                val y = path.horizonY - sideLabelRise
+                val leftEdge = edgeInset
+                val rightEdge = canvasWidth - edgeInset
+                sunriseX = if (sunriseSign > 0f) {
+                    rightEdge - sunriseWidth
+                } else {
+                    leftEdge + sunriseWidth
+                }
+                sunsetX = if (sunriseSign > 0f) {
+                    leftEdge + sunsetWidth
+                } else {
+                    rightEdge - sunsetWidth
+                }
+                sunriseY = y
+                sunsetY = y
+                // 上中天仍在圆顶上方；若和退让后的两侧标签还相交，就一路顶到画布上沿。
+                val topY = edgeInset + labelHeight
+                val noonAtTopLeft = placedLeft(cx - noonWidth / 2f, noonWidth)
+                val noonAtTop = LabelRect(
+                    noonAtTopLeft,
+                    topY - labelHeight,
+                    noonAtTopLeft + noonWidth,
+                    topY,
+                )
+                val stillOverlaps = noonAtTop.overlaps(sideRect(sunriseX, y, sunriseWidth)) ||
+                    noonAtTop.overlaps(sideRect(sunsetX, y, sunsetWidth))
+                if (stillOverlaps) noonY = topY
+            }
+        }
         return SunLabelAnchors(
             sunriseX = sunriseX,
             sunriseY = sunriseY,
             sunsetX = sunsetX,
             sunsetY = sunsetY,
             noonX = cx,
-            noonY = cy - r - noonGap,
+            noonY = noonY,
             polarX = cx,
             polarY = cy,
         )

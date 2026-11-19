@@ -9,6 +9,9 @@
     <string name="solar_noon">Solar noon</string>
     <string name="sunset">Sunset</string>
     <string name="sun_daylight_line">Daylight %1$s</string>
+    <string name="sun_label_sunrise">Sunrise</string>
+    <string name="sun_label_sunset">Sunset</string>
+    <string name="sun_label_noon">Solar noon</string>
     <string name="sun_polar_day">Polar day</string>
     <string name="sun_polar_night">Polar night</string>
     <string name="version_label">Version %1$s</string>
