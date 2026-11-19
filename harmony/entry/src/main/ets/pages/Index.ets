@@ -1000,6 +1000,8 @@ struct Index {
     // 之前把副标题放在「标题那一列」里，那一列的可用宽度 = 整个 Row 减去右侧的 GPS/齿轮，
     // 窄屏 / 大字号下副标题会换行、右端还空着一大片（Android 红米已实测踩过同样的坑）。
     Column() {
+      // 行内底部对齐：行高仍由 22fp 齿轮决定，但标题底边贴住行底边，
+      // 于是标题与副标题间距仍是 ~2vp（不会被齿轮撑开）。
       Row() {
         Text('真太阳时时钟')
           .fontSize(20)
@@ -1019,7 +1021,7 @@ struct Index {
             .constraintSize({ maxWidth: '40%' })
             .margin({ right: 6 })
         }
-        // 与 Android 一致：齿轮图标按钮，不再用「设置」文字
+        // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
         SymbolGlyph($r('sys.symbol.gearshape_fill'))
           .fontSize(22)
           .fontColor([this.palette.text])
@@ -1031,6 +1033,7 @@ struct Index {
           })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Bottom)
 
       Text('以太阳经过当地子午线的时刻为正午')
         .fontSize(12)
