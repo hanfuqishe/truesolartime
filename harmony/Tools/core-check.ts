@@ -14,7 +14,7 @@ import { CityIndex } from './core/CityIndex';
 import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './core/TakeTime';import { WeatherLogic, WeatherCondition, HourPoint, WeatherSlot, WeatherSource, WeatherFallback } from './core/Weather';
 import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
-import { DistrictLayoutTier } from './core/DistrictLayout';
+import { DistrictLayoutPlan, DistrictLayoutSolver, DistrictLayoutTier } from './core/DistrictLayout';
 import { DialLabels } from './core/DialLabels';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
@@ -2233,6 +2233,23 @@ for (const item of equationCases) {
     DistrictLayoutTier.HIDE_LABEL < DistrictLayoutTier.HIDE_UTC);
   check('tier 2/3 hide the utc label',
     DistrictLayoutTier.HIDE_UTC < DistrictLayoutTier.ELLIPSIS);
+
+  // 档位 + 字号联合求解：先 12fp 试档，档内缩到 9fp，仍放不下才退下一档。
+  const hkPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 132, 48, 24, 160, 345);
+  equal('hong kong lands on tier 1', DistrictLayoutTier.HIDE_LABEL, hkPlan.tier);
+  equal('hong kong keeps 12fp', 12, hkPlan.fontSize);
+  const beijingPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 36, 48, 24, 160, 345);
+  equal('beijing lands on tier 0', DistrictLayoutTier.FULL, beijingPlan.tier);
+  equal('beijing keeps 12fp', 12, beijingPlan.fontSize);
+  const sydneyPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 276, 48, 24, 160, 260);
+  equal('sydney lands on tier 2', DistrictLayoutTier.HIDE_UTC, sydneyPlan.tier);
+  check('sydney shrinks only as needed', sydneyPlan.fontSize <= 12 && sydneyPlan.fontSize >= 9);
+  const hugePlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 480, 48, 24, 160, 260);
+  equal('40 chars lands on tier 3', DistrictLayoutTier.ELLIPSIS, hugePlan.tier);
+  equal('40 chars uses the minimum font', 9, hugePlan.fontSize);
+  // 回归：自然宽度 ≤ 该档可用宽时，字号必须保持 12。
+  const fitsPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 120, 48, 24, 160, 345);
+  equal('a fitting name keeps 12fp', 12, fitsPlan.fontSize);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

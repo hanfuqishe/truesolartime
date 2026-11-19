@@ -14,7 +14,7 @@ import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/
 import { TimeFormat } from '../core/TimeFormat';
 import { CivicTimeLogic } from '../core/CivicTime';
 import { DialLabels } from '../core/DialLabels';
-import { DistrictLayoutTier } from '../core/DistrictLayout';
+import { DistrictLayoutPlan, DistrictLayoutSolver, DistrictLayoutTier } from '../core/DistrictLayout';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { SunDialColors } from '../core/SunDialColors';
 import { PolarState, SolarTimeMath } from '../core/SolarTimeMath';
@@ -168,6 +168,7 @@ struct Index {
   /** 大卡片「地区」字号的缓存键与结果：名字／栏宽／语言变了才重新量。 */
   private districtFontKey: string = '';
   private districtFontFit: number = 0;
+  private districtTierFit: number = 0;
   /** 白天／夜间两套主题，按太阳高度角切换（见 common/Theme.ets）。 */
   @State palette: AppPalette = paletteFor(true);
   /** 配色模式：AUTO（按日出日落，默认）/ LIGHT / DARK，见 core/ThemeMode.ets。 */
@@ -831,17 +832,39 @@ struct Index {
     return this.locationUnknown ? LocationPlaceholders.SHORT : value;
   }
 
-  /** 顶部信息行的退化档位：先缩字号，再按档 0→1→2→3 退化。 */
+  /** 顶部信息行的档位与字号联合求解（先 12fp 试档，再逐档缩字号）。 */
+  private districtPlan(): DistrictLayoutPlan {
+    const name: string = this.districtLabel();
+    const key: string = `${name}|${this.clockColumnWidth}|${this.language}|${this.isWideLayout() ? 1 : 0}`;
+    if (key === this.districtFontKey && this.districtFontFit > 0) {
+      return new DistrictLayoutPlan(this.districtTierFit, this.districtFontFit);
+    }
+    if (this.clockColumnWidth <= 0 || name.length === 0) {
+      return new DistrictLayoutPlan(DistrictLayoutTier.FULL, 12);
+    }
+    const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
+    const measure = (text: string): number => utils.measureTextSize({
+      textContent: text,
+      fontSize: this.cs(12) + 'fp',
+      fontFamily: CARD_FONT_REGULAR
+    }).width as number;
+    const utcWidth: number = measure(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds));
+    const placeWidth: number = measure(name);
+    const labelWidth: number = measure('真太阳时');
+    const shichenWidth: number = measure(this.shortText(this.snapshot.shichenName));
+    const halfWidth: number = vp2px(this.clockColumnWidth);
+    // 整行宽 = 两栏 + 竖线与两侧 12vp 边距。
+    const rowWidth: number = halfWidth * 2 + vp2px(25);
+    const plan: DistrictLayoutPlan = DistrictLayoutSolver.solve(utcWidth, placeWidth, labelWidth,
+      shichenWidth, halfWidth, rowWidth);
+    this.districtFontKey = key;
+    this.districtFontFit = plan.fontSize;
+    this.districtTierFit = plan.tier;
+    return plan;
+  }
+
   private districtTier(): number {
-    const base: number = this.cs(12);
-    // 左右两半按时间栏的实测宽度算（竖线与两半结构下的真实可用宽度）。
-    const halfWidth: number = this.clockColumnWidth > 0 ? this.clockColumnWidth : this.cs(150);
-    const utcWidth: number = TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds).length * base;
-    const placeWidth: number = this.districtLabel().length * this.cs(this.districtFontSize());
-    const labelWidth: number = 4 * base;
-    const shichenWidth: number = this.shortText(this.snapshot.shichenName).length * base;
-    return DistrictLayoutTier.ofNameLength(utcWidth, placeWidth, labelWidth, shichenWidth, halfWidth,
-      this.districtLabel().length);
+    return this.districtPlan().tier;
   }
 
   /**
@@ -850,42 +873,7 @@ struct Index {
    * （与 Android 卡片档 3 的兜底一致）。短名字仍是 12fp，字号不变。
    */
   private districtFontSize(): number {
-    const base: number = 12;
-    const min: number = 9;
-    const name: string = this.districtLabel();
-    const key: string = `${name}|${this.clockColumnWidth}|${this.language}|${this.isWideLayout() ? 1 : 0}`;
-    if (key === this.districtFontKey && this.districtFontFit > 0) {
-      return this.districtFontFit;
-    }
-    let fitted: number = base;
-    if (this.clockColumnWidth > 0 && name.length > 0) {
-      const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
-      // 量宽必须指定卡片自带字族：默认字族会跟着系统「字体粗细」变宽，判档就会随设置漂。
-      const utcWidth: number = utils.measureTextSize({
-        textContent: TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds),
-        fontSize: this.cs(base) + 'fp',
-        fontFamily: CARD_FONT_REGULAR
-      }).width as number;
-      // 8vp 是地区与 UTC 之间的间隔，再留 2vp 余量，免得刚好贴边被省略。
-      const available: number = vp2px(this.clockColumnWidth) - utcWidth - vp2px(10);
-      if (available > 0) {
-        fitted = min;
-        for (let size: number = base; size >= min; size -= 0.5) {
-          const width: number = utils.measureTextSize({
-            textContent: name,
-            fontSize: this.cs(size) + 'fp',
-            fontFamily: CARD_FONT_REGULAR
-          }).width as number;
-          if (width <= available) {
-            fitted = size;
-            break;
-          }
-        }
-      }
-    }
-    this.districtFontKey = key;
-    this.districtFontFit = fitted;
-    return fitted;
+    return this.districtPlan().fontSize;
   }
 
   /**
