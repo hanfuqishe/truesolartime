@@ -1004,9 +1004,11 @@ struct Index {
       // 于是标题与副标题间距仍是 ~2vp（不会被齿轮撑开）。
       Row() {
         Text('真太阳时时钟')
-          .fontSize(20)
+          .fontSize(28)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         // 右侧定宽槽位（22fp 图标 + 6×2 padding = 34vp）：齿轮居中。
         Row() {
