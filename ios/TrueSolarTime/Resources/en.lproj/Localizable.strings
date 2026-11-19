@@ -268,3 +268,10 @@
 "weather.skipNotDue" = "not due yet";
 
 "settings.diagHourly" = "Hourly points";
+
+"district.geoHitCache" = "cache hit";
+"district.geoRequested" = "requested";
+"district.geoWaiting" = "waiting for interval";
+"district.geoInFlight" = "in flight";
+"district.geoNotYet" = "not yet";
+"district.geoSucceededAgo" = "last success %d min ago";

@@ -268,3 +268,10 @@
 "weather.skipNotDue" = "未到刷新窗口";
 
 "settings.diagHourly" = "逐时点";
+
+"district.geoHitCache" = "命中缓存";
+"district.geoRequested" = "已请求";
+"district.geoWaiting" = "等待间隔";
+"district.geoInFlight" = "在飞";
+"district.geoNotYet" = "尚未反查";
+"district.geoSucceededAgo" = "上次成功 %d 分钟前";

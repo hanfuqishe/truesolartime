@@ -2557,6 +2557,15 @@ expect(
         && PlaceNameSource.errorKind(.failed) == .retryable
         && PlaceNameSource.errorKind(.notFound) == .terminal
 )
+expect(
+    "在飞时不发新请求（inFlight == true → shouldRequest == false）",
+    !PlaceNameThrottle.shouldRequest(key: "k", cachedKeys: [], lastRequestAt: nil, now: 100, inFlight: true)
+        && PlaceNameThrottle.shouldRequest(key: "k", cachedKeys: [], lastRequestAt: nil, now: 100, inFlight: false)
+)
+expect(
+    "失败但有缓存 → 用缓存（pick 分支仍通过）",
+    PlaceNameSource.pick(clGeocoder: .timeout, osm: .unavailable, hasCachedName: true) == .useCached
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

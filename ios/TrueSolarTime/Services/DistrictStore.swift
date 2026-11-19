@@ -49,6 +49,35 @@ final class DistrictStore {
     /// 最近一次 `CLGeocoder` 到底回了什么（逐字段），排查「境外只回国家」用。
     private(set) var lastAppleFields: String = "-"
 
+    // MARK: 反查节流（最小接线，不改 OSM 分支）
+    /// 成功过的地名，按**约 100 m 网格**（`PlaceNameThrottle.cacheKey`）缓存：同一键永不重复请求。
+    private var geocodeCache: [String: DistrictNames] = [:]
+    /// 上一次真正发出请求的时刻（全局保留，不随地点清理）。
+    private var lastGeocodeRequestAt: Date?
+    /// 上一次成功反查的时刻（诊断「上次成功 N 分钟前」）。
+    private var lastGeocodeSuccessAt: Date?
+    /// 这一次为什么没发请求（命中缓存 / 等待间隔 / 在飞）。
+    private(set) var geocodeSkipReason: String?
+
+    /// 诊断一行：`反查 = 命中缓存 / 已请求 / 等待间隔 / 在飞 · 上次成功 N 分钟前`。
+    func geocodeSummary() -> String {
+        var parts: [String] = []
+        if inFlight {
+            parts.append(L("district.geoInFlight"))
+        } else if let reason = geocodeSkipReason {
+            parts.append(reason)
+        } else if lastGeocodeRequestAt != nil {
+            parts.append(L("district.geoRequested"))
+        } else {
+            parts.append(L("district.geoNotYet"))
+        }
+        if let success = lastGeocodeSuccessAt {
+            let minutes = max(0, Int(Date().timeIntervalSince(success) / 60))
+            parts.append(Lf("district.geoSucceededAgo", minutes))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     private init() {
         lastProvider = defaults.string(forKey: Key.provider) ?? "-"
     }
@@ -86,6 +115,29 @@ final class DistrictStore {
     /// 但**同一个地点**的请求还在路上时不做取消 —— 反复 cancel 会让回调丢失。
     func requestRefresh(place: Place, force: Bool = false, completion: ((DistrictNames?) -> Void)? = nil) {
         let siteKey = Self.siteKey(place)
+        // **入口节流**（最小接线）：
+        //  1) 命中网格缓存 → 直接用缓存名，不发请求；
+        //  2) 在飞 / 未到 3 秒间隔 → 记下原因并返回（不排队堆积，下次触发再发）。
+        let throttleKey = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
+        if let cached = geocodeCache[throttleKey] {
+            geocodeSkipReason = L("district.geoHitCache")
+            finish(place: place, names: cached, provider: lastProvider == "-" ? "Apple" : lastProvider, completion: completion)
+            return
+        }
+        let now = Date()
+        guard PlaceNameThrottle.shouldRequest(
+            key: throttleKey,
+            cachedKeys: Set(geocodeCache.keys),
+            lastRequestAt: lastGeocodeRequestAt?.timeIntervalSince1970,
+            now: now.timeIntervalSince1970,
+            inFlight: inFlight
+        ) else {
+            geocodeSkipReason = inFlight ? L("district.geoInFlight") : L("district.geoWaiting")
+            return
+        }
+        geocodeSkipReason = nil
+        lastGeocodeRequestAt = now
+
         if inFlight, siteKey == inFlightSiteKey, !force { return }
         if !force, !needsRefresh(place) { return }
 
@@ -233,6 +285,9 @@ final class DistrictStore {
         completion: ((DistrictNames?) -> Void)?
     ) {
         inFlight = false
+        let key = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
+        geocodeCache[key] = names
+        lastGeocodeSuccessAt = Date()
         DispatchQueue.main.async {
             self.lastProvider = provider
             self.save(place: place, names: names, provider: provider)
@@ -313,7 +368,7 @@ final class DistrictStore {
 
     /// 诊断：缓存里的名字来自哪儿、最近一次失败原因、`CLGeocoder` 到底回了什么。
     func diagnosticsSummary() -> String {
-        var parts: [String] = [Lf("district.source", lastProvider)]
+        var parts: [String] = [Lf("district.source", lastProvider), geocodeSummary()]
         if let lastErrorDescription { parts.append(lastErrorDescription) }
         parts.append(Lf("district.appleFields", lastAppleFields))
         return parts.joined(separator: " · ")

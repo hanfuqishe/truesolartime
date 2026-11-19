@@ -28,8 +28,11 @@ enum PlaceNameThrottle {
         key: String,
         cachedKeys: Set<String>,
         lastRequestAt: Double?,
-        now: Double
+        now: Double,
+        inFlight: Bool = false
     ) -> Bool {
+        // 同一时刻只允许 1 个在飞；在飞时不发新请求（排队也不堆，下次触发再发）。
+        if inFlight { return false }
         if cachedKeys.contains(key) { return false }
         guard let last = lastRequestAt else { return true }
         return now - last >= minRequestIntervalSeconds
