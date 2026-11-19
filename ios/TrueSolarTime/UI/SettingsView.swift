@@ -332,6 +332,35 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
+    /// 设置页「关于」里的天气署名（与卡片页脚同源：`WeatherAttributionStore`）。
+    @ViewBuilder private var weatherAttributionAbout: some View {
+        let presentation = WeatherAttributionStore.shared.presentation(
+            source: WeatherStore.shared.source,
+            isDark: !model.uiIsDay
+        )
+        switch presentation {
+        case .mark(_, _, let legal):
+            if let url = URL(string: presentation.markURL(isDark: !model.uiIsDay) ?? ""),
+               let link = URL(string: legal) {
+                Link(destination: link) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image): image.resizable().scaledToFit().frame(height: 11.5)
+                        default: Text(model.weatherAttributionText).font(.system(size: 12))
+                        }
+                    }
+                }
+            } else {
+                Text(model.weatherAttributionText).font(.system(size: 12))
+            }
+        case .text(let text, let link):
+            if let link, let url = URL(string: link) {
+                Link(text, destination: url).font(.system(size: 12))
+            } else {
+                Text(text).font(.system(size: 12))
+            }
+        }
+    }
     private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)

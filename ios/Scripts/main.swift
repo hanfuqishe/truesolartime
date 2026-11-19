@@ -2804,6 +2804,43 @@ expect(
         && SunPathGeometry.estimatedLabelWidth(characters: 12)
             > SunPathGeometry.estimatedLabelWidth(characters: 9)
 )
+// WeatherKit 官方署名：标识图（浅/深）+ 法律页；退化用文字 + 链接；其它源用 CC BY 文案。
+let wkMark = WeatherAttributionPresentation.choose(
+    source: .weatherKit,
+    markLightURL: "https://example/light.png",
+    markDarkURL: "https://example/dark.png",
+    legalURL: "https://example/legal",
+    isDark: false
+)
+let wkMarkDark = WeatherAttributionPresentation.choose(
+    source: .weatherKit,
+    markLightURL: "https://example/light.png",
+    markDarkURL: "https://example/dark.png",
+    legalURL: "https://example/legal",
+    isDark: true
+)
+expect(
+    "WeatherKit + 标识图 → .mark（浅色取 light、深色取 dark，链接为法律页）",
+    wkMark.markURL(isDark: false) == "https://example/light.png"
+        && wkMarkDark.markURL(isDark: true) == "https://example/dark.png"
+        && wkMark.link == "https://example/legal"
+)
+let wkFallback = WeatherAttributionPresentation.choose(
+    source: .weatherKit, markLightURL: nil, markDarkURL: nil, legalURL: nil, isDark: false
+)
+expect(
+    "标识图不可用 → 退化成 Apple 官方文字 + 法律页链接",
+    wkFallback.markURL(isDark: false) == nil
+        && wkFallback.link == "https://weatherkit.apple.com/legal-attribution.html"
+        && wkFallback == .text(L("weather.attributionWeatherKit"), "https://weatherkit.apple.com/legal-attribution.html")
+)
+expect(
+    "Open-Meteo / 7Timer → 文字署名（CC BY 4.0）、无链接",
+    WeatherAttributionPresentation.choose(source: .openMeteo, markLightURL: "x", markDarkURL: "y", legalURL: "z", isDark: false)
+        == .text(L("weather.attribution"), nil)
+        && WeatherAttributionPresentation.choose(source: .sevenTimer, markLightURL: nil, markDarkURL: nil, legalURL: nil, isDark: false)
+            == .text(L("weather.attribution7Timer"), nil)
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

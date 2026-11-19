@@ -68,15 +68,21 @@ struct ContentView: View {
                     // 首页原先还有第二行「天气数据 © …」的来源署名，按用户要求去掉了（没必要，
                     // 而且会把页脚撑成两行）。**署名本身没有取消**：CC BY 4.0 的合规标注移到了
                     // 设置页「关于」里（见 `SettingsView`），仍然是跟着实际数据源切换的那一句。
-                    Text(versionLabel)
-                        .foregroundStyle(palette.onSurfaceVariant)
-                        .font(.system(size: 12))
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            model.registerVersionTap()
-                        }
+                    // 版本号 + **天气署名**（WeatherKit 用 Apple 官方标识图 + 法律页链接；
+                    // 其它源用 CC BY 4.0 文字）。版本号仍是隐藏诊断入口。
+                    HStack(spacing: 6) {
+                        Text(versionLabel)
+                            .foregroundStyle(palette.onSurfaceVariant)
+                            .font(.system(size: 12))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                model.registerVersionTap()
+                            }
+                        weatherAttributionView
+                            .foregroundStyle(palette.onSurfaceVariant)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -124,6 +130,41 @@ struct ContentView: View {
     /// ① 反查到的行政区划名优先；
     /// ② 反查失败时，只有**预设城市**才回退显示预设城市名（如「纽约」）；
     /// ③ 手工坐标与 GPS 定位没有名字可用 → 半角「-」（失败**不回填**上一个城市的地名）。
+    /// 天气署名（页脚）：WeatherKit 用 Apple 官方标识图 + 法律页链接；其它源用文字。
+    @ViewBuilder private var weatherAttributionView: some View {
+        let presentation = WeatherAttributionStore.shared.presentation(
+            source: model.weather?.source ?? .openMeteo,
+            isDark: !model.uiIsDay
+        )
+        switch presentation {
+        case .mark(_, _, let legal):
+            if let url = URL(string: presentation.markURL(isDark: !model.uiIsDay) ?? ""),
+               let link = URL(string: legal) {
+                Link(destination: link) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            // 只缩放高度：不裁切、不改色、不加滤镜。
+                            image.resizable().scaledToFit().frame(height: 11.5)
+                        case .failure, .empty:
+                            // 加载中 / 失败都不留空白：直接落到文字退化版。
+                            Text(L("weather.attributionWeatherKit")).font(.system(size: 12))
+                        @unknown default:
+                            Text(L("weather.attributionWeatherKit")).font(.system(size: 12))
+                        }
+                    }
+                }
+            } else {
+                Text(L("weather.attributionWeatherKit")).font(.system(size: 12))
+            }
+        case .text(let text, let link):
+            if let link, let url = URL(string: link) {
+                Link(text, destination: url).font(.system(size: 12))
+            } else {
+                Text(text).font(.system(size: 12))
+            }
+        }
+    }
     private var cityText: String {
         // 未知态（跟随 GPS 但拿不到定位）：地名位置显示「定位不可用」，可点击去系统设置。
         if model.isLocationUnknown { return L("location.unavailable") }
