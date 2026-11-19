@@ -113,6 +113,27 @@ struct DistrictNames: Equatable {
 }
 
 /// 把反查到的各级行政区划拼成显示名。纯逻辑，便于自检。
+/// 地名**最终显示什么**（纯函数，`cardCityText` 与断言共用同一套规则）。
+///
+/// 项目规则（`docs/AGENTS.md` 第 5 节）：
+/// - **预设城市**反查失败 → 直接显示该预设的城市名（本地数据、零网络、立即出）；
+/// - **手工坐标 / GPS** 反查失败 → 半角 `-`（不是「暫無」，也不是空）。
+enum PlaceNameResolver {
+
+    // 中文文档注释：规则与 `DistrictNaming.cardCityText` 完全一致，后者转调本函数。
+
+    /// - Parameters:
+    ///   - presetName: 预设城市的本地化名（手工 / GPS 传 nil）。
+    ///   - geocoded: 反查成功的地名（`nil` = 没拿到）。
+    ///   - source: 地点来源（预设 / 手动 / GPS）。
+    static func name(presetName: String?, geocoded: DistrictNames?, source: PlaceSource) -> String {
+        if let full = geocoded?.full, !full.isEmpty { return full }
+        // 预设名由调用方决定（只有预设城市才传）：传了就用，不看 `source`
+        if let presetName, !presetName.isEmpty { return presetName }
+        _ = source
+        return "-"
+    }
+}
 enum DistrictNaming {
 
     /// 高德 / 系统逆地理用来占位、本身不是地名的上级字段。
@@ -248,9 +269,15 @@ enum DistrictNaming {
     /// ② 反查没结果时，**只有预设城市**才回退显示预设名（如「纽约」）；
     /// ③ 手工坐标与 GPS 没有名字可用 —— 显示半角「-」（既定产品决策：失败**不回填旧地名**）。
     static func cardCityText(district: DistrictNames?, place: Place) -> String {
-        if let full = district?.full, !full.isEmpty { return full }
-        if let preset = place.presetLabel, !preset.isEmpty { return preset }
-        return "-"
+        // 规则统一在 `PlaceNameResolver`：**只有预设城市**才拿预设名兜底；
+        // 手工坐标 / GPS 反查失败一律显示 `-`（`presetLabel` 会按坐标「认回」预设城市，
+        // 那是给老数据升级用的，不能用于这里）。
+        // 预设城市：`presetLabel`（有 `presetKey` 时是本地化名；老数据按坐标认回预设城市）。
+        // 手工 / GPS：一律 `nil` —— 反查失败就显示 `-`。
+        // **有 `presetKey` 就是预设城市**（`Place.presets` 里的 source 是 `.manual`，不能按 source 判断）；
+        // 手工坐标 / GPS 没有 `presetKey` → 反查失败显示 `-`。
+        let presetName: String? = place.presetKey != nil ? place.displayLabel : nil
+        return PlaceNameResolver.name(presetName: presetName, geocoded: district, source: place.source)
     }
 
     static let moveThresholdKm = 5.0

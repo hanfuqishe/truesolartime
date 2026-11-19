@@ -2566,6 +2566,26 @@ expect(
     "失败但有缓存 → 用缓存（pick 分支仍通过）",
     PlaceNameSource.pick(clGeocoder: .timeout, osm: .unavailable, hasCachedName: true) == .useCached
 )
+// 地名最终显示：预设名兜底、反查优先、手工/GPS 显示 `-`（docs/AGENTS.md 第 5 节）。
+let presetPlace = Place(latitude: 35.6762, longitude: 139.6503, source: .preset, label: "", presetKey: "city.tokyo", countryCode: "jp")
+let manualPlace = Place(latitude: 35.6762, longitude: 139.6503, source: .manual, label: "", presetKey: nil, countryCode: "jp")
+let gpsPlace = Place(latitude: 35.6762, longitude: 139.6503, source: .gps, label: "", presetKey: nil, countryCode: "jp")
+expect(
+    "预设城市反查失败 → 显示预设城市名（零网络、立即出）",
+    PlaceNameResolver.name(presetName: "东京", geocoded: nil, source: .preset) == "东京"
+        && DistrictNaming.cardCityText(district: nil, place: presetPlace) == presetPlace.presetLabel
+)
+expect(
+    "预设城市反查成功 → 反查结果优先",
+    PlaceNameResolver.name(presetName: "东京", geocoded: DistrictNames(full: "新宿区", short: "新宿区", countryCode: "jp"), source: .preset) == "新宿区"
+)
+expect(
+    "手工坐标 / GPS 反查失败 → 半角 `-`（不是「暫無」）",
+    PlaceNameResolver.name(presetName: nil, geocoded: nil, source: .manual) == "-"
+        && PlaceNameResolver.name(presetName: nil, geocoded: nil, source: .gps) == "-"
+        && DistrictNaming.cardCityText(district: nil, place: manualPlace) == "-"
+        && DistrictNaming.cardCityText(district: nil, place: gpsPlace) == "-"
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

@@ -319,6 +319,9 @@ final class AppModel: ObservableObject {
         weather = WeatherStore.shared.cached(for: newPlace)
 
         if moved || userChosen || previous.source != newPlace.source {
+            // 换了地点：地名反查的诊断残留（locality=… / CLGeocoder 错误）必须清掉，
+            // 否则「东京」那一页会挂着上一次「上海市」的字段，诊断永远误导。
+            DistrictStore.shared.resetDiagnosticsForNewPlace()
             // 切换地点可以立刻触发一次（包括「低精度升级」那条，不受 60 秒窗口限制）。
             refreshData(forceDistrict: userChosen, ignoreLowPrecisionThrottle: true)
             rescheduleReminders()

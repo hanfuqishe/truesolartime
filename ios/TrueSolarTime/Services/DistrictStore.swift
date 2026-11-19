@@ -59,6 +59,14 @@ final class DistrictStore {
     /// 这一次为什么没发请求（命中缓存 / 等待间隔 / 在飞）。
     private(set) var geocodeSkipReason: String?
 
+    /// **换地点时清空诊断残留**：否则 `CLGeocoder：locality=上海市…` 会一直挂在新城市（东京）上。
+    func resetDiagnosticsForNewPlace() {
+        lastAppleFields = "-"
+        lastErrorDescription = nil
+        geocodeSkipReason = nil
+        lastProvider = "-"
+    }
+
     /// 诊断一行：`反查 = 命中缓存 / 已请求 / 等待间隔 / 在飞 · 上次成功 N 分钟前`。
     func geocodeSummary() -> String {
         var parts: [String] = []
