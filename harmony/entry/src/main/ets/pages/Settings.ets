@@ -461,8 +461,9 @@ struct Settings {
               .width('100%')
             Button(this.locating ? '定位中…' : '实时跟随GPS')
               .fontSize(13)
-              .backgroundColor(this.palette.chip)
-              .fontColor(this.palette.text)
+              // 与下方「应用」完全同款：主色实心 + 白字，高度/圆角/内边距一致。
+              .backgroundColor(this.palette.accent)
+              .fontColor(this.palette.onAccent)
               .width('100%')
               .height(38)
               .margin({ top: 12 })
