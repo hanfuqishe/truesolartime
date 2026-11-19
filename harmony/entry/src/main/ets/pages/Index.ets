@@ -618,9 +618,19 @@ struct Index {
 
   /** 上一次真正画到界面上的底图快照：相同就完全不 setState（失败计数变化不会触发 UI 更新）。 */
   private lastMapUi: MapUiState = new MapUiState();
+  /** 每次换地点 +1；旧地点的异步结果回来时直接丢弃，避免覆盖新地图。 */
+  private mapLoadSeq: number = 0;
+
+  /** 换地点时先同步清空旧图层，保证一帧内就看出「已跳到新地点」。 */
+  private clearMapForPlace(): void {
+    this.mapLoadSeq++;
+    this.mapTiles = [];
+    this.lastMapUi = new MapUiState();
+  }
 
   /** 地图中心复位到观测点：换城市、跟随 GPS 更新坐标后都要复位。 */
   private recenterMap(): void {
+    this.clearMapForPlace();
     const layer: MapLayer = this.mapLayer();
     const point: number[] = MapTilesLogic.displayPoint(layer, this.place.latitude, this.place.longitude);
     this.applyViewport(point[0], point[1], this.mapZoom);
@@ -645,9 +655,13 @@ struct Index {
       return;
     }
     this.startMapLoading();
+    const seq: number = ++this.mapLoadSeq;
     if (this.locationUnknown) {
       // 未知态：z3 全球底图，不画标记；有缓存零探测，否则并行探 2 块 z3。
       MapTileService.loadUnknown(this.mapWpx, this.mapHpx).then((result: MapLoadResult) => {
+        if (seq !== this.mapLoadSeq) {
+          return;
+        }
         this.stopMapLoading();
         this.mapTiles = result.tiles;
         this.mapAttribution = result.attribution;
@@ -663,6 +677,9 @@ struct Index {
     MapTileService.load(this.place, this.mapStyleKey, this.countryCodeOfPlace(), this.mapCenterLat,
       this.mapCenterLon, this.mapZoom, this.mapWpx, this.mapHpx, viewportChanged)
       .then((result: MapLoadResult) => {
+        if (seq !== this.mapLoadSeq) {
+          return;
+        }
         this.stopMapLoading();
         // 有效 plan 快照没变就什么都不做：失败/空白计数变化不触发 UI 更新，杜绝自激刷新。
         if (sameUiState(this.lastMapUi, result.uiState)) {

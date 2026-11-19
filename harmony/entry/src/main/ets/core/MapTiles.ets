@@ -282,6 +282,12 @@ export class MapTilesLogic {
     return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoom)));
   }
 
+  /** 换地点必须重置视口与瓦片：坐标任一变化即 true。 */
+  static shouldResetForPlace(oldLatitude: number, oldLongitude: number, newLatitude: number,
+      newLongitude: number): boolean {
+    return oldLatitude !== newLatitude || oldLongitude !== newLongitude;
+  }
+
   private static transformLatitude(x: number, y: number): number {
     let result: number = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
     result += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;

@@ -2268,6 +2268,18 @@ for (const item of equationCases) {
   equal('gps sample interval is 60 seconds', 60, PlaceNamePolicy.LOCATION_SAMPLE_INTERVAL_SECONDS);
 }
 
+// ---- 换地点：缓存 key 必须含坐标，视口状态必须重置 ----
+{
+  check('tile cache key contains the coordinates',
+    cacheKey(39.9042, 116.4074) !== cacheKey(-33.8688, 151.2093));
+  check('tile urls contain the new tile coordinates',
+    tileOf(MapStyle.OSM, 39.9042, 116.4074, 12) !== tileOf(MapStyle.OSM, -33.8688, 151.2093, 12));
+  check('a place change must reset the map',
+    MapTilesLogic.shouldResetForPlace(39.9042, 116.4074, -33.8688, 151.2093));
+  check('the same place does not reset the map',
+    !MapTilesLogic.shouldResetForPlace(39.9042, 116.4074, 39.9042, 116.4074));
+}
+
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const failure of failures) {
