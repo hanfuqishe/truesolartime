@@ -2225,15 +2225,19 @@ for (const item of equationCases) {
 {
   equal('dial sunrise label (zh)', '日出 06:24', DialLabels.sunrise('zh-CN', '06:24'));
   equal('dial sunset label (zh)', '日落 16:54', DialLabels.sunset('zh-CN', '16:54'));
-  equal('dial noon label (zh)', '上中天 11:39', DialLabels.noon('zh-CN', '11:39'));
+  equal('dial noon label (zh, north)', '上中天 11:39 · 正南', DialLabels.noon('zh-CN', '11:39'));
+  equal('dial noon label (zh, south)', '上中天 11:39 · 正北', DialLabels.noon('zh-CN', '11:39', true));
+  equal('dial noon label (en, north)', 'Transit 11:39 · S', DialLabels.noon('en-US', '11:39'));
+  equal('dial noon label (en, south)', 'Transit 11:39 · N', DialLabels.noon('en-US', '11:39', true));
+  equal('dial noon direction (zh-Hant)', '上中天 11:39 · 正南',
+    DialLabels.noon('zh-Hant', '11:39'));
   equal('dial sunrise label (en)', 'Sunrise 06:24', DialLabels.sunrise('en-US', '06:24'));
-  equal('dial noon label (en)', 'Solar noon 11:39', DialLabels.noon('en-US', '11:39'));
   equal('dial polar label (zh)', '极昼', DialLabels.polar(true, 'zh-CN'));
   equal('dial polar label (en)', 'Polar night', DialLabels.polar(false, 'en-US'));
 
   const size: number = 11;
   const padding: number = 4;
-  const zhTexts: string[] = ['日出 06:24', '日落 16:54', '上中天 11:39'];
+  const zhTexts: string[] = ['日出 06:24', '日落 16:54', '上中天 11:39 · 正南'];
   const sunriseWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[0], size, padding);
   const sunsetWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[1], size, padding);
   const noonWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[2], size, padding);
@@ -2266,6 +2270,20 @@ for (const item of equationCases) {
   const kunlunScene: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
   check('kunlun three labels disjoint with descriptions', noOverlap(layoutOf(kunlunScene, 0.35, 23.65)));
   check('kunlun three labels stay inside the canvas', inside(layoutOf(kunlunScene, 0.35, 23.65)));
+
+  // 不同昼长下的重叠检测（含 0.5h 短昼与 24h 极昼）。
+  const lengths: number[][] = [[11.75, 12.25], [10.5, 13.5], [9, 15], [6, 18]];
+  for (const pair of lengths) {
+    const path: SunPath = SunPathGeometry.compute(294, 194, pair[0], pair[1], 12, false, false, false);
+    const rects: number[][] = layoutOf(path, pair[0], pair[1]);
+    check(`day length ${pair[1] - pair[0]}h keeps labels apart`, noOverlap(rects));
+    check(`day length ${pair[1] - pair[0]}h keeps labels inside`, inside(rects));
+  }
+  const polarScene: SunPath = SunPathGeometry.compute(294, 194, null, null, 12, true, false, false);
+  const polarAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(polarScene, null, null,
+    10, 8, 18, 10, size, padding, 5, zhTexts);
+  check('polar day shows only the noon label',
+    Math.abs(polarAnchors.sunriseX - (polarScene.centerX - polarScene.radius - 10)) < 1e-6);
 }
 
 // ---- 顶部标签行：左右两半的四档 ----

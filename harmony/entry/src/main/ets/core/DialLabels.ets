@@ -13,8 +13,18 @@ export class DialLabels {
     return `${DialLabels.isEnglish(language) ? 'Sunset' : '日落'} ${clock}`;
   }
 
-  static noon(language: string, clock: string): string {
-    return `${DialLabels.isEnglish(language) ? 'Solar noon' : '上中天'} ${clock}`;
+  static noon(language: string, clock: string, southernHemisphere: boolean = false): string {
+    const direction: string = DialLabels.noonDirection(language, southernHemisphere);
+    const prefix: string = DialLabels.isEnglish(language) ? 'Transit' : '上中天';
+    return `${prefix} ${clock} · ${direction}`;
+  }
+
+  /** 上中天方位：北半球面朝南（正南 / S），南半球面朝北（正北 / N）。 */
+  static noonDirection(language: string, southernHemisphere: boolean): string {
+    if (DialLabels.isEnglish(language)) {
+      return southernHemisphere ? 'N' : 'S';
+    }
+    return southernHemisphere ? '正北' : '正南';
   }
 
   static polar(midnightSun: boolean, language: string): string {

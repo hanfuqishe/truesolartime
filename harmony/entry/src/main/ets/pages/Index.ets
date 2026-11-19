@@ -1477,7 +1477,8 @@ struct Index {
       }
       // 极夜没有上中天（太阳整日不升），极昼保留。
       if (this.snapshot.polar !== PolarState.POLAR_NIGHT) {
-        Text(DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds)))
+        Text(DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds),
+          this.isSouthernHemisphere()))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
@@ -1636,7 +1637,8 @@ struct Index {
     const texts: string[] = [
       DialLabels.sunrise(this.language, TimeFormat.clock(this.snapshot.sunriseLocalSeconds)),
       DialLabels.sunset(this.language, TimeFormat.clock(this.snapshot.sunsetLocalSeconds)),
-      DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
+      DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds),
+        this.isSouthernHemisphere())
     ];
     return SunPathGeometry.labelAnchors(this.sunDialPath(), this.sunriseDialHour(), this.sunsetDialHour(),
       this.cs(SUN_LABEL_GAP), this.cs(SUN_NOON_LABEL_GAP), this.cs(SUN_LABEL_TOP_INSET),
