@@ -405,12 +405,37 @@ enum SunPathGeometry {
         // 重叠检测：近极昼时日出 / 日落 / 上中天会挤到圆顶同一处，改用边缘退让布局。
         let estSunrise = estimatedLabelWidth(characters: 9)
         let estSunset = estimatedLabelWidth(characters: 9)
-        let estNoon = estimatedLabelWidth(characters: 11)
+        let estNoon = estimatedLabelWidth(characters: noonWidthCharacters)
         let baseRects = [
             labelRect(point: CGPoint(x: sunriseAnchorX, y: labelY), alignment: southern ? .leading : .trailing, width: estSunrise),
             labelRect(point: CGPoint(x: sunsetAnchorX, y: labelY), alignment: southern ? .trailing : .leading, width: estSunset),
             labelRect(point: CGPoint(x: center.x, y: center.y - path.radius - noonGap), alignment: .bottom, width: estNoon),
         ]
+        // **紧凑行布局（几何判据，不用固定阈值）**：昼长短时地平线贴近圆顶，正常锚点会贴上中天。
+        // 只要「日出/日落标签」与「上中天标签」的垂直间隙 < 6pt（或已相交），就改成一整行：
+        // 行 y = 上中天底边 + 6 + 半行高；两个标签贴画布左右内边距（弦退化成一个点时贴弦必然互相压）。
+        // 南半球不走这条：它的标签在地平线下方，与上中天天然远离。
+        if !southern {
+            let noonRect = baseRects[2]
+            let riseRect = baseRects[0]
+            let setRect = baseRects[1]
+            let gap = min(abs(riseRect.minY - noonRect.maxY), abs(setRect.minY - noonRect.maxY))
+            if gap < 6 || riseRect.intersects(noonRect) || setRect.intersects(noonRect) {
+                let rowY = noonRect.maxY + 6 + labelHeight / 2
+                return SunPathLabels(
+                    sunrise: SunPathLabel(
+                        point: CGPoint(x: edgeInset + estSunrise, y: rowY),
+                        alignment: .trailing
+                    ),
+                    sunset: SunPathLabel(
+                        point: CGPoint(x: size.width - edgeInset - estSunset, y: rowY),
+                        alignment: .leading
+                    ),
+                    noon: noon,
+                    polar: nil
+                )
+            }
+        }
         // 南半球：近极昼时两个交点几乎重合 → 分别贴左右内边距，避免标签叠在一起。
         let tooClose = southern && abs(sunriseAnchorX - sunsetAnchorX) < size.width * 0.2
         if labelsOverlap(baseRects) || tooClose {
@@ -443,7 +468,16 @@ enum SunPathGeometry {
     static let labelPadding: CGFloat = 4
     static let labelHeight: CGFloat = 15
     static let edgeInset: CGFloat = 4
+    /// 上中天标签的估算字符数：`上中天 11:39 · 正南` ≈ 15（加方位后缀后必须放宽，否则重叠检测漏判）。
+    static let noonWidthCharacters = 15
 
+    /// 上中天时太阳的方位文字（北半球「正南」、南半球「正北」）。
+    ///
+    /// 圆盘是「面朝赤道的竖直平面」投影：北半球观测者面朝南、南半球面朝北。
+    /// 把上中天的方位直接标出来，用户就不会把日出/日落的方向看反。
+    static func noonDirection(southernHemisphere: Bool) -> String {
+        L(southernHemisphere ? "sun.dueNorth" : "sun.dueSouth")
+    }
     static func estimatedLabelWidth(characters: Int) -> CGFloat {
         CGFloat(max(characters, 1)) * labelFontSize * labelWidthPerChar + labelPadding * 2
     }

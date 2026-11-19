@@ -27,7 +27,7 @@ enum CivicTime {
     /// 不用大包围盒 —— 同扇区最近的澳大利亚 Davis 站（-68.58, 77.97）只有约 108 km，
     /// 包围盒会把它一起圈进来。
     static let chinaAntarcticStations: [(name: String, latitude: Double, longitude: Double)] = [
-        ("中山站 Zhongshan", -69.3733, 76.3800),
+        ("昆仑站 Kunlun", -80.4169, 77.1161),
         ("长城站 Great Wall", -62.2167, -58.9667),
         ("昆仑站 Kunlun", -80.4167, 77.1167),
         ("泰山站 Taishan", -73.8667, 76.9833),

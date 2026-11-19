@@ -237,7 +237,7 @@
 "city.singapore" = "Singapore";
 "city.sydney" = "Sydney";
 "city.murmansk" = "Murmansk";
-"city.zhongshan" = "Zhongshan Station, Antarctica";
+"city.kunlun" = "Kunlun Station";
 
 /* Misc */
 "weather.title" = "Weather";
@@ -282,3 +282,6 @@
 
 "city.cairo" = "Cairo";
 "city.rio" = "Rio de Janeiro";
+
+"sun.dueSouth" = "S";
+"sun.dueNorth" = "N";

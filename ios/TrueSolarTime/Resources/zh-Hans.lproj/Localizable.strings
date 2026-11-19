@@ -237,7 +237,7 @@
 "city.singapore" = "新加坡";
 "city.sydney" = "悉尼";
 "city.murmansk" = "摩尔曼斯克";
-"city.zhongshan" = "南极中山站";
+"city.kunlun" = "昆仑站";
 
 /* 其它 */
 "weather.title" = "天气";
@@ -282,3 +282,6 @@
 
 "city.cairo" = "开罗";
 "city.rio" = "里约热内卢";
+
+"sun.dueSouth" = "正南";
+"sun.dueNorth" = "正北";

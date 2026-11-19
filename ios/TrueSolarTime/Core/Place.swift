@@ -99,13 +99,13 @@ struct Place: Equatable {
         // 北极圈内（68.97°N）：摩尔曼斯克时间 = UTC+3（俄罗斯按经度分段，33.08°E 落在 <40 那一段）。
         // 夏至前后极昼、冬至前后极夜，用来验证极昼/极夜文案与太阳圆盘。
         Place(latitude: 68.97, longitude: 33.08, source: .manual, label: "", presetKey: "city.murmansk", countryCode: "ru"),
-        // 南极圈内（69.37°S）：中山站。南极没有民用时区，中国各站按北京时间（UTC+8）。
-        // **国家码给 "cn"**：`countryCode` 表达的是「该地法定标准时间归属」，中山站属中国规则；
+        // 南极内陆（80.42°S）：昆仑站（中国距南极点最近的考察站）。南极没有民用时区，
+        // 中国各站按北京时间（UTC+8）。
         // 与 Android / 鸿蒙保持一致（三端需同步修改，别单独改这一端）。两条路径都得到 +8：
         // ① `GeoRegion.isInChina(countryCode: "cn")` → 480 分钟；
         // ② `CivicTime.isChinaAntarcticStation` 的坐标匹配（50 km 内的中国站）→ 480 分钟。
         // 南半球季节相反：北半球夏至时它极夜、冬至时它极昼。
-        Place(latitude: -69.37, longitude: 76.38, source: .manual, label: "", presetKey: "city.zhongshan", countryCode: "cn"),
+        Place(latitude: -80.4169, longitude: 77.1161, source: .manual, label: "", presetKey: "city.kunlun", countryCode: "cn"),
         // 2024 补到 24 个（4 列 × 6 行整）：开罗 / 里约热内卢，接在中山站之后（其余城市顺序不变）。
         Place(latitude: 30.0444, longitude: 31.2357, source: .manual, label: "", presetKey: "city.cairo", countryCode: "eg"),
         Place(latitude: -22.9068, longitude: -43.1729, source: .manual, label: "", presetKey: "city.rio", countryCode: "br"),

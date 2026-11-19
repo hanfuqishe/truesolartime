@@ -156,7 +156,10 @@ struct SunCard: View {
                     .foregroundColor(palette.onSurfaceVariant)
                     + Text(" " + TimeFormat.clock(snapshot.solarNoonBeijing))
                     .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
-                    .foregroundColor(palette.onSurface),
+                    .foregroundColor(palette.onSurface)
+                    + Text(" · " + SunPathGeometry.noonDirection(southernHemisphere: snapshot.latitude < 0))
+                    .font(.system(size: 9))
+                    .foregroundColor(palette.onSurfaceVariant),
                 at: noon.point,
                 alignment: .bottom
             )

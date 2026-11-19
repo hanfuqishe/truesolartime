@@ -1733,7 +1733,7 @@ expect(
 let missing = BasemapProbe.decide(osm: [:], amap: [:], preferred: .amapVector)
 expect("探测没回来（空表）也当不可用", missing.zoom == nil)
 // 南极中山站端到端：标 cn（偏好高德）但高德在南极全是空白瓦片 → 应该换源 OSM z12，而不是降级到 z3。
-let zhongshanPreset = Place.presets.first { $0.presetKey == "city.zhongshan" }
+let zhongshanPreset = Place.presets.first { $0.presetKey == "city.kunlun" }
 let zhongshanPreferred = MapStyle.auto.effective(
     countryCode: zhongshanPreset?.countryCode,
     latitude: zhongshanPreset?.latitude ?? 0,
@@ -2663,7 +2663,7 @@ let zhongshanPath = SunPathGeometry.compute(
 )
 let zhongshanLabels = SunPathGeometry.labels(path: zhongshanPath, size: dialCanvas, dayLengthHours: 18)
 let estW = SunPathGeometry.estimatedLabelWidth(characters: 9)
-let estN = SunPathGeometry.estimatedLabelWidth(characters: 11)
+let estN = SunPathGeometry.estimatedLabelWidth(characters: SunPathGeometry.noonWidthCharacters)
 let zsRects: [CGRect] = [
     zhongshanLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
     zhongshanLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
@@ -2680,7 +2680,7 @@ let realPath = SunPathGeometry.compute(
 )
 let realLabels = SunPathGeometry.labels(path: realPath, size: dialCanvas, dayLengthHours: 22.7)
 let realEstW = SunPathGeometry.estimatedLabelWidth(characters: 9)
-let realEstN = SunPathGeometry.estimatedLabelWidth(characters: 11)
+let realEstN = SunPathGeometry.estimatedLabelWidth(characters: SunPathGeometry.noonWidthCharacters)
 let realRects: [CGRect] = [
     realLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
     realLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
@@ -2708,7 +2708,7 @@ expect(
 for (name, dayLen) in [("摩尔曼斯克", 21.0), ("斯德哥尔摩", 18.5)] {
     let pth = SunPathGeometry.compute(
         size: dialCanvas, sunriseHour: 6, sunsetHour: 18, trueSolarHour: 12,
-        isPolarDay: false, isPolarNight: false, southernHemisphere: false
+        isPolarDay: false, isPolarNight: false
     )
     let lbl = SunPathGeometry.labels(path: pth, size: dialCanvas, dayLengthHours: dayLen)
     let rects: [CGRect] = [
@@ -2920,12 +2920,83 @@ expect(
     !cairoPreset!.isInChina && !rioPreset!.isInChina
 )
 expect(
-    "预设顺序对齐 Android / 鸿蒙：末尾 9 项依次为 dubai → newdelhi → tokyo → singapore → sydney → murmansk → zhongshan → cairo → rio",
+    "预设顺序对齐 Android / 鸿蒙：末尾 9 项依次为 dubai → newdelhi → tokyo → singapore → sydney → murmansk → kunlun → cairo → rio",
     Place.presets.suffix(9).map { $0.presetKey ?? "" } == [
         "city.dubai", "city.newdelhi", "city.tokyo", "city.singapore",
-        "city.sydney", "city.murmansk", "city.zhongshan", "city.cairo", "city.rio",
+        "city.sydney", "city.murmansk", "city.kunlun", "city.cairo", "city.rio",
     ],
     "actual=\(Place.presets.suffix(9).map { $0.presetKey ?? "-" })"
+)
+// 昼长扫描：0.05h → 8h（步长 0.05h），三标签矩形必须两两不相交、都在画布内。
+var scanFailures: [(Double, String)] = []
+var shortScan: [Double] = []
+var hour = 0.05
+while hour <= 8.0001 {
+    let pth = SunPathGeometry.compute(
+        size: dialCanvas, sunriseHour: 12 - hour / 2, sunsetHour: 12 + hour / 2, trueSolarHour: 12,
+        isPolarDay: false, isPolarNight: false
+    )
+    let lbl = SunPathGeometry.labels(path: pth, size: dialCanvas, dayLengthHours: hour)
+    let wS = SunPathGeometry.estimatedLabelWidth(characters: 9)
+    let wN = SunPathGeometry.estimatedLabelWidth(characters: SunPathGeometry.noonWidthCharacters)
+    var rects: [CGRect] = []
+    if let r = lbl.sunrise { rects.append(SunPathGeometry.labelRect(point: r.point, alignment: r.alignment, width: wS)) }
+    if let s = lbl.sunset { rects.append(SunPathGeometry.labelRect(point: s.point, alignment: s.alignment, width: wS)) }
+    if let n = lbl.noon { rects.append(SunPathGeometry.labelRect(point: n.point, alignment: n.alignment, width: wN)) }
+    if SunPathGeometry.labelsOverlap(rects) { scanFailures.append((hour, "overlap")) }
+    if rects.contains(where: { $0.minX < -1 || $0.maxX > dialCanvas.width + 1 }) {
+        scanFailures.append((hour, "out of canvas"))
+    }
+    if hour <= 4 { shortScan.append(hour) }
+    hour = ((hour + 0.05) * 100).rounded() / 100
+}
+expect(
+    "昼长扫描 0.05…8h（步长 0.05h）：三标签两两不相交、且都在画布内",
+    scanFailures.isEmpty,
+    "failures=\(scanFailures.prefix(6))"
+)
+expect(
+    "扫描覆盖了短昼段（含 2–4h 临界区）",
+    shortScan.count >= 70
+)
+// 昆仑站（-80.4169 / 77.1161，cn）：原地替换中山站，预设仍 24 个、下标 21。
+expect(
+    "预设下标 21 = city.kunlun（昆仑站），坐标 -80.4169 / 77.1161、cn、UTC+480",
+    Place.presets.count == 24
+        && Place.presets[21].presetKey == "city.kunlun"
+        && abs(Place.presets[21].latitude + 80.4169) < 1e-9
+        && abs(Place.presets[21].longitude - 77.1161) < 1e-9
+        && Place.presets[21].countryCode == "cn"
+        && Place.presets[21].standardOffsetSeconds == 480 * 60,
+    "key=\(Place.presets[21].presetKey ?? "-") offset=\(Place.presets[21].standardOffsetSeconds)"
+)
+expect(
+    "城市表里不再有 zhongshan 残留",
+    !Place.presets.contains { ($0.presetKey ?? "").contains("zhongshan") }
+)
+let kunlunNov = SolarTimeSnapshot.compute(
+    date: date("2026-11-19T04:00:00Z"), latitude: -80.4169, longitude: 77.1161, countryCode: "cn"
+)
+expect(
+    "昆仑站 2026-11-19（南半球夏季）→ 极昼",
+    kunlunNov.polar == .midnightSun,
+    "actual=\(kunlunNov.polar)"
+)
+// 上中天方位后缀：北半球「正南」、南半球「正北」；英文单字母 S/N。
+expect(
+    "上中天方位：北半球 → 正南/英文 S；南半球 → 正北/英文 N",
+    SunPathGeometry.noonDirection(southernHemisphere: false) == L("sun.dueSouth")
+        && SunPathGeometry.noonDirection(southernHemisphere: true) == L("sun.dueNorth")
+        && L10n.t("sun.dueSouth", language: .simplified) == "正南"
+        && L10n.t("sun.dueNorth", language: .simplified) == "正北"
+        && L10n.t("sun.dueSouth", language: .english) == "S"
+        && L10n.t("sun.dueNorth", language: .english) == "N"
+    )
+expect(
+    "上中天宽度估算已按加后缀后的长度放宽（15 字符 > 原 11 字符）",
+    SunPathGeometry.noonWidthCharacters == 15
+        && SunPathGeometry.estimatedLabelWidth(characters: SunPathGeometry.noonWidthCharacters)
+            > SunPathGeometry.estimatedLabelWidth(characters: 11)
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
@@ -3689,7 +3760,7 @@ let expectedPresets: [(String, Int)] = [
     ("city.london", 0), ("city.paris", 3_600), ("city.dubai", 14_400),
     ("city.newdelhi", 19_800), ("city.tokyo", 32_400), ("city.singapore", 28_800), ("city.sydney", 36_000),
     // 极圈内两座城市：摩尔曼斯克 +3（俄罗斯经度分段 <40°E）、中山站 +8（南极站按北京时间）
-    ("city.murmansk", 10_800), ("city.zhongshan", 28_800)
+    ("city.murmansk", 10_800), ("city.kunlun", 28_800)
 ]
 for (presetKey, expected) in expectedPresets {
     guard let preset = Place.presets.first(where: { $0.presetKey == presetKey }) else {
@@ -3709,11 +3780,11 @@ for (presetKey, expected) in expectedPresets {
     )
 print("== 极圈内两座城市：坐标 / 时区 / 极昼极夜文案（验证太阳圆盘用）==")
 // 摩尔曼斯克（68.97°N, 33.08°E）：北极圈内，夏至极昼、冬至极夜。
-// 中山站（69.37°S, 76.38°E）：南极圈内，季节相反 —— 北半球夏至时它极夜。
+// 中山站（69.37°S, 77.1161°E）：南极圈内，季节相反 —— 北半球夏至时它极夜。
 let murmansk = Place.presets.first { $0.presetKey == "city.murmansk" }
-let zhongshan = Place.presets.first { $0.presetKey == "city.zhongshan" }
+let zhongshan = Place.presets.first { $0.presetKey == "city.kunlun" }
 expect("摩尔曼斯克坐标 68.97°N / 33.08°E", murmansk?.latitude == 68.97 && murmansk?.longitude == 33.08)
-expect("中山站坐标 69.37°S / 76.38°E", zhongshan?.latitude == -69.37 && zhongshan?.longitude == 76.38)
+expect("昆仑站坐标 80.4169°S / 77.1161°E", zhongshan?.latitude == -80.4169 && zhongshan?.longitude == 77.1161)
 expect(
     "摩尔曼斯克国家码 ru → UTC+3（不是按经度近似的 +2）",
     murmansk?.countryCode == "ru"
@@ -3721,22 +3792,22 @@ expect(
     "得到 \(TimeFormat.utcOffsetLabel(seconds: murmansk?.standardOffsetSeconds ?? 0))"
 )
 expect(
-    "中山站国家码 cn（与 Android / 鸿蒙一致）→ UTC+8（不是按 76°E 近似的 +5）",
+    "昆仑站国家码 cn（与 Android / 鸿蒙一致）→ UTC+8（不是按 76°E 近似的 +5）",
     zhongshan?.countryCode == "cn"
         && TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0) == "UTC+8",
     "得到 \(String(describing: zhongshan?.countryCode)) / \(TimeFormat.utcOffsetLabel(seconds: zhongshan?.standardOffsetSeconds ?? 0))"
 )
 expect(
-    "中山站法定偏移两条路径一致：cn 国家码 480、坐标站点匹配也是 480",
-    CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: "cn") == 480
-        && CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: nil) == 480,
-    "cn=\(CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: "cn")) "
-        + "nil=\(CivicTime.standardOffsetMinutes(latitude: -69.37, longitude: 76.38, countryCode: nil))"
+    "昆仑站法定偏移两条路径一致：cn 国家码 480、坐标站点匹配也是 480",
+    CivicTime.standardOffsetMinutes(latitude: -80.4169, longitude: 77.1161, countryCode: "cn") == 480
+        && CivicTime.standardOffsetMinutes(latitude: -80.4169, longitude: 77.1161, countryCode: nil) == 480,
+    "cn=\(CivicTime.standardOffsetMinutes(latitude: -80.4169, longitude: 77.1161, countryCode: "cn")) "
+        + "nil=\(CivicTime.standardOffsetMinutes(latitude: -80.4169, longitude: 77.1161, countryCode: nil))"
 )
 expect(
     "没有 aq 覆盖时会退成 +5（说明这条覆盖是必要的）",
-    SolarTimeMath.approxZoneOffsetSeconds(longitude: 76.38) == 18_000,
-    "得到 \(SolarTimeMath.approxZoneOffsetSeconds(longitude: 76.38))"
+    SolarTimeMath.approxZoneOffsetSeconds(longitude: 77.1161) == 18_000,
+    "得到 \(SolarTimeMath.approxZoneOffsetSeconds(longitude: 77.1161))"
 )
 // 三语城市名
 expect(
@@ -3746,10 +3817,10 @@ expect(
         && L10n.t("city.murmansk", language: .english) == "Murmansk"
 )
 expect(
-    "中山站三语（南极中山站 / 南極中山站 / Zhongshan Station, Antarctica）",
-    L10n.t("city.zhongshan", language: .simplified) == "南极中山站"
-        && L10n.t("city.zhongshan", language: .traditional) == "南極中山站"
-        && L10n.t("city.zhongshan", language: .english) == "Zhongshan Station, Antarctica"
+    "中山站三语（南极中山站 / 南極中山站 / Kunlun Station）",
+    L10n.t("city.kunlun", language: .simplified) == "昆仑站"
+        && L10n.t("city.kunlun", language: .traditional) == "崑崙站"
+        && L10n.t("city.kunlun", language: .english) == "Kunlun Station"
 )
 expect(
     "显示名多一个字也不截断：320pt 宽屏幕城市 5 字（≈60pt）仍走「四档全显示」",
@@ -3765,17 +3836,17 @@ let murmanskWinter = SolarTimeSnapshot.compute(
     date: date("2026-12-21T12:00:00Z"), latitude: 68.97, longitude: 33.08, countryCode: "ru"
 )
 let zhongshanJune = SolarTimeSnapshot.compute(
-    date: date("2026-06-21T12:00:00Z"), latitude: -69.37, longitude: 76.38,
+    date: date("2026-06-21T12:00:00Z"), latitude: -69.37, longitude: 77.1161,
     countryCode: zhongshan?.countryCode
 )
 let zhongshanDecember = SolarTimeSnapshot.compute(
-    date: date("2026-12-21T12:00:00Z"), latitude: -69.37, longitude: 76.38,
+    date: date("2026-12-21T12:00:00Z"), latitude: -69.37, longitude: 77.1161,
     countryCode: zhongshan?.countryCode
 )
 expect("摩尔曼斯克 6 月极昼", murmanskSummer.polar == .midnightSun, "得到 \(murmanskSummer.polar)")
 expect("摩尔曼斯克 12 月极夜", murmanskWinter.polar == .polarNight, "得到 \(murmanskWinter.polar)")
-expect("中山站 6 月极夜（南半球季节相反）", zhongshanJune.polar == .polarNight, "得到 \(zhongshanJune.polar)")
-expect("中山站 12 月极昼", zhongshanDecember.polar == .midnightSun, "得到 \(zhongshanDecember.polar)")
+expect("昆仑站 6 月极夜（南半球季节相反）", zhongshanJune.polar == .polarNight, "得到 \(zhongshanJune.polar)")
+expect("昆仑站 12 月极昼", zhongshanDecember.polar == .midnightSun, "得到 \(zhongshanDecember.polar)")
 expect(
     "极昼/极夜时不显示日出日落时刻（快照里没有这两个值）",
     murmanskSummer.sunriseBeijing == nil && murmanskSummer.sunsetBeijing == nil
@@ -3828,10 +3899,11 @@ expect(
 expect("北京 → 480", civicMinutes(39.9042, 116.4074, "cn") == 480)
 expect("香港 / 澳门 / 台北 → 480", ["hk", "mo", "tw"].allSatisfy { civicMinutes(22.3193, 114.1694, $0) == 480 })
 // ② 中国南极考察站 +8（四个站全覆盖）
+// ② 中国南极考察站 +8（四个站全覆盖）
 expect(
-    "中山站 → 480",
-    civicMinutes(-69.3733, 76.38, "aq") == 480,
-    "得到 \(civicMinutes(-69.3733, 76.38, "aq"))"
+    "昆仑站 → 480",
+    civicMinutes(-80.4169, 77.1161, "aq") == 480,
+    "得到 \(civicMinutes(-80.4169, 77.1161, "aq"))"
 )
 expect(
     "长城 / 昆仑 / 泰山三站 → 480",
@@ -3840,8 +3912,8 @@ expect(
         && civicMinutes(-73.8667, 76.9833, "aq") == 480
 )
 expect(
-    "站点识别按 50 km 半径（中山站 → 中山站）",
-    CivicTime.chinaAntarcticStationName(latitude: -69.3733, longitude: 76.38) == "中山站 Zhongshan"
+    "站点识别按 50 km 半径（昆仑站 → 昆仑站）",
+    CivicTime.chinaAntarcticStationName(latitude: -80.4169, longitude: 77.1161) == "昆仑站 Kunlun"
 )
 expect(
     "邻近的他国站点不会被当成中国站（Davis 站 -68.58, 77.97 → nil）",
@@ -3876,7 +3948,7 @@ expect(
 expect(
     "秒版入口与分钟版同源（乌鲁木齐 480 分 = 28800 秒）",
     SolarTimeMath.standardZoneOffsetSeconds(countryCode: "cn", latitude: 43.8256, longitude: 87.6168) == 28_800
-        && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "aq", latitude: -69.3733, longitude: 76.38) == 28_800
+        && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "aq", latitude: -80.4169, longitude: 77.1161) == 28_800
         && SolarTimeMath.standardZoneOffsetSeconds(countryCode: "ru", latitude: 68.97, longitude: 33.08) == 10_800
 )
 // 端到端：乌鲁木齐的 UTC 标签与标准时间，以及真太阳时相对它的偏移。
