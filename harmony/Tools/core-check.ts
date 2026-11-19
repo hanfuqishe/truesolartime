@@ -16,6 +16,7 @@ import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
 import { DistrictLayoutPlan, DistrictLayoutSolver, DistrictLayoutTier } from './core/DistrictLayout';
 import { DialLabels } from './core/DialLabels';
+import { PlaceNamePolicy } from './core/PlaceNamePolicy';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -2253,6 +2254,18 @@ for (const item of equationCases) {
   // 回归：自然宽度 ≤ 该档可用宽时，字号必须保持 12。
   const fitsPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 120, 48, 24, 160, 345);
   equal('a fitting name keeps 12fp', 12, fitsPlan.fontSize);
+}
+
+// ---- 地名反查策略：5 km + 30 天 + 60 秒采样 ----
+{
+  check('half a kilometre is trusted', !PlaceNamePolicy.shouldQuery(0.5, 1000));
+  check('six kilometres triggers a query', PlaceNamePolicy.shouldQuery(6, 1000));
+  check('a month old name triggers a query',
+    PlaceNamePolicy.shouldQuery(1, 31 * 24 * 60 * 60 * 1000));
+  check('unknown distance always triggers a query', PlaceNamePolicy.shouldQuery(-1, 1000));
+  check('5 km exactly is trusted', PlaceNamePolicy.trustsNameAt(5.0));
+  check('5.1 km is not trusted', !PlaceNamePolicy.trustsNameAt(5.1));
+  equal('gps sample interval is 60 seconds', 60, PlaceNamePolicy.LOCATION_SAMPLE_INTERVAL_SECONDS);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

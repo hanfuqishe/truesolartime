@@ -54,6 +54,7 @@ struct Settings {
   @State weatherRetry: string = '—';
   /** 地图底图诊断：实际源 / 样式 / 首选 / 缩放与降级 / 瓦片状态 / OSM 失败 / 空白判定 / 下次探测。 */
   @State mapDiagLines: string[] = [];
+  @State districtDiagLine: string = '';
   /** 地图底图标识（见 core/MapTiles 的 MAP_STYLE_OPTIONS）。 */
   @State mapStyleKey: string = 'auto';
   @State locating: boolean = false;
@@ -148,6 +149,7 @@ struct Settings {
       ? '即将重试'
       : `${retrySeconds} 秒后（${retryReason}）`;
     this.mapDiagLines = MapTileService.diagnostics();
+    this.districtDiagLine = DistrictService.diagnosticLine();
   }
 
   /** 毫秒时间戳 → 「HH:mm」（本地时区），诊断里显示取数时刻。 */
@@ -233,7 +235,7 @@ struct Settings {
     }).catch((error: BusinessError) => {
       console.warn(`weather refresh failed: ${error.code} ${error.message}`);
     });
-    DistrictService.refreshIfNeeded(place).catch((error: BusinessError) => {
+    DistrictService.refreshIfNeeded(place, true).catch((error: BusinessError) => {
       console.warn(`district refresh failed: ${error.code} ${error.message}`);
     });
     // 常用城市与「实时跟随GPS」都是一步到位的选择，选完直接回首页看结果。
@@ -742,6 +744,11 @@ struct Settings {
               .fontSize(10)
               .fontColor(this.palette.subtle)
               .margin({ top: 8 })
+              .width('100%')
+            Text(this.districtDiagLine)
+              .fontSize(11)
+              .fontColor(this.palette.text)
+              .margin({ top: 4 })
               .width('100%')
             ForEach(this.mapDiagLines, (line: string) => {
               Text(line)

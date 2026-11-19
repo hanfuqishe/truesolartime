@@ -7,6 +7,7 @@ import { geoLocationManager } from '@kit.LocationKit';
 import { i18n } from '@kit.LocalizationKit';
 import { CityIndex } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
+import { PlaceNamePolicy } from '../core/PlaceNamePolicy';
 import { Place } from '../core/Place';
 import { SolarTimeMath } from '../core/SolarTimeMath';
 import { AppStore, CachedDistrict } from './Store';
@@ -22,6 +23,13 @@ const USER_AGENT: string = 'TrueSolarTime-HarmonyOS/1.0';
 
 export class DistrictService {
   private static inFlight: boolean = false;
+  /** 上次成功反查的坐标与时刻：5 km 判定与诊断都以它为基准。 */
+  private static lastSuccessLat: number = NaN;
+  private static lastSuccessLon: number = NaN;
+  private static lastSuccessMillis: number = 0;
+  private static requestCount: number = 0;
+  private static lastDurationMillis: number = 0;
+  private static lastDistanceKm: number = -1;
 
   /** 每反查到一次新名字就 +1，供界面判断「区划名换了」。 */
   private static revisionCount: number = 0;
@@ -89,36 +97,58 @@ export class DistrictService {
     DistrictService.revisionCount++;
   }
 
-  /** 坐标超过 5 km 才重查。 */
+  /** 5 km / 30 天 / 语言变化才重查；距离未知一律查。 */
   static needsRefresh(place: Place): boolean {
     const cached: CachedDistrict = AppStore.district();
     const hasCache: boolean = cached.full.length > 0 && cached.schema === CACHE_SCHEMA;
+    if (!hasCache || cached.language !== DistrictService.language()) {
+      return true;
+    }
     const age: number = Date.now() - cached.fetchedMillis;
-    let moved: number = Number.MAX_VALUE;
+    let moved: number = -1;
     if (!isNaN(cached.latitude) && !isNaN(cached.longitude)) {
       moved = CityIndex.distanceKm(cached.latitude, cached.longitude, place.latitude, place.longitude);
     }
-    return DistrictNameLogic.needsRefresh(hasCache, cached.language, DistrictService.language(), age, moved);
+    return PlaceNamePolicy.shouldQuery(moved, age);
   }
 
-  /** 需要时反查一次；查到新名字返回 true（调用方据此刷新界面与卡片）。 */
-  static async refreshIfNeeded(place: Place): Promise<boolean> {
-    if (DistrictService.inFlight || !DistrictService.needsRefresh(place)) {
+  /** 需要时反查一次；force = 换城市 / 手输坐标时绕过 5 km。 */
+  static async refreshIfNeeded(place: Place, force: boolean = false): Promise<boolean> {
+    if (DistrictService.inFlight || (!force && !DistrictService.needsRefresh(place))) {
       return false;
     }
     DistrictService.inFlight = true;
+    const started: number = Date.now();
     try {
       const language: string = DistrictService.language();
       const names: DistrictNames | null = await DistrictService.resolve(place, language);
+      DistrictService.lastDurationMillis = Date.now() - started;
       if (names === null) {
         return false;
       }
+      DistrictService.lastDistanceKm = !isNaN(DistrictService.lastSuccessLat)
+        ? CityIndex.distanceKm(DistrictService.lastSuccessLat, DistrictService.lastSuccessLon,
+          place.latitude, place.longitude) : -1;
+      DistrictService.lastSuccessLat = place.latitude;
+      DistrictService.lastSuccessLon = place.longitude;
+      DistrictService.lastSuccessMillis = Date.now();
+      DistrictService.requestCount++;
       AppStore.saveDistrict(names.full, names.short, language, place.latitude, place.longitude, CACHE_SCHEMA, names.countryCode);
       DistrictService.revisionCount++;
       return true;
     } finally {
       DistrictService.inFlight = false;
     }
+  }
+
+  /** 诊断：`行政区名 … · 耗时 = 0.4s · 请求次数 = 1 · 距上次反查 1.2 km`。 */
+  static diagnosticLine(): string {
+    const name: string = DistrictService.cachedName();
+    const label: string = name.length > 0 ? name : '-';
+    const seconds: string = (DistrictService.lastDurationMillis / 1000).toFixed(1);
+    const distance: string = DistrictService.lastDistanceKm < 0
+      ? '未知' : `${DistrictService.lastDistanceKm.toFixed(1)} km`;
+    return `行政区名 ${label} · 耗时 = ${seconds}s · 请求次数 = ${DistrictService.requestCount} · 距上次反查 ${distance}`;
   }
 
   /** 强制反查（用户换城市后立刻更新名字）。 */
