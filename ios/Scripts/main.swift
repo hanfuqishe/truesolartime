@@ -2586,6 +2586,49 @@ expect(
         && DistrictNaming.cardCityText(district: nil, place: manualPlace) == "-"
         && DistrictNaming.cardCityText(district: nil, place: gpsPlace) == "-"
 )
+// 地名阶段模型：首帧 / 查询中 / 都失败 / 并行胜出 / Apple 后到覆盖。
+let beijingNames = DistrictNames(full: "黄浦区", short: "黄浦区", countryCode: "cn")
+expect(
+    "首帧：预设城市 → 预设名；GPS/手工 → `--`；有缓存 → 缓存名",
+    PlaceNamePhase.firstFrame(presetName: "东京", cached: nil) == "东京"
+        && PlaceNamePhase.firstFrame(presetName: nil, cached: nil) == PlaceNamePhase.dash
+        && PlaceNamePhase.firstFrame(presetName: nil, cached: beijingNames) == "黄浦区"
+)
+expect(
+    "占位符常量：`--`（查询中）≠ `-`（都失败），且都只含半角字符",
+    PlaceNamePhase.dash != PlaceNamePhase.hyphen
+        && Placeholders.isAllowedCharacters(PlaceNamePhase.dash)
+        && Placeholders.isAllowedCharacters(PlaceNamePhase.hyphen)
+)
+expect(
+    "两者都失败 → `-`（预设城市仍显示预设名）",
+    PlaceNamePhase.text(.failed("Apple -1001 / OSM DNS")) == "-"
+        && PlaceNamePhase.text(.failed("x"), presetName: "东京") == "东京"
+)
+expect(
+    "并行胜出：Apple 未回 + OSM 成功 → 用 OSM；其后 Apple 成功 → **覆盖为 Apple**",
+    PlaceNamePhase.winner(apple: .pending, osm: .ok(beijingNames)) == .ok(beijingNames)
+        && PlaceNamePhase.winner(apple: .ok(beijingNames), osm: .ok(beijingNames)) == .ok(beijingNames)
+        && PlaceNamePhase.winner(apple: .failed("t"), osm: .ok(beijingNames)) == .ok(beijingNames)
+)
+expect(
+    "查询中显示 `--`；诊断区分阶段（查询中 / 成功带来源 / 都失败）",
+    PlaceNamePhase.text(.pending) == PlaceNamePhase.dash
+        && PlaceNamePhase.diagnostics(result: .pending, provider: nil).contains("查詢中")
+        && PlaceNamePhase.diagnostics(result: .ok(beijingNames), provider: "Apple").contains("Apple")
+        && PlaceNamePhase.diagnostics(result: .failed("Apple -1001 / OSM DNS"), provider: nil).contains("均失敗")
+)
+expect(
+    "首帧接线：GPS/手工 + 查询中 → `--`；已失败（isQuerying == false）→ `-`",
+    DistrictNaming.cardCityText(district: nil, place: gpsPlace, isQuerying: true) == PlaceNamePhase.dash
+        && DistrictNaming.cardCityText(district: nil, place: gpsPlace, isQuerying: false) == "-"
+        && DistrictNaming.cardCityText(district: nil, place: manualPlace, isQuerying: true) == PlaceNamePhase.dash
+)
+expect(
+    "预设城市在任何阶段都显示预设名（查询中不闪 `--`）",
+    DistrictNaming.cardCityText(district: nil, place: presetPlace, isQuerying: true) == presetPlace.displayLabel
+        && DistrictNaming.cardCityText(district: nil, place: presetPlace, isQuerying: false) == presetPlace.displayLabel
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

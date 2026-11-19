@@ -52,12 +52,42 @@ final class DistrictStore {
     // MARK: 反查节流（最小接线，不改 OSM 分支）
     /// 成功过的地名，按**约 100 m 网格**（`PlaceNameThrottle.cacheKey`）缓存：同一键永不重复请求。
     private var geocodeCache: [String: DistrictNames] = [:]
+    /// 当前地点的网格键（供 `isQuerying` 判断「该网格是否已有缓存」）。
+    private var currentThrottleKey: String?
     /// 上一次真正发出请求的时刻（全局保留，不随地点清理）。
     private var lastGeocodeRequestAt: Date?
     /// 上一次成功反查的时刻（诊断「上次成功 N 分钟前」）。
     private var lastGeocodeSuccessAt: Date?
     /// 这一次为什么没发请求（命中缓存 / 等待间隔 / 在飞）。
     private(set) var geocodeSkipReason: String?
+    /// 5 秒并行计时器：Apple 迟迟不回就并行发 Nominatim。
+    private var nominatimTimer: DispatchWorkItem?
+    /// Apple 已经覆盖过的网格（同一网格只覆盖一次，避免来回抖）。
+    private var appleCoveredKeys: Set<String> = []
+    /// 当前反查的网格键（`requestRefresh` 入口更新），供 `isQuerying` 判断「尚未开始」。
+    /// 这一轮是否已经有终局失败（失败后不再显示查询中的 `--`）。
+    private(set) var didFail = false
+
+    /// 地名是否处于「查询中」（首帧 / 在飞且还没失败）——View 用它决定显示 `--` 还是 `-`。
+    /// 当前查询是否仍在进行（界面据此显示 `--` 占位）。
+    ///
+    /// 三种「还没名字但仍在等」的情形都算查询中：
+    /// 1. 请求在飞（`inFlight`）；
+    /// 2. 尚未开始（首次进入、还没发请求）；
+    /// 3. 该网格尚无缓存结果。
+    /// **失败之后**（`didFail`）一律返回 false，界面退化成 `-`（只有坐标、没有地名），
+    /// 不能让 `--` 一直挂着——那会让人以为还在查。
+    var isQuerying: Bool {
+        guard !didFail else { return false }
+        if inFlight { return true }
+        guard let key = currentThrottleKey else { return true }
+        return geocodeCache[key] == nil
+    }
+
+    private func cancelNominatimTimer() {
+        nominatimTimer?.cancel()
+        nominatimTimer = nil
+    }
 
     /// **换地点时清空诊断残留**：否则 `CLGeocoder：locality=上海市…` 会一直挂在新城市（东京）上。
     func resetDiagnosticsForNewPlace() {
@@ -127,6 +157,9 @@ final class DistrictStore {
         //  1) 命中网格缓存 → 直接用缓存名，不发请求；
         //  2) 在飞 / 未到 3 秒间隔 → 记下原因并返回（不排队堆积，下次触发再发）。
         let throttleKey = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
+        currentThrottleKey = throttleKey
+        // 记下当前网格键：`isQuerying` 用它判断「该网格是否已有缓存」→ 决定界面显示 `--` 还是真名字。
+        currentThrottleKey = throttleKey
         if let cached = geocodeCache[throttleKey] {
             geocodeSkipReason = L("district.geoHitCache")
             finish(place: place, names: cached, provider: lastProvider == "-" ? "Apple" : lastProvider, completion: completion)
@@ -151,6 +184,8 @@ final class DistrictStore {
 
         if inFlight {
             geocoder.cancelGeocode()
+            cancelNominatimTimer()
+            didFail = false
             inFlight = false
         }
         generation += 1
@@ -177,12 +212,27 @@ final class DistrictStore {
         completion: ((DistrictNames?) -> Void)?
     ) {
         let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
+        // **5 秒并行**：Apple 迟迟不回（境外常见）就同时发 Nominatim；
+        // 国内 Apple 秒回 → callback 里立刻取消该计时器，**零额外延迟**。
+        cancelNominatimTimer()
+        let scheduledGeneration = generation
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self, scheduledGeneration == self.generation, self.inFlight else { return }
+            self.fetchNominatim(place: place, generation: generation, attempt: 1, completion: completion)
+        }
+        nominatimTimer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: timer)
         geocoder.reverseGeocodeLocation(location, preferredLocale: locale) { [weak self] placemarks, error in
             guard let self else { return }
             guard generation == self.generation else { return }
 
             if let mark = placemarks?.first {
                 self.lastAppleFields = Self.describe(mark)
+            // Apple 后到覆盖（同一网格一次）+ 取消 5 秒计时器。
+            self.cancelNominatimTimer()
+            let coveredKey = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
+            if self.appleCoveredKeys.contains(coveredKey) { return }
+            self.appleCoveredKeys.insert(coveredKey)
                 let appleNames = Self.names(from: mark)
                 if let appleNames, !Self.isWeak(appleNames, country: mark.country) {
                     self.lastErrorDescription = nil
@@ -293,6 +343,8 @@ final class DistrictStore {
         completion: ((DistrictNames?) -> Void)?
     ) {
         inFlight = false
+        cancelNominatimTimer()
+        didFail = false
         let key = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
         geocodeCache[key] = names
         lastGeocodeSuccessAt = Date()
@@ -308,6 +360,8 @@ final class DistrictStore {
     /// 界面拿到 nil 就显示半角「-」（既定产品决策）。绝不能「什么都不回调」——
     /// 那样卡片会一直挂着上一个城市的地名（手动输入埃及坐标却显示「北京」就是这么来的）。
     private func fail(completion: ((DistrictNames?) -> Void)?) {
+        cancelNominatimTimer()
+        didFail = true
         inFlight = false
         lastProvider = "-"
         DispatchQueue.main.async {

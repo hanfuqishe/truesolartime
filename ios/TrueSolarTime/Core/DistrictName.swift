@@ -268,7 +268,9 @@ enum DistrictNaming {
     /// ① 反查到的行政区划名优先（**只有属于当前地点时才给得出来**，见 `cacheMatches`）；
     /// ② 反查没结果时，**只有预设城市**才回退显示预设名（如「纽约」）；
     /// ③ 手工坐标与 GPS 没有名字可用 —— 显示半角「-」（既定产品决策：失败**不回填旧地名**）。
-    static func cardCityText(district: DistrictNames?, place: Place) -> String {
+    /// - Parameter isQuerying: 反查是否还在进行（首帧 / 查询中）。为 true 时 GPS / 手工显示
+    ///   `--`（查询中），false 时才显示 `-`（两者都失败）。
+    static func cardCityText(district: DistrictNames?, place: Place, isQuerying: Bool = false) -> String {
         // 规则统一在 `PlaceNameResolver`：**只有预设城市**才拿预设名兜底；
         // 手工坐标 / GPS 反查失败一律显示 `-`（`presetLabel` 会按坐标「认回」预设城市，
         // 那是给老数据升级用的，不能用于这里）。
@@ -277,6 +279,10 @@ enum DistrictNaming {
         // **有 `presetKey` 就是预设城市**（`Place.presets` 里的 source 是 `.manual`，不能按 source 判断）；
         // 手工坐标 / GPS 没有 `presetKey` → 反查失败显示 `-`。
         let presetName: String? = place.presetKey != nil ? place.displayLabel : nil
+        if isQuerying {
+            // 首帧 / 查询中：有缓存或预设名就先用，否则 `--`（**不是** `-`）。
+            return PlaceNamePhase.firstFrame(presetName: presetName, cached: district)
+        }
         return PlaceNameResolver.name(presetName: presetName, geocoded: district, source: place.source)
     }
 

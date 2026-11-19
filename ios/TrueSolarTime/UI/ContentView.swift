@@ -127,7 +127,7 @@ struct ContentView: View {
     private var cityText: String {
         // 未知态（跟随 GPS 但拿不到定位）：地名位置显示「定位不可用」，可点击去系统设置。
         if model.isLocationUnknown { return L("location.unavailable") }
-        return DistrictNaming.cardCityText(district: model.districtName, place: model.place)
+        return DistrictNaming.cardCityText(district: model.districtName, place: model.place, isQuerying: model.isDistrictQuerying)
     }
 
     /// 时间轴上关键时段的颜色。

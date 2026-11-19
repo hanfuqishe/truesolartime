@@ -83,6 +83,9 @@ final class AppModel: ObservableObject {
     /// 配色用的「当前是不是白天」：自动模式按太阳高度角，亮色 / 暗色强制忽略日出日落。
     ///
     /// 页面背景、卡片、大卡片渐变都读它；`SunCard` 里的太阳弧仍按真实高度角画（事实，不是配色）。
+    /// 地名是否「查询中」（在飞且还没失败）——View 用它决定显示 `--`（查询中）还是 `-`（已失败）。
+    var isDistrictQuerying: Bool { DistrictStore.shared.isQuerying }
+
     /// 底部署名（按**实际**天气源切换；WeatherKit 用 Apple 官方表述）。
     var weatherAttributionText: String {
         WeatherChain.attribution(for: weather?.source ?? .openMeteo).text
