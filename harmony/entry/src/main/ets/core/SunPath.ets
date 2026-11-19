@@ -324,7 +324,8 @@ export class SunPathGeometry {
    */
   static labelAnchors(path: SunPath, sunriseHour: number | null, sunsetHour: number | null,
     sideGap: number, noonGap: number, minLabelDrop: number, sideLabelRise: number,
-    labelFontSize: number = 11, labelPadding: number = 4, textChars: number = 5): SunLabelAnchors {
+    labelFontSize: number = 11, labelPadding: number = 4, textChars: number = 5,
+    labelOffset: number = 14): SunLabelAnchors {
     const sunriseY: number = SunPathGeometry.sideAnchorY(path, sunriseHour, minLabelDrop, sideLabelRise);
     const sunsetY: number = SunPathGeometry.sideAnchorY(path, sunsetHour, minLabelDrop, sideLabelRise);
     // 南半球：日出在右（+1）、日落在左（−1）；北半球反过来。
@@ -344,9 +345,14 @@ export class SunPathGeometry {
     if (sunriseHour === null || sunsetHour === null) {
       return normal;
     }
-    // 接近极昼时两个交点都挤在圆顶：水平间距不足，或任一与上中天相交 → 边缘退让布局。
     const labelWidth: number = textChars * labelFontSize * 0.6 + labelPadding;
     const labelHeight: number = labelFontSize * 1.2 + labelPadding;
+    // 南半球：日出/日落标签一律放到地平线**下方**，不会再压到轨迹圆上。
+    if (path.southernHemisphere) {
+      return SunPathGeometry.southernBelowAnchors(path, sideGap, noonGap, labelWidth, labelHeight,
+        labelOffset);
+    }
+    // 北半球接近极昼时两个交点挤在圆顶：水平间距不足，或任一与上中天相交 → 边缘退让布局。
     const sunriseRect: number[] = SunPathGeometry.rectOf(normal.sunriseX, normal.sunriseY,
       labelWidth, labelHeight, sunriseSign < 0);
     const sunsetRect: number[] = SunPathGeometry.rectOf(normal.sunsetX, normal.sunsetY,
@@ -372,6 +378,33 @@ export class SunPathGeometry {
 
   static rectsOverlap(a: number[], b: number[]): boolean {
     return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  }
+
+  /**
+   * 南半球的日出/日落标签：固定放在地平线下方，横向在交点外侧。
+   *
+   * 近极昼时两个交点都挤在圆底：标签会贴到画布左右内边距，水平间距至少卡片宽的 60%。
+   */
+  private static southernBelowAnchors(path: SunPath, sideGap: number, noonGap: number,
+    labelWidth: number, labelHeight: number, labelOffset: number): SunLabelAnchors {
+    const pad: number = Math.max(sideGap, 4);
+    const canvasWidth: number = path.centerX * 2;
+    const y: number = path.horizonY + labelOffset;
+    const halfChord: number = SunPathGeometry.horizonHalfChord(path);
+    let sunriseX: number = path.centerX + halfChord + sideGap;
+    let sunsetX: number = path.centerX - halfChord - sideGap;
+    const sunriseRect: number[] = SunPathGeometry.rectOf(sunriseX, y, labelWidth, labelHeight, false);
+    const sunsetRect: number[] = SunPathGeometry.rectOf(sunsetX, y, labelWidth, labelHeight, true);
+    const crowded: boolean = Math.abs(sunriseX - sunsetX) < canvasWidth * 0.6 ||
+      SunPathGeometry.rectsOverlap(sunriseRect, sunsetRect) ||
+      sunriseRect[2] > canvasWidth - pad || sunsetRect[0] < pad;
+    if (crowded) {
+      // 贴画布左右内边距：日出右边缘贴右、日落左边缘贴左。
+      sunriseX = canvasWidth - pad - labelWidth;
+      sunsetX = pad + labelWidth;
+    }
+    return new SunLabelAnchors(sunriseX, y, sunsetX, y, path.centerX,
+      path.centerY - path.radius - noonGap, path.centerX, path.centerY);
   }
 
   private static retreatAnchors(path: SunPath, sunriseSign: number, sideLabelRise: number,

@@ -2078,6 +2078,57 @@ for (const item of equationCases) {
     SunPathGeometry.dayArcSpan(null, null) === null && wholeDayAnchors.sunriseX >= 0);
 }
 
+// ---- 南半球标签放到地平线下方；北半球保持原样 ----
+{
+  const labelWidth: number = 5 * 11 * 0.6 + 4;
+  const labelHeight: number = 11 * 1.2 + 4;
+  // 悉尼（正常昼长）：两个标签都在地平线下，左/右分列。
+  const sydney: SunPath = SunPathGeometry.compute(294, 194, 6.0, 18.0, 12, false, false, true);
+  const sydneyAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(sydney, 6, 18, 10, 8, 18, 10);
+  check('sydney labels sit below the horizon',
+    sydneyAnchors.sunriseY > sydney.horizonY && sydneyAnchors.sunsetY > sydney.horizonY);
+  check('sydney sunrise stays right, sunset stays left',
+    sydneyAnchors.sunriseX > sydney.centerX && sydneyAnchors.sunsetX < sydney.centerX);
+  check('sydney side labels do not overlap',
+    !SunPathGeometry.rectsOverlap(
+      SunPathGeometry.rectOf(sydneyAnchors.sunriseX, sydneyAnchors.sunriseY, labelWidth, labelHeight, false),
+      SunPathGeometry.rectOf(sydneyAnchors.sunsetX, sydneyAnchors.sunsetY, labelWidth, labelHeight, true)));
+
+  // 南极中山站（22.7h / 00:21 / 23:39，近极昼）：贴左右内边距，间距 ≥ 60% 卡片宽。
+  const zhongshan: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
+  const zhongshanAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(zhongshan, 0.35, 23.65,
+    10, 8, 18, 10);
+  check('zhongshan labels sit below the horizon',
+    zhongshanAnchors.sunriseY > zhongshan.horizonY &&
+      zhongshanAnchors.sunsetY > zhongshan.horizonY);
+  check('zhongshan labels are at least 60% of the card apart',
+    Math.abs(zhongshanAnchors.sunriseX - zhongshanAnchors.sunsetX) >= 294 * 0.6);
+  const zhongshanRects: number[][] = [
+    SunPathGeometry.rectOf(zhongshanAnchors.sunriseX, zhongshanAnchors.sunriseY, labelWidth,
+      labelHeight, false),
+    SunPathGeometry.rectOf(zhongshanAnchors.sunsetX, zhongshanAnchors.sunsetY, labelWidth,
+      labelHeight, true),
+    SunPathGeometry.rectOf(zhongshanAnchors.noonX, zhongshanAnchors.noonY, labelWidth,
+      labelHeight, false, true)
+  ];
+  check('zhongshan three labels are pairwise disjoint',
+    !SunPathGeometry.rectsOverlap(zhongshanRects[0], zhongshanRects[1]) &&
+      !SunPathGeometry.rectsOverlap(zhongshanRects[0], zhongshanRects[2]) &&
+      !SunPathGeometry.rectsOverlap(zhongshanRects[1], zhongshanRects[2]));
+
+  // 北京（北半球）：锚点与现状完全一致，仍在地平线上方。
+  const beijing: SunPath = SunPathGeometry.compute(294, 194, 6.4, 16.9, 12, false, false, false);
+  const beijingAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(beijing, 6.4, 16.9,
+    10, 8, 18, 10);
+  near('beijing sunrise x unchanged', 65.43784736562158, beijingAnchors.sunriseX, 1e-9);
+  near('beijing sunrise y unchanged', 79.29416168790857, beijingAnchors.sunriseY, 1e-9);
+  near('beijing sunset x unchanged', 223.9141435910342, beijingAnchors.sunsetX, 1e-9);
+  near('beijing sunset y unchanged', 66.0623887884268, beijingAnchors.sunsetY, 1e-9);
+  near('beijing noon y unchanged', 15.280000000000001, beijingAnchors.noonY, 1e-9);
+  check('beijing labels stay above the horizon',
+    beijingAnchors.sunriseY < beijing.horizonY && beijingAnchors.sunsetY < beijing.horizonY);
+}
+
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const failure of failures) {
