@@ -197,6 +197,16 @@ struct Settings {
     return AppStore.gpsIntent() && this.place.source !== PlaceSource.GPS;
   }
 
+  /** 常用城市按 4 个一行切分的行号（最后一行不满 4 个也保留空位）。 */
+  private presetRowIndexes(): number[] {
+    const rows: number[] = [];
+    const count: number = Math.ceil(Place.PRESETS.length / 4);
+    for (let index: number = 0; index < count; index++) {
+      rows.push(index);
+    }
+    return rows;
+  }
+
   private applyPlace(place: Place, leave: boolean = false): void {
     // 换地点（含手动坐标）：先把旧区划名清掉，反查回来前显示 `-`，绝不残留上一个城市。
     if (!place.sameLocation(this.place)) {
@@ -405,6 +415,10 @@ struct Settings {
           .fontColor(this.palette.accent)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          // 长地名只允许占右侧 55%，永不压到左边的「设置」标题。
+          .constraintSize({ maxWidth: '55%' })
+          .margin({ left: 8 })
+          .textAlign(TextAlign.End)
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 12 })
@@ -491,24 +505,43 @@ struct Settings {
           // 常用城市：只是快捷定位入口，不按当前坐标高亮（当前坐标未必落在这些点上）
           Column() {
             this.sectionTitle('常用城市')
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(Place.PRESETS, (preset: Place, index: number) => {
-                Text(index < this.presetLabels.length
-                  ? this.presetLabels[index]
-                  : TimeFormat.coordinates(preset.latitude, preset.longitude))
-                  .fontSize(12)
-                  .fontColor(this.palette.text)
-                  .backgroundColor(this.palette.chip)
-                  .borderRadius(14)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .margin({ right: 8, top: 8 })
-                  .onClick(() => {
-                    this.applyPlace(preset, true);
-                  })
-              }, (preset: Place) => `${preset.latitude}-${preset.longitude}`)
-            }
-            .width('100%')
-            .margin({ top: 4 })
+            // 手工分行：每行固定 4 格，每格 layoutWeight(1)，等宽由结构保证。
+            ForEach(this.presetRowIndexes(), (row: number) => {
+              Row({ space: 8 }) {
+                ForEach([0, 1, 2, 3], (column: number) => {
+                  if (row * 4 + column < Place.PRESETS.length) {
+                    Row() {
+                      Text(row * 4 + column < this.presetLabels.length
+                        ? this.presetLabels[row * 4 + column]
+                        : TimeFormat.coordinates(Place.PRESETS[row * 4 + column].latitude,
+                          Place.PRESETS[row * 4 + column].longitude))
+                        .fontSize(12)
+                        .fontColor(this.palette.text)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .textAlign(TextAlign.Center)
+                        .width('100%')
+                        .padding({ left: 4, right: 4 })
+                    }
+                    .layoutWeight(1)
+                    .height(32)
+                    .justifyContent(FlexAlign.Center)
+                    .backgroundColor(this.palette.chip)
+                    .borderRadius(14)
+                    .onClick(() => {
+                      this.applyPlace(Place.PRESETS[row * 4 + column], true);
+                    })
+                  } else {
+                    // 空位也占 1/4，最后一行左对齐、右侧留空。
+                    Row()
+                      .layoutWeight(1)
+                      .height(32)
+                  }
+                }, (column: number) => `${row}-${column}`)
+              }
+              .width('100%')
+              .margin({ top: 8 })
+            }, (row: number) => `${row}`)
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
@@ -516,7 +549,7 @@ struct Settings {
           // 地图底图：与 Android 设置面板同一组选项
           Column() {
             this.sectionTitle('地图底图')
-            Text('自动：境内用高德，境外用 OpenStreetMap')
+            Text(MapTilesLogic.autoHint(DistrictService.language()))
               .fontSize(10)
               .fontColor(this.palette.subtle)
               .margin({ top: 4 })

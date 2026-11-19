@@ -1,7 +1,8 @@
 /**
  * 位置地图的底图与瓦片计算，规则与 Android 端 `map/MapTileSources.kt` 一致：
  *
- * - 境内用高德栅格瓦片（中文地名、路网更细、无需 API Key），境外用 OpenStreetMap；
+ * - 境内用高德栅格瓦片（中文地名、路网更细、无需 API Key），境外自动首选 ESRI 街道图
+ *   （OSM 域名在部分网络被 DNS 污染；ESRI 连不上再回退 OSM、高德）；
  * - 高德底图是 GCJ-02 坐标，标点前要把 WGS-84 转成 GCJ-02，数据层始终保持 WGS-84；
  * - 瓦片是标准的 Web Mercator 金字塔，每片 256 px。
  *
@@ -107,7 +108,7 @@ export class MapTilesLogic {
   }
 
   /**
-   * 自动选图：境内高德，境外 OSM。
+   * 自动选图：境内高德，境外 ESRI（兜底 OSM → 高德）。
    *
    * 「境内」走 `SolarTimeMath.isInChina`：**有国家码以国家码为准**，没有才退回包围盒。
    * 只看经纬度时，新德里（77.2°E, 28.6°N）会被当成境内 → 去拉高德的瓦片（境外没有覆盖，
@@ -130,6 +131,19 @@ export class MapTilesLogic {
     return MapStyle.AUTO;
   }
 
+  /** 设置页「自动」说明：境内高德、境外 ESRI，兜底 OSM → 高德。 */
+  static autoHint(language: string): string {
+    if (language.startsWith('en')) {
+      return 'Auto: AMap inside China, Esri Street Map elsewhere; falls back to OSM, then AMap';
+    }
+    const traditional: boolean = language.startsWith('zh') &&
+      (language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 || language.indexOf('HK') >= 0);
+    if (traditional) {
+      return '自動：境內用高德，境外用 Esri 街道圖；連不上時依次回退 OSM、高德';
+    }
+    return '自动：境内用高德，境外用 Esri 街道图；连不上时依次回退 OSM、高德';
+  }
+
   /** 设置页选项文案：Esri 按三语显示，其余沿用固定文案。 */
   static optionLabel(option: MapStyleOption, language: string): string {
     if (option.style !== MapStyle.ESRI) {
@@ -144,7 +158,7 @@ export class MapTilesLogic {
   }
 
   /**
-   * 按设置里选定的底图取图层：自动仍是境内高德、境外 OSM（境内/境外按国家码判，见 [layerFor]）。
+   * 按设置里选定的底图取图层：自动仍是境内高德、境外 ESRI（境内/境外按国家码判，见 [layerFor]）。
    *
    * @param countryCode ISO 3166-1 alpha-2；未知传空串，只有「自动」会用到。
    */

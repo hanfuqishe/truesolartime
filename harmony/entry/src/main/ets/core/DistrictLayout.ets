@@ -18,6 +18,30 @@ export class DistrictLayoutTier {
   /** 相邻元素之间的最小间距（与视图里的 margin 一致）。 */
   static readonly GAP: number = 8;
 
+  /** 地区与竖线之间、地区与 UTC 之间留的间距（安卓为 6dp）。 */
+  static readonly CITY_GAP: number = 6;
+
+  /**
+   * 左右两半结构下的档位（与 Android `SmallRowLayout.cityRowTier` 等价）。
+   *
+   * 左半：`UTC + 地区`；右半：`真太阳时 + 时辰`。右半放不下 → 隐藏「真太阳时」；
+   * 左半仍放不下 → 隐藏 UTC；还放不下 → 省略号。
+   */
+  static ofHalves(utcWidth: number, placeWidth: number, labelWidth: number, shichenWidth: number,
+      halfWidth: number): number {
+    const gap: number = DistrictLayoutTier.CITY_GAP;
+    if (utcWidth + placeWidth + gap <= halfWidth && labelWidth + shichenWidth + gap <= halfWidth) {
+      return DistrictLayoutTier.FULL;
+    }
+    if (utcWidth + placeWidth + gap <= halfWidth) {
+      return DistrictLayoutTier.HIDE_LABEL;
+    }
+    if (placeWidth <= halfWidth) {
+      return DistrictLayoutTier.HIDE_UTC;
+    }
+    return DistrictLayoutTier.ELLIPSIS;
+  }
+
   /**
    * 计算档位。
    *

@@ -13,6 +13,7 @@ import { SolarSnapshot, SolarTimeSnapshot } from '../core/SolarSnapshot';
 import { AxisSegment, TakeBand, TakeTimeLogic, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { CivicTimeLogic } from '../core/CivicTime';
+import { DialLabels } from '../core/DialLabels';
 import { DistrictLayoutTier } from '../core/DistrictLayout';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from '../core/SunPath';
 import { SunDialColors } from '../core/SunDialColors';
@@ -607,7 +608,7 @@ struct Index {
 
   // ---- 位置地图 ----
 
-  /** 当前设置下的底图图层（自动＝境内高德、境外 OSM；境内/境外按国家码判）。 */
+  /** 当前设置下的底图图层（自动＝境内高德、境外 ESRI；境内/境外按国家码判）。 */
   private mapLayer(): MapLayer {
     const style: MapStyle = MapTilesLogic.styleFromKey(this.mapStyleKey);
     return MapTilesLogic.layerForStyle(style, this.place.latitude, this.place.longitude,
@@ -833,12 +834,13 @@ struct Index {
   /** 顶部信息行的退化档位：先缩字号，再按档 0→1→2→3 退化。 */
   private districtTier(): number {
     const base: number = this.cs(12);
-    const rowWidth: number = this.contentWidth > 0 ? this.contentWidth - 80 : this.cs(320);
+    // 左右两半按时间栏的实测宽度算（竖线与两半结构下的真实可用宽度）。
+    const halfWidth: number = this.clockColumnWidth > 0 ? this.clockColumnWidth : this.cs(150);
     const utcWidth: number = TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds).length * base;
     const placeWidth: number = this.districtLabel().length * this.cs(this.districtFontSize());
     const labelWidth: number = 4 * base;
     const shichenWidth: number = this.shortText(this.snapshot.shichenName).length * base;
-    return DistrictLayoutTier.of(utcWidth, placeWidth, labelWidth, shichenWidth, rowWidth);
+    return DistrictLayoutTier.ofHalves(utcWidth, placeWidth, labelWidth, shichenWidth, halfWidth);
   }
 
   /**
@@ -1031,55 +1033,41 @@ struct Index {
   @Builder
   heroCard() {
     Column() {
-      // 顶部信息行（整卡宽）：UTC / 地名 / 真太阳时 / 时辰。地名优先保完整：
-      // 先缩字号，再按四档退化（隐藏标签 → 隐藏 UTC → 省略号）。
       Row() {
-        if (this.districtTier() < DistrictLayoutTier.HIDE_UTC) {
-          Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
-            .fontSize(this.cs(12))
-            .fontFamily(this.cardFont(FontWeight.Normal))
-            .lineHeight(this.cardLineHeight(this.cs(12)))
-            .fontColor('#CCFFFFFF')
-        }
-        Text(this.districtLabel())
-          .fontSize(this.cs(this.districtFontSize()))
-          .fontFamily(this.cardFont(FontWeight.Normal))
-          .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
-          .fontColor('#B3FFFFFF')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .textAlign(this.districtTier() >= DistrictLayoutTier.HIDE_LABEL ? TextAlign.Start : TextAlign.End)
-          .layoutWeight(1)
-          .margin({ left: this.districtTier() >= DistrictLayoutTier.HIDE_UTC ? 0 : 8 })
-          .onClick(() => {
-            // 未知态：「定位不可用」可点，跳到系统应用详情/权限设置。
-            if (this.locationUnknown && this.context !== null) {
-              LocationService.openAppSettings(this.context).catch((error: BusinessError) => {
-                console.warn(`open settings failed: ${error.code} ${error.message}`);
-              });
-            }
-          })
-        if (this.districtTier() === DistrictLayoutTier.FULL) {
-          Text('真太阳时')
-            .fontSize(this.cs(12))
-            .fontFamily(this.cardFont(FontWeight.Normal))
-            .lineHeight(this.cardLineHeight(this.cs(12)))
-            .fontColor('#CCFFFFFF')
-            .margin({ left: 8 })
-        }
-        Text(this.shortText(this.snapshot.shichenName))
-          .fontSize(this.cs(12))
-          .fontFamily(this.cardFont(FontWeight.Normal))
-          .lineHeight(this.cardLineHeight(this.cs(12)))
-          .fontColor('#B3FFFFFF')
-          .maxLines(1)
-          .margin({ left: 8 })
-      }
-      .width('100%')
-
-      Row() {
-        // 左：标准时间
+        // 左：标准时间。标签行与数字同栏（与安卓同一套左右两半布局）。
         Column() {
+          Row() {
+            if (this.districtTier() < DistrictLayoutTier.HIDE_UTC) {
+              Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
+                .fontSize(this.cs(12))
+                .fontFamily(this.cardFont(FontWeight.Normal))
+                .lineHeight(this.cardLineHeight(this.cs(12)))
+                .fontColor('#CCFFFFFF')
+            }
+            Text(this.districtLabel())
+              .fontSize(this.cs(this.districtFontSize()))
+              .fontFamily(this.cardFont(FontWeight.Normal))
+              .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
+              .fontColor('#B3FFFFFF')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(this.districtTier() === DistrictLayoutTier.FULL ? TextAlign.End
+                : (this.districtTier() === DistrictLayoutTier.HIDE_LABEL ? TextAlign.Center : TextAlign.Start))
+              .layoutWeight(1)
+              .margin({ left: this.districtTier() < DistrictLayoutTier.HIDE_UTC ? 8 : 0,
+                right: this.districtTier() === DistrictLayoutTier.FULL ? 6 : 0 })
+              .onClick(() => {
+                // 未知态：「定位不可用」可点，跳到系统应用详情/权限设置。
+                if (this.locationUnknown && this.context !== null) {
+                  LocationService.openAppSettings(this.context).catch((error: BusinessError) => {
+                    console.warn(`open settings failed: ${error.code} ${error.message}`);
+                  });
+                }
+              })
+          }
+          .width('100%')
+          .height(this.cs(18))
+          .margin({ bottom: 4 })
           Row() {
             Text(TimeFormat.clock(this.standardSecond))
               .fontSize(this.clockMainSize())
@@ -1120,12 +1108,48 @@ struct Index {
 
         Column()
           .width(1)
-          .height(this.cs(58))
+          // 档 0：竖线从标签行顶端一直延伸到大数字底部；其余档位只在大数字之间。
+          .height(this.cs(this.districtTier() === DistrictLayoutTier.FULL ? 76 : 58))
           .backgroundColor('#33FFFFFF')
-          .margin({ left: 12, right: 12, top: 3 })
+          .margin({ left: 12, right: 12,
+            top: this.districtTier() === DistrictLayoutTier.FULL ? 0 : 3 })
 
         // 右：真太阳时（逐秒刷新）
         Column() {
+          if (this.districtTier() === DistrictLayoutTier.FULL) {
+            Row() {
+              Text('真太阳时')
+                .fontSize(this.cs(12))
+                .fontFamily(this.cardFont(FontWeight.Normal))
+                .lineHeight(this.cardLineHeight(this.cs(12)))
+                .fontColor('#CCFFFFFF')
+              Text(this.shortText(this.snapshot.shichenName))
+                .fontSize(this.cs(12))
+                .fontFamily(this.cardFont(FontWeight.Normal))
+                .lineHeight(this.cardLineHeight(this.cs(12)))
+                .fontColor('#B3FFFFFF')
+                .maxLines(1)
+                .textAlign(TextAlign.End)
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(this.cs(18))
+            .margin({ bottom: 4 })
+          } else {
+            Row() {
+              Text(this.shortText(this.snapshot.shichenName))
+                .fontSize(this.cs(12))
+                .fontFamily(this.cardFont(FontWeight.Normal))
+                .lineHeight(this.cardLineHeight(this.cs(12)))
+                .fontColor('#B3FFFFFF')
+                .maxLines(1)
+                .textAlign(TextAlign.End)
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(this.cs(18))
+            .margin({ bottom: 4 })
+          }
           Row() {
             if (this.locationUnknown) {
               Text(LocationPlaceholders.TIME)
@@ -1384,7 +1408,7 @@ struct Index {
     // 未知态：不画日出/日落/上中天标签。
     if (!this.locationUnknown && this.sunDialW > 0 && this.sunDialH > 0) {
       if (this.snapshot.polar === PolarState.NORMAL) {
-        Text(TimeFormat.clock(this.snapshot.sunriseLocalSeconds))
+        Text(DialLabels.sunrise(this.language, TimeFormat.clock(this.snapshot.sunriseLocalSeconds)))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
@@ -1392,7 +1416,7 @@ struct Index {
           .maxLines(1)
           .position({ x: this.sunAnchors().sunriseX, y: this.sunAnchors().sunriseY })
           .markAnchor({ x: this.isSouthernHemisphere() ? 0 : '100%', y: '50%' })
-        Text(TimeFormat.clock(this.snapshot.sunsetLocalSeconds))
+        Text(DialLabels.sunset(this.language, TimeFormat.clock(this.snapshot.sunsetLocalSeconds)))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
@@ -1401,7 +1425,7 @@ struct Index {
           .position({ x: this.sunAnchors().sunsetX, y: this.sunAnchors().sunsetY })
           .markAnchor({ x: this.isSouthernHemisphere() ? '100%' : 0, y: '50%' })
       } else {
-        Text(this.snapshot.polar === PolarState.MIDNIGHT_SUN ? '极昼' : '极夜')
+        Text(DialLabels.polar(this.snapshot.polar === PolarState.MIDNIGHT_SUN, this.language))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
@@ -1412,7 +1436,7 @@ struct Index {
       }
       // 极夜没有上中天（太阳整日不升），极昼保留。
       if (this.snapshot.polar !== PolarState.POLAR_NIGHT) {
-        Text(TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
+        Text(DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds)))
           .fontSize(this.cs(11))
           .fontFamily(this.cardFont(FontWeight.Medium))
           .lineHeight(this.cardLineHeight(this.cs(11)))
@@ -1426,7 +1450,7 @@ struct Index {
 
   /**
    * 位置地图：与 Android 的 MapCard 同款——标题 + 坐标、190 高的地图、底图来源。
-   * 境内用高德栅格瓦片（中文路网），境外用 OpenStreetMap；标点固定在地图中心，
+   * 境内用高德栅格瓦片（中文路网），境外自动用 Esri 街道图（兜底 OSM、高德）；标点固定在地图中心，
    * 支持双指缩放与双击放大（页面本身可上下滚动，所以不做拖动平移）。
    */
   @Builder
@@ -1568,9 +1592,14 @@ struct Index {
 
   /** 三个时间标签 + 极昼极夜文案的锚点。 */
   private sunAnchors(): SunLabelAnchors {
+    const texts: string[] = [
+      DialLabels.sunrise(this.language, TimeFormat.clock(this.snapshot.sunriseLocalSeconds)),
+      DialLabels.sunset(this.language, TimeFormat.clock(this.snapshot.sunsetLocalSeconds)),
+      DialLabels.noon(this.language, TimeFormat.clock(this.snapshot.solarNoonLocalSeconds))
+    ];
     return SunPathGeometry.labelAnchors(this.sunDialPath(), this.sunriseDialHour(), this.sunsetDialHour(),
       this.cs(SUN_LABEL_GAP), this.cs(SUN_NOON_LABEL_GAP), this.cs(SUN_LABEL_TOP_INSET),
-      this.cs(SUN_LABEL_RISE));
+      this.cs(SUN_LABEL_RISE), this.cs(11), this.cs(4), 5, texts, this.cs(14));
   }
 
   /** 日出对应的**当地真太阳时**（小时数）；极昼/极夜没有日出，返回 null。 */

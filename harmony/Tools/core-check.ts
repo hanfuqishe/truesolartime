@@ -15,6 +15,7 @@ import { TakeBand, TakeTemperature, TakeTimeLogic, MINUTES_PER_DAY } from './cor
 import { ThemeMode } from './core/ThemeMode';
 import { DistrictNameLogic, DistrictNames } from './core/DistrictName';
 import { DistrictLayoutTier } from './core/DistrictLayout';
+import { DialLabels } from './core/DialLabels';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -1095,6 +1096,15 @@ for (const item of equationCases) {
     && MapTilesLogic.styleFromKey(MAP_STYLE_OPTIONS[3].key) === MapStyle.AMAP_VECTOR);
   equal('map style option order', 'AUTO,ESRI,OSM,AMAP_VECTOR,AMAP_SATELLITE',
     MAP_STYLE_OPTIONS.map((option): string => MapStyle[option.style]).join(','));
+  equal('auto hint (simplified)',
+    '自动：境内用高德，境外用 Esri 街道图；连不上时依次回退 OSM、高德',
+    MapTilesLogic.autoHint('zh-CN'));
+  equal('auto hint (traditional)',
+    '自動：境內用高德，境外用 Esri 街道圖；連不上時依次回退 OSM、高德',
+    MapTilesLogic.autoHint('zh-Hant'));
+  equal('auto hint (english)',
+    'Auto: AMap inside China, Esri Street Map elsewhere; falls back to OSM, then AMap',
+    MapTilesLogic.autoHint('en-US'));
   const forcedOsm = MapTilesLogic.layerForStyle(MapStyle.OSM, 31.2304, 121.4737);
   check('osm forced inside china', forcedOsm.datum === MapDatum.WGS84 && forcedOsm.name === 'osm');
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
@@ -1781,10 +1791,10 @@ for (const item of equationCases) {
     `${southAnchors.sunsetX}`);
   const southSunrisePointX: number = SunPathGeometry.hourX(southPath.centerX, southPath.radius, 6.0, true);
   const southSunsetPointX: number = SunPathGeometry.hourX(southPath.centerX, southPath.radius, 18.0, true);
-  check('southern sunrise label outside right intersection',
-    southAnchors.sunriseX > southSunrisePointX);
-  check('southern sunset label outside left intersection',
-    southAnchors.sunsetX < southSunsetPointX);
+  check('southern sunrise label sits at the right intersection',
+    Math.abs(southAnchors.sunriseX - southSunrisePointX) < 1e-6);
+  check('southern sunset label sits at the left intersection',
+    Math.abs(southAnchors.sunsetX - southSunsetPointX) < 1e-6);
   near('southern noon label still above top', southPath.centerY - southPath.radius - noonGap,
     southAnchors.noonY, 0.5);
 
@@ -2089,20 +2099,30 @@ for (const item of equationCases) {
     sydneyAnchors.sunriseY > sydney.horizonY && sydneyAnchors.sunsetY > sydney.horizonY);
   check('sydney sunrise stays right, sunset stays left',
     sydneyAnchors.sunriseX > sydney.centerX && sydneyAnchors.sunsetX < sydney.centerX);
+  const sydneyChord: number = SunPathGeometry.horizonHalfChord(sydney);
+  near('sydney sunrise sits on its intersection', sydney.centerX + sydneyChord,
+    sydneyAnchors.sunriseX, 1e-9);
+  near('sydney sunset sits on its intersection', sydney.centerX - sydneyChord,
+    sydneyAnchors.sunsetX, 1e-9);
   check('sydney side labels do not overlap',
     !SunPathGeometry.rectsOverlap(
       SunPathGeometry.rectOf(sydneyAnchors.sunriseX, sydneyAnchors.sunriseY, labelWidth, labelHeight, false),
       SunPathGeometry.rectOf(sydneyAnchors.sunsetX, sydneyAnchors.sunsetY, labelWidth, labelHeight, true)));
 
-  // 南极中山站（22.7h / 00:21 / 23:39，近极昼）：贴左右内边距，间距 ≥ 60% 卡片宽。
+  // 南极中山站（22.7h / 00:21 / 23:39，近极昼）：以交点为基准，仅最小推开。
   const zhongshan: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
   const zhongshanAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(zhongshan, 0.35, 23.65,
     10, 8, 18, 10);
+  const zhongshanChord: number = SunPathGeometry.horizonHalfChord(zhongshan);
+  const sunrisePoint: number = zhongshan.centerX + zhongshanChord;
+  const sunsetPoint: number = zhongshan.centerX - zhongshanChord;
   check('zhongshan labels sit below the horizon',
     zhongshanAnchors.sunriseY > zhongshan.horizonY &&
       zhongshanAnchors.sunsetY > zhongshan.horizonY);
-  check('zhongshan labels are at least 60% of the card apart',
-    Math.abs(zhongshanAnchors.sunriseX - zhongshanAnchors.sunsetX) >= 294 * 0.6);
+  check('zhongshan sunrise stays within 40% of the card',
+    Math.abs(zhongshanAnchors.sunriseX - sunrisePoint) <= 294 * 0.4);
+  check('zhongshan sunset stays within 40% of the card',
+    Math.abs(zhongshanAnchors.sunsetX - sunsetPoint) <= 294 * 0.4);
   const zhongshanRects: number[][] = [
     SunPathGeometry.rectOf(zhongshanAnchors.sunriseX, zhongshanAnchors.sunriseY, labelWidth,
       labelHeight, false),
@@ -2116,6 +2136,15 @@ for (const item of equationCases) {
       !SunPathGeometry.rectsOverlap(zhongshanRects[0], zhongshanRects[2]) &&
       !SunPathGeometry.rectsOverlap(zhongshanRects[1], zhongshanRects[2]));
 
+  // 极端极昼：日出=日落=同一个点，允许退到边缘，但间距仍 ≥ 60% 卡片宽。
+  const samePoint: SunPath = SunPathGeometry.compute(294, 194, 12, 12, 12, false, false, true);
+  const samePointAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(samePoint, 12, 12, 10, 8, 18, 10);
+  check('same point labels still sit below the horizon',
+    samePointAnchors.sunriseY > samePoint.horizonY &&
+      samePointAnchors.sunsetY > samePoint.horizonY);
+  check('same point labels fall back to the edges with 60% spacing',
+    Math.abs(samePointAnchors.sunriseX - samePointAnchors.sunsetX) >= 294 * 0.6);
+
   // 北京（北半球）：锚点与现状完全一致，仍在地平线上方。
   const beijing: SunPath = SunPathGeometry.compute(294, 194, 6.4, 16.9, 12, false, false, false);
   const beijingAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(beijing, 6.4, 16.9,
@@ -2127,6 +2156,69 @@ for (const item of equationCases) {
   near('beijing noon y unchanged', 15.280000000000001, beijingAnchors.noonY, 1e-9);
   check('beijing labels stay above the horizon',
     beijingAnchors.sunriseY < beijing.horizonY && beijingAnchors.sunsetY < beijing.horizonY);
+}
+
+// ---- 标签文案「说明 + 时间」与新宽度下的三场景布局 ----
+{
+  equal('dial sunrise label (zh)', '日出 06:24', DialLabels.sunrise('zh-CN', '06:24'));
+  equal('dial sunset label (zh)', '日落 16:54', DialLabels.sunset('zh-CN', '16:54'));
+  equal('dial noon label (zh)', '上中天 11:39', DialLabels.noon('zh-CN', '11:39'));
+  equal('dial sunrise label (en)', 'Sunrise 06:24', DialLabels.sunrise('en-US', '06:24'));
+  equal('dial noon label (en)', 'Solar noon 11:39', DialLabels.noon('en-US', '11:39'));
+  equal('dial polar label (zh)', '极昼', DialLabels.polar(true, 'zh-CN'));
+  equal('dial polar label (en)', 'Polar night', DialLabels.polar(false, 'en-US'));
+
+  const size: number = 11;
+  const padding: number = 4;
+  const zhTexts: string[] = ['日出 06:24', '日落 16:54', '上中天 11:39'];
+  const sunriseWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[0], size, padding);
+  const sunsetWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[1], size, padding);
+  const noonWidth: number = SunPathGeometry.estimateLabelWidth(zhTexts[2], size, padding);
+  check('new label is wider than the old 5-char estimate', sunriseWidth > 5 * size * 0.6 + padding);
+  check('solar noon label is the widest', noonWidth > sunriseWidth && noonWidth > sunsetWidth);
+  const h: number = size * 1.2 + padding;
+
+  const layoutOf = (path: SunPath, a: number | null, b: number | null): number[][] => {
+    const anchors: SunLabelAnchors = SunPathGeometry.labelAnchors(path, a, b, 10, 8, 18, 10,
+      size, padding, 5, zhTexts);
+    return [
+      SunPathGeometry.rectOf(anchors.sunriseX, anchors.sunriseY, sunriseWidth, h, !path.southernHemisphere),
+      SunPathGeometry.rectOf(anchors.sunsetX, anchors.sunsetY, sunsetWidth, h, path.southernHemisphere),
+      SunPathGeometry.rectOf(anchors.noonX, anchors.noonY, noonWidth, h, false, true)
+    ];
+  };
+  const noOverlap = (rects: number[][]): boolean =>
+    !SunPathGeometry.rectsOverlap(rects[0], rects[1]) &&
+      !SunPathGeometry.rectsOverlap(rects[0], rects[2]) &&
+      !SunPathGeometry.rectsOverlap(rects[1], rects[2]);
+  const inside = (rects: number[][]): boolean => rects.every((r: number[]): boolean =>
+    r[0] >= -0.01 && r[2] <= 294.01 && r[1] >= -0.01 && r[3] <= 194.01);
+
+  const beijingScene: SunPath = SunPathGeometry.compute(294, 194, 6.4, 16.9, 12, false, false, false);
+  check('beijing three labels disjoint with descriptions', noOverlap(layoutOf(beijingScene, 6.4, 16.9)));
+  check('beijing three labels stay inside the canvas', inside(layoutOf(beijingScene, 6.4, 16.9)));
+  const sydneyScene: SunPath = SunPathGeometry.compute(294, 194, 6.0, 18.0, 12, false, false, true);
+  check('sydney three labels disjoint with descriptions', noOverlap(layoutOf(sydneyScene, 6, 18)));
+  check('sydney three labels stay inside the canvas', inside(layoutOf(sydneyScene, 6, 18)));
+  const zhongshanScene: SunPath = SunPathGeometry.compute(294, 194, 0.35, 23.65, 12, false, false, true);
+  check('zhongshan three labels disjoint with descriptions', noOverlap(layoutOf(zhongshanScene, 0.35, 23.65)));
+  check('zhongshan three labels stay inside the canvas', inside(layoutOf(zhongshanScene, 0.35, 23.65)));
+}
+
+// ---- 顶部标签行：左右两半的四档 ----
+{
+  const utc: number = 36;
+  const place: number = 72;
+  const label: number = 48;
+  const shichen: number = 24;
+  equal('halves tier 0 when both halves fit', DistrictLayoutTier.FULL,
+    DistrictLayoutTier.ofHalves(utc, place, label, shichen, 160));
+  equal('halves tier 1 when only the right half is crowded', DistrictLayoutTier.HIDE_LABEL,
+    DistrictLayoutTier.ofHalves(utc, 20, label, shichen, 70));
+  equal('halves tier 2 when the left half is crowded', DistrictLayoutTier.HIDE_UTC,
+    DistrictLayoutTier.ofHalves(utc, 60, label, shichen, 80));
+  equal('halves tier 3 when even the place alone does not fit', DistrictLayoutTier.ELLIPSIS,
+    DistrictLayoutTier.ofHalves(utc, 200, label, shichen, 80));
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
