@@ -35,15 +35,19 @@ export class DistrictLayoutSolver {
   private static fits(tier: number, utcWidth: number, placeWidth: number, labelWidth: number,
       shichenWidth: number, halfWidth: number, rowWidth: number): boolean {
     if (tier === 0) {
+      // 右半：真太阳时 + 时辰也必须放得下。
       if (labelWidth + shichenWidth + 6 > halfWidth) {
         return false;
       }
-      return placeWidth <= halfWidth - utcWidth - 6;
+      // 左半扣掉：UTC 与地名 8vp、地名与竖线 6vp。
+      return placeWidth <= halfWidth - utcWidth - 14;
     }
     if (tier === 1) {
-      return placeWidth <= rowWidth - utcWidth - shichenWidth - 12;
+      // UTC 与地名 8vp、地名与时辰 8vp。
+      return placeWidth <= rowWidth - utcWidth - shichenWidth - 16;
     }
-    return placeWidth <= rowWidth - shichenWidth - 6;
+    // 地名与时辰之间留 8vp。
+    return placeWidth <= rowWidth - shichenWidth - 8;
   }
 }
 

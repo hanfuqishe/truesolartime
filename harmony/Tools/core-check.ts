@@ -2254,6 +2254,14 @@ for (const item of equationCases) {
   // 回归：自然宽度 ≤ 该档可用宽时，字号必须保持 12。
   const fitsPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 120, 48, 24, 160, 345);
   equal('a fitting name keeps 12fp', 12, fitsPlan.fontSize);
+
+  // 英文长名（Bilecik…）半栏放不下、整行放得下 → 退到档 1，绝不停在档 0 被截断。
+  const bilecikPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 240, 48, 24, 160, 345);
+  equal('a long english name drops out of tier 0', DistrictLayoutTier.HIDE_LABEL, bilecikPlan.tier);
+  check('a name wider than half never stays on tier 0',
+    DistrictLayoutSolver.solve(36, 170, 48, 24, 160, 345).tier !== DistrictLayoutTier.FULL);
+  equal('only a name wider than the row reaches tier 3', DistrictLayoutTier.ELLIPSIS,
+    DistrictLayoutSolver.solve(36, 330, 48, 24, 160, 345).tier);
 }
 
 // ---- 地名反查策略：5 km + 30 天 + 60 秒采样 ----

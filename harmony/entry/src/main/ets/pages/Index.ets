@@ -865,13 +865,19 @@ struct Index {
       fontSize: this.cs(12) + 'fp',
       fontFamily: CARD_FONT_REGULAR
     }).width as number;
-    const utcWidth: number = measure(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds));
-    const placeWidth: number = measure(name);
-    const labelWidth: number = measure('真太阳时');
-    const shichenWidth: number = measure(this.shortText(this.snapshot.shichenName));
-    const halfWidth: number = vp2px(this.clockColumnWidth);
+    // 统一换算到 vp：solver 里的 14/16/8 间距都是 vp，混用 px 会把可用宽算大。
+    const utcWidth: number = px2vp(measure(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds)));
+    // 量宽取「实测」与「保守估算」的较大值：系统测量偶尔偏窄，会让档 0/1 被静默截断。
+    let placeUnits: number = 0;
+    for (let index: number = 0; index < name.length; index++) {
+      placeUnits += name.charCodeAt(index) > 0x2e80 ? 1 : 0.6;
+    }
+    const placeWidth: number = Math.max(px2vp(measure(name)), placeUnits * 12);
+    const labelWidth: number = px2vp(measure('真太阳时'));
+    const shichenWidth: number = px2vp(measure(this.shortText(this.snapshot.shichenName)));
+    const halfWidth: number = this.clockColumnWidth;
     // 整行宽 = 两栏 + 竖线与两侧 12vp 边距。
-    const rowWidth: number = halfWidth * 2 + vp2px(25);
+    const rowWidth: number = halfWidth * 2 + 25;
     const plan: DistrictLayoutPlan = DistrictLayoutSolver.solve(utcWidth, placeWidth, labelWidth,
       shichenWidth, halfWidth, rowWidth);
     this.districtFontKey = key;
@@ -1052,7 +1058,8 @@ struct Index {
         .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
         .fontColor('#B3FFFFFF')
         .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textOverflow({ overflow: this.districtTier() === DistrictLayoutTier.ELLIPSIS
+          ? TextOverflow.Ellipsis : TextOverflow.Clip })
         .textAlign(this.districtTier() === DistrictLayoutTier.HIDE_LABEL
           ? TextAlign.Center : TextAlign.Start)
         .layoutWeight(1)
@@ -1095,7 +1102,8 @@ struct Index {
               .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
               .fontColor('#B3FFFFFF')
               .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textOverflow({ overflow: this.districtTier() === DistrictLayoutTier.ELLIPSIS
+                ? TextOverflow.Ellipsis : TextOverflow.Clip })
               .textAlign(this.districtTier() === DistrictLayoutTier.FULL ? TextAlign.End
                 : (this.districtTier() === DistrictLayoutTier.HIDE_LABEL ? TextAlign.Center : TextAlign.Start))
               .layoutWeight(1)
