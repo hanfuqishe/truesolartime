@@ -1013,7 +1013,7 @@ struct Index {
         // 右侧定宽槽位：只保留顶部 padding，让齿轮字形贴到行底。
         Row() {
           // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
-          SymbolGlyph($r('sys.symbol.gearshape_fill'))
+          SymbolGlyph($r('sys.symbol.gearshape'))
             .fontSize(22)
             .fontColor([this.palette.text])
             // 只保留顶部 padding：字形贴到行底，视觉底边不再比标题高 6vp；
