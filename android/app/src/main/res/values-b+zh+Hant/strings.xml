@@ -128,6 +128,9 @@
     <string name="section_diagnostics">診斷</string>
     <string name="diagnostics_desc">系統字型/密度設定與最近一次小工具建構的唯讀快照。桌面小工具顯示不正常時，把它整段傳給開發者。</string>
     <string name="diagnostics_open">查看診斷資訊</string>
+    <string name="section_map_sources">地圖資料來源</string>
+    <string name="map_sources_osm">地圖資料 © OpenStreetMap 貢獻者</string>
+    <string name="map_sources_amap">底圖 © 高德地圖</string>
     <string name="section_about">關於計算</string>
     <string name="widget_add_action">新增到桌面</string>
     <string name="widget_label_solar">真太陽時</string>

@@ -128,6 +128,9 @@
     <string name="section_diagnostics">诊断</string>
     <string name="diagnostics_desc">系统字体/密度设置与最近一次小组件构建的只读快照。桌面小组件显示不正常时，把它整段发给开发者。</string>
     <string name="diagnostics_open">查看诊断信息</string>
+    <string name="section_map_sources">地图数据来源</string>
+    <string name="map_sources_osm">地图数据 © OpenStreetMap 贡献者</string>
+    <string name="map_sources_amap">底图 © 高德地图</string>
     <string name="section_about">关于计算</string>
     <string name="widget_add_action">添加到桌面</string>
     <string name="widget_label_solar">真太阳时</string>

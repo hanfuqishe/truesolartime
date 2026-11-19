@@ -131,6 +131,9 @@
 
     <string name="widget_label_solar">True solar</string>
     <string name="widget_add_action">Add to home screen</string>
+    <string name="section_map_sources">Map data sources</string>
+    <string name="map_sources_osm">Map data © OpenStreetMap contributors</string>
+    <string name="map_sources_amap">Tiles © AMap</string>
     <string name="section_about">About the calculation</string>
 
     <string-array name="weekdays">

@@ -1,6 +1,7 @@
 package com.realsuntime.solartime.ui
 
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
@@ -42,14 +43,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.realsuntime.solartime.R
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.ThemeMode
 import com.realsuntime.solartime.data.WeatherRepository
+import com.realsuntime.solartime.map.MapSourceAttribution
 import com.realsuntime.solartime.map.MapStyle
 import com.realsuntime.solartime.solar.TimeFormat
 import com.realsuntime.solartime.widget.ChimeAlarm
@@ -440,6 +444,38 @@ fun SettingsSheet(
                 text = TimeText.weatherAttribution(context, WeatherRepository.source(context)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(14.dp))
+            // 地图数据来源：卡片底部只放 4 个主要来源的短署名；这里是**完整署名**（英文原文），
+            // 按当前实际使用的源切换，可点击打开版权页。Esri 的 copyrightText 有 14 个来源，
+            // 卡片一行放不下，只列 4 个又不合规，所以分两层。
+            Text(stringResource(R.string.section_map_sources), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(6.dp))
+            val mapSource = MapSourceAttribution.resolveSource(
+                style = mapStyle,
+                latitude = place.latitude,
+                longitude = place.longitude,
+                countryCode = place.countryCode,
+            )
+            val sourceNote = MapSourceAttribution.noteFor(
+                source = mapSource,
+                osmText = stringResource(R.string.map_sources_osm),
+                amapText = stringResource(R.string.map_sources_amap),
+            )
+            val uriHandler = LocalUriHandler.current
+            Text(
+                text = sourceNote.text,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 6,
+                modifier = if (sourceNote.url != null) {
+                    Modifier.clickable { uriHandler.openUri(sourceNote.url) }
+                } else {
+                    Modifier
+                },
             )
         }
     }
