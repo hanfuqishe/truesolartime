@@ -1131,6 +1131,21 @@ for (const item of equationCases) {
       satelliteAttribution !== vectorAttribution);
   check('manual tile concurrency is at most 6',
     MANUAL_TILE_CONCURRENCY >= 1 && MANUAL_TILE_CONCURRENCY <= 6);
+  check('esri full attribution keeps OSM contributors',
+    MapTilesLogic.ESRI_FULL_ATTRIBUTION.indexOf('OpenStreetMap contributors') >= 0);
+  check('esri full attribution keeps the GIS user community',
+    MapTilesLogic.ESRI_FULL_ATTRIBUTION.indexOf('GIS User Community') >= 0);
+  const esriAbout: string = MapTilesLogic.aboutAttribution(MapStyle.ESRI, 'zh-CN');
+  const osmAbout: string = MapTilesLogic.aboutAttribution(MapStyle.OSM, 'zh-CN');
+  const amapAbout: string = MapTilesLogic.aboutAttribution(MapStyle.AMAP_VECTOR, 'zh-CN');
+  check('about attributions differ per source',
+    esriAbout !== osmAbout && esriAbout !== amapAbout && osmAbout !== amapAbout);
+  check('the about page shows the full esri attribution, not the card short one',
+    esriAbout !== MapTilesLogic.layerForStyle(MapStyle.ESRI, 0, 0).attribution);
+  check('esri about link is present',
+    MapTilesLogic.aboutLink(MapStyle.ESRI).indexOf('arcgisonline') >= 0);
+  check('osm about link is present',
+    MapTilesLogic.aboutLink(MapStyle.OSM).indexOf('openstreetmap.org') >= 0);
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
   check('satellite forced outside china', forcedSatellite.datum === MapDatum.GCJ02
     && forcedSatellite.name === 'amap-satellite');

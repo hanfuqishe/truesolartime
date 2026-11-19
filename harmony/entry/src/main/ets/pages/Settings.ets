@@ -10,7 +10,7 @@ import { formInfo, formProvider } from '@kit.FormKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
-import { MAP_STYLE_OPTIONS, MapStyleOption, MapTilesLogic } from '../core/MapTiles';
+import { MAP_STYLE_OPTIONS, MapStyle, MapStyleOption, MapTilesLogic } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
@@ -65,6 +65,29 @@ struct Settings {
   /** 通知权限相关的提示，显示在「提醒」卡片里。 */
   @State reminderHint: string = '';
   private context: common.UIAbilityContext | null = null;
+
+  /** 当前实际生效的底图源（自动按地区解析）。 */
+  private aboutMapStyle(): MapStyle {
+    return MapTilesLogic.resolvedStyle(MapTilesLogic.styleFromKey(this.mapStyleKey),
+      this.place.latitude, this.place.longitude, '');
+  }
+
+  private languageForAbout(): string {
+    return DistrictService.language();
+  }
+
+  private openMapSourceLink(style: MapStyle): void {
+    const url: string = MapTilesLogic.aboutLink(style);
+    if (url.length === 0 || this.context === null) {
+      return;
+    }
+    this.context.startAbility({
+      action: 'ohos.want.action.viewData',
+      uri: url
+    }).catch((error: BusinessError) => {
+      console.warn(`open map source failed: ${error.code} ${error.message}`);
+    });
+  }
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -780,6 +803,24 @@ struct Settings {
               .fontColor(this.palette.subtle)
               .margin({ top: 6 })
               .width('100%')
+            Text(MapTilesLogic.aboutTitle(DistrictService.language()))
+              .fontSize(11)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.palette.text)
+              .margin({ top: 10 })
+              .width('100%')
+            Text(MapTilesLogic.aboutAttribution(this.aboutMapStyle(), this.languageForAbout()))
+              .fontSize(11)
+              .fontColor(this.palette.subtle)
+              .margin({ top: 4 })
+              .width('100%')
+              .maxLines(6)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .decoration({ type: MapTilesLogic.aboutLink(this.aboutMapStyle()).length > 0
+                ? TextDecorationType.Underline : TextDecorationType.None })
+              .onClick(() => {
+                this.openMapSourceLink(this.aboutMapStyle());
+              })
             Text(`北京时区偏移 ${SolarTimeMath.BEIJING_OFFSET_MILLIS / 3600000} 小时`)
               .fontSize(10)
               .fontColor('#5A6885')

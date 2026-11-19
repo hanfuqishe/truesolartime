@@ -156,6 +156,54 @@ export class MapTilesLogic {
     return '自动：境内用高德，境外用 Esri 街道图；连不上时依次回退 OSM、高德';
   }
 
+  /** Esri 官方 `copyrightText` 完整版（英文原样，供设置页「关于」使用）。 */
+  static readonly ESRI_FULL_ATTRIBUTION: string =
+    'Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, ' +
+    'Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, © OpenStreetMap contributors, ' +
+    'and the GIS User Community';
+
+  /** AUTO 解析成实际会用的源（境内高德、境外 ESRI）。 */
+  static resolvedStyle(style: MapStyle, latitude: number, longitude: number,
+      countryCode: string): MapStyle {
+    if (style !== MapStyle.AUTO) {
+      return style;
+    }
+    return SolarTimeMath.isInChina(latitude, longitude, countryCode)
+      ? MapStyle.AMAP_VECTOR : MapStyle.ESRI;
+  }
+
+  /** 设置页「关于 · 地图数据来源」正文。 */
+  static aboutAttribution(style: MapStyle, language: string): string {
+    if (style === MapStyle.ESRI) {
+      return MapTilesLogic.ESRI_FULL_ATTRIBUTION;
+    }
+    if (style === MapStyle.OSM) {
+      return MapTilesLogic.localizedAttribution(
+        MapTilesLogic.layerForStyle(MapStyle.OSM, 0, 0).attribution, language);
+    }
+    return MapTilesLogic.layerForStyle(style, 0, 0).attribution;
+  }
+
+  /** 设置页「关于 · 地图数据来源」点击打开的链接（高德无链接）。 */
+  static aboutLink(style: MapStyle): string {
+    if (style === MapStyle.ESRI) {
+      return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer';
+    }
+    if (style === MapStyle.OSM) {
+      return 'https://www.openstreetmap.org/copyright';
+    }
+    return '';
+  }
+
+  static aboutTitle(language: string): string {
+    if (language.startsWith('en')) {
+      return 'Map data sources';
+    }
+    const traditional: boolean = language.startsWith('zh') &&
+      (language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 || language.indexOf('HK') >= 0);
+    return traditional ? '地圖資料來源' : '地图数据来源';
+  }
+
   /** 设置页选项文案：Esri 按三语显示，其余沿用固定文案。 */
   static optionLabel(option: MapStyleOption, language: string): string {
     if (option.style !== MapStyle.ESRI) {
