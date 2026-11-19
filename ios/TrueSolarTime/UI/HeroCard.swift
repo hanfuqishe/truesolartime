@@ -149,6 +149,17 @@ struct HeroCard: View {
         return (text as NSString).size(withAttributes: [.font: Self.labelFont]).width
     }
 
+    /// 顶部标签行的档位（按自然宽度判，见 `HeroRowTier.tier`）。
+    private var rowTier: HeroRowTier.Tier {
+        HeroRowTier.tier(
+            utcWidth: textWidth(snapshot.utcLabel),
+            cityWidth: textWidth(districtName),
+            labelWidth: textWidth(L("hero.trueSolar")),
+            shichenWidth: textWidth(shichenText),
+            rowWidth: labelRowWidth
+        )
+    }
+
     private var labelRow: some View {
         let tier = rowTier
         return HStack(spacing: HeroRowTier.showsSolarLabel(tier: tier) ? 0 : HeroRowTier.gap) {
