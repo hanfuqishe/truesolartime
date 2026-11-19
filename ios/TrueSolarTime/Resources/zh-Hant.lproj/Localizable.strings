@@ -278,3 +278,5 @@
 "district.geoSucceededAgo" = "上次成功 %d 分鐘前";
 
 "settings.diagAttribution" = "天氣署名";
+
+"district.geoWithinThreshold" = "5 公里內沿用";

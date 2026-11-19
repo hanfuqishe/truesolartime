@@ -277,3 +277,5 @@
 "district.geoSucceededAgo" = "last success %d min ago";
 
 "settings.diagAttribution" = "Weather attribution";
+
+"district.geoWithinThreshold" = "within 5 km, reused";

@@ -1,4 +1,6 @@
 import CoreLocation
+        geocodeRequestCount += 1
+        if geocodeRequestedAt == nil { geocodeRequestedAt = now }
 import Foundation
 
 /// 把经纬度反查成「区县 + 市 + 州/省」。
@@ -88,6 +90,16 @@ final class DistrictStore {
     }
 
     /// **换地点时清空诊断残留**：否则 `CLGeocoder：locality=上海市…` 会一直挂在新城市（东京）上。
+
+    /// **换地点 / 首次拿到 GPS fix**：清掉 3 秒窗口，让第一请求立刻发出；重置本次计数与耗时。
+    func notePlaceChanged() {
+        lastGeocodeRequestAt = nil
+        geocodeRequestCount = 0
+        geocodeRequestedAt = nil
+        geocodeElapsedSeconds = nil
+        didFail = false
+    }
+
     func resetDiagnosticsForNewPlace() {
         lastAppleFields = "-"
         lastErrorDescription = nil
@@ -110,6 +122,13 @@ final class DistrictStore {
         if let success = lastGeocodeSuccessAt {
             let minutes = max(0, Int(Date().timeIntervalSince(success) / 60))
             parts.append(Lf("district.geoSucceededAgo", minutes))
+        if let elapsed = geocodeElapsedSeconds {
+            parts.append(String(format: "耗时 = %.1fs", elapsed))
+        }
+        parts.append("请求次数 = \(geocodeRequestCount)")
+        if let moved = lastMovedKm {
+            parts.append(String(format: "距上次反查 %.1f km", moved))
+        }
         }
         return parts.joined(separator: " · ")
     }
@@ -163,18 +182,30 @@ final class DistrictStore {
             return
         }
         let now = Date()
-        guard PlaceNameThrottle.shouldRequest(
-            key: throttleKey,
-            cachedKeys: Set(geocodeCache.keys),
-            lastRequestAt: lastGeocodeRequestAt?.timeIntervalSince1970,
-            now: now.timeIntervalSince1970,
-            inFlight: inFlight
-        ) else {
-            geocodeSkipReason = inFlight ? L("district.geoInFlight") : L("district.geoWaiting")
+        let movedKm: Double = {
+            guard let lat = lastSuccessLatitude, let lon = lastSuccessLongitude else { return -1 }
+            return DistrictNaming.distanceKm(lat, lon, place.latitude, place.longitude)
+        }()
+        lastMovedKm = movedKm >= 0 ? movedKm : nil
+        let ageMillis: Int64 = {
+            guard let at = lastSuccessAt else { return Int64.max }
+            return Int64(Date().timeIntervalSince(at) * 1000)
+        }()
+        // 并发保护与缓存命中最优先；换城市 / 超 5 km / 过期 才真正发请求。
+        if inFlight {
+            geocodeSkipReason = L("district.geoInFlight")
             return
         }
-        geocodeSkipReason = nil
-        lastGeocodeRequestAt = now
+        guard isNewPlace || PlaceNamePolicy.shouldQuery(movedKm: movedKm, ageMillis: ageMillis) else {
+            geocodeSkipReason = L("district.geoWithinThreshold")
+            // ≤ 5 km：沿用已有名字（有就直接上屏，绝不显示占位）。
+            if let names = cachedNames(for: place) {
+                finish(place: place, names: names, provider: lastProvider, completion: completion)
+            }
+            return
+        }
+        geocodeRequestCount += 1
+        if geocodeRequestedAt == nil { geocodeRequestedAt = now }
 
         if inFlight, siteKey == inFlightSiteKey, !force { return }
         if !force, !needsRefresh(place) { return }
@@ -345,6 +376,12 @@ final class DistrictStore {
         let key = PlaceNameThrottle.cacheKey(latitude: place.latitude, longitude: place.longitude)
         geocodeCache[key] = names
         lastGeocodeSuccessAt = Date()
+        lastSuccessLatitude = place.latitude
+        lastSuccessLongitude = place.longitude
+        lastSuccessAt = Date()
+        if let started = geocodeRequestedAt, geocodeElapsedSeconds == nil {
+            geocodeElapsedSeconds = Date().timeIntervalSince(started)
+        }
         DispatchQueue.main.async {
             self.lastProvider = provider
             self.save(place: place, names: names, provider: provider)

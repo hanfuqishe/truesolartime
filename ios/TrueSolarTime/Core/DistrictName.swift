@@ -2,6 +2,37 @@ import Foundation
 
 /// 反查结果的两级写法：`full` 带上级（如「上海市宝山区」/「Huangpu District, Shanghai」），
 /// `short` 只有区县。小组件与卡片那一行放不下长名字时退到 `short`。
+/// 地名反查的**触发策略**（照搬 Android `DistrictResolver`，纯函数、可离线断言）。
+///
+/// 规则：
+/// - 距「上次成功反查的坐标」**≤ 5 km** → 视为同一地方，**不反查**，沿用缓存名字；
+/// - **> 5 km** 或缓存超过 **30 天** → 才发新请求；
+/// - 拿不到距离（负数）→ 保守反查。
+///
+/// 这样「跟 GPS 走动」时不会每秒/每米都触发反查，只有真正换了地方才查。
+enum PlaceNamePolicy {
+
+    /// 距离阈值：5 km（与 Android `MOVE_THRESHOLD_KM` 一致）。
+    static let moveThresholdKm: Double = 5.0
+    /// 缓存有效期：30 天（与 Android `MAX_AGE_MILLIS` 一致）。
+    static let maxAgeMillis: Int64 = 30 * 24 * 60 * 60 * 1000
+
+    /// 这个距离内的名字可以信任（直接沿用）。
+    static func trustsNameAt(movedKm: Double) -> Bool {
+        movedKm >= 0 && movedKm <= moveThresholdKm
+    }
+
+    /// 该不该发一次新的反查。
+    static func shouldQuery(movedKm: Double, ageMillis: Int64) -> Bool {
+        if movedKm < 0 { return true }                       // 拿不到距离 → 保守查
+        if movedKm > moveThresholdKm { return true }          // 换地方了
+        if ageMillis < 0 || ageMillis > maxAgeMillis { return true }  // 过期
+        return false
+    }
+
+    /// GPS 采样间隔：**60 秒一次**（Android `GPS_INTERVAL_MILLIS`）。
+    static let locationSampleIntervalSeconds: TimeInterval = 60
+}
 /// 地名反查的**节流与缓存键**（纯函数，可离线断言）。
 ///
 /// 背景：CLGeocoder 有「每次用户操作最多一个请求」的硬性要求，发太频繁会返回
@@ -29,11 +60,14 @@ enum PlaceNameThrottle {
         cachedKeys: Set<String>,
         lastRequestAt: Double?,
         now: Double,
-        inFlight: Bool = false
+        inFlight: Bool = false,
+        isNewPlace: Bool = false
     ) -> Bool {
         // 同一时刻只允许 1 个在飞；在飞时不发新请求（排队也不堆，下次触发再发）。
         if inFlight { return false }
         if cachedKeys.contains(key) { return false }
+        // **换地点 / 首次拿到 GPS fix**：不受 3 秒窗口限制，第一请求立即发。
+        if isNewPlace { return true }
         guard let last = lastRequestAt else { return true }
         return now - last >= minRequestIntervalSeconds
     }

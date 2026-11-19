@@ -2860,6 +2860,37 @@ expect(
         && WeatherAttributionStatus.failed("Apple -1001").summary(hasMarkURL: false).contains("不可用")
         && WeatherAttributionStatus.failed("Apple -1001").summary(hasMarkURL: false).contains("无")
 )
+expect(
+    "换地点后 shouldRequest 立即为 true（不受 3 秒窗口限制）",
+    PlaceNameThrottle.shouldRequest(key: "k2", cachedKeys: [], lastRequestAt: 100, now: 100.5, inFlight: false, isNewPlace: true)
+)
+expect(
+    "同地点 3 秒内重复 → false；仍在飞 → false（节流与并发保护都保留）",
+    !PlaceNameThrottle.shouldRequest(key: "k2", cachedKeys: [], lastRequestAt: 100, now: 101, inFlight: false, isNewPlace: false)
+        && !PlaceNameThrottle.shouldRequest(key: "k2", cachedKeys: [], lastRequestAt: 100, now: 200, inFlight: true, isNewPlace: true)
+)
+expect(
+    "GPS 抖动 ±3 m（4 位小数取整后再取 3 位）仍是同一个键",
+    PlaceNameThrottle.cacheKey(latitude: 31.230400, longitude: 121.473700)
+        == PlaceNameThrottle.cacheKey(latitude: 31.230427, longitude: 121.473672)
+)
+// 照搬 Android 的「5 km + 30 天」规则：同城走动不反查，换地方/过期才查。
+expect(
+    "shouldQuery：同城 0.5 km/1 s → false；6 km → true；1 km 但 31 天 → true；距离未知 → true",
+    !PlaceNamePolicy.shouldQuery(movedKm: 0.5, ageMillis: 1_000)
+        && PlaceNamePolicy.shouldQuery(movedKm: 6, ageMillis: 1_000)
+        && PlaceNamePolicy.shouldQuery(movedKm: 1, ageMillis: Int64(31) * 24 * 60 * 60 * 1000)
+        && PlaceNamePolicy.shouldQuery(movedKm: -1, ageMillis: 1_000)
+)
+expect(
+    "trustsNameAt：≤ 5 km 信任、> 5 km 不信任、距离未知不信任",
+    PlaceNamePolicy.trustsNameAt(movedKm: 0) && PlaceNamePolicy.trustsNameAt(movedKm: 5)
+        && !PlaceNamePolicy.trustsNameAt(movedKm: 5.1) && !PlaceNamePolicy.trustsNameAt(movedKm: -1)
+)
+expect(
+    "GPS 采样 60 秒一次（不是每秒）",
+    PlaceNamePolicy.locationSampleIntervalSeconds == 60
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
