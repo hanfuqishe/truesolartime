@@ -1,0 +1,34 @@
+name: presets-sync
+
+# 三端各自维护一份「常用城市」预设表（Android Place.kt / 鸿蒙 Place.ets / iOS Place.swift），
+# 靠人工同步，容易漂移 —— 2026-11 就出过：iOS 的摩尔曼斯克排在第 16 位，另两端在第 22 位，
+# 导致三端设置页的城市排列不一样。
+#
+# 这个工作流只做一件事：把三份预设表解析出来，要求「数量、顺序、坐标、国家码」完全一致。
+on:
+  push:
+    paths:
+      - 'android/app/src/main/java/com/realsuntime/solartime/data/Place.kt'
+      - 'harmony/entry/src/main/ets/core/Place.ets'
+      - 'ios/TrueSolarTime/Core/Place.swift'
+      - 'tools/check-presets-sync.py'
+      - '.github/workflows/presets-sync.yml'
+  pull_request:
+    paths:
+      - 'android/app/src/main/java/com/realsuntime/solartime/data/Place.kt'
+      - 'harmony/entry/src/main/ets/core/Place.ets'
+      - 'ios/TrueSolarTime/Core/Place.swift'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 三端预设表一致性
+        run: python tools/check-presets-sync.py --verbose

@@ -2891,6 +2891,42 @@ expect(
     "GPS 采样 60 秒一次（不是每秒）",
     PlaceNamePolicy.locationSampleIntervalSeconds == 60
 )
+// 常用城市补到 24 个（4 列 × 6 行整），新增开罗 / 里约热内卢。
+expect(
+    "预设城市总数 = 24（4 列 × 6 行整，无孤儿行）",
+    Place.presets.count == 24,
+    "actual=\(Place.presets.count)"
+)
+let cairoPreset = Place.presets.first { $0.presetKey == "city.cairo" }
+let rioPreset = Place.presets.first { $0.presetKey == "city.rio" }
+expect(
+    "开罗：30.0444 / 31.2357 · eg · UTC+120 分钟",
+    cairoPreset != nil
+        && abs(cairoPreset!.latitude - 30.0444) < 1e-9
+        && abs(cairoPreset!.longitude - 31.2357) < 1e-9
+        && cairoPreset!.countryCode == "eg"
+        && ZoneTable.offsetSeconds(countryCode: "eg", longitude: 31.2357, fallbackSeconds: 0) == 120 * 60
+)
+expect(
+    "里约热内卢：-22.9068 / -43.1729 · br · UTC−180 分钟",
+    rioPreset != nil
+        && abs(rioPreset!.latitude + 22.9068) < 1e-9
+        && abs(rioPreset!.longitude + 43.1729) < 1e-9
+        && rioPreset!.countryCode == "br"
+        && ZoneTable.offsetSeconds(countryCode: "br", longitude: -43.1729, fallbackSeconds: 0) == -180 * 60
+)
+expect(
+    "两地都在境外（自动态走 Apple 底图）",
+    !cairoPreset!.isInChina && !rioPreset!.isInChina
+)
+expect(
+    "预设顺序对齐 Android / 鸿蒙：末尾 9 项依次为 dubai → newdelhi → tokyo → singapore → sydney → murmansk → zhongshan → cairo → rio",
+    Place.presets.suffix(9).map { $0.presetKey ?? "" } == [
+        "city.dubai", "city.newdelhi", "city.tokyo", "city.singapore",
+        "city.sydney", "city.murmansk", "city.zhongshan", "city.cairo", "city.rio",
+    ],
+    "actual=\(Place.presets.suffix(9).map { $0.presetKey ?? "-" })"
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
@@ -3666,8 +3702,11 @@ for (presetKey, expected) in expectedPresets {
         "得到 \(preset.standardOffsetSeconds)（\(TimeFormat.utcOffsetLabel(seconds: preset.standardOffsetSeconds))）"
     )
 }
-expect("内置城市数量 = 22（原 20 + 极圈内 2 座）", Place.presets.count == 22, "实际 \(Place.presets.count)")
-
+    expect(
+        "内置城市数量 = 24（20 + 极圈内 2 座 + 开罗/里约）",
+        Place.presets.count == 24,
+        "实际 \(Place.presets.count)"
+    )
 print("== 极圈内两座城市：坐标 / 时区 / 极昼极夜文案（验证太阳圆盘用）==")
 // 摩尔曼斯克（68.97°N, 33.08°E）：北极圈内，夏至极昼、冬至极夜。
 // 中山站（69.37°S, 76.38°E）：南极圈内，季节相反 —— 北半球夏至时它极夜。

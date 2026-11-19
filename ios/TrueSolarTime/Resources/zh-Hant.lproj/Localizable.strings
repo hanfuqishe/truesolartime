@@ -280,3 +280,6 @@
 "settings.diagAttribution" = "天氣署名";
 
 "district.geoWithinThreshold" = "5 公里內沿用";
+
+"city.cairo" = "開羅";
+"city.rio" = "里約熱內盧";

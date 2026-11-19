@@ -279,3 +279,6 @@
 "settings.diagAttribution" = "Weather attribution";
 
 "district.geoWithinThreshold" = "within 5 km, reused";
+
+"city.cairo" = "Cairo";
+"city.rio" = "Rio de Janeiro";
