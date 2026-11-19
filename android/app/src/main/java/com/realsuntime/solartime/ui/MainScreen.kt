@@ -530,46 +530,68 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
  */
 @Composable
 private fun Header(badge: String?, onOpenSettings: () -> Unit) {
-    // 第一行：标题 + GPS 徽标 + 齿轮；第二行：副标题**单独占整行**。
-    // 早先副标题和标题挤在同一列里，只有 574px（≈191dp）宽，被挤成两行、末行只剩一个字；
-    // 而徽标/齿轮只占第一行高度，它们下方那片区域白白空着。移出来后就占满卡片内容宽度。
+    // 页头两行：① 标题 + 齿轮；② 副标题 + GPS 徽标（有才显示）。
+    // 右侧是**定宽槽位**（48dp = 齿轮的最小触控宽），齿轮与 GPS 都在槽内居中 →
+    // 两者水平中心对齐；不显示 GPS 时槽位仍占位，副标题宽度不会抖。
+    // 两行都底对齐，标题底边贴副标题（+2dp），不会因齿轮热区被推远。
+    val gearSlot = 48.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 16.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 标题与右侧徽标都要限宽：地名是不定宽文本，长地址会把左边的标题挤成一字一行。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            // 标题与右侧徽标都要限宽：长地名不能把标题挤成一字一行。
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            if (badge != null) {
-                Text(
-                    text = badge,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.padding(start = 8.dp, end = 6.dp),
-                )
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
+            Box(
+                modifier = Modifier.width(gearSlot),
+                contentAlignment = Alignment.Center,
+            ) {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
+                }
             }
         }
-        Text(
-            text = stringResource(R.string.screen_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(
+                text = stringResource(R.string.screen_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(top = 2.dp),
+            )
+            Box(
+                modifier = Modifier.width(gearSlot),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (badge != null) {
+                    Text(
+                        text = badge,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
