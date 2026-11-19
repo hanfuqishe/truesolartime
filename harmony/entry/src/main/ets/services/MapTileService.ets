@@ -9,7 +9,7 @@
  */
 
 import { image } from '@kit.ImageKit';
-import { MapLayer, MapStyle, MapTile, MapTilesLogic } from '../core/MapTiles';
+import { MANUAL_TILE_CONCURRENCY, MapLayer, MapStyle, MapTile, MapTilesLogic } from '../core/MapTiles';
 import {
   MapFallback,
   MapFallbackState,
@@ -335,12 +335,19 @@ export class MapTileService {
     const tiles: MapTile[] = MapTilesLogic.visibleTiles(layer, centerLatitude, centerLongitude, zoom,
       widthPx, heightPx);
     let anyOk: boolean = false;
-    for (const tile of tiles) {
-      const content: TileContent | null = await MapTileService.fetchContent(tile.url);
-      const ok: boolean = content !== null && !(layer.name === 'amap-vector' && content.isBlank);
-      MapTileService.manualTracker.onResult(ok);
-      if (ok) {
-        anyOk = true;
+    // 分批并行：每批最多 MANUAL_TILE_CONCURRENCY 块，避免被 CDN 限速。
+    for (let start: number = 0; start < tiles.length; start += MANUAL_TILE_CONCURRENCY) {
+      const batch: MapTile[] = tiles.slice(start, start + MANUAL_TILE_CONCURRENCY);
+      const results: boolean[] = await Promise.all(batch.map(async (tile: MapTile): Promise<boolean> => {
+        const content: TileContent | null = await MapTileService.fetchContent(tile.url);
+        const ok: boolean = content !== null && !(layer.name === 'amap-vector' && content.isBlank);
+        MapTileService.manualTracker.onResult(ok);
+        return ok;
+      }));
+      for (const ok of results) {
+        if (ok) {
+          anyOk = true;
+        }
       }
     }
     const result: MapLoadResult = new MapLoadResult();

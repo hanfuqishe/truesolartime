@@ -632,6 +632,8 @@ struct Index {
   private recenterMap(): void {
     this.clearMapForPlace();
     const layer: MapLayer = this.mapLayer();
+    // 样式/地点一变就同步切署名，不等瓦片加载完成（手动模式加载慢时不会残留上一个源）。
+    this.mapAttribution = layer.attribution;
     const point: number[] = MapTilesLogic.displayPoint(layer, this.place.latitude, this.place.longitude);
     this.applyViewport(point[0], point[1], this.mapZoom);
   }

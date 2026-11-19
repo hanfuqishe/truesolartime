@@ -30,7 +30,8 @@ import {
   UnknownMapDecision
 } from './core/LocationUnknown';
 import { ZoneTable } from './core/ZoneTable';
-import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM } from './core/MapTiles';
+import { MapTilesLogic, MapDatum, MAP_STYLE_OPTIONS, MapStyle, TILE_PX, MIN_ZOOM, MAX_ZOOM,
+  MANUAL_TILE_CONCURRENCY } from './core/MapTiles';
 import {
   AmapProbe,
   MapFallback,
@@ -1117,6 +1118,19 @@ for (const item of equationCases) {
     MapTilesLogic.localizedAttribution(esriAttribution, 'zh-Hant'));
   equal('esri attribution stays english in english ui', esriAttribution,
     MapTilesLogic.localizedAttribution(esriAttribution, 'en-US'));
+  const osmAttribution: string = MapTilesLogic.layerForStyle(MapStyle.OSM, 31.2304, 121.4737).attribution;
+  const vectorAttribution: string =
+    MapTilesLogic.layerForStyle(MapStyle.AMAP_VECTOR, 31.2304, 121.4737).attribution;
+  const satelliteAttribution: string =
+    MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 31.2304, 121.4737).attribution;
+  check('osm attribution is not the esri one',
+    osmAttribution !== esriAttribution && osmAttribution.indexOf('OpenStreetMap') >= 0);
+  check('each map style has its own attribution',
+    vectorAttribution !== esriAttribution && vectorAttribution !== osmAttribution &&
+      satelliteAttribution !== esriAttribution && satelliteAttribution !== osmAttribution &&
+      satelliteAttribution !== vectorAttribution);
+  check('manual tile concurrency is at most 6',
+    MANUAL_TILE_CONCURRENCY >= 1 && MANUAL_TILE_CONCURRENCY <= 6);
   const forcedSatellite = MapTilesLogic.layerForStyle(MapStyle.AMAP_SATELLITE, 35.6812, 139.7671);
   check('satellite forced outside china', forcedSatellite.datum === MapDatum.GCJ02
     && forcedSatellite.name === 'amap-satellite');

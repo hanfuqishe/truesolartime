@@ -16,6 +16,8 @@ export const TILE_PX: number = 256;
 export const MIN_ZOOM: number = 3;
 export const MAX_ZOOM: number = 18;
 export const DEFAULT_ZOOM: number = 12;
+/** 手动底图一次最多并行下载多少块（防止被 CDN 限速）。 */
+export const MANUAL_TILE_CONCURRENCY: number = 4;
 
 const EARTH_AXIS: number = 6378245.0;
 const ECCENTRICITY: number = 0.00669342162296594323;
@@ -75,7 +77,7 @@ export class MapLayer {
 }
 
 const AMAP_LAYER: MapLayer = new MapLayer('amap-vector', MapDatum.GCJ02, '底图 © 高德地图');
-const AMAP_SATELLITE_LAYER: MapLayer = new MapLayer('amap-satellite', MapDatum.GCJ02, '底图 © 高德地图');
+const AMAP_SATELLITE_LAYER: MapLayer = new MapLayer('amap-satellite', MapDatum.GCJ02, '底图 © 高德地图 卫星');
 const OSM_LAYER: MapLayer = new MapLayer('osm', MapDatum.WGS84, '地图数据 © OpenStreetMap 贡献者');
 /** ESRI 要求完整署名：Esri, HERE, Garmin, © OpenStreetMap contributors。 */
 const ESRI_LAYER: MapLayer = new MapLayer('esri', MapDatum.WGS84,
