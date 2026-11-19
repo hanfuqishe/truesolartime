@@ -2046,6 +2046,38 @@ for (const item of equationCases) {
     DistrictLayoutTier.of(utc, 22 * base, label, shichen, 380));
 }
 
+// ---- 近极昼标签退让：三个标签矩形两两不相交 ----
+{
+  const polarPath: SunPath = SunPathGeometry.compute(294, 194, 1.5, 22.5, 12, false, false, true);
+  const polarAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(polarPath, 1.5, 22.5,
+    10, 8, 18, 10, 11, 4, 5);
+  const labelWidth: number = 5 * 11 * 0.6 + 4;
+  const labelHeight: number = 11 * 1.2 + 4;
+  const sunriseRect: number[] = SunPathGeometry.rectOf(polarAnchors.sunriseX, polarAnchors.sunriseY,
+    labelWidth, labelHeight, false);
+  const sunsetRect: number[] = SunPathGeometry.rectOf(polarAnchors.sunsetX, polarAnchors.sunsetY,
+    labelWidth, labelHeight, true);
+  const noonRect: number[] = SunPathGeometry.rectOf(polarAnchors.noonX, polarAnchors.noonY,
+    labelWidth, labelHeight, false, true);
+  check('near polar sunrise and sunset labels do not overlap',
+    !SunPathGeometry.rectsOverlap(sunriseRect, sunsetRect));
+  check('near polar sunrise and noon labels do not overlap',
+    !SunPathGeometry.rectsOverlap(sunriseRect, noonRect));
+  check('near polar sunset and noon labels do not overlap',
+    !SunPathGeometry.rectsOverlap(sunsetRect, noonRect));
+  // 南半球镜像：日出在右、日落在左。
+  check('near polar southern sunrise stays on the right',
+    polarPath.southernHemisphere && polarAnchors.sunriseX > polarPath.centerX);
+  check('near polar southern sunset stays on the left',
+    polarAnchors.sunsetX < polarPath.centerX);
+  // 极昼/极夜没有日出日落标签（小时为 null，视图不渲染两侧标签）。
+  const wholeDay: SunPath = SunPathGeometry.compute(294, 194, null, null, 12, true, false, true);
+  const wholeDayAnchors: SunLabelAnchors = SunPathGeometry.labelAnchors(wholeDay, null, null,
+    10, 8, 18, 10, 11, 4, 5);
+  check('polar day anchors keep null side hours',
+    SunPathGeometry.dayArcSpan(null, null) === null && wholeDayAnchors.sunriseX >= 0);
+}
+
 console.log(`\n${passed} checks passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const failure of failures) {

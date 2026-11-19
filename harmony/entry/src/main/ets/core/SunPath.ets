@@ -323,13 +323,14 @@ export class SunPathGeometry {
    * 日落在左（见 [SunPath.southernHemisphere]）。竖直方向（上中天在圆顶、极昼极夜在圆心）不变。
    */
   static labelAnchors(path: SunPath, sunriseHour: number | null, sunsetHour: number | null,
-    sideGap: number, noonGap: number, minLabelDrop: number, sideLabelRise: number): SunLabelAnchors {
+    sideGap: number, noonGap: number, minLabelDrop: number, sideLabelRise: number,
+    labelFontSize: number = 11, labelPadding: number = 4, textChars: number = 5): SunLabelAnchors {
     const sunriseY: number = SunPathGeometry.sideAnchorY(path, sunriseHour, minLabelDrop, sideLabelRise);
     const sunsetY: number = SunPathGeometry.sideAnchorY(path, sunsetHour, minLabelDrop, sideLabelRise);
     // 南半球：日出在右（+1）、日落在左（−1）；北半球反过来。
     const sunriseSign: number = path.southernHemisphere ? 1 : -1;
     const sunsetSign: number = -sunriseSign;
-    return new SunLabelAnchors(
+    const normal: SunLabelAnchors = new SunLabelAnchors(
       SunPathGeometry.sideAnchorX(path, sunriseHour, sunriseSign, sideGap, sunriseY),
       sunriseY,
       SunPathGeometry.sideAnchorX(path, sunsetHour, sunsetSign, sideGap, sunsetY),
@@ -339,6 +340,60 @@ export class SunPathGeometry {
       path.centerX,
       path.centerY
     );
+    // 极昼/极夜没有日出日落标签，保持原样。
+    if (sunriseHour === null || sunsetHour === null) {
+      return normal;
+    }
+    // 接近极昼时两个交点都挤在圆顶：水平间距不足，或任一与上中天相交 → 边缘退让布局。
+    const labelWidth: number = textChars * labelFontSize * 0.6 + labelPadding;
+    const labelHeight: number = labelFontSize * 1.2 + labelPadding;
+    const sunriseRect: number[] = SunPathGeometry.rectOf(normal.sunriseX, normal.sunriseY,
+      labelWidth, labelHeight, sunriseSign < 0);
+    const sunsetRect: number[] = SunPathGeometry.rectOf(normal.sunsetX, normal.sunsetY,
+      labelWidth, labelHeight, sunsetSign < 0);
+    const noonRect: number[] = SunPathGeometry.rectOf(normal.noonX, normal.noonY,
+      labelWidth, labelHeight, false, true);
+    if (!SunPathGeometry.rectsOverlap(sunriseRect, sunsetRect) &&
+      !SunPathGeometry.rectsOverlap(sunriseRect, noonRect) &&
+      !SunPathGeometry.rectsOverlap(sunsetRect, noonRect)) {
+      return normal;
+    }
+    return SunPathGeometry.retreatAnchors(path, sunriseSign, sideLabelRise, sideGap, labelWidth,
+      labelHeight);
+  }
+
+  /** 标签矩形 [left, top, right, bottom]：横向按对齐方式（rightAligned = 文字右边缘在 x）。 */
+  static rectOf(x: number, y: number, width: number, height: number, rightAligned: boolean,
+      bottomAligned: boolean = false): number[] {
+    const left: number = rightAligned ? x - width : (bottomAligned ? x - width / 2 : x);
+    const top: number = bottomAligned ? y - height : y - height / 2;
+    return [left, top, left + width, top + height];
+  }
+
+  static rectsOverlap(a: number[], b: number[]): boolean {
+    return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  }
+
+  private static retreatAnchors(path: SunPath, sunriseSign: number, sideLabelRise: number,
+    sideGap: number, labelWidth: number, labelHeight: number): SunLabelAnchors {
+    const pad: number = Math.max(sideGap, 4);
+    const canvasWidth: number = path.centerX * 2;
+    const y: number = path.horizonY - sideLabelRise;
+    const sunriseX: number = sunriseSign < 0 ? pad + labelWidth : canvasWidth - pad - labelWidth;
+    const sunsetX: number = sunriseSign < 0 ? canvasWidth - pad - labelWidth : pad + labelWidth;
+    const noonX: number = path.centerX;
+    let noonY: number = path.centerY - path.radius - pad;
+    // 若仍与两侧退让标签相交，再上移到顶部内边距。
+    const noonRect: number[] = SunPathGeometry.rectOf(noonX, noonY, labelWidth, labelHeight, false, true);
+    const sunriseRect: number[] = SunPathGeometry.rectOf(sunriseX, y, labelWidth, labelHeight,
+      sunriseSign < 0);
+    const sunsetRect: number[] = SunPathGeometry.rectOf(sunsetX, y, labelWidth, labelHeight,
+      sunriseSign > 0);
+    if (SunPathGeometry.rectsOverlap(noonRect, sunriseRect) ||
+      SunPathGeometry.rectsOverlap(noonRect, sunsetRect)) {
+      noonY = pad + labelHeight;
+    }
+    return new SunLabelAnchors(sunriseX, y, sunsetX, y, noonX, noonY, path.centerX, path.centerY);
   }
 
   /**
