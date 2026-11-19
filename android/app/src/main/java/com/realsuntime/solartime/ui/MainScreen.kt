@@ -547,17 +547,31 @@ private fun Header(badge: String?, onOpenSettings: () -> Unit) {
             // 标题与右侧徽标都要限宽：长地名不能把标题挤成一字一行。
             Text(
                 text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleLarge,
+                // 与右侧齿轮图标「等高」：图标 24dp，标题字号 26sp + 行高 1:1（≈26dp 行盒），
+                // 实测节点高度 ≈ 齿轮图标高度 + 2dp。保持单行，宽度不够时省略而不是换行。
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 26.sp,
+                    lineHeight = 24.sp,
+                ),
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            // 齿轮：48dp 触控热区不变，但**图标在热区底部居中**（与标题底边对齐）；
+            // 图标放大到 34dp，让它的高度接近标题节点高度（26sp 行盒约 34.7dp），
+            // 于是「底边差 0、高度差 ≈ 1dp」，不会再有「齿轮高高在上」。
             Box(
-                modifier = Modifier.width(gearSlot),
-                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(gearSlot)
+                    .clickable(onClick = onOpenSettings),
+                contentAlignment = Alignment.BottomCenter,
             ) {
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
-                }
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = stringResource(R.string.action_settings),
+                    modifier = Modifier.size(34.dp),
+                )
             }
         }
         Row(
