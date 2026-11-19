@@ -47,6 +47,14 @@ enum WeatherAttributionPresentation: Equatable {
         }
     }
 
+    /// 卡片（橙色 / 深蓝底）内**一律用 dark 版**（白字标识）：light 版是深色字，放橙底上看不清。
+    func cardMarkURL() -> String? {
+        switch self {
+        case .mark(_, let dark, _): return dark
+        case .text: return nil
+        }
+    }
+
     /// 点击后该打开的链接（非 mark / 无链接时为 nil）。
     var link: String? {
         switch self {

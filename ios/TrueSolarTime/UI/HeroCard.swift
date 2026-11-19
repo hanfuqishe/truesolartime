@@ -97,8 +97,14 @@ struct HeroCard: View {
 
             HourlyRow(weather: weather, weatherSource: weatherSource, isDay: isDay, isLocationUnknown: isLocationUnknown)
                 .padding(.top, 12)
+
+            // **卡片页脚署名**（合规要求）：WeatherKit 用 Apple 官方标识图（**恒 dark 版**，
+            // 橙底/深蓝底都是浅色背景外的深色，深色字看不清），可点开法律页；其它源用 CC BY 文字。
+            weatherAttributionFooter
+                .padding(.top, 7)
         }
-        .padding(cardPadding)
+        // 页脚署名占了约 18pt：底部内边距相应收一点，逐时行间距不变。
+        .padding(EdgeInsets(top: cardPadding, leading: cardPadding, bottom: cardPadding - 6, trailing: cardPadding))
         .background(
             RoundedRectangle(cornerRadius: Theme.heroCornerRadius, style: .continuous)
                 .fill(isDay ? Theme.dayGradient : Theme.nightGradient)
@@ -129,6 +135,42 @@ struct HeroCard: View {
         }
     }
 
+    /// 卡片内页脚署名：整行宽、居中；标识图高 11pt（只缩高度，不裁切不改色）。
+    @ViewBuilder private var weatherAttributionFooter: some View {
+        let presentation = WeatherAttributionStore.shared.presentation(source: weatherSource, isDark: true)
+        switch presentation {
+        case .mark(_, _, let legal):
+            if let markURL = presentation.cardMarkURL(), let url = URL(string: markURL),
+               let link = URL(string: legal) {
+                Link(destination: link) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFit().frame(height: 11)
+                        default:
+                            // 加载中 / 失败都不留空白：直接落到文字退化版。
+                            Text(L("weather.attributionWeatherKit")).font(.system(size: 11))
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                Text(L("weather.attributionWeatherKit"))
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        case .text(let text, let link):
+            if let link, let url = URL(string: link) {
+                Link(text, destination: url)
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                Text(text)
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
     // MARK: - 顶部标签行（四档退化）
 
     /// 当前档位。宽度全部用 `UIFont` 量（与渲染同一字号、同一字体），纯计算、无副作用。

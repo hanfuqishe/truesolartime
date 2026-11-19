@@ -2841,6 +2841,17 @@ expect(
         && WeatherAttributionPresentation.choose(source: .sevenTimer, markLightURL: nil, markDarkURL: nil, legalURL: nil, isDark: false)
             == .text(L("weather.attribution7Timer"), nil)
 )
+expect(
+    "卡片内页脚：cardMarkURL 恒返回 dark 版（橙底/深蓝底都用白字标识）",
+    wkMark.cardMarkURL() == "https://example/dark.png"
+        && wkMarkDark.cardMarkURL() == "https://example/dark.png"
+        && wkFallback.cardMarkURL() == nil
+)
+expect(
+    "设置页仍按主题切换：markURL(isDark:) 浅取 light、深取 dark",
+    wkMark.markURL(isDark: false) == "https://example/light.png"
+        && wkMark.markURL(isDark: true) == "https://example/dark.png"
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {
