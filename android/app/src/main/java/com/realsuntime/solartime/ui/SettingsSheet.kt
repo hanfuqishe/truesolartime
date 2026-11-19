@@ -154,12 +154,18 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
-            FilledTonalButton(
+            // 与下方「应用坐标」**同款主按钮**：同一个 Material3 `Button` + 同一套颜色/高度/圆角，
+            // 不抄颜色值（主色改了这里自动跟着变）。选中态（跟随中）用主色底 + 白色进度环表达。
+            Button(
                 onClick = onRequestGps,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (trackingGps) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
                     Spacer(Modifier.width(10.dp))
                 }
                 // 文案与鸿蒙版一致：跟随中也是「实时跟随GPS」，不改成「重新开始…」（点它本来就是重取一次定位）。
