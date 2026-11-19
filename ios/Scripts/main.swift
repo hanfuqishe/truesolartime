@@ -2663,7 +2663,7 @@ let zhongshanPath = SunPathGeometry.compute(
 )
 let zhongshanLabels = SunPathGeometry.labels(path: zhongshanPath, size: dialCanvas, dayLengthHours: 18)
 let estW = SunPathGeometry.estimatedLabelWidth(characters: 9)
-let estN = SunPathGeometry.estimatedLabelWidth(characters: 7)
+let estN = SunPathGeometry.estimatedLabelWidth(characters: 11)
 let zsRects: [CGRect] = [
     zhongshanLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
     zhongshanLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: estW) },
@@ -2680,7 +2680,7 @@ let realPath = SunPathGeometry.compute(
 )
 let realLabels = SunPathGeometry.labels(path: realPath, size: dialCanvas, dayLengthHours: 22.7)
 let realEstW = SunPathGeometry.estimatedLabelWidth(characters: 9)
-let realEstN = SunPathGeometry.estimatedLabelWidth(characters: 7)
+let realEstN = SunPathGeometry.estimatedLabelWidth(characters: 11)
 let realRects: [CGRect] = [
     realLabels.sunrise.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },
     realLabels.sunset.map { SunPathGeometry.labelRect(point: $0.point, alignment: $0.alignment, width: realEstW) },

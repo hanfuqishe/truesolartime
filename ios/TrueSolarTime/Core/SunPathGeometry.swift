@@ -405,7 +405,7 @@ enum SunPathGeometry {
         // 重叠检测：近极昼时日出 / 日落 / 上中天会挤到圆顶同一处，改用边缘退让布局。
         let estSunrise = estimatedLabelWidth(characters: 9)
         let estSunset = estimatedLabelWidth(characters: 9)
-        let estNoon = estimatedLabelWidth(characters: 7)
+        let estNoon = estimatedLabelWidth(characters: 11)
         let baseRects = [
             labelRect(point: CGPoint(x: sunriseAnchorX, y: labelY), alignment: southern ? .leading : .trailing, width: estSunrise),
             labelRect(point: CGPoint(x: sunsetAnchorX, y: labelY), alignment: southern ? .trailing : .leading, width: estSunset),
