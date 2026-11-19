@@ -283,6 +283,8 @@ object CityIndex {
         卡萨布兰卡|33.57|-7.59|Casablanca
         摩尔曼斯克|68.97|33.08|Murmansk
         南极中山站|-69.37|76.38|Zhongshan Station, Antarctica
+        开罗|30.0444|31.2357|Cairo
+        里约热内卢|-22.9068|-43.1729|Rio de Janeiro
     """.trimIndent()
 
     private val entries: List<Entry> by lazy {

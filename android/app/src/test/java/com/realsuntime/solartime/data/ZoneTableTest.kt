@@ -67,6 +67,28 @@ class ZoneTableTest {
         assertFalse(ZoneTable.knows(null))
     }
 
+    /** 新增的两个城市：坐标、国家码、时区偏移必须与 iOS / 鸿蒙逐位一致。 */
+    @Test
+    fun cairoAndRioPresetsMatchTheOtherPlatforms() {
+        val cairo = Place.PRESETS.first { it.labelResName == "city_cairo" }
+        assertEquals(30.0444, cairo.latitude, 1e-9)
+        assertEquals(31.2357, cairo.longitude, 1e-9)
+        assertEquals("eg", cairo.countryCode)
+        // +120 分钟（无夏令时）
+        assertEquals(120 * 60, ZoneTable.offsetSeconds(cairo.countryCode, cairo.longitude, fallback))
+
+        val rio = Place.PRESETS.first { it.labelResName == "city_rio" }
+        assertEquals(-22.9068, rio.latitude, 1e-9)
+        assertEquals(-43.1729, rio.longitude, 1e-9)
+        assertEquals("br", rio.countryCode)
+        // −180 分钟
+        assertEquals(-180 * 60, ZoneTable.offsetSeconds(rio.countryCode, rio.longitude, fallback))
+
+        // 两个都在「南极中山站」之后，且都在预设表末尾。
+        val tail = Place.PRESETS.takeLast(3).map { it.labelResName }
+        assertEquals(listOf("city_zhongshan", "city_cairo", "city_rio"), tail)
+    }
+
     @Test
     fun presetsCarryCountryCodesThatResolveToTheirRealOffsets() {
         // 每个预设城市都必须带国家码：选中后标准时区靠它当场查表，不依赖逆地理编码。
@@ -74,9 +96,9 @@ class ZoneTableTest {
             assertTrue("${preset.labelResName} 缺少国家码", preset.countryCode != null)
             assertTrue("${preset.countryCode} 不在表里", ZoneTable.knows(preset.countryCode))
         }
-        // 22 个常用城市：前 10 个是中国境内（含香港）；第 11 个起是境外城市，
-        // 末尾两个是极圈城市（摩尔曼斯克 / 中山站），用来验证极昼／极夜。
-        assertEquals(22, Place.PRESETS.size)
+        // 24 个常用城市：前 10 个是中国境内（含香港）；第 11 个起是境外城市，
+        // 末尾四个依次是极圈城市（摩尔曼斯克 / 中山站）与新增的开罗 / 里约热内卢。
+        assertEquals(24, Place.PRESETS.size)
         val expected = listOf(
             -10 * 3600, // 檀香山
             -8 * 3600,  // 洛杉矶
@@ -90,6 +112,8 @@ class ZoneTableTest {
             10 * 3600,  // 悉尼
             3 * 3600,   // 摩尔曼斯克：ru + 经度 33.08°E < 40°E → UTC+3
             8 * 3600,   // 中山站：国家码 cn → UTC+8（站上惯例，不用经度取整的 +5）
+            2 * 3600,   // 开罗：eg → +120 分钟（无夏令时）
+            -3 * 3600,  // 里约：br，经度 −43.17° → America/Sao_Paulo = −180 分钟
         )
         val overseas = Place.PRESETS.drop(10)
         assertEquals(expected.size, overseas.size)

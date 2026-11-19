@@ -71,6 +71,8 @@
     <string name="city_sydney">雪梨</string>
     <string name="city_murmansk">莫曼斯克</string>
     <string name="city_zhongshan">南極中山站</string>
+    <string name="city_cairo">開羅</string>
+    <string name="city_rio">里約熱內盧</string>
     <string name="map_style_auto">自動</string>
     <string name="map_style_esri">Esri 街道圖</string>
     <string name="map_style_osm">OpenStreetMap</string>

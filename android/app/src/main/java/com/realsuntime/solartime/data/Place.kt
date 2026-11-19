@@ -53,6 +53,11 @@ data class Place(
             //   时区显式用 `cn` → UTC+8：中山站按中国站务惯例使用北京时间；ZoneTable 没有
             //   `aq` 条目，若写 aq 会退回「按经度取整」得到 +5，与站上实际使用的 UTC+8 不符。
             Place(-69.3700, 76.3800, PlaceSource.MANUAL, "", "city_zhongshan", "cn"),
+            // 开罗（30.04°N 31.24°E）：埃及，UTC+2 且无夏令时（ZoneTable: eg → +120）。
+            Place(30.0444, 31.2357, PlaceSource.MANUAL, "", "city_cairo", "eg"),
+            // 里约热内卢（22.91°S 43.17°W）：巴西，America/Sao_Paulo = UTC−3
+            //（ZoneTable: br 按经度分段，−43.17° 落在 else 段 → −180）。
+            Place(-22.9068, -43.1729, PlaceSource.MANUAL, "", "city_rio", "br"),
         )
 
         const val MIN_LATITUDE = -90.0
