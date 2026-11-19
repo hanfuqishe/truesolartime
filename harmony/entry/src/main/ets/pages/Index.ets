@@ -1010,13 +1010,15 @@ struct Index {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        // 右侧定宽槽位（22fp 图标 + 6×2 padding = 34vp）：齿轮居中。
+        // 右侧定宽槽位：只保留顶部 padding，让齿轮字形贴到行底。
         Row() {
           // 与 Android 一致：齿轮图标按钮，不再用「设置」文字。
           SymbolGlyph($r('sys.symbol.gearshape_fill'))
             .fontSize(22)
             .fontColor([this.palette.text])
-            .padding(6)
+            // 只保留顶部 padding：字形贴到行底，视觉底边不再比标题高 6vp；
+            // 触控热区仍由这个 34×34 的盒子的点击事件保证。
+            .padding({ top: 12, bottom: 0, left: 6, right: 6 })
             .onClick(() => {
               router.pushUrl({ url: 'pages/Settings' }).catch((error: BusinessError) => {
                 console.warn(`open settings failed: ${error.code} ${error.message}`);
