@@ -27,6 +27,14 @@ final class DistrictStore {
     private var geocodeRequestCount: Int = 0
     /// 本轮第一次发出反查请求的时刻（算耗时用）。
     private var geocodeRequestedAt: Date?
+    /// 本轮反查的耗时（秒）：从第一次发出请求到拿到名字。
+    private var geocodeElapsedSeconds: Double?
+    /// 当前位置与「上次成功反查坐标」的距离（km）；未知为 nil。
+    private var lastMovedKm: Double?
+    /// 上次成功反查的坐标与时刻：5 km / 30 天规则的判定基准。
+    private var lastSuccessLatitude: Double?
+    private var lastSuccessLongitude: Double?
+    private var lastSuccessAt: Date?
     /// OSM 兜底用的会话：12 秒超时（与 Android 的 12 s 一致）、允许等网络。
     private let nominatimSession: URLSession = {
         let config = URLSessionConfiguration.default
@@ -124,13 +132,13 @@ final class DistrictStore {
         if let success = lastGeocodeSuccessAt {
             let minutes = max(0, Int(Date().timeIntervalSince(success) / 60))
             parts.append(Lf("district.geoSucceededAgo", minutes))
+        }
         if let elapsed = geocodeElapsedSeconds {
             parts.append(String(format: "耗时 = %.1fs", elapsed))
         }
         parts.append("请求次数 = \(geocodeRequestCount)")
         if let moved = lastMovedKm {
             parts.append(String(format: "距上次反查 %.1f km", moved))
-        }
         }
         return parts.joined(separator: " · ")
     }
@@ -198,6 +206,9 @@ final class DistrictStore {
             geocodeSkipReason = L("district.geoInFlight")
             return
         }
+        // 「新地点」= 用户明确换地点（force），或当前地点还没有任何可用名字。
+        // 只有这种情况才允许绕过 5 km / 30 天判定。
+        let isNewPlace = force || cachedNames(for: place) == nil
         guard isNewPlace || PlaceNamePolicy.shouldQuery(movedKm: movedKm, ageMillis: ageMillis) else {
             geocodeSkipReason = L("district.geoWithinThreshold")
             // ≤ 5 km：沿用已有名字（有就直接上屏，绝不显示占位）。
