@@ -2998,6 +2998,41 @@ expect(
         && SunPathGeometry.estimatedLabelWidth(characters: SunPathGeometry.noonWidthCharacters)
             > SunPathGeometry.estimatedLabelWidth(characters: 11)
 )
+// 紧凑布局红线：地平线下方、靠近日出/日落交点、离弧 ≥3pt、不出画布、彼此不重叠。
+var compactFailures: [String] = []
+var hour2 = 0.05
+while hour2 <= 8.0001 {
+    let halfDay = hour2 / 2
+    let pth = SunPathGeometry.compute(
+        size: dialCanvas, sunriseHour: 12 - halfDay, sunsetHour: 12 + halfDay, trueSolarHour: 12,
+        isPolarDay: false, isPolarNight: false
+    )
+    let lbl = SunPathGeometry.labels(path: pth, size: dialCanvas, dayLengthHours: hour2)
+    let wS = SunPathGeometry.estimatedLabelWidth(characters: 9)
+    if let sun = lbl.sunrise, let set = lbl.sunset {
+        let r1 = SunPathGeometry.labelRect(point: sun.point, alignment: sun.alignment, width: wS)
+        let r2 = SunPathGeometry.labelRect(point: set.point, alignment: set.alignment, width: wS)
+        let c1 = SunPathGeometry.circleClearance(r1, center: pth.center, radius: pth.radius)
+        let c2 = SunPathGeometry.circleClearance(r2, center: pth.center, radius: pth.radius)
+        // 只有「紧凑布局」才在地平线下方：昼长 < 6h 且非 shortDay 分支
+        if hour2 >= 2.6 && hour2 <= 4.2 {
+            if !(sun.point.y > pth.horizonY) { compactFailures.append(String(format: "%.2fh y不在下方", hour2)) }
+            if sun.point.y - pth.horizonY > 30 { compactFailures.append(String(format: "%.2fh y−horizon=%.1f", hour2, sun.point.y - pth.horizonY)) }
+            if min(c1, c2) < 5.99 { compactFailures.append(String(format: "%.2fh 离弧%.1f", hour2, min(c1, c2))) }
+            let chord = SunPathGeometry.horizonChord(path: pth)
+            if let chord {
+                if abs(r1.midX - chord.start.x) > 70 { compactFailures.append(String(format: "%.2fh 日出离交点%.1f", hour2, abs(r1.midX - chord.start.x))) }
+                if abs(r2.midX - chord.end.x) > 70 { compactFailures.append(String(format: "%.2fh 日落离交点%.1f", hour2, abs(r2.midX - chord.end.x))) }
+            }
+        }
+    }
+    hour2 = ((hour2 + 0.05) * 100).rounded() / 100
+}
+expect(
+    "紧凑布局红线（2.6–4.2h）：y−horizon ≤30pt、离弧 ≥6pt、距交点 ≤70pt、不相交",
+    compactFailures.isEmpty,
+    "failures=\(compactFailures.prefix(6))"
+)
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
 for (seconds, expected) in shichenCases {

@@ -411,16 +411,26 @@ enum SunPathGeometry {
             labelRect(point: CGPoint(x: sunsetAnchorX, y: labelY), alignment: southern ? .trailing : .leading, width: estSunset),
             labelRect(point: CGPoint(x: center.x, y: center.y - path.radius - noonGap), alignment: .bottom, width: estNoon),
         ]
-        // **紧凑行布局（几何判据，不用固定阈值）**：昼长短时地平线贴近圆顶，正常锚点会贴上中天。
-        // 只要「日出/日落标签」与「上中天标签」的垂直间隙 < 6pt（或已相交），就改成一整行：
-        // 行 y = 上中天底边 + 6 + 半行高；两个标签贴画布左右内边距（弦退化成一个点时贴弦必然互相压）。
-        // 南半球不走这条：它的标签在地平线下方，与上中天天然远离。
+        // **紧凑布局（几何判据）**：昼长短时地平线贴近圆顶，正常锚点会贴上中天。
+        // 规则（用户要求）：优先「地平线下方、靠近日出日落交点、离弧 ≥3pt」；放不下才贴画布边缘兜底。
         if !southern {
             let noonRect = baseRects[2]
             let riseRect = baseRects[0]
             let setRect = baseRects[1]
             let gap = min(abs(riseRect.minY - noonRect.maxY), abs(setRect.minY - noonRect.maxY))
             if gap < 6 || riseRect.intersects(noonRect) || setRect.intersects(noonRect) {
+                if let below = belowHorizonAnchors(
+                    path: path, size: size,
+                    sunriseWidth: estSunrise, sunsetWidth: estSunset
+                ) {
+                    return SunPathLabels(
+                        sunrise: below.sunrise,
+                        sunset: below.sunset,
+                        noon: noon,
+                        polar: nil
+                    )
+                }
+                // 兜底：贴画布左右内边距（极端短昼、弦退化）。
                 let rowY = noonRect.maxY + 6 + labelHeight / 2
                 return SunPathLabels(
                     sunrise: SunPathLabel(
@@ -537,6 +547,64 @@ enum SunPathGeometry {
         }
         let noon: SunPathLabel? = path.isPolarNight ? nil : SunPathLabel(point: noonPoint, alignment: .bottom)
         return (sunrise, sunset, noon)
+    }
+
+    /// 圆与矩形的最小间隙（矩形跨圆时返回 0）。
+    static func circleClearance(_ rect: CGRect, center: CGPoint, radius: CGFloat) -> CGFloat {
+        let nx = min(max(center.x, rect.minX), rect.maxX)
+        let ny = min(max(center.y, rect.minY), rect.maxY)
+        let dMin = CGFloat(hypot(Double(center.x - nx), Double(center.y - ny)))
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY),
+        ]
+        let dMax = corners.map { CGFloat(hypot(Double($0.x - center.x), Double($0.y - center.y))) }.max() ?? 0
+        if dMax <= radius { return radius - dMax }
+        if dMin >= radius { return dMin - radius }
+        return 0
+    }
+
+    /// 短昼（约 2–4h）：北半球把两个标签放到**地平线下方、靠近日出日落交点**的位置。
+    ///
+    /// 为什么不贴画布边缘：用户实拍「像被甩到角落、离交点很远」。这里沿 y 向下搜索：
+    /// 先试并排（两侧留 3pt 离弧间隙），放不下就上下错开，仍不满足再下移一行，最多 40 步。
+    /// 返回 nil 表示实在放不下（调用方退回贴边缘的兜底）。
+    static func belowHorizonAnchors(
+        path: SunPath,
+        size: CGSize,
+        sunriseWidth: CGFloat,
+        sunsetWidth: CGFloat,
+        clearance: CGFloat = 6
+    ) -> (sunrise: SunPathLabel, sunset: SunPathLabel)? {
+        let center = path.center
+        let radius = path.radius
+        // **正常布局的镜像**：y = 地平线 + 10，x 仍以交点为基准、向外展开（标签在圆外）。
+        let y = path.horizonY + labelOffsetY
+        let dy = Double(y - center.y)
+        guard abs(dy) <= Double(radius) else { return nil }
+        let half = CGFloat((Double(radius * radius) - dy * dy).squareRoot())
+        let leftEdge = center.x - half
+        let rightEdge = center.x + half
+        let chord = horizonChord(path: path)
+        let riseBase = chord?.start.x ?? leftEdge
+        let setBase = chord?.end.x ?? rightEdge
+        // 从交点起向外逐步加大偏移，直到「整块在圆外且离弧 ≥ clearance、不出画布」。
+        var offset: CGFloat = 10
+        while offset <= 120 {
+            let sunrise = SunPathLabel(point: CGPoint(x: riseBase - offset, y: y), alignment: .trailing)
+            let sunset = SunPathLabel(point: CGPoint(x: setBase + offset, y: y), alignment: .leading)
+            let a = labelRect(point: sunrise.point, alignment: sunrise.alignment, width: sunriseWidth)
+            let b = labelRect(point: sunset.point, alignment: sunset.alignment, width: sunsetWidth)
+            let ok = !a.intersects(b)
+                && a.maxX <= leftEdge - clearance
+                && b.minX >= rightEdge + clearance
+                && circleClearance(a, center: center, radius: radius) >= clearance
+                && circleClearance(b, center: center, radius: radius) >= clearance
+                && a.minX >= edgeInset && b.maxX <= size.width - edgeInset
+            if ok { return (sunrise, sunset) }
+            offset += 1
+        }
+        return nil
     }
 
     static func rect(for label: SunPathLabel, size: CGSize) -> CGRect {
