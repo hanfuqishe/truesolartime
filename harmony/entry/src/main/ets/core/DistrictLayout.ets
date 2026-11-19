@@ -15,54 +15,35 @@ export class DistrictLayoutPlan {
 }
 
 export class DistrictLayoutSolver {
-  static readonly MIN_FONT: number = 9;
   static readonly BASE_FONT: number = 12;
 
   /**
-   * @param utcWidth UTC 标签在 12fp 下的宽度
-   * @param placeWidth 地点名在 12fp 下的自然宽度
-   * @param labelWidth 「真太阳时」在 12fp 下的宽度
-   * @param shichenWidth 时辰在 12fp 下的宽度
-   * @param halfWidth 左右半栏宽度（档 0 用）
-   * @param rowWidth 整行宽度（档 1/2/3 用）
+   * 档位只按 12fp 的自然宽度判：档 0 → 1 → 2 → 3，哪档放得下用哪档；
+   * 四档都放不下 → 档 3（界面用省略号截断，不缩字号）。
    */
   static solve(utcWidth: number, placeWidth: number, labelWidth: number, shichenWidth: number,
       halfWidth: number, rowWidth: number): DistrictLayoutPlan {
-    // 第一轮：12fp 自然宽度逐档试（0→1→2→3），能放下就保 12fp。
     for (let tier: number = 0; tier <= 3; tier++) {
-      if (DistrictLayoutSolver.fits(tier, 12, utcWidth, placeWidth, labelWidth, shichenWidth,
+      if (DistrictLayoutSolver.fits(tier, utcWidth, placeWidth, labelWidth, shichenWidth,
         halfWidth, rowWidth)) {
         return new DistrictLayoutPlan(tier, DistrictLayoutSolver.BASE_FONT);
       }
     }
-    // 第二轮：所有档在 12fp 都放不下，才在每档内从 11.5 缩到 9fp。
-    for (let tier: number = 0; tier <= 3; tier++) {
-      for (let size: number = DistrictLayoutSolver.BASE_FONT - 0.5;
-        size >= DistrictLayoutSolver.MIN_FONT; size -= 0.5) {
-        if (DistrictLayoutSolver.fits(tier, size, utcWidth, placeWidth, labelWidth, shichenWidth,
-          halfWidth, rowWidth)) {
-          return new DistrictLayoutPlan(tier, size);
-        }
-      }
-    }
-    // 40 字级别：档 3、最小字号、交给省略号。
-    return new DistrictLayoutPlan(3, DistrictLayoutSolver.MIN_FONT);
+    return new DistrictLayoutPlan(3, DistrictLayoutSolver.BASE_FONT);
   }
 
-  private static fits(tier: number, size: number, utcWidth: number, placeWidth: number,
-      labelWidth: number, shichenWidth: number, halfWidth: number, rowWidth: number): boolean {
-    const scale: number = size / DistrictLayoutSolver.BASE_FONT;
+  private static fits(tier: number, utcWidth: number, placeWidth: number, labelWidth: number,
+      shichenWidth: number, halfWidth: number, rowWidth: number): boolean {
     if (tier === 0) {
-      // 右半（真太阳时 + 时辰）在 12fp 下也要放得下。
       if (labelWidth + shichenWidth + 6 > halfWidth) {
         return false;
       }
-      return placeWidth * scale <= halfWidth - utcWidth * scale - 6;
+      return placeWidth <= halfWidth - utcWidth - 6;
     }
     if (tier === 1) {
-      return placeWidth * scale <= rowWidth - (utcWidth + shichenWidth) * scale - 12;
+      return placeWidth <= rowWidth - utcWidth - shichenWidth - 12;
     }
-    return placeWidth * scale <= rowWidth - shichenWidth * scale - 6;
+    return placeWidth <= rowWidth - shichenWidth - 6;
   }
 }
 

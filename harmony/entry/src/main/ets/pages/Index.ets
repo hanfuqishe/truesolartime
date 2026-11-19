@@ -867,13 +867,9 @@ struct Index {
     return this.districtPlan().tier;
   }
 
-  /**
-   * 大卡片左栏「地区」的字号：名字太长时按这一栏的可用宽度逐档缩小（12 → 9fp，0.5 一档），
-   * 避免「New York, Manhattan」这种长名字被直接截成「New …」。缩到下限仍放不下才交给省略号
-   * （与 Android 卡片档 3 的兜底一致）。短名字仍是 12fp，字号不变。
-   */
+  /** 三端统一：地名永远 12fp，只做四档退化，档 3 用省略号（不缩字号）。 */
   private districtFontSize(): number {
-    return this.districtPlan().fontSize;
+    return 12;
   }
 
   /**

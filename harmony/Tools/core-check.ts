@@ -2242,11 +2242,14 @@ for (const item of equationCases) {
   equal('beijing lands on tier 0', DistrictLayoutTier.FULL, beijingPlan.tier);
   equal('beijing keeps 12fp', 12, beijingPlan.fontSize);
   const sydneyPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 276, 48, 24, 160, 260);
-  equal('sydney lands on tier 2', DistrictLayoutTier.HIDE_UTC, sydneyPlan.tier);
-  check('sydney shrinks only as needed', sydneyPlan.fontSize <= 12 && sydneyPlan.fontSize >= 9);
+  equal('sydney falls to the last tier that still runs', DistrictLayoutTier.ELLIPSIS, sydneyPlan.tier);
+  equal('sydney keeps 12fp', 12, sydneyPlan.fontSize);
   const hugePlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 480, 48, 24, 160, 260);
   equal('40 chars lands on tier 3', DistrictLayoutTier.ELLIPSIS, hugePlan.tier);
-  equal('40 chars uses the minimum font', 9, hugePlan.fontSize);
+  equal('40 chars stays 12fp instead of shrinking', 12, hugePlan.fontSize);
+  check('the solver never shrinks below 12fp',
+    hkPlan.fontSize === 12 && beijingPlan.fontSize === 12 && sydneyPlan.fontSize === 12 &&
+      hugePlan.fontSize === 12);
   // 回归：自然宽度 ≤ 该档可用宽时，字号必须保持 12。
   const fitsPlan: DistrictLayoutPlan = DistrictLayoutSolver.solve(36, 120, 48, 24, 160, 345);
   equal('a fitting name keeps 12fp', 12, fitsPlan.fontSize);
