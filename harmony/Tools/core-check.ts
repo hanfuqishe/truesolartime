@@ -2219,6 +2219,20 @@ for (const item of equationCases) {
     DistrictLayoutTier.ofHalves(utc, 60, label, shichen, 80));
   equal('halves tier 3 when even the place alone does not fit', DistrictLayoutTier.ELLIPSIS,
     DistrictLayoutTier.ofHalves(utc, 200, label, shichen, 80));
+
+  // 按地点名称长度选档（用户规格）：短→0、中→1、长→2、极长→3。
+  const nameTier = (placeWidth: number, nameLength: number): number =>
+    DistrictLayoutTier.ofNameLength(36, placeWidth, 48, 24, 160, nameLength);
+  equal('name length tier 0 for a short place', DistrictLayoutTier.FULL, nameTier(60, 5));
+  equal('name length tier 1 for a medium place', DistrictLayoutTier.HIDE_LABEL, nameTier(180, 15));
+  equal('name length tier 2 for a long place', DistrictLayoutTier.HIDE_UTC, nameTier(264, 22));
+  equal('name length tier 3 for a very long place', DistrictLayoutTier.ELLIPSIS, nameTier(480, 40));
+  // 各档元素可见性：0 有真太阳时；1 无真太阳时、有时区；2/3 无时区；3 压缩。
+  check('tier 0 shows the solar-time label', DistrictLayoutTier.FULL < DistrictLayoutTier.HIDE_LABEL);
+  check('tier 1 keeps the utc label but hides the solar-time label',
+    DistrictLayoutTier.HIDE_LABEL < DistrictLayoutTier.HIDE_UTC);
+  check('tier 2/3 hide the utc label',
+    DistrictLayoutTier.HIDE_UTC < DistrictLayoutTier.ELLIPSIS);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

@@ -43,6 +43,29 @@ export class DistrictLayoutTier {
   }
 
   /**
+   * 按地点名称长度选档（先缩字号，再退档）：
+   * - 名称 ≤ 6 字（短）→ 档 0；
+   * - 7–20 字符 → 档 1（收「真太阳时」，保留时区与时辰）；
+   * - ≤ 30 字符 → 档 2（再收时区）；
+   * - 更长 → 档 3（地点尾部省略号）。
+   */
+  static ofNameLength(utcWidth: number, placeWidth: number, labelWidth: number, shichenWidth: number,
+      halfWidth: number, nameLength: number): number {
+    // 短名称（≤6 字）一律档 0；缩字号后仍放不下才按长度退档。
+    if (nameLength <= 6 || DistrictLayoutTier.ofHalves(utcWidth, placeWidth, labelWidth, shichenWidth,
+      halfWidth) === DistrictLayoutTier.FULL) {
+      return DistrictLayoutTier.FULL;
+    }
+    if (nameLength <= 20) {
+      return DistrictLayoutTier.HIDE_LABEL;
+    }
+    if (nameLength <= 30) {
+      return DistrictLayoutTier.HIDE_UTC;
+    }
+    return DistrictLayoutTier.ELLIPSIS;
+  }
+
+  /**
    * 计算档位。
    *
    * @param utcWidth UTC 标签宽度（如 `UTC+8`）

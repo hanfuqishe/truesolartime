@@ -840,7 +840,8 @@ struct Index {
     const placeWidth: number = this.districtLabel().length * this.cs(this.districtFontSize());
     const labelWidth: number = 4 * base;
     const shichenWidth: number = this.shortText(this.snapshot.shichenName).length * base;
-    return DistrictLayoutTier.ofHalves(utcWidth, placeWidth, labelWidth, shichenWidth, halfWidth);
+    return DistrictLayoutTier.ofNameLength(utcWidth, placeWidth, labelWidth, shichenWidth, halfWidth,
+      this.districtLabel().length);
   }
 
   /**
@@ -1029,14 +1030,57 @@ struct Index {
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
   }
 
+  /**
+   * 档 1/2/3 的整行标签：档 1 = 时区 + 地点居中 + 时辰；档 2/3 = 地点贴左 + 时辰。
+   * 这一行在大数字上方，竖线只出现在两个大数字之间，不会上延。
+   */
+  @Builder
+  headerSingleRow() {
+    Row() {
+      if (this.districtTier() === DistrictLayoutTier.HIDE_LABEL) {
+        Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
+          .fontSize(this.cs(12))
+          .fontFamily(this.cardFont(FontWeight.Normal))
+          .lineHeight(this.cardLineHeight(this.cs(12)))
+          .fontColor('#CCFFFFFF')
+          .margin({ right: 8 })
+      }
+      Text(this.districtLabel())
+        .fontSize(this.cs(this.districtFontSize()))
+        .fontFamily(this.cardFont(FontWeight.Normal))
+        .lineHeight(this.cardLineHeight(this.cs(this.districtFontSize())))
+        .fontColor('#B3FFFFFF')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(this.districtTier() === DistrictLayoutTier.HIDE_LABEL
+          ? TextAlign.Center : TextAlign.Start)
+        .layoutWeight(1)
+      Text(this.shortText(this.snapshot.shichenName))
+        .fontSize(this.cs(12))
+        .fontFamily(this.cardFont(FontWeight.Normal))
+        .lineHeight(this.cardLineHeight(this.cs(12)))
+        .fontColor('#B3FFFFFF')
+        .maxLines(1)
+        .margin({ left: 8 })
+    }
+    .width('100%')
+    .height(this.cs(18))
+    .margin({ bottom: 4 })
+  }
+
   /** 首页大卡片：与桌面卡片同款版面，但页面里可以逐秒刷新，所以右栏真太阳时是活的。 */
   @Builder
   heroCard() {
     Column() {
+      // 档 1/2/3：整行单列布局（时区/地点/时辰），竖线不会上延到标签行。
+      if (this.districtTier() !== DistrictLayoutTier.FULL) {
+        this.headerSingleRow()
+      }
       Row() {
-        // 左：标准时间。标签行与数字同栏（与安卓同一套左右两半布局）。
+        // 左：标准时间。档 0 时标签行与数字同栏（左右两半 + 竖线上延）。
         Column() {
-          Row() {
+          if (this.districtTier() === DistrictLayoutTier.FULL) {
+            Row() {
             if (this.districtTier() < DistrictLayoutTier.HIDE_UTC) {
               Text(TimeFormat.utcOffsetLabel(this.snapshot.localOffsetSeconds))
                 .fontSize(this.cs(12))
@@ -1068,6 +1112,7 @@ struct Index {
           .width('100%')
           .height(this.cs(18))
           .margin({ bottom: 4 })
+          }
           Row() {
             Text(TimeFormat.clock(this.standardSecond))
               .fontSize(this.clockMainSize())
@@ -1111,8 +1156,7 @@ struct Index {
           // 档 0：竖线从标签行顶端一直延伸到大数字底部；其余档位只在大数字之间。
           .height(this.cs(this.districtTier() === DistrictLayoutTier.FULL ? 76 : 58))
           .backgroundColor('#33FFFFFF')
-          .margin({ left: 12, right: 12,
-            top: this.districtTier() === DistrictLayoutTier.FULL ? 0 : 3 })
+          .margin({ left: 12, right: 12, top: 0 })
 
         // 右：真太阳时（逐秒刷新）
         Column() {
@@ -1123,20 +1167,6 @@ struct Index {
                 .fontFamily(this.cardFont(FontWeight.Normal))
                 .lineHeight(this.cardLineHeight(this.cs(12)))
                 .fontColor('#CCFFFFFF')
-              Text(this.shortText(this.snapshot.shichenName))
-                .fontSize(this.cs(12))
-                .fontFamily(this.cardFont(FontWeight.Normal))
-                .lineHeight(this.cardLineHeight(this.cs(12)))
-                .fontColor('#B3FFFFFF')
-                .maxLines(1)
-                .textAlign(TextAlign.End)
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .height(this.cs(18))
-            .margin({ bottom: 4 })
-          } else {
-            Row() {
               Text(this.shortText(this.snapshot.shichenName))
                 .fontSize(this.cs(12))
                 .fontFamily(this.cardFont(FontWeight.Normal))
