@@ -18,6 +18,7 @@ import { DistrictLayoutPlan, DistrictLayoutSolver, DistrictLayoutTier } from './
 import { DialLabels } from './core/DialLabels';
 import { DistrictLookupPolicy } from './core/DistrictLookup';
 import { PlaceNamePolicy } from './core/PlaceNamePolicy';
+import { packRows } from './core/PresetLayout';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -2391,6 +2392,59 @@ for (const item of equationCases) {
   equal('rio label zh', '里约热内卢', CityIndex.nearest(rio.latitude, rio.longitude, 'zh-CN')?.name ?? '');
   equal('rio label zh-Hant', '里約熱內盧', CityIndex.nearest(rio.latitude, rio.longitude, 'zh-Hant')?.name ?? '');
   equal('rio label en', 'Rio de Janeiro', CityIndex.nearest(rio.latitude, rio.longitude, 'en-US')?.name ?? '');
+}
+
+// ---- 常用城市 chip 贪心折行 ----
+{
+  const rowsA: number[][] = packRows([100, 100, 100], 300, 8);
+  equal('packRows wraps a row that does not fit', 2, rowsA.length);
+  equal('packRows keeps the first two together', '0,1', rowsA[0].join(','));
+  const exact: number[][] = packRows([100, 100], 208, 8);
+  equal('packRows fits exactly', 1, exact.length);
+  const offByOne: number[][] = packRows([100, 100], 207, 8);
+  equal('packRows wraps when one pixel short', 2, offByOne.length);
+  const wide: number[][] = packRows([400, 100], 300, 8);
+  equal('a chip wider than the row owns a line', 2, wide.length);
+  equal('the wide chip is alone', 1, wide[0].length);
+  equal('empty input yields no rows', 0, packRows([], 300, 8).length);
+  equal('single chip is one row', 1, packRows([80], 300, 8).length);
+  const noEarly: number[][] = packRows([100, 100, 100], 308, 8);
+  equal('packRows does not wrap early', 2, noEarly.length);
+  equal('packRows packs two on the first line', 2, noEarly[0].length);
+
+  // 24 个城市、360vp 内容宽：至少 5 行，且每行（含间距）不超过行宽。
+  const widths: number[] = [];
+  for (let index: number = 0; index < 24; index++) {
+    widths.push(60);
+  }
+  const cityRows: number[][] = packRows(widths, 360, 8);
+  check('24 city chips need at least five rows', cityRows.length >= 5);
+  let allFit: boolean = true;
+  for (const row of cityRows) {
+    let width: number = 0;
+    for (let index: number = 0; index < row.length; index++) {
+      width += widths[row[index]] + (index === 0 ? 0 : 8);
+    }
+    if (width > 360) {
+      allFit = false;
+    }
+  }
+  check('every packed city row fits the content width', allFit);
+
+  // 窄屏 320vp：仍只按内容宽换行，每行不超宽。
+  const narrowRows: number[][] = packRows(widths, 320, 8);
+  check('320vp needs at least six rows', narrowRows.length >= 6);
+  let narrowFits: boolean = true;
+  for (const row of narrowRows) {
+    let width: number = 0;
+    for (let index: number = 0; index < row.length; index++) {
+      width += widths[row[index]] + (index === 0 ? 0 : 8);
+    }
+    if (width > 320) {
+      narrowFits = false;
+    }
+  }
+  check('320vp rows never exceed the content width', narrowFits);
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

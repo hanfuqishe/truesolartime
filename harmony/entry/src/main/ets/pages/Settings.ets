@@ -5,13 +5,14 @@
 
 import { common, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { promptAction, router } from '@kit.ArkUI';
+import { MeasureUtils, promptAction, router } from '@kit.ArkUI';
 import { formInfo, formProvider } from '@kit.FormKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { MAP_STYLE_OPTIONS, MapStyle, MapStyleOption, MapTilesLogic } from '../core/MapTiles';
 import { Place, PlaceSource } from '../core/Place';
+import { packRows } from '../core/PresetLayout';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
 import { SolarTimeMath } from '../core/SolarTimeMath';
@@ -37,6 +38,10 @@ struct Settings {
   @State palette: AppPalette = paletteFor(true);
   @State placeName: string = '';
   @State presetLabels: string[] = [];
+  @State presetRows: number[][] = [];
+  @State presetChipWidths: number[] = [];
+  /** 常用城市区的实测内容宽（vp），用于贪心排布。 */
+  private presetRowWidth: number = 0;
   @State shichenReminders: boolean = false;
   @State keyTimeChime: boolean = false;
   @State keepScreenOn: boolean = true;
@@ -114,6 +119,7 @@ struct Settings {
       labels.push(this.cityLabel(preset));
     }
     this.presetLabels = labels;
+    this.rebuildPresetRows();
     this.applyPalette();
     this.reloadDiagnostics();
   }
@@ -222,14 +228,25 @@ struct Settings {
     return AppStore.gpsIntent() && this.place.source !== PlaceSource.GPS;
   }
 
-  /** 常用城市按 4 个一行切分的行号（最后一行不满 4 个也保留空位）。 */
-  private presetRowIndexes(): number[] {
-    const rows: number[] = [];
-    const count: number = Math.ceil(Place.PRESETS.length / 4);
-    for (let index: number = 0; index < count; index++) {
-      rows.push(index);
+  /** 实测每个 chip 的文字宽（px → vp），再贪心排成若干行。 */
+  private rebuildPresetRows(): void {
+    if (this.presetRowWidth <= 0 || this.presetLabels.length === 0) {
+      this.presetRows = [];
+      this.presetChipWidths = [];
+      return;
     }
-    return rows;
+    const utils: MeasureUtils = this.getUIContext().getMeasureUtils();
+    const widths: number[] = [];
+    for (const label of this.presetLabels) {
+      const measured: number = utils.measureTextSize({
+        textContent: label,
+        fontSize: '12fp'
+      }).width as number;
+      // 11vp 横向内边距：使「北京」chip ≈124px，与安卓 45.7dp 对齐。
+      widths.push(px2vp(measured) + 11);
+    }
+    this.presetChipWidths = widths;
+    this.presetRows = packRows(widths, this.presetRowWidth, 8);
   }
 
   private applyPlace(place: Place, leave: boolean = false): void {
@@ -531,43 +548,47 @@ struct Settings {
           // 常用城市：只是快捷定位入口，不按当前坐标高亮（当前坐标未必落在这些点上）
           Column() {
             this.sectionTitle('常用城市')
-            // 手工分行：每行固定 4 格，每格 layoutWeight(1)，等宽由结构保证。
-            ForEach(this.presetRowIndexes(), (row: number) => {
-              Row({ space: 8 }) {
-                ForEach([0, 1, 2, 3], (column: number) => {
-                  if (row * 4 + column < Place.PRESETS.length) {
+            // 内容宽 + 自动折行：chip 宽度按实测文字宽，行内左对齐。
+            Column({ space: 6 }) {
+              ForEach(this.presetRows, (row: number[]) => {
+                Row({ space: 8 }) {
+                  ForEach(row, (index: number) => {
                     Row() {
-                      Text(row * 4 + column < this.presetLabels.length
-                        ? this.presetLabels[row * 4 + column]
-                        : TimeFormat.coordinates(Place.PRESETS[row * 4 + column].latitude,
-                          Place.PRESETS[row * 4 + column].longitude))
+                      Text(index < this.presetLabels.length
+                        ? this.presetLabels[index]
+                        : TimeFormat.coordinates(Place.PRESETS[index].latitude,
+                          Place.PRESETS[index].longitude))
                         .fontSize(12)
                         .fontColor(this.palette.text)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .textAlign(TextAlign.Center)
                         .width('100%')
-                        .padding({ left: 4, right: 4 })
                     }
-                    .layoutWeight(1)
+                    .width(index < this.presetChipWidths.length ? this.presetChipWidths[index] : 80)
                     .height(32)
                     .justifyContent(FlexAlign.Center)
                     .backgroundColor(this.palette.chip)
-                    .borderRadius(14)
+                    .borderRadius(8)
+                    .border({ width: 1, color: this.palette.divider })
                     .onClick(() => {
-                      this.applyPlace(Place.PRESETS[row * 4 + column], true);
+                      this.applyPlace(Place.PRESETS[index], true);
                     })
-                  } else {
-                    // 空位也占 1/4，最后一行左对齐、右侧留空。
-                    Row()
-                      .layoutWeight(1)
-                      .height(32)
-                  }
-                }, (column: number) => `${row}-${column}`)
+                  }, (index: number) => `${index}`)
+                }
+                .width('100%')
+                .justifyContent(FlexAlign.Start)
+              }, (row: number[], rowIndex: number) => `${rowIndex}-${row.join('-')}`)
+            }
+            .width('100%')
+            .margin({ top: 8 })
+            .onAreaChange((oldValue: Area, newValue: Area) => {
+              const available: number = Number(newValue.width) - 32;
+              if (Math.abs(available - this.presetRowWidth) > 1) {
+                this.presetRowWidth = available;
+                this.rebuildPresetRows();
               }
-              .width('100%')
-              .margin({ top: 8 })
-            }, (row: number) => `${row}`)
+            })
           }
           .cardStyle()
     .backgroundColor(this.palette.card)
