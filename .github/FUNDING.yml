@@ -1,0 +1,4 @@
+# 赞助入口：GitHub 会在仓库页右上角显示 "Sponsor" 按钮。
+# 指向我们自己的赞助页（GitHub Pages，静态页，含微信收款码）。
+# GitHub Sponsors 需要 Stripe 账户，中国大陆个人无法收款，所以这里只用 custom。
+custom: ["https://hanfuqishe.github.io/truesolartime/sponsor.html"]
