@@ -1483,6 +1483,7 @@ expect(
     "active=\(probeState.active) step=\(probeState.zoomStep)"
 )
 
+var contractManual = BasemapState(mode: .manual, preferred: .osm, now: 0)
 var manualState = BasemapState(mode: .manual, preferred: .osm, now: 0)
 for index in 0..<6 {
     manualState.recordOSMTile(success: false, at: TimeInterval(index))
@@ -3095,6 +3096,27 @@ expect(
     Place.presets.first { $0.presetKey == "city.sansha" }?.standardOffsetSeconds == 480 * 60
         && Place.presets.first { $0.presetKey == "city.mohe" }?.standardOffsetSeconds == 480 * 60
         && Place.presets.first { $0.presetKey == "city.vladivostok" }?.standardOffsetSeconds == 600 * 60
+)
+// 底图契约（对照 Android「失败只作用于级别、源永不因失败改变」）：
+// iOS 的自动模式恒为 Apple 系统底图，OSM/高德只在手动选择时使用，且手动模式**不回退**。
+for i in 0..<6 { contractManual.recordOSMTile(success: false, at: Double(i + 1) * 10) }
+expect(
+    "手动模式（选 OSM）：连续 6 次失败也不换源（active 恒为 OSM、无回退标记）",
+    contractManual.active == .osm && !contractManual.didFallBackToAmap,
+    "active=\(contractManual.active) fellBack=\(contractManual.didFallBackToAmap)"
+)
+var autoState = BasemapState(mode: .auto, preferred: .osm, now: 0)
+autoState.markSystemBasemap(at: 1)
+expect(
+    "自动模式：走 Apple 系统底图后，OSM 的失败结果不会换源",
+    autoState.active == .apple && !autoState.didFallBackToAmap && autoState.isDegraded == false,
+    "active=\(autoState.active)"
+)
+expect(
+    "境外坐标在自动模式下一律解析成 Apple 系统底图（不经过 OSM/高德）",
+    MapStyle.auto.effective(countryCode: "au", latitude: -33.8688, longitude: 151.2093) == .apple
+        && MapStyle.auto.effective(countryCode: nil, latitude: 48.8566, longitude: 2.3522) == .apple
+        && MapStyle.auto.effective(countryCode: "cn", latitude: 31.2304, longitude: 121.4737) == .apple
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
