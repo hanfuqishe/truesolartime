@@ -96,8 +96,11 @@ object MapFallback {
                 probeAtMillis = null,
             )
         }
-        // 境外（首选 Esri / OSM 这些「外网源」）才有回退到高德这一说；境内本来就用高德。
-        val fellBack = preferred != MapStyle.AMAP_VECTOR && state.fellBack
+        // **境外永不回退到高德**：高德在境外只有 z3 全球图，换过去只会更糊。
+        // 外网源连不上时走「降级 zoom（同源）→ 底图不可用 → 5 分钟探测恢复」，
+        // 绝不切源。用户实测：放大后掉到高德，属于不可接受的降级方向。
+        // （`state.fellBack` 仍保留给诊断/统计，但不再影响实际底图。）
+        val fellBack = false
         return MapTilePlan(
             requested = style,
             preferred = preferred,
@@ -184,9 +187,10 @@ object MapFallback {
                 )
             }
         }
-        if (plan.effective != MapStyle.AMAP_VECTOR) {
-            next = next.recovered(nowMillis)
-        }
+        // 外网源（Esri / OSM）出一块瓦片**不再**清空整个降级链：
+        // 降级链记的是「哪些级别在这片区域没内容」，与「源是否可用」是两件事；
+        // 一出图就清会立刻弹回 z12、再空白、再降级 —— 真机上就是地图来回跳。
+        // 恢复仍由 [canRecoverChain] 的两道闸（安静 30s + 冷却 5min）控制。
         return next
     }
 
@@ -212,12 +216,10 @@ object MapFallback {
         if (state.isSettling(nowMillis)) return state
         // 刚程序化改过视口（切城市 / 降级）：那是我们主动取消了在飞的请求，失败不算。
         //
-        // **只对高德这一支生效**：降级链的自激循环发生在高德（改级别 → 取消 → 失败 → 再改级别），
-        // 需要这道闸；而外网源（Esri / OSM）的失败正是「网络不通」的证据，吞掉只会让回退变慢。
-        // （切源那一瞬间的旧请求由上面的 SWITCH_SETTLE_MILLIS 负责丢掉。）
-        if (state.isSettlingViewport(nowMillis) &&
-            plan(style, latitude, longitude, state).effective == MapStyle.AMAP_VECTOR
-        ) {
+        // **对所有源生效**：现在「失败」的唯一后果是让 [zoomPlan] 降级（不再换源），
+        // 而降级本身又会取消在飞请求 —— 一旦把取消当失败，就会「降级 → 取消 → 失败 → 再降级」
+        // 自激到最低级别。境外源以前不受这道闸保护，是因为那时失败只用于「整源回退」。
+        if (state.isSettlingViewport(nowMillis)) {
             return state
         }
         return registerFailure(style, latitude, longitude, zoom, state, nowMillis, blank = false)
@@ -248,7 +250,8 @@ object MapFallback {
     ): MapFallbackState {
         if (style != MapStyle.AUTO) return state
         // 境内（首选高德）不消费探测结果：本来就能 1 秒内出图，探测只会白等。
-        if (style.effective(latitude, longitude, state.countryCode) == MapStyle.AMAP_VECTOR) return state
+        val effective = style.effective(latitude, longitude, state.countryCode)
+        if (effective == MapStyle.AMAP_VECTOR) return state
         val choice = result.choice
         val base = state.copy(
             probeKey = cacheKey,
@@ -270,13 +273,14 @@ object MapFallback {
                 probeAtMillis = null,
             )
         }
-        // 高德：把选中级别之上的级别标成「没内容」，降级链一步落到选中的级别。
-        val seeded = base.unavailableZooms[MapStyle.AMAP_VECTOR].orEmpty() + BasemapProbe.zoomsAbove(choice)
+        // 探测结论是「高德」时：**仍然不换源**（境外高德只有 z3 全球图）。
+        // 只把「选中级别之上没内容」这件事种进**当前源**的降级链，
+        // 于是 zoomPlan 直接落到该级别，源保持 Esri/OSM。
+        val seeded = base.unavailableZooms[effective].orEmpty() + BasemapProbe.zoomsAbove(choice)
         return base.copy(
-            fellBack = true,
-            fallbackFailures = maxOf(base.fallbackFailures, 1),
+            fellBack = false,
             probeAtMillis = nowMillis + PROBE_INTERVAL_MILLIS,
-            unavailableZooms = base.unavailableZooms + (MapStyle.AMAP_VECTOR to seeded),
+            unavailableZooms = base.unavailableZooms + (effective to seeded),
             // **必须同时打上恢复冷却**：否则选中 z3 后第一块瓦片一出图，就会触发
             // 「最低级别出图 → 清掉降级记忆 → 弹回 z12」，接着又是空白→降级，
             // 用户看到的是地图 3→12→11→10→3 猛跳一下（真机实测就是这样）。
@@ -378,39 +382,31 @@ object MapFallback {
         blank: Boolean,
     ): MapFallbackState {
         val plan = plan(style, latitude, longitude, state)
-        // 高德这一支才做「降级」；外网源（Esri / OSM）失败是「连不上」，整源回退。
-        if (plan.effective == MapStyle.AMAP_VECTOR) {
-            val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
-            // 空白瓦片是**确定性**判据（有内容就是有内容，不会像网络失败那样抖），
-            // 所以整屏判空白时 1 次就够降一级；网络失败仍要连续 3 次才判「这级别没瓦片」。
-            val threshold = if (blank) 1 else FAILURE_THRESHOLD
-            var next = state.copy(
-                lastFailedZoom = zoom,
-                zoomFailures = streak,
-                lastFailedAtMillis = nowMillis,
-            )
-            if (streak >= threshold) {
-                next = next
-                    .markZoom(plan.effective, zoom, available = false)
-                    .copy(lastFailedZoom = null, zoomFailures = 0)
-                // 空白瓦片学来的「这级别没内容」要额外记一份：它不会被「最低级别出图」清掉。
-                if (blank) next = next.markBlankZoom(plan.effective, zoom)
-            }
-            return next
-        }
-        val failures = state.osmFailures + 1
-        if (failures < FAILURE_THRESHOLD) {
-            return state.copy(osmFailures = failures, lastFailedAtMillis = nowMillis)
-        }
-        return state.copy(
-            osmFailures = failures,
-            fellBack = true,
-            fallbackFailures = failures,
-            probeAtMillis = nowMillis + PROBE_INTERVAL_MILLIS,
-            lastFailedZoom = null,
-            zoomFailures = 0,
-            switchedAtMillis = nowMillis,
+        // **源永不因失败而改变**（境内境外都一样）：失败只作用于「级别」——
+        // 标记该级别没瓦片，交给 [zoomPlan] 逐级下降，降到最低级别也没有就显示「底图不可用」，
+        // 之后由探测/冷却恢复。
+        //
+        // 为什么不再「整源回退」：
+        // * 境外回退目标是高德，而高德在境外只有 z3 全球图 —— 比空白更糊，用户实测不接受；
+        // * 回退会把「放大后这片没细节」误判成「整个源挂了」，而前者是必然出现的情况。
+        //
+        // 阈值：空白瓦片是**确定性**判据（有内容就是有内容，不会抖），1 次就够降一级；
+        // 网络失败仍要连续 [FAILURE_THRESHOLD] 次才判「这级别没瓦片」。
+        val streak = if (state.lastFailedZoom == zoom) state.zoomFailures + 1 else 1
+        val threshold = if (blank) 1 else FAILURE_THRESHOLD
+        var next = state.copy(
+            lastFailedZoom = zoom,
+            zoomFailures = streak,
+            lastFailedAtMillis = nowMillis,
         )
+        if (streak >= threshold) {
+            next = next
+                .markZoom(plan.effective, zoom, available = false)
+                .copy(lastFailedZoom = null, zoomFailures = 0)
+            // 空白瓦片学来的「这级别没内容」要额外记一份：它不会被「最低级别出图」清掉。
+            if (blank) next = next.markBlankZoom(plan.effective, zoom)
+        }
+        return next
     }
 
     /** 设置渐进升级「当前正在用的源 + 级别」（null = 交回 plan / zoomPlan）。纯函数。 */
@@ -880,7 +876,8 @@ internal object MapFallbackDiagnostics {
     private fun sourceLine(plan: MapTilePlan): String = when {
         // 手动选择：说清楚「不回退」，免得看日志的人以为兜底没生效。
         plan.requested != MapStyle.AUTO -> "${styleName(plan.effective)}（手动选择，不回退）"
-        plan.fellBack -> "高德（外网源失败 ${plan.fallbackFailures} 次后回退）"
+        // 回退到高德已经取消（境外高德只有 z3，只会更糊）；fellBack 只作历史状态保留。
+        plan.fellBack -> "${styleName(plan.effective)}（旧状态残留，已不再换源）"
         else -> "${styleName(plan.effective)}（自动：${if (plan.effective == MapStyle.AMAP_VECTOR) "境内" else "境外"}）"
     }
 

@@ -124,25 +124,28 @@ class MapFallbackTest {
     // ------------------------------------------------------------ 回退与记忆
 
     @Test
-    fun osmFailsThreeTimesThenFallsBackToAmapFromTheFourthOnwards() {
+    fun overseasFailuresDegradeTheZoomButNeverSwitchSource() {
+        // **新契约**：境外失败不再「整源回退到高德」——那会让地图更糊（高德境外只有 z3）。
+        // 失败只让 zoomPlan 逐级下降，源始终是 ESRI。
         val tracker = newTracker()
-        // 前两次失败还在试 OSM
         tracker.failTiles(threshold - 1)
-        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
-        assertFalse(tracker.planAt(MapStyle.AUTO, paris).fellBack)
+        val beforeThreshold = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.ESRI, beforeThreshold.effective)
+        assertFalse(beforeThreshold.fellBack)
 
-        // 第 3 次失败：达到阈值 → 回退
+        // 第 3 次失败：达到阈值 → 判 z12 没瓦片 → 降一级，**源不变**
         tracker.failTiles(1)
-        val fallenBack = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.AMAP_VECTOR, fallenBack.effective)
-        assertTrue(fallenBack.fellBack)
-        assertEquals(threshold, fallenBack.fallbackFailures)
-        assertEquals("底图 © 高德地图", fallenBack.effective.attribution)
+        val afterThreshold = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.ESRI, afterThreshold.effective)
+        assertFalse(afterThreshold.fellBack)
+        assertEquals("底图 © Esri, HERE, Garmin, © OpenStreetMap contributors", afterThreshold.effective.attribution)
+        assertEquals(11, tracker.zoomPlan(afterThreshold, 12).zoom)
 
-        // 第 4 次及以后：直接用高德，不再先让每张 OSM 瓦片失败一遍
-        tracker.failTiles(4)
-        assertEquals(MapStyle.AMAP_VECTOR, tracker.planAt(MapStyle.AUTO, paris).effective)
-        assertEquals(threshold, tracker.planAt(MapStyle.AUTO, paris).fallbackFailures)
+        // 继续失败：只沿降级链往下走，永远不回高德
+        tracker.failTiles(6)
+        val later = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.ESRI, later.effective)
+        assertFalse(later.fellBack)
     }
 
     @Test
@@ -162,17 +165,18 @@ class MapFallbackTest {
     @Test
     fun failuresRightAfterTheSwitchAreIgnored() {
         val tracker = newTracker()
-        tracker.failTiles(threshold) // 第 3 次触发回退，switchedAt = now
+        val plan = tracker.planAt(MapStyle.AUTO, paris)
+        tracker.failTiles(threshold) // 3 连失败 → 判 z12 没瓦片（源仍是 ESRI）
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
 
-        // 切换瞬间还在飞的旧 OSM 请求紧接着失败：不能算成「高德这一级没瓦片」
-        repeat(threshold + 2) { tracker.onTileFailed(MapStyle.AUTO, paris.first, paris.second, 12) }
+        // 换到 z11 后，连续失败要**重新数**：z12 的旧计数不能顺延到 z11
+        tracker.failTiles(threshold - 1, zoom = 11)
+        assertEquals(2, tracker.snapshot().zoomFailures)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
 
-        assertTrue(tracker.snapshot().fellBack)
-        assertEquals(12, tracker.zoomPlan(tracker.planAt(MapStyle.AUTO, paris), 12).zoom)
-
-        // 窗口过去后，真没瓦片仍然能被诊断出来
-        tracker.failTiles(threshold, zoom = 12)
-        assertEquals(11, tracker.zoomPlan(tracker.planAt(MapStyle.AUTO, paris), 12).zoom)
+        // 再失败 1 次才够阈值 → 判 z11 没瓦片 → 降到 z10
+        tracker.failTiles(1, zoom = 11)
+        assertEquals(10, tracker.zoomPlan(plan, 12).zoom)
     }
 
     // ------------------------------------------------------------ 5 分钟探测 / 网络恢复
@@ -183,23 +187,16 @@ class MapFallbackTest {
         val tracker = newTracker(probe = { reachable })
         tracker.failTiles(threshold)
 
-        val fallenBack = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.AMAP_VECTOR, fallenBack.effective)
-        assertEquals(now + MapFallback.PROBE_INTERVAL_MILLIS, fallenBack.probeAtMillis ?: -1L)
+        // 失败后源不变（仍是 ESRI），只是降到 z11
+        val degraded = tracker.planAt(MapStyle.AUTO, paris)
+        assertEquals(MapStyle.ESRI, degraded.effective)
+        assertFalse(degraded.fellBack)
 
-        // 冷却没到：不探测
-        now += MapFallback.PROBE_INTERVAL_MILLIS - 1
-        assertFalse(tracker.probeIfDue())
-
-        // 冷却到点 + 网络恢复：探测成功 → 切回 OSM、失败计数清零
-        now += 1
+        // 网络恢复后：安静够久 + 冷却到期，最低级别出图即把降级链收回默认级别
         reachable = true
-        assertTrue(tracker.probeIfDue())
-        val restored = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.ESRI, restored.effective)
-        assertFalse(restored.fellBack)
-        assertEquals(0, tracker.snapshot().osmFailures)
-        assertNull(tracker.snapshot().probeAtMillis)
+        now += MapFallback.RECOVERY_QUIET_MILLIS + MapFallback.RECOVERY_COOLDOWN_MILLIS
+        tracker.loadTiles(zoom = MapFallback.MIN_ZOOM)
+        assertEquals(12, tracker.zoomPlan(degraded, 12).zoom)
     }
 
     @Test
@@ -207,14 +204,10 @@ class MapFallbackTest {
         val tracker = newTracker(probe = { false })
         tracker.failTiles(threshold)
 
-        now += MapFallback.PROBE_INTERVAL_MILLIS
-        assertTrue(tracker.probeIfDue())
-        assertEquals(MapStyle.AMAP_VECTOR, tracker.planAt(MapStyle.AUTO, paris).effective)
-        val state = tracker.snapshot()
-        assertTrue(state.fellBack)
-        assertEquals(now + MapFallback.PROBE_INTERVAL_MILLIS, state.probeAtMillis ?: -1L)
-        // 冷却刚推后，立刻再问也不会重复发请求
-        assertFalse(tracker.probeIfDue())
+        // 新契约：失败不再触发「换源 + 探测回退」。源始终是 ESRI，只沿降级链下降，
+        // 恢复由「最低级别出图 + 安静/冷却」负责，不靠探测切源。
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
+        assertFalse(tracker.snapshot().fellBack)
     }
 
     @Test
@@ -312,13 +305,16 @@ class MapFallbackTest {
     fun switchingToAutoAndChoosingAnotherCityResetsTheMemory() {
         val tracker = newTracker()
         tracker.failTiles(threshold)
-        assertTrue(tracker.planAt(MapStyle.AUTO, paris).fellBack)
+        assertFalse(tracker.planAt(MapStyle.AUTO, paris).fellBack)
+        assertEquals(11, tracker.zoomPlan(tracker.planAt(MapStyle.AUTO, paris), 12).zoom)
 
-        // MainViewModel 在「切到自动」或「用户重新选地点」时调 reset()
+        // MainViewModel 在「切到自动」或「用户重新选择地点」时调 reset()
+        // —— 必须把「哪一级没瓦片」的记忆一起清掉，否则新城市会继承旧城市的降级
         tracker.reset()
         val plan = tracker.planAt(MapStyle.AUTO, paris)
         assertEquals(MapStyle.ESRI, plan.effective)
         assertFalse(plan.fellBack)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
         assertEquals(0, tracker.snapshot().osmFailures)
 
         // 换回境内城市：本来就是高德，且不带任何回退标记
@@ -332,23 +328,26 @@ class MapFallbackTest {
     @Test
     fun missingZoomDegradesStepByStepToALowerLevelWithTiles() {
         val tracker = newTracker()
-        tracker.failTiles(threshold) // OSM 失败 → 回退到高德
+        tracker.failTiles(threshold) // 第一次 3 连失败：判 z12 没瓦片
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertTrue(plan.fellBack)
+        assertEquals(MapStyle.ESRI, plan.effective)
+        assertFalse(plan.fellBack)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom) // 已经降到 z11
 
-        // 高德 z12 也没瓦片 → 降 1 级
-        tracker.failTiles(threshold, zoom = 12)
-        val at11 = tracker.zoomPlan(plan, 12)
-        assertEquals(11, at11.zoom)
-        assertTrue(at11.degraded)
-        assertFalse(at11.unavailable)
-
-        // z11 也没有 → 再降 1 级（最多降 2 级，所以止步 z10）
+        // z11 也没瓦片 → 再降 1 级
         tracker.failTiles(threshold, zoom = 11)
         val at10 = tracker.zoomPlan(plan, 12)
         assertEquals(10, at10.zoom)
         assertTrue(at10.degraded)
         assertFalse(at10.unavailable)
+
+        // z10 也没有 → 继续往下降到最低级别（源头仍是 ESRI）
+        tracker.failTiles(threshold, zoom = 10)
+        val floor = tracker.zoomPlan(plan, 12)
+        assertEquals(MapFallback.MIN_ZOOM, floor.zoom)
+        assertTrue(floor.degraded)
+        assertFalse(floor.unavailable)
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
     }
 
     @Test
@@ -425,35 +424,50 @@ class MapFallbackTest {
     @Test
     fun failuresRightAfterAProgrammaticViewportChangeAreIgnored() {
         val tracker = newTracker()
-        tracker.failTiles(threshold)
-        val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertTrue(plan.fellBack)
+        val plan = tracker.planAt(MapStyle.AUTO, paris) // 失败前
+        // 新契约：失败只降级、**永不换源**，所以这里不再出现「回退」标记
+        assertFalse(plan.fellBack)
+        assertEquals(MapStyle.ESRI, plan.effective)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
 
-        // 刚程序化改过视口：这一批「失败」是被取消的旧请求，不能算
+        tracker.failTiles(threshold) // 3 连失败 → 判 z12 没瓦片
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
+
+        // 刚程序化改过视口：这一批「失败」是被取消的旧请求，不能算（否则自激降级）
         tracker.onZoomApplied(12)
         repeat(threshold * 3) {
             now += 10L
-            tracker.onTileFailed(MapStyle.AUTO, paris.first, paris.second, 12)
+            tracker.onTileFailed(MapStyle.AUTO, paris.first, paris.second, 11)
         }
         assertEquals(0, tracker.snapshot().zoomFailures)
-        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
-        assertFalse(tracker.snapshot().zoomUnavailable(MapStyle.AMAP_VECTOR, 12))
-
-        // 窗口过去后，真没网仍然能被诊断出来
-        now += MapFallback.VIEWPORT_SETTLE_MILLIS
-        tracker.failTiles(threshold, zoom = 12)
         assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
+        assertFalse(tracker.snapshot().zoomUnavailable(MapStyle.ESRI, 11))
+
+        // 窗口过去后，真没网仍然能被诊断出来（只降级，不换源）
+        now += MapFallback.VIEWPORT_SETTLE_MILLIS
+        tracker.failTiles(threshold, zoom = 11)
+        assertEquals(10, tracker.zoomPlan(plan, 12).zoom)
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
     }
 
     /** 视口残响只该保护高德：OSM 的失败是「网络不通」的证据，不能被它吞掉（否则回退会变慢）。 */
     @Test
-    fun viewportSettleDoesNotSwallowOsmFailures() {
+    fun viewportSettleSwallowsCancelFailuresForEverySource() {
+        // 程序化改视口会取消在飞请求，osmdroid 把「取消」也报成失败。
+        // 现在境外源同样靠「降级」应对失败，而降级又会改视口 —— 若不吞掉这些取消，
+        // 就会「降级 → 取消 → 失败 → 再降级」自激到最低级别，所以这道闸必须对所有源生效。
         val tracker = newTracker()
-        tracker.onZoomApplied(12) // 刚切完城市，视口残响窗口开着
-        tracker.failTiles(threshold) // OSM 连不上
+        tracker.onZoomApplied(12)
+        repeat(threshold * 2) { tracker.onTileFailed(MapStyle.AUTO, paris.first, paris.second, 12) }
+        assertEquals(0, tracker.snapshot().zoomFailures)
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertTrue("OSM 失败必须照常累计并回退", plan.fellBack)
-        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+        assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
+        assertEquals(MapStyle.ESRI, plan.effective)
+
+        // 窗口过后，真实失败照常生效（同源降级）
+        now += MapFallback.VIEWPORT_SETTLE_MILLIS
+        tracker.failTiles(threshold, zoom = 12)
+        assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
     }
 
     // ------------------------------------------------------------ 空白瓦片：一次即降级
@@ -462,13 +476,14 @@ class MapFallbackTest {
     fun aSingleBlankViewportDegradesOneLevel() {
         // 空白是确定性判据（有内容就是有内容），不像网络失败会抖 → 一次就降一级。
         val tracker = newTracker()
-        tracker.failTiles(threshold) // 先回退到高德
         val plan = tracker.planAt(MapStyle.AUTO, paris)
         assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
 
         tracker.blankTiles(1, zoom = 12)
         assertEquals(11, tracker.zoomPlan(plan, 12).zoom)
         assertEquals(1, tracker.snapshot().blankTileCount)
+        // 空白只降级，不换源
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
     }
 
     // ------------------------------------------------------------ 首屏并行探测：直接定源与级别
@@ -517,8 +532,10 @@ class MapFallbackTest {
             ),
         )
         plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
-        assertTrue(plan.fellBack)
+        // 新契约：探测到「高德有内容」也**不换源**（高德境外只有 z3），
+        // 只把「z10 之上没内容」种进当前源的降级链 → 落到 z10，源仍是 ESRI
+        assertEquals(MapStyle.ESRI, plan.effective)
+        assertFalse(plan.fellBack)
         assertEquals(10, tracker.zoomPlan(plan, 12).zoom)
         assertTrue(tracker.snapshot().probeSummary?.contains("z10 有内容") == true)
 
@@ -613,34 +630,29 @@ class MapFallbackTest {
         )
         assertEquals(base, noisy)
 
-        // 回退（换成高德）→ 必须变
-        val fallenBackState = MapFallbackState(fellBack = true, fallbackFailures = MapFallback.FAILURE_THRESHOLD)
-        val fallenBack = MapUiState.of(MapStyle.AUTO, paris.first, paris.second, fallenBackState)
-        assertNotEquals(base, fallenBack)
-        assertEquals(MapStyle.AMAP_VECTOR, fallenBack.source)
-        assertTrue(fallenBack.fellBack)
+        // 旧字段 fellBack 不再影响底图：即使被置上，UI 状态也不该变（否则每块瓦片都会重组）
+        val legacyFellBack = MapFallbackState(fellBack = true, fallbackFailures = MapFallback.FAILURE_THRESHOLD)
+        assertEquals(base, MapUiState.of(MapStyle.AUTO, paris.first, paris.second, legacyFellBack))
 
-        // 降级（z12 判没瓦片）→ 必须变
+        // 降级（z12 判没瓦片；**源仍是 ESRI**）→ 必须变
         val degraded = MapUiState.of(
             MapStyle.AUTO,
             paris.first,
             paris.second,
-            MapFallbackState(fellBack = true, fallbackFailures = 1, unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12))),
+            MapFallbackState(unavailableZooms = mapOf(MapStyle.ESRI to setOf(12))),
         )
-        assertNotEquals(fallenBack, degraded)
+        assertNotEquals(base, degraded)
+        assertEquals(MapStyle.ESRI, degraded.source)
         assertEquals(11, degraded.zoom)
         assertTrue(degraded.degraded)
+        assertFalse(degraded.fellBack)
 
         // 连 z3 也没瓦片 → 「底图不可用」必须变
         val offline = MapUiState.of(
             MapStyle.AUTO,
             paris.first,
             paris.second,
-            MapFallbackState(
-                fellBack = true,
-                fallbackFailures = 1,
-                unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12, 11, 10, MapFallback.MIN_ZOOM)),
-            ),
+            MapFallbackState(unavailableZooms = mapOf(MapStyle.ESRI to setOf(12, 11, 10, MapFallback.MIN_ZOOM))),
         )
         assertNotEquals(degraded, offline)
         assertTrue(offline.unavailable)
@@ -674,13 +686,14 @@ class MapFallbackTest {
     @Test
     fun zoomPlanResolvesAgainstInjectedTileAvailability() {
         // 「哪些级别有瓦片」是注入进纯函数的：这里直接给状态塞一份不可用级别表
-        val fallenBack = MapFallbackState(fellBack = true, fallbackFailures = threshold)
-        val plan = MapFallback.plan(MapStyle.AUTO, paris.first, paris.second, fallenBack)
-        assertEquals(MapStyle.AMAP_VECTOR, plan.effective)
+        val base = MapFallbackState()
+        val plan = MapFallback.plan(MapStyle.AUTO, paris.first, paris.second, base)
+        // 境外首选 ESRI，且**不因任何失败换源**
+        assertEquals(MapStyle.ESRI, plan.effective)
 
         // z12、z11 没瓦片 → 降 2 级到 z10
-        val noHighZooms = fallenBack.copy(
-            unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12, 11)),
+        val noHighZooms = base.copy(
+            unavailableZooms = mapOf(MapStyle.ESRI to setOf(12, 11)),
         )
         val degraded = MapFallback.zoomPlan(plan, 12, noHighZooms)
         assertEquals(10, degraded.zoom)
@@ -688,8 +701,8 @@ class MapFallbackTest {
         assertFalse(degraded.unavailable)
 
         // 连最低级别都没有瓦片 → 「底图不可用」
-        val nothing = fallenBack.copy(
-            unavailableZooms = mapOf(MapStyle.AMAP_VECTOR to setOf(12, 11, 10, MapFallback.MIN_ZOOM)),
+        val nothing = base.copy(
+            unavailableZooms = mapOf(MapStyle.ESRI to setOf(12, 11, 10, MapFallback.MIN_ZOOM)),
         )
         val offline = MapFallback.zoomPlan(plan, 12, nothing)
         assertEquals(MapFallback.MIN_ZOOM, offline.zoom)
@@ -701,22 +714,22 @@ class MapFallbackTest {
     @Test
     fun blankAmapTilesDegradeExactlyLikeRealFailures() {
         val tracker = newTracker()
-        tracker.failTiles(threshold) // OSM 失败 → 回退高德
         val plan = tracker.planAt(MapStyle.AUTO, paris)
-        assertTrue(plan.fellBack)
         assertEquals(12, tracker.zoomPlan(plan, 12).zoom)
 
-        // 高德 z12 连来三块空白：与三次真实失败一样，判「这一级没瓦片」→ 降到 z11
-        tracker.blankTiles(threshold)
+        // 境外 Esri 在 z12 来一块空白：空白是**确定性**判据，1 次就判「这一级没内容」→ 降到 z11，
+        // 而且**不换源**（这是与旧契约最大的区别：空白不再被当成「整个源连不上」）
+        tracker.blankTiles(1)
         val degraded = tracker.zoomPlan(plan, 12)
         assertEquals(11, degraded.zoom)
         assertTrue(degraded.degraded)
         assertFalse(degraded.unavailable)
+        assertEquals(MapStyle.ESRI, tracker.planAt(MapStyle.AUTO, paris).effective)
 
         // 同一个失败路径也用掉了「同一级别连续失败」计数：够阈值就清零重新数
         assertEquals(0, tracker.snapshot().zoomFailures)
         // 另记一份诊断计数：触发几次、最近一次的级别与颜色种类
-        assertEquals(threshold, tracker.snapshot().blankTileCount)
+        assertEquals(1, tracker.snapshot().blankTileCount)
         assertEquals(12, tracker.snapshot().lastBlankZoom)
         assertEquals(3, tracker.snapshot().lastBlankColorKinds)
     }
@@ -821,13 +834,14 @@ class MapFallbackTest {
         val zoom = tracker.zoomPlan(plan, 12)
         val lines = MapFallbackDiagnostics.lines(plan, zoom, tracker.snapshot(), now)
 
-        assertEquals("地图底图 = 高德（外网源失败 3 次后回退）", lines.first())
+        // 外网源失败不再导致换源：诊断应显示仍是 ESRI（境外），并把失败次数如实列出
+        assertEquals("地图底图 = ESRI（自动：境外）", lines.first())
         assertTrue(lines.contains("地图底图样式 = 自动"))
         assertTrue(lines.contains("首选底图 = ESRI"))
-        assertTrue(lines.contains("地图缩放 = 12"))
+        // 3 次失败 → 判 z12 没瓦片 → 降到 z11（诊断要能看出「降过级」）
+        assertTrue(lines.contains("地图缩放 = 11（已降级：请求 12）"))
         assertTrue(lines.contains("瓦片状态 = 正常"))
-        assertTrue(lines.contains("OSM 失败次数 = 3"))
-        assertTrue(lines.any { it.startsWith("下次探测 OSM = ") && it.endsWith("约 5 分钟后）") })
+        assertTrue(lines.any { it.startsWith("下次探测 OSM = ") })
     }
 
     @Test
