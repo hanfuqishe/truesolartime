@@ -86,8 +86,9 @@ object ZoneTable {
         }
         "mx" -> if (longitude < -105) -420 else -360
         "br" -> when {
-            longitude < -60 -> -300
-            longitude < -45 -> -240
+            // 真实分区：Acre −5 / Manaus·Cuiabá −4 / Brasília·São Paulo −3。
+            longitude < -63 -> -300
+            longitude < -49 -> -240
             else -> -180
         }
         "ru" -> when {

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.realsuntime.solartime.R
+import com.realsuntime.solartime.data.CityRegion
 import com.realsuntime.solartime.data.Place
 import com.realsuntime.solartime.data.ThemeMode
 import com.realsuntime.solartime.data.WeatherRepository
@@ -243,48 +244,71 @@ fun SettingsSheet(
             val chipStyle = MaterialTheme.typography.labelMedium.copy(fontSize = PresetGrid.TEXT_SIZE_SP.sp)
             val textMeasurer = rememberTextMeasurer()
             val density = LocalDensity.current
-            val chipWidthsDp = Place.PRESETS.map { preset ->
+            fun measuredWidthDp(preset: Place): Float {
                 val measured = textMeasurer.measure(
                     text = TimeText.placeLabel(context, preset),
                     style = chipStyle,
                     maxLines = 1,
                     softWrap = false,
                 ).size.width
-                with(density) { measured.toDp().value } + 2f * PresetGrid.CHIP_PADDING_DP
+                return with(density) { measured.toDp().value } + 2f * PresetGrid.CHIP_PADDING_DP
             }
-            val rows = PresetGrid.packRows(chipWidthsDp, contentWidthDp, PresetGrid.GAP_DP)
-            Column(verticalArrangement = Arrangement.spacedBy(PresetGrid.ROW_GAP_DP.dp)) {
-                rows.forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(PresetGrid.GAP_DP.dp)) {
-                        row.forEach { index ->
-                            val preset = Place.PRESETS[index]
-                            val widthDp = chipWidthsDp[index].coerceAtMost(contentWidthDp)
-                            Surface(
-                                onClick = {
-                                    onSelectPreset(preset)
-                                    onDismiss()
+            // 按大洲分组：组标题 + 组内流式 chips（内容宽 + 两端对齐）。
+            Column {
+                CityRegion.entries.forEachIndexed { groupIndex, region ->
+                    val cities = Place.PRESETS.filter { it.region == region }
+                    if (cities.isEmpty()) return@forEachIndexed
+                    if (groupIndex > 0) Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = stringResource(regionTitleRes(region)),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val widths = cities.map { measuredWidthDp(it) }
+                    val rows = PresetGrid.packRows(widths, contentWidthDp, PresetGrid.GAP_DP)
+                    Column(verticalArrangement = Arrangement.spacedBy(PresetGrid.ROW_GAP_DP.dp)) {
+                        rows.forEachIndexed { rowIndex, row ->
+                            val spacedToEdges = rowIndex != rows.lastIndex && row.size > 1
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (spacedToEdges) {
+                                    Arrangement.SpaceBetween
+                                } else {
+                                    Arrangement.spacedBy(PresetGrid.GAP_DP.dp)
                                 },
-                                modifier = Modifier
-                                    .width(widthDp.dp)
-                                    .height(PresetGrid.CHIP_HEIGHT_DP.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = PresetGrid.CHIP_PADDING_DP.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = TimeText.placeLabel(context, preset),
-                                        style = chipStyle,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                    )
+                                row.forEach { index ->
+                                    val preset = cities[index]
+                                    val widthDp = widths[index].coerceAtMost(contentWidthDp)
+                                    Surface(
+                                        onClick = {
+                                            onSelectPreset(preset)
+                                            onDismiss()
+                                        },
+                                        modifier = Modifier
+                                            .width(widthDp.dp)
+                                            .height(PresetGrid.CHIP_HEIGHT_DP.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = PresetGrid.CHIP_PADDING_DP.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = TimeText.placeLabel(context, preset),
+                                                style = chipStyle,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -510,6 +534,16 @@ fun SettingsSheet(
 }
 
 /** 主题选项的本地化名称：自动 / 亮色 / 暗色。 */
+/** 大洲分组标题的资源 id。 */
+private fun regionTitleRes(region: CityRegion): Int = when (region) {
+    CityRegion.ASIA -> R.string.region_asia
+    CityRegion.EUROPE -> R.string.region_europe
+    CityRegion.AFRICA -> R.string.region_africa
+    CityRegion.NORTH_AMERICA -> R.string.region_north_america
+    CityRegion.SOUTH_AMERICA -> R.string.region_south_america
+    CityRegion.OCEANIA -> R.string.region_oceania
+    CityRegion.ANTARCTICA -> R.string.region_antarctica
+}
 private fun themeLabel(context: Context, mode: ThemeMode): String = context.getString(
     when (mode) {
         ThemeMode.AUTO -> R.string.theme_auto
