@@ -841,7 +841,7 @@ for (const item of equationCases) {
 // ---- 观测点 ----
 {
   check('default place is Beijing', Place.DEFAULT.labelKey === 'city_beijing' && Place.DEFAULT.latitude === 39.9042);
-  equal('fifty three presets', 53, Place.PRESETS.length);
+  equal('fifty five presets', 55, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
 
@@ -866,7 +866,7 @@ for (const item of equationCases) {
   // 47 个城市按大洲分组：20/8/5/6/4/3/1，顺序与 Android 一致。
   const regionOrder: PlaceRegion[] = [PlaceRegion.ASIA, PlaceRegion.EUROPE, PlaceRegion.AFRICA,
     PlaceRegion.NORTH_AMERICA, PlaceRegion.SOUTH_AMERICA, PlaceRegion.OCEANIA, PlaceRegion.ANTARCTICA];
-  const regionCounts: number[] = [26, 8, 5, 6, 4, 3, 1];
+  const regionCounts: number[] = [28, 8, 5, 6, 4, 3, 1];
   let regionSequenceOk: boolean = true;
   let cursor: number = 0;
   for (let r: number = 0; r < regionOrder.length; r++) {
@@ -877,7 +877,7 @@ for (const item of equationCases) {
       cursor++;
     }
   }
-  check('presets are grouped by continent in order', regionSequenceOk && cursor === 53);
+  check('presets are grouped by continent in order', regionSequenceOk && cursor === 55);
   for (let r: number = 0; r < regionOrder.length; r++) {
     let count: number = 0;
     for (const preset of Place.PRESETS) {
@@ -911,6 +911,16 @@ for (const item of equationCases) {
   equal('diaoyu longitude', 123.4776, diaoyu.longitude);
   equal('diaoyu offset is +480', 480,
     ZoneTable.offsetSeconds(diaoyu.countryCode, diaoyu.longitude, 0) / 60);
+  const taipei: Place = at(25.0330, 121.5654);
+  equal('taipei offset is +480', 480,
+    ZoneTable.offsetSeconds(taipei.countryCode, taipei.longitude, 0) / 60);
+  equal('taipei uses amap in auto mode', MapStyle.AMAP_VECTOR,
+    MapFallback.preferredStyle(MapStyle.AUTO, taipei.latitude, taipei.longitude, taipei.countryCode));
+  const kaohsiung: Place = at(22.6273, 120.3014);
+  equal('kaohsiung offset is +480', 480,
+    ZoneTable.offsetSeconds(kaohsiung.countryCode, kaohsiung.longitude, 0) / 60);
+  equal('kaohsiung uses amap in auto mode', MapStyle.AMAP_VECTOR,
+    MapFallback.preferredStyle(MapStyle.AUTO, kaohsiung.latitude, kaohsiung.longitude, kaohsiung.countryCode));
   equal('kashgar longitude correction is -176 min', -176.04,
     Math.round((75.9898 - 120) * 4 * 100) / 100);
   equal('seoul offset is +540', 540,
@@ -2437,7 +2447,7 @@ for (const item of equationCases) {
 
 // ---- 常用城市补到 24 个：开罗 / 里约热内卢 ----
 {
-  equal('preset count is 53', 53, Place.PRESETS.length);
+  equal('preset count is 55', 55, Place.PRESETS.length);
   const cairo: Place = Place.PRESETS.find((preset: Place): boolean =>
     preset.countryCode === 'eg' && Math.abs(preset.latitude - 30.0444) < 1e-9) ?? Place.DEFAULT;
   const rio: Place = Place.PRESETS.find((preset: Place): boolean =>

@@ -64,6 +64,8 @@ export class Place {
     new Place(39.4704, 75.9898, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
     new Place(29.6520, 91.1721, PlaceSource.MANUAL, '', 'city_lhasa', 'cn', PlaceRegion.ASIA),
     new Place(22.3193, 114.1694, PlaceSource.MANUAL, '', 'city_hongkong', 'hk', PlaceRegion.ASIA),
+    new Place(25.0330, 121.5654, PlaceSource.MANUAL, '', '', 'tw', PlaceRegion.ASIA),
+    new Place(22.6273, 120.3014, PlaceSource.MANUAL, '', '', 'tw', PlaceRegion.ASIA),
     new Place(16.8343, 112.3388, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
     new Place(25.7459, 123.4776, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
     new Place(35.6762, 139.6503, PlaceSource.MANUAL, '', '', 'jp', PlaceRegion.ASIA),

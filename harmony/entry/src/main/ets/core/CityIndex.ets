@@ -294,6 +294,8 @@ const RAW: string = `
 万象|17.9757|102.6331|Vientiane
 漠河|52.9721|122.5388|Mohe
 抚远|48.3669|134.2895|Fuyuan
+台北|25.0330|121.5654|Taipei
+高雄|22.6273|120.3014|Kaohsiung
 喀什|39.4704|75.9898|Kashgar
 三沙|16.8343|112.3388|Sansha
 钓鱼岛|25.7459|123.4776|Diaoyu Islands
@@ -429,6 +431,9 @@ export class CityIndex {
     }
     if (nameZh === '钓鱼岛') {
       return '釣魚島';
+    }
+    if (nameZh === '台北') {
+      return '臺北';
     }
     return nameZh;
   }
