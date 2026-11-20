@@ -1,5 +1,6 @@
 package com.realsuntime.solartime.widget
 
+import com.realsuntime.solartime.ui.theme.SunColors
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -66,12 +67,19 @@ object WidgetAxis {
         dotXCompensation: Float = 1f,
     ): Bitmap? {
         if (widthPx <= 0 || heightPx <= 0) return null
-        val dotCore = dotColor
+        // 圆点参数**直接复用首页大卡片那一组常量**（SunColors.SOFT_DOT_*）：
+        // 半径 5.5dp、中停 0.5 处 alpha 0.45、边缘全透明。
+        // 之前桌面卡片走的是「高度 × 0.44 + 中停保持不透明」，于是同样的位置画出来
+        // 是一枚实心白圆盘 —— 比首页重得多。两边必须一模一样，用户一眼就能看出差别。
+        val dotAlpha: Int = (SunColors.SOFT_DOT_CENTER_ALPHA.coerceIn(0f, 1f) * 255).toInt()
+        val dotMidAlpha: Int = (SunColors.SOFT_DOT_MID_ALPHA.coerceIn(0f, 1f) * 255).toInt()
+        val dotCore = withAlpha(dotColor, dotAlpha)
+        val dotMid = withAlpha(dotColor, dotMidAlpha)
         val dotEdge = dotColor and 0x00FFFFFF
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val centerY = heightPx / 2f
-        val dotRadius = heightPx * 0.44f
+        val dotRadius = dp(context, SunColors.SOFT_DOT_RADIUS_DP)
         // 轴线（和色带）**铺满整条位图**：位图贴在内容列里，左右边缘就是上下文字的外沿，
         // 两端要跟日期行／经纬度对齐。所以这里不做内缩 —— 代价是 0:00 与 24:00 附近那个
         // 圆点会被位图边缘裁掉一半，这与 App 首页的时间轴（圆点中心夹到 0..width）表现一致。
@@ -105,8 +113,8 @@ object WidgetAxis {
                 0f,
                 0f,
                 dotRadius,
-                intArrayOf(dotCore, dotCore, dotEdge),
-                floatArrayOf(0f, 0.45f, 1f),
+                intArrayOf(dotCore, dotMid, dotEdge),
+                SunColors.softDotStopPositions().toFloatArray(),
                 Shader.TileMode.CLAMP,
             )
             shader.setLocalMatrix(
@@ -122,6 +130,10 @@ object WidgetAxis {
         }
         return bitmap
     }
+
+    /** 把颜色换成指定 alpha（0..255），保留 RGB。 */
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
 
     private fun dp(context: Context, value: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, context.resources.displayMetrics)
