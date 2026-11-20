@@ -19,7 +19,7 @@
 | 定位权限说明 | 三语在 `InfoPlist.strings` 的 `NSLocationWhenInUseUsageDescription` | 同上 |
 
 其他固定项：类别 **Utilities**、版权 **© 2026 NowSolar**、
-`ITSAppUsesNonExemptEncryption = NO`（只用系统 HTTPS）、支持网址与隐私政策 URL 见文末 TODO。
+`ITSAppUsesNonExemptEncryption = NO`（只用系统 HTTPS）、支持网址与隐私政策 URL 见文末（已填 GitHub Pages 地址）。
 
 ---
 
@@ -259,8 +259,13 @@ Location is used only on-device to compute true solar time and sunrise/sunset. C
 
 ## 上架时还要准备（与本表无关）
 
-- 隐私政策 URL：仓库 `docs/privacy.html`（可用 GitHub Pages 托管）——`TODO(owner)` 填真实地址
-- 支持网址：`TODO(owner)`
+- 隐私政策 URL：**https://hanfuqishe.github.io/truesolartime/privacy.html**
+- 支持网址：**https://hanfuqishe.github.io/truesolartime/**
+- 营销网址（可选）：同上
+- **赞助入口不进商店元数据**：Apple 3.1.1 覆盖「Apps and their metadata」，
+  描述/推广文本/关键词里出现打赏链接或「赞助」引导，与 App 内放支付入口同属风险。
+  赞助页（`.../sponsor.html`）只放在仓库 FUNDING 与 README，**不要写进任何商店字段**；
+  用户从「支持网址」进官网后自然能看到，属于网站内容而非应用元数据。
 - 截图：6.9"/6.7" 竖屏各 3 张起（用真机或模拟器出图），三种语言各一套（至少英文一套 + 中文一套）
 - 中国大陆区上架需要工信部 **App 备案号**；没有的话只能上架非中国区
 - 版本号由 CI 统一 bump（本文件不含版本号）
