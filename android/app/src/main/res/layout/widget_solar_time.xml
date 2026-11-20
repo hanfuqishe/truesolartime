@@ -668,5 +668,13 @@
 
 
 </LinearLayout>
+    <!-- 高度校准尺：校准模式下显示它、隐藏 widget_content；普通模式恒为 GONE。 -->
+    <ImageView
+        android:id="@+id/widget_ruler"
+        android:layout_width="match_parent"
+        android:layout_height="400dp"
+        android:scaleType="fitXY"
+        android:contentDescription="@null"
+        android:visibility="gone" />
 </FrameLayout>
 

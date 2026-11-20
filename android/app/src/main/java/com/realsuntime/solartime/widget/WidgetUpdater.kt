@@ -333,6 +333,33 @@ object WidgetUpdater {
      *   「时间/时区被改动」时才需要；平时重发会让秒的显示出现忽长忽短的抖动，见
      *   [shouldResetChronometer]。
      */
+    // ---- 卡片高度校准（Android 读不到 RemoteViews 真实高度，只能让用户量）----
+    private const val HEIGHT_PREFS = "widget_height"
+    private const val KEY_CALIBRATION = "calibration"
+    private const val KEY_OVERRIDE_DP = "override_dp"
+
+    private fun heightPrefs(context: Context) =
+        context.applicationContext.getSharedPreferences(HEIGHT_PREFS, Context.MODE_PRIVATE)
+
+    /** 校准模式：卡片只显示刻度尺，用户读出最大完整刻度。 */
+    fun calibrationMode(context: Context): Boolean =
+        runCatching { heightPrefs(context).getBoolean(KEY_CALIBRATION, false) }.getOrDefault(false)
+
+    fun setCalibrationMode(context: Context, enabled: Boolean) {
+        runCatching { heightPrefs(context).edit().putBoolean(KEY_CALIBRATION, enabled).apply() }
+    }
+
+    /** 用户实测高度（dp）；0 = 未校准（沿用自动估算）。越界会被夹到 100–400。 */
+    fun heightOverrideDp(context: Context): Int =
+        WidgetRuler.clampOverrideDp(
+            runCatching { heightPrefs(context).getInt(KEY_OVERRIDE_DP, 0) }.getOrDefault(0),
+        )
+
+    fun setHeightOverrideDp(context: Context, dp: Int) {
+        runCatching {
+            heightPrefs(context).edit().putInt(KEY_OVERRIDE_DP, WidgetRuler.clampOverrideDp(dp)).apply()
+        }
+    }
     fun refreshAll(context: Context, forceChronometer: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java))
@@ -460,6 +487,18 @@ object WidgetUpdater {
         diag: MutableList<Pair<String, String>>? = null,
     ): RemoteViews {
         val place = location.place
+
+        // 校准模式：只显示刻度尺（隐藏整块内容），让用户直接读出卡片真实高度。
+        if (calibrationMode(context)) {
+            val metrics = renderMetrics(context)
+            val views = RemoteViews(context.packageName, R.layout.widget_solar_time)
+            views.setViewVisibility(R.id.widget_content, View.GONE)
+            val widthPx = (cellWidthDp(metrics, widthDp) * metrics.density).toInt()
+            views.setImageViewBitmap(R.id.widget_ruler, WidgetRuler.render(context, widthPx))
+            views.setViewVisibility(R.id.widget_ruler, View.VISIBLE)
+            return views
+        }
+
         val now = Instant.now()
         val zone = civilZoneOf(context, place, now)
         val civil = now.atZone(zone)
@@ -516,7 +555,10 @@ object WidgetUpdater {
             (if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP) * fitMetrics.density) / 2f)
             .coerceAtLeast(1f)
         val clockRowDp = CLOCK_LINE_BOX_EM * columnPx * CLOCK_EM_PER_COLUMN / fitMetrics.density
-        val availableDp = cellDp * CELL_HEIGHT_RATIO
+        // 有实测高度就用它（留 4dp 余量），否则沿用「宽度 × 0.54」的估算。
+        val heightOverrideDp = heightOverrideDp(context)
+        val autoAvailableDp = cellDp * CELL_HEIGHT_RATIO
+        val availableDp = WidgetRuler.availableDp(heightOverrideDp, autoAvailableDp)
         // 注意比的是**本进程原始密度**：fitMetrics.density 已经夹到出厂密度了，跟出厂比较永远相等。
         val densityOverridden = verticalFitEnabled(context)
         var contentDp = CONTENT_FIXED_DP + clockRowDp
@@ -606,7 +648,18 @@ object WidgetUpdater {
                 add("逐时步长(小时)" to WeatherRepository.stepHours(context).toString())
                 add("主题模式" to themeMode.name.lowercase(Locale.ROOT))
                 add("昼夜(经主题修正)" to if (isDay) "白天" else "夜间")
+                val overrideDp = heightOverrideDp(context)
+                add("卡片高度模式" to when {
+                    overrideDp > 0 -> "手动 ${overrideDp}dp"
+                    else -> "自动"
+                })
+                add("采用高度" to "%.1fdp".format(Locale.US, availableDp))
+                add("收轴判定" to (if (showAxis) "否" else "是") +
+                    "（内容 %.1fdp）".format(Locale.US, contentDp))
             }
+            setViewVisibility(R.id.widget_ruler, View.GONE)
+            // 校准模式关掉后要把内容显示回来（否则卡片会一直空白）。
+            setViewVisibility(R.id.widget_content, View.VISIBLE)
             if (compressPadding) {
                 // 上下内边距 10dp/9dp → 4dp：内容更紧时先把留白压掉，比收掉整行信息温和得多。
                 val d = renderMetrics(context).density

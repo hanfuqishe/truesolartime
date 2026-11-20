@@ -466,6 +466,61 @@ fun SettingsSheet(
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(14.dp))
+            // 桌面卡片高度校准：Android 读不到 RemoteViews 真实高度，让用户照着刻度尺量。
+            Text(stringResource(R.string.section_widget_height), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            var calibrationOn by remember { mutableStateOf(WidgetUpdater.calibrationMode(context)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.widget_height_calibrate),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.widget_height_calibrate_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = calibrationOn,
+                    onCheckedChange = {
+                        calibrationOn = it
+                        WidgetUpdater.setCalibrationMode(context, it)
+                        WidgetUpdater.refreshAll(context, forceChronometer = true)
+                    },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            var heightText by remember {
+                mutableStateOf(
+                    WidgetUpdater.heightOverrideDp(context).takeIf { it > 0 }?.toString().orEmpty(),
+                )
+            }
+            OutlinedTextField(
+                value = heightText,
+                onValueChange = { raw ->
+                    val digits = raw.filter { it.isDigit() }.take(3)
+                    heightText = digits
+                    val parsed = digits.toIntOrNull() ?: 0
+                    WidgetUpdater.setHeightOverrideDp(context, parsed)
+                    WidgetUpdater.refreshAll(context)
+                },
+                label = { Text(stringResource(R.string.widget_height_override)) },
+                suffix = { Text(stringResource(R.string.widget_height_unit)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.widget_height_saved),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(stringResource(R.string.section_diagnostics), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
             Text(
