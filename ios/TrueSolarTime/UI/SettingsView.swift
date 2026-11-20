@@ -11,7 +11,6 @@ struct SettingsView: View {
     @State private var longitudeText = ""
     @State private var errorText: String?
 
-    private let chipColumns = [GridItem(.adaptive(minimum: 84), spacing: 8)]
 
     var body: some View {
         NavigationStack {
@@ -54,7 +53,7 @@ struct SettingsView: View {
                         Button(L("settings.applyCoordinates")) { applyManual() }
                             .buttonStyle(ThemedPrimaryButtonStyle())
 
-                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                        FlowLayout(spacing: 8, lineSpacing: 8) {
                             ForEach(Place.presets, id: \.presetKey) { preset in
                                 Button(preset.displayLabel) {
                                     model.usePreset(preset)
@@ -71,7 +70,7 @@ struct SettingsView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(palette.onSurfaceVariant)
 
-                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                        FlowLayout(spacing: 8, lineSpacing: 8) {
                             ForEach(MapStyle.selectable) { style in
                                 Button(style.label) { model.setMapStyle(style) }
                                     .buttonStyle(ThemedChipButtonStyle(isSelected: style == model.mapStyle))
@@ -88,7 +87,7 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                        FlowLayout(spacing: 8, lineSpacing: 8) {
                             ForEach(WeatherSourceSetting.allCases) { setting in
                                 Button(setting.label) { model.setWeatherSource(setting) }
                                     .buttonStyle(ThemedChipButtonStyle(isSelected: setting == model.weatherSourceSetting))
@@ -145,7 +144,7 @@ struct SettingsView: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(palette.onSurfaceVariant)
 
-                            LazyVGrid(columns: chipColumns, alignment: .leading, spacing: 8) {
+                            FlowLayout(spacing: 8, lineSpacing: 8) {
                                 ForEach(ThemeMode.allCases, id: \.self) { mode in
                                     Button(mode.label) { model.setThemeMode(mode) }
                                         .buttonStyle(ThemedChipButtonStyle(isSelected: mode == model.themeMode))

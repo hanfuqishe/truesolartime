@@ -77,9 +77,9 @@ struct ThemedChipButtonStyle: ButtonStyle {
         return configuration.label
             .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
             .foregroundStyle(isSelected ? palette.primary : palette.onSurface)
+            // **按内容宽度**（不再撑满列宽），也不缩字号：放不下由外层 `FlowLayout` 换行。
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(shape.fill(isSelected ? palette.primary.opacity(0.18) : palette.surface))
