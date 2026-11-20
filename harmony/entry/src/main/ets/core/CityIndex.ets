@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 由经纬度查出所在城市。
  *
  * 内置一张主要城市表（省会与常见地级市、各国主要城市），按球面距离取最近的一个：
@@ -278,6 +278,35 @@ const RAW: string = `
 墨西哥城|19.43|-99.13|Mexico City
 圣保罗|-23.55|-46.63|Sao Paulo
 里约热内卢|-22.9068|-43.1729|Rio de Janeiro
+莫斯科|55.7558|37.6173|Moscow
+柏林|52.5200|13.4050|Berlin
+罗马|41.9028|12.4964|Rome
+马德里|40.4168|-3.7038|Madrid
+伊斯坦布尔|41.0082|28.9784|Istanbul
+开普敦|-33.9249|18.4241|Cape Town
+内罗毕|-1.2921|36.8219|Nairobi
+基加利|-1.9441|30.0619|Kigali
+拉各斯|6.5244|3.3792|Lagos
+首尔|37.5665|126.9780|Seoul
+平壤|39.0392|125.7625|Pyongyang
+海参崴|43.1155|131.8855|Vladivostok
+曼谷|13.7563|100.5018|Bangkok
+万象|17.9757|102.6331|Vientiane
+漠河|52.9721|122.5388|Mohe
+抚远|48.3669|134.2895|Fuyuan
+喀什|39.4704|75.9898|Kashgar
+三沙|16.8343|112.3388|Sansha
+钓鱼岛|25.7459|123.4776|Diaoyu Islands
+雅加达|-6.2088|106.8456|Jakarta
+珀斯|-31.9523|115.8613|Perth
+奥克兰|-36.8485|174.7633|Auckland
+雷克雅未克|64.1466|-21.9426|Reykjavík
+芝加哥|41.8781|-87.6298|Chicago
+墨西哥城|19.4326|-99.1332|Mexico City
+圣保罗|-23.5505|-46.6333|São Paulo
+布宜诺斯艾利斯|-34.6037|-58.3816|Buenos Aires
+利马|-12.0464|-77.0428|Lima
+温哥华|49.2827|-123.1207|Vancouver
 布宜诺斯艾利斯|-34.60|-58.38|Buenos Aires
 圣地亚哥|-33.45|-70.67|Santiago
 利马|-12.05|-77.04|Lima
@@ -343,6 +372,63 @@ export class CityIndex {
     }
     if (nameZh === '昆仑站') {
       return '崑崙站';
+    }
+    if (nameZh === '罗马') {
+      return '羅馬';
+    }
+    if (nameZh === '马德里') {
+      return '馬德里';
+    }
+    if (nameZh === '伊斯坦布尔') {
+      return '伊斯坦堡';
+    }
+    if (nameZh === '开普敦') {
+      return '開普敦';
+    }
+    if (nameZh === '内罗毕') {
+      return '奈洛比';
+    }
+    if (nameZh === '拉各斯') {
+      return '拉哥斯';
+    }
+    if (nameZh === '首尔') {
+      return '首爾';
+    }
+    if (nameZh === '雅加达') {
+      return '雅加達';
+    }
+    if (nameZh === '珀斯') {
+      return '伯斯';
+    }
+    if (nameZh === '奥克兰') {
+      return '奧克蘭';
+    }
+    if (nameZh === '雷克雅未克') {
+      return '雷克雅維克';
+    }
+    if (nameZh === '圣保罗') {
+      return '聖保羅';
+    }
+    if (nameZh === '布宜诺斯艾利斯') {
+      return '布宜諾斯艾利斯';
+    }
+    if (nameZh === '利马') {
+      return '利馬';
+    }
+    if (nameZh === '温哥华') {
+      return '溫哥華';
+    }
+    if (nameZh === '万象') {
+      return '萬象';
+    }
+    if (nameZh === '海参崴') {
+      return '海參崴';
+    }
+    if (nameZh === '抚远') {
+      return '撫遠';
+    }
+    if (nameZh === '钓鱼岛') {
+      return '釣魚島';
     }
     return nameZh;
   }

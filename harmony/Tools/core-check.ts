@@ -20,7 +20,7 @@ import { DistrictLookupPolicy } from './core/DistrictLookup';
 import { PlaceNamePolicy } from './core/PlaceNamePolicy';
 import { packRows } from './core/PresetLayout';
 import { ChimeLogic } from './core/Chime';
-import { Place, PlaceSource } from './core/Place';
+import { Place, PlaceRegion, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
 import { CivicTimeLogic } from './core/CivicTime';
 import { HorizonSpan, MotionArrow, SunArcSpan, SunLabelAnchors, SunPath, SunPathGeometry } from './core/SunPath';
@@ -841,7 +841,7 @@ for (const item of equationCases) {
 // ---- 观测点 ----
 {
   check('default place is Beijing', Place.DEFAULT.labelKey === 'city_beijing' && Place.DEFAULT.latitude === 39.9042);
-  equal('twenty four presets', 24, Place.PRESETS.length);
+  equal('fifty three presets', 53, Place.PRESETS.length);
   check('valid latitude', Place.isValidLatitude(39.9) && !Place.isValidLatitude(91));
   check('same location', Place.DEFAULT.sameLocation(new Place(39.9042, 116.4074, 0, '', '')));
 
@@ -861,30 +861,95 @@ for (const item of equationCases) {
   }
   check('every preset carries a country code', everyPresetHasCountry);
   equal('china preset stays utc+8', 8 * 3600,
-    ZoneTable.offsetSeconds(Place.PRESETS[8].countryCode, Place.PRESETS[8].longitude, 0));
+    ZoneTable.offsetSeconds(Place.PRESETS[0].countryCode, Place.PRESETS[0].longitude, 0));
 
-  // 第 11 个起是境外城市：前 10 个大致按 UTC 偏移从西到东（檀香山 −10 … 悉尼 +10），
-  // 末尾两个是极圈城市（摩尔曼斯克 +3、昆仑站 +8），用来验证极昼／极夜。
-  const overseasMinutes: number[] = [-600, -480, -300, 0, 60, 240, 330, 540, 480, 600, 180, 480];
-  let overseasOffsetsOk: boolean = true;
-  let overseasNamesOk: boolean = true;
-  for (let i = 0; i < overseasMinutes.length; i++) {
-    const preset: Place = Place.PRESETS[10 + i];
-    if (ZoneTable.offsetSeconds(preset.countryCode, preset.longitude, 0) !== overseasMinutes[i] * 60) {
-      overseasOffsetsOk = false;
-    }
-    // 名字由 Settings.cityLabel 查 CityIndex 得到：查不到就只能显示经纬度了。
-    if (CityIndex.nearest(preset.latitude, preset.longitude, 'zh') === null) {
-      overseasNamesOk = false;
+  // 47 个城市按大洲分组：20/8/5/6/4/3/1，顺序与 Android 一致。
+  const regionOrder: PlaceRegion[] = [PlaceRegion.ASIA, PlaceRegion.EUROPE, PlaceRegion.AFRICA,
+    PlaceRegion.NORTH_AMERICA, PlaceRegion.SOUTH_AMERICA, PlaceRegion.OCEANIA, PlaceRegion.ANTARCTICA];
+  const regionCounts: number[] = [26, 8, 5, 6, 4, 3, 1];
+  let regionSequenceOk: boolean = true;
+  let cursor: number = 0;
+  for (let r: number = 0; r < regionOrder.length; r++) {
+    for (let n: number = 0; n < regionCounts[r]; n++) {
+      if (Place.PRESETS[cursor].region !== regionOrder[r]) {
+        regionSequenceOk = false;
+      }
+      cursor++;
     }
   }
-  check('overseas presets resolve by country code', overseasOffsetsOk);
-  check('overseas presets have a city name', overseasNamesOk);
+  check('presets are grouped by continent in order', regionSequenceOk && cursor === 53);
+  for (let r: number = 0; r < regionOrder.length; r++) {
+    let count: number = 0;
+    for (const preset of Place.PRESETS) {
+      if (preset.region === regionOrder[r]) {
+        count++;
+      }
+    }
+    equal(`region ${regionOrder[r]} count`, regionCounts[r], count);
+  }
 
-  // 极圈城市：摩尔曼斯克（68.97°N 33.08°E，ru → UTC+3）与昆仑站（69.37°S 77.1161°E，cn → UTC+8）。
+  const at = (latitude: number, longitude: number): Place =>
+    Place.PRESETS.find((preset: Place): boolean =>
+      Math.abs(preset.latitude - latitude) < 1e-9 && Math.abs(preset.longitude - longitude) < 1e-9) ?? Place.DEFAULT;
+  equal('moscow offset is +180', 180,
+    ZoneTable.offsetSeconds('ru', 37.6173, 0) / 60);
+  equal('vladivostok offset is +600', 600,
+    ZoneTable.offsetSeconds('ru', 131.8855, 0) / 60);
+  const sansha: Place = at(16.8343, 112.3388);
+  equal('sansha latitude', 16.8343, sansha.latitude);
+  equal('sansha longitude', 112.3388, sansha.longitude);
+  equal('sansha country code is cn', 'cn', sansha.countryCode);
+  equal('sansha offset is +480', 480,
+    ZoneTable.offsetSeconds(sansha.countryCode, sansha.longitude, 0) / 60);
+  equal('sansha uses amap in auto mode', MapStyle.AMAP_VECTOR,
+    MapFallback.preferredStyle(MapStyle.AUTO, sansha.latitude, sansha.longitude, sansha.countryCode));
+  const fuyuan: Place = at(48.3669, 134.2895);
+  equal('fuyuan longitude', 134.2895, fuyuan.longitude);
+  equal('fuyuan offset is +480', 480,
+    ZoneTable.offsetSeconds(fuyuan.countryCode, fuyuan.longitude, 0) / 60);
+  const diaoyu: Place = at(25.7459, 123.4776);
+  equal('diaoyu longitude', 123.4776, diaoyu.longitude);
+  equal('diaoyu offset is +480', 480,
+    ZoneTable.offsetSeconds(diaoyu.countryCode, diaoyu.longitude, 0) / 60);
+  equal('kashgar longitude correction is -176 min', -176.04,
+    Math.round((75.9898 - 120) * 4 * 100) / 100);
+  equal('seoul offset is +540', 540,
+    ZoneTable.offsetSeconds('kr', 126.9780, 0) / 60);
+  equal('pyongyang offset is +540', 540,
+    ZoneTable.offsetSeconds('kp', 125.7625, 0) / 60);
+  equal('vientiane offset is +420', 420,
+    ZoneTable.offsetSeconds('la', 102.6331, 0) / 60);
+  equal('kigali offset is +120', 120,
+    ZoneTable.offsetSeconds('rw', 30.0619, 0) / 60);
+  equal('auckland offset is +720', 720,
+    ZoneTable.offsetSeconds('nz', 174.7633, 0) / 60);
+  equal('lima offset is -300', -300,
+    ZoneTable.offsetSeconds('pe', -77.0428, 0) / 60);
+  equal('mexico city offset is -360', -360,
+    ZoneTable.offsetSeconds('mx', -99.1332, 0) / 60);
+  equal('reykjavik offset is 0', 0,
+    ZoneTable.offsetSeconds('is', -21.9426, 0) / 60);
+  equal('sao paulo offset is -180', -180,
+    ZoneTable.offsetSeconds('br', -46.6333, 0) / 60);
+  equal('vancouver standard offset is -480', -480,
+    ZoneTable.offsetSeconds('ca', -123.1207, 0) / 60);
+
+  let trilingualNamesOk: boolean = true;
+  for (const preset of Place.PRESETS) {
+    const zh = CityIndex.nearest(preset.latitude, preset.longitude, 'zh-CN');
+    const zhHant = CityIndex.nearest(preset.latitude, preset.longitude, 'zh-Hant');
+    const en = CityIndex.nearest(preset.latitude, preset.longitude, 'en-US');
+    if (zh === null || zhHant === null || en === null ||
+      zh.name.length === 0 || zhHant.name.length === 0 || en.name.length === 0) {
+      trilingualNamesOk = false;
+    }
+  }
+  check('all presets have trilingual names', trilingualNamesOk);
+
+  // 极圈城市：摩尔曼斯克（68.97°N 33.08°E，ru → UTC+3）与昆仑站（80.4169°S 77.1161°E，cn → UTC+8）。
   // 名字和按钮文案一样走 CityIndex；时区靠国家码，不依赖逆地理编码。
-  const murmansk: Place = Place.PRESETS[20];
-  const kunlun: Place = Place.PRESETS[21];
+  const murmansk: Place = at(68.97, 33.08);
+  const kunlun: Place = at(-80.4169, 77.1161);
   equal('murmansk latitude', 68.97, murmansk.latitude);
   equal('murmansk longitude', 33.08, murmansk.longitude);
   equal('kunlun latitude', -80.4169, kunlun.latitude);
@@ -988,7 +1053,8 @@ for (const item of equationCases) {
     delhiSnapshotNoCode.localOffsetSeconds);
 
   // 预设城市自带国家码：选中新德里就当场是 +5:30，不必等逆地理回来。
-  const delhiPreset: Place = Place.PRESETS[16];
+  const delhiPreset: Place = Place.PRESETS.find((preset: Place): boolean =>
+    preset.countryCode === 'in' && Math.abs(preset.latitude - 28.6139) < 1e-9) ?? Place.DEFAULT;
   equal('delhi preset carries country code in', 'in', delhiPreset.countryCode);
   equal('delhi preset resolves utc+5:30', 19800,
     zoneOf(delhiPreset.latitude, delhiPreset.longitude, delhiPreset.countryCode));
@@ -2371,9 +2437,11 @@ for (const item of equationCases) {
 
 // ---- 常用城市补到 24 个：开罗 / 里约热内卢 ----
 {
-  equal('preset count is 24', 24, Place.PRESETS.length);
-  const cairo: Place = Place.PRESETS[22];
-  const rio: Place = Place.PRESETS[23];
+  equal('preset count is 53', 53, Place.PRESETS.length);
+  const cairo: Place = Place.PRESETS.find((preset: Place): boolean =>
+    preset.countryCode === 'eg' && Math.abs(preset.latitude - 30.0444) < 1e-9) ?? Place.DEFAULT;
+  const rio: Place = Place.PRESETS.find((preset: Place): boolean =>
+    preset.countryCode === 'br' && Math.abs(preset.latitude + 22.9068) < 1e-9) ?? Place.DEFAULT;
   check('cairo coordinates match android exactly',
     cairo.latitude === 30.0444 && cairo.longitude === 31.2357 && cairo.countryCode === 'eg');
   check('rio coordinates match android exactly',

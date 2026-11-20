@@ -8,6 +8,17 @@ export enum PlaceSource {
   MANUAL = 2
 }
 
+/** 常用城市分组（按大洲）。 */
+export enum PlaceRegion {
+  ASIA = 'asia',
+  EUROPE = 'europe',
+  AFRICA = 'africa',
+  NORTH_AMERICA = 'north_america',
+  SOUTH_AMERICA = 'south_america',
+  OCEANIA = 'oceania',
+  ANTARCTICA = 'antarctica'
+}
+
 export class Place {
   latitude: number;
   longitude: number;
@@ -23,53 +34,76 @@ export class Place {
    * 绌轰覆琛ㄧず鏈煡锛圙PS / 鎵嬪姩鍧愭爣锛夛紝鐢遍€嗗湴鐞嗙粨鏋滆ˉ銆?
    */
   countryCode: string;
+  /** 常用城市所在大洲（仅 PRESETS 使用）。 */
+  region: PlaceRegion;
 
   constructor(latitude: number, longitude: number, source: PlaceSource, label: string, labelKey: string,
-      countryCode: string = '') {
+      countryCode: string = '', region: PlaceRegion = PlaceRegion.ASIA) {
     this.latitude = latitude;
     this.longitude = longitude;
     this.source = source;
     this.label = label;
     this.labelKey = labelKey;
     this.countryCode = countryCode;
+    this.region = region;
   }
 
   static readonly DEFAULT: Place = new Place(39.9042, 116.4074, PlaceSource.DEFAULT, '', 'city_beijing', 'cn');
 
   static readonly PRESETS: Place[] = [
-    new Place(39.9042, 116.4074, PlaceSource.MANUAL, '', 'city_beijing', 'cn'),
-    new Place(31.2304, 121.4737, PlaceSource.MANUAL, '', 'city_shanghai', 'cn'),
-    new Place(23.1291, 113.2644, PlaceSource.MANUAL, '', 'city_guangzhou', 'cn'),
-    new Place(22.5431, 114.0579, PlaceSource.MANUAL, '', 'city_shenzhen', 'cn'),
-    new Place(30.5728, 104.0668, PlaceSource.MANUAL, '', 'city_chengdu', 'cn'),
-    new Place(34.3416, 108.9398, PlaceSource.MANUAL, '', 'city_xian', 'cn'),
-    new Place(45.8038, 126.5350, PlaceSource.MANUAL, '', 'city_harbin', 'cn'),
-    new Place(43.8256, 87.6168, PlaceSource.MANUAL, '', 'city_urumqi', 'cn'),
-    new Place(29.6520, 91.1721, PlaceSource.MANUAL, '', 'city_lhasa', 'cn'),
-    new Place(22.3193, 114.1694, PlaceSource.MANUAL, '', 'city_hongkong', 'hk'),
-    // 澧冨甯哥敤鍩庡競锛氭寜 UTC 鍋忕Щ浠庤タ鍒颁笢鎺掋€傚悕瀛楃敱 Settings.cityLabel 鏌?CityIndex 寰楀埌
-    // 锛坈ore/CityIndex 閲岄兘鏈夎繖浜涘煄甯傦級锛屾墍浠?label 涓?labelKey 鐣欑┖锛岄殢鐣岄潰璇█鍙樺寲銆?
-    new Place(21.3069, -157.8583, PlaceSource.MANUAL, '', '', 'us'),   // 妾€棣欏北
-    new Place(34.0522, -118.2437, PlaceSource.MANUAL, '', '', 'us'),   // 娲涙潐鐭?
-    new Place(40.7128, -74.0060, PlaceSource.MANUAL, '', '', 'us'),    // 绾界害
-    new Place(51.5074, -0.1278, PlaceSource.MANUAL, '', '', 'gb'),     // 浼︽暒
-    new Place(48.8566, 2.3522, PlaceSource.MANUAL, '', '', 'fr'),      // 宸撮粠
-    new Place(25.2048, 55.2708, PlaceSource.MANUAL, '', '', 'ae'),     // 杩嫓
-    new Place(28.6139, 77.2090, PlaceSource.MANUAL, '', '', 'in'),     // 鏂板痉閲?
-    new Place(35.6762, 139.6503, PlaceSource.MANUAL, '', '', 'jp'),    // 涓滀含
-    new Place(1.3521, 103.8198, PlaceSource.MANUAL, '', '', 'sg'),     // 鏂板姞鍧?
-    new Place(-33.8688, 151.2093, PlaceSource.MANUAL, '', '', 'au'),   // 鎮夊凹
-    // 鏋佸湀鍩庡競锛氶獙璇佹瀬鏄硷紡鏋佸銆傚悕瀛楃敱绂荤嚎鍩庡競琛紙core/CityIndex锛夌粰鍑猴紝璺熷叾浠栧澶栧煄甯備竴鏍?
-    // 闅忕晫闈㈣瑷€鍙樺寲锛涘浗瀹剁爜鍙敤鏉ュ畾鏍囧噯鏃跺尯銆?
-    // 鎽╁皵鏇兼柉鍏嬶紙68.97掳N 33.08掳E锛夛細淇勭綏鏂紝鍖楁瀬鍦堝唴锛屽瀛ｆ瀬鏄笺€佸啲瀛ｆ瀬澶滐紱
-    //   ru + 缁忓害 33.08掳E < 40掳E 鈫?UTC+3锛堣帿鏂鏃堕棿锛夈€?
-    new Place(68.9700, 33.0800, PlaceSource.MANUAL, '', '', 'ru'),
-    // 涓北绔欙紙69.37掳S 76.38掳E锛夛細涓浗鍗楁瀬鑰冨療绔欙紝鍗楁瀬鍦堝唴锛涙樉寮忕敤 cn 鈫?UTC+8
-    //锛堢珯涓婃寜涓浗绔欏姟鎯緥浣跨敤鍖椾含鏃堕棿锛沍oneTable 娌℃湁 aq 鏉＄洰锛屽啓 aq 浼氭寜缁忓害鍙栨暣鎴?+5锛夈€?
-    new Place(-80.4169, 77.1161, PlaceSource.MANUAL, '', 'city_kunlun', 'cn'),
-    // 涓夌鍚屾琛ュ埌 24 涓紙4 鍒?脳 6 琛屾暣锛夛細寮€缃椼€侀噷绾︾儹鍐呭崲锛屽潗鏍囦笌 Android 閫愪綅涓€鑷淬€?
-    new Place(30.0444, 31.2357, PlaceSource.MANUAL, '', '', 'eg'),
-    new Place(-22.9068, -43.1729, PlaceSource.MANUAL, '', '', 'br')
+    new Place(39.9042, 116.4074, PlaceSource.MANUAL, '', 'city_beijing', 'cn', PlaceRegion.ASIA),
+    new Place(31.2304, 121.4737, PlaceSource.MANUAL, '', 'city_shanghai', 'cn', PlaceRegion.ASIA),
+    new Place(23.1291, 113.2644, PlaceSource.MANUAL, '', 'city_guangzhou', 'cn', PlaceRegion.ASIA),
+    new Place(22.5431, 114.0579, PlaceSource.MANUAL, '', 'city_shenzhen', 'cn', PlaceRegion.ASIA),
+    new Place(30.5728, 104.0668, PlaceSource.MANUAL, '', 'city_chengdu', 'cn', PlaceRegion.ASIA),
+    new Place(34.3416, 108.9398, PlaceSource.MANUAL, '', 'city_xian', 'cn', PlaceRegion.ASIA),
+    new Place(45.8038, 126.5350, PlaceSource.MANUAL, '', 'city_harbin', 'cn', PlaceRegion.ASIA),
+    new Place(52.9721, 122.5388, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
+    new Place(48.3669, 134.2895, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
+    new Place(43.8256, 87.6168, PlaceSource.MANUAL, '', 'city_urumqi', 'cn', PlaceRegion.ASIA),
+    new Place(39.4704, 75.9898, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
+    new Place(29.6520, 91.1721, PlaceSource.MANUAL, '', 'city_lhasa', 'cn', PlaceRegion.ASIA),
+    new Place(22.3193, 114.1694, PlaceSource.MANUAL, '', 'city_hongkong', 'hk', PlaceRegion.ASIA),
+    new Place(16.8343, 112.3388, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
+    new Place(25.7459, 123.4776, PlaceSource.MANUAL, '', '', 'cn', PlaceRegion.ASIA),
+    new Place(35.6762, 139.6503, PlaceSource.MANUAL, '', '', 'jp', PlaceRegion.ASIA),
+    new Place(37.5665, 126.9780, PlaceSource.MANUAL, '', '', 'kr', PlaceRegion.ASIA),
+    new Place(39.0392, 125.7625, PlaceSource.MANUAL, '', '', 'kp', PlaceRegion.ASIA),
+    new Place(43.1155, 131.8855, PlaceSource.MANUAL, '', '', 'ru', PlaceRegion.ASIA),
+    new Place(1.3521, 103.8198, PlaceSource.MANUAL, '', '', 'sg', PlaceRegion.ASIA),
+    new Place(13.7563, 100.5018, PlaceSource.MANUAL, '', '', 'th', PlaceRegion.ASIA),
+    new Place(17.9757, 102.6331, PlaceSource.MANUAL, '', '', 'la', PlaceRegion.ASIA),
+    new Place(-6.2088, 106.8456, PlaceSource.MANUAL, '', '', 'id', PlaceRegion.ASIA),
+    new Place(28.6139, 77.2090, PlaceSource.MANUAL, '', '', 'in', PlaceRegion.ASIA),
+    new Place(25.2048, 55.2708, PlaceSource.MANUAL, '', '', 'ae', PlaceRegion.ASIA),
+    new Place(41.0082, 28.9784, PlaceSource.MANUAL, '', '', 'tr', PlaceRegion.ASIA),
+    new Place(55.7558, 37.6173, PlaceSource.MANUAL, '', '', 'ru', PlaceRegion.EUROPE),
+    new Place(51.5074, -0.1278, PlaceSource.MANUAL, '', '', 'gb', PlaceRegion.EUROPE),
+    new Place(48.8566, 2.3522, PlaceSource.MANUAL, '', '', 'fr', PlaceRegion.EUROPE),
+    new Place(52.5200, 13.4050, PlaceSource.MANUAL, '', '', 'de', PlaceRegion.EUROPE),
+    new Place(41.9028, 12.4964, PlaceSource.MANUAL, '', '', 'it', PlaceRegion.EUROPE),
+    new Place(40.4168, -3.7038, PlaceSource.MANUAL, '', '', 'es', PlaceRegion.EUROPE),
+    new Place(64.1466, -21.9426, PlaceSource.MANUAL, '', '', 'is', PlaceRegion.EUROPE),
+    new Place(68.9700, 33.0800, PlaceSource.MANUAL, '', '', 'ru', PlaceRegion.EUROPE),
+    new Place(30.0444, 31.2357, PlaceSource.MANUAL, '', '', 'eg', PlaceRegion.AFRICA),
+    new Place(-33.9249, 18.4241, PlaceSource.MANUAL, '', '', 'za', PlaceRegion.AFRICA),
+    new Place(-1.2921, 36.8219, PlaceSource.MANUAL, '', '', 'ke', PlaceRegion.AFRICA),
+    new Place(-1.9441, 30.0619, PlaceSource.MANUAL, '', '', 'rw', PlaceRegion.AFRICA),
+    new Place(6.5244, 3.3792, PlaceSource.MANUAL, '', '', 'ng', PlaceRegion.AFRICA),
+    new Place(21.3069, -157.8583, PlaceSource.MANUAL, '', '', 'us', PlaceRegion.NORTH_AMERICA),
+    new Place(34.0522, -118.2437, PlaceSource.MANUAL, '', '', 'us', PlaceRegion.NORTH_AMERICA),
+    new Place(40.7128, -74.0060, PlaceSource.MANUAL, '', '', 'us', PlaceRegion.NORTH_AMERICA),
+    new Place(41.8781, -87.6298, PlaceSource.MANUAL, '', '', 'us', PlaceRegion.NORTH_AMERICA),
+    new Place(19.4326, -99.1332, PlaceSource.MANUAL, '', '', 'mx', PlaceRegion.NORTH_AMERICA),
+    new Place(49.2827, -123.1207, PlaceSource.MANUAL, '', '', 'ca', PlaceRegion.NORTH_AMERICA),
+    new Place(-22.9068, -43.1729, PlaceSource.MANUAL, '', '', 'br', PlaceRegion.SOUTH_AMERICA),
+    new Place(-23.5505, -46.6333, PlaceSource.MANUAL, '', '', 'br', PlaceRegion.SOUTH_AMERICA),
+    new Place(-34.6037, -58.3816, PlaceSource.MANUAL, '', '', 'ar', PlaceRegion.SOUTH_AMERICA),
+    new Place(-12.0464, -77.0428, PlaceSource.MANUAL, '', '', 'pe', PlaceRegion.SOUTH_AMERICA),
+    new Place(-33.8688, 151.2093, PlaceSource.MANUAL, '', '', 'au', PlaceRegion.OCEANIA),
+    new Place(-31.9523, 115.8613, PlaceSource.MANUAL, '', '', 'au', PlaceRegion.OCEANIA),
+    new Place(-36.8485, 174.7633, PlaceSource.MANUAL, '', '', 'nz', PlaceRegion.OCEANIA),
+    new Place(-80.4169, 77.1161, PlaceSource.MANUAL, '', 'city_kunlun', 'cn', PlaceRegion.ANTARCTICA)
   ];
 
   static readonly MIN_LATITUDE: number = -90.0;

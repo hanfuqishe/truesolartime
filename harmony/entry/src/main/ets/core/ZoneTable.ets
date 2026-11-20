@@ -89,8 +89,8 @@ export class ZoneTable {
       return longitude < -105 ? -420 : -360;
     }
     if (country === 'br') {
-      if (longitude < -60) return -300;
-      if (longitude < -45) return -240;
+      if (longitude < -58) return -300;
+      if (longitude < -50) return -240;
       return -180;
     }
     if (country === 'ru') {

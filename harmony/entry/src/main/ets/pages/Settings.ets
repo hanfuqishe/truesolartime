@@ -11,7 +11,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { CityIndex, NearbyCity } from '../core/CityIndex';
 import { DistrictNameLogic, DistrictNames } from '../core/DistrictName';
 import { MAP_STYLE_OPTIONS, MapStyle, MapStyleOption, MapTilesLogic } from '../core/MapTiles';
-import { Place, PlaceSource } from '../core/Place';
+import { Place, PlaceRegion, PlaceSource } from '../core/Place';
 import { packRows } from '../core/PresetLayout';
 import { TakeBand, TakeTimeSchedule } from '../core/TakeTime';
 import { TimeFormat } from '../core/TimeFormat';
@@ -38,7 +38,8 @@ struct Settings {
   @State palette: AppPalette = paletteFor(true);
   @State placeName: string = '';
   @State presetLabels: string[] = [];
-  @State presetRows: number[][] = [];
+  /** 每个大洲一组排好序的行；行内是 Place.PRESETS 的全局下标。 */
+  @State presetRowsByRegion: number[][][] = [[], [], [], [], [], [], []];
   @State presetChipWidths: number[] = [];
   /** 常用城市区的实测内容宽（vp），用于贪心排布。 */
   private presetRowWidth: number = 0;
@@ -228,10 +229,53 @@ struct Settings {
     return AppStore.gpsIntent() && this.place.source !== PlaceSource.GPS;
   }
 
-  /** 实测每个 chip 的文字宽（px → vp），再贪心排成若干行。 */
+  private static readonly REGION_ORDER: PlaceRegion[] = [
+    PlaceRegion.ASIA, PlaceRegion.EUROPE, PlaceRegion.AFRICA, PlaceRegion.NORTH_AMERICA,
+    PlaceRegion.SOUTH_AMERICA, PlaceRegion.OCEANIA, PlaceRegion.ANTARCTICA
+  ];
+
+  private regionTitle(region: PlaceRegion): string {
+    const language: string = DistrictService.language();
+    const english: boolean = language.toLowerCase().startsWith('en');
+    const traditional: boolean = language.indexOf('Hant') >= 0 || language.indexOf('TW') >= 0 ||
+      language.indexOf('HK') >= 0;
+    if (english) {
+      switch (region) {
+        case PlaceRegion.ASIA: return 'Asia';
+        case PlaceRegion.EUROPE: return 'Europe';
+        case PlaceRegion.AFRICA: return 'Africa';
+        case PlaceRegion.NORTH_AMERICA: return 'North America';
+        case PlaceRegion.SOUTH_AMERICA: return 'South America';
+        case PlaceRegion.OCEANIA: return 'Oceania';
+        default: return 'Antarctica';
+      }
+    }
+    if (traditional) {
+      switch (region) {
+        case PlaceRegion.ASIA: return '亞洲';
+        case PlaceRegion.EUROPE: return '歐洲';
+        case PlaceRegion.AFRICA: return '非洲';
+        case PlaceRegion.NORTH_AMERICA: return '北美洲';
+        case PlaceRegion.SOUTH_AMERICA: return '南美洲';
+        case PlaceRegion.OCEANIA: return '大洋洲';
+        default: return '南極洲';
+      }
+    }
+    switch (region) {
+      case PlaceRegion.ASIA: return '亚洲';
+      case PlaceRegion.EUROPE: return '欧洲';
+      case PlaceRegion.AFRICA: return '非洲';
+      case PlaceRegion.NORTH_AMERICA: return '北美洲';
+      case PlaceRegion.SOUTH_AMERICA: return '南美洲';
+      case PlaceRegion.OCEANIA: return '大洋洲';
+      default: return '南极洲';
+    }
+  }
+
+  /** 实测每个 chip 的文字宽（px → vp），按大洲分组后各自贪心排成若干行。 */
   private rebuildPresetRows(): void {
     if (this.presetRowWidth <= 0 || this.presetLabels.length === 0) {
-      this.presetRows = [];
+      this.presetRowsByRegion = [[], [], [], [], [], [], []];
       this.presetChipWidths = [];
       return;
     }
@@ -246,7 +290,20 @@ struct Settings {
       widths.push(px2vp(measured) + 11);
     }
     this.presetChipWidths = widths;
-    this.presetRows = packRows(widths, this.presetRowWidth, 8);
+    const grouped: number[][][] = [];
+    for (const region of Settings.REGION_ORDER) {
+      const indices: number[] = [];
+      for (let index: number = 0; index < Place.PRESETS.length; index++) {
+        if (Place.PRESETS[index].region === region) {
+          indices.push(index);
+        }
+      }
+      const localWidths: number[] = indices.map((index: number): number => widths[index]);
+      const packed: number[][] = packRows(localWidths, this.presetRowWidth, 8);
+      grouped.push(packed.map((row: number[]): number[] =>
+        row.map((local: number): number => indices[local])));
+    }
+    this.presetRowsByRegion = grouped;
   }
 
   private applyPlace(place: Place, leave: boolean = false): void {
@@ -548,42 +605,60 @@ struct Settings {
           // 常用城市：只是快捷定位入口，不按当前坐标高亮（当前坐标未必落在这些点上）
           Column() {
             this.sectionTitle('常用城市')
-            // 内容宽 + 自动折行：chip 宽度按实测文字宽，行内左对齐。
-            Column({ space: 6 }) {
-              ForEach(this.presetRows, (row: number[]) => {
-                Row({ space: 8 }) {
-                  ForEach(row, (index: number) => {
-                    Row() {
-                      Text(index < this.presetLabels.length
-                        ? this.presetLabels[index]
-                        : TimeFormat.coordinates(Place.PRESETS[index].latitude,
-                          Place.PRESETS[index].longitude))
-                        .fontSize(12)
-                        .fontColor(this.palette.text)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .textAlign(TextAlign.Center)
-                        .width('100%')
+            // 按大洲分组；组内仍是内容宽 chip + 非末行两端对齐、末行左对齐。
+            Column() {
+              ForEach(Settings.REGION_ORDER, (region: PlaceRegion, regionIndex: number) => {
+              Column() {
+                Text(this.regionTitle(region))
+                  .fontSize(11)
+                  .fontColor(this.palette.subtle)
+                  .width('100%')
+                Column({ space: 6 }) {
+                  ForEach(this.presetRowsByRegion[regionIndex], (row: number[], rowIndex: number) => {
+                    // 非末行且不止一个 chip 时两端对齐；末行/单 chip 行保持左对齐。
+                    Row({ space: rowIndex < this.presetRowsByRegion[regionIndex].length - 1 &&
+                      row.length > 1 ? 0 : 8 }) {
+                      ForEach(row, (index: number) => {
+                        Row() {
+                          Text(index < this.presetLabels.length
+                            ? this.presetLabels[index]
+                            : TimeFormat.coordinates(Place.PRESETS[index].latitude,
+                              Place.PRESETS[index].longitude))
+                            .fontSize(12)
+                            .fontColor(this.palette.text)
+                            .maxLines(1)
+                            .textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .textAlign(TextAlign.Center)
+                            .width('100%')
+                        }
+                        .width(index < this.presetChipWidths.length ? this.presetChipWidths[index] : 80)
+                        .height(32)
+                        .justifyContent(FlexAlign.Center)
+                        .backgroundColor(this.palette.chip)
+                        .borderRadius(8)
+                        .border({ width: 1, color: this.palette.divider })
+                        .onClick(() => {
+                          this.applyPlace(Place.PRESETS[index], true);
+                        })
+                      }, (index: number) => `${regionIndex}-${rowIndex}-${index}`)
                     }
-                    .width(index < this.presetChipWidths.length ? this.presetChipWidths[index] : 80)
-                    .height(32)
-                    .justifyContent(FlexAlign.Center)
-                    .backgroundColor(this.palette.chip)
-                    .borderRadius(8)
-                    .border({ width: 1, color: this.palette.divider })
-                    .onClick(() => {
-                      this.applyPlace(Place.PRESETS[index], true);
-                    })
-                  }, (index: number) => `${index}`)
+                    .width('100%')
+                    .justifyContent(rowIndex < this.presetRowsByRegion[regionIndex].length - 1 &&
+                      row.length > 1 ? FlexAlign.SpaceBetween : FlexAlign.Start)
+                  }, (row: number[], rowIndex: number) => `${regionIndex}-${rowIndex}-${row.join('-')}`)
                 }
                 .width('100%')
-                .justifyContent(FlexAlign.Start)
-              }, (row: number[], rowIndex: number) => `${rowIndex}-${row.join('-')}`)
+                .margin({ top: 4 })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+              .margin({ top: regionIndex === 0 ? 8 : 10 })
+            }, (region: PlaceRegion) => region)
             }
             .width('100%')
-            .margin({ top: 8 })
             .onAreaChange((oldValue: Area, newValue: Area) => {
-              const available: number = Number(newValue.width) - 32;
+              // width='100%' 容器的实测宽度就是行宽，不再做任何扣减。
+              const available: number = Number(newValue.width);
               if (Math.abs(available - this.presetRowWidth) > 1) {
                 this.presetRowWidth = available;
                 this.rebuildPresetRows();
@@ -856,6 +931,7 @@ struct Settings {
         .padding({ left: 16, right: 16, bottom: 24 })
       }
       .layoutWeight(1)
+      .width('100%')
       .scrollBar(BarState.Off)
       .align(Alignment.Top)
     }
