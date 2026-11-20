@@ -20,6 +20,9 @@ import org.osmdroid.util.MapTileIndex
  */
 enum class MapStyle(val label: String) {
     AUTO("自动"),
+            // 境外不用高德的理由见 docs/AGENTS.md §12：高德有全球数据（世界地图），
+        // 但那是**付费开通的高级能力**；未开通时公开瓦片境外只有全球概览（z12 稀疏、z14 空）。
+        // 所以境外走公开免费的 Esri，境内才用高德。
     ESRI("Esri 街道图"),
     OSM("OpenStreetMap"),
     AMAP_VECTOR("高德矢量"),

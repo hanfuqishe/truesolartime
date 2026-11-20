@@ -78,6 +78,7 @@ enum CoordinateTransform {
 enum MapStyle: String, CaseIterable, Identifiable {
     case auto
     /// **iOS 的「自动」= Apple 地图**（MapKit 系统底图：不挂 overlay、不探测、不回退、不降级）。
+    // 境外不用高德的理由见 docs/AGENTS.md §12（高德世界地图是付费高级能力）。
     case apple
     case osm
     case amapVector

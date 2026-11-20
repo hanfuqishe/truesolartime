@@ -288,6 +288,33 @@ request { result in
 
 ---
 
+## 12. 底图数据源边界（为什么境外不用高德）
+
+**结论：境外（非中国区）一律不用高德瓦片，用 Esri / OSM。iOS 用 Apple 系统底图。**
+
+### 事实
+- 高德**有**全球数据，叫「世界地图」（`showOversea`），覆盖 200+ 国家/地区，
+  开通后境外 z10+ 有道路与 POI —— 见[官方文档](https://lbs.amap.com/api/javascript-api-v2/guide/map/world-map)；
+- 但它是**高级地图能力**：「如需申请，请通过工单进行商务咨询」，
+  即商业授权类目（与「技术服务许可」并列），**免费开放配额不含此能力**；
+- 我们用的公开栅格瓦片（`webrd01.is.autonavi.com` / `webst01.is.autonavi.com`）
+  未开通该权限时，境外只有全球概览：实测伦敦 z12 极稀疏、钓鱼岛 z14 只有 179 字节纯色块。
+
+### 所以
+| 场景 | 底图 | 署名 |
+|---|---|---|
+| 中国境内（`cn/hk/mo/tw`）| 高德矢量 / 卫星 | `底图 © 高德地图` / `Tiles © AMap` |
+| 境外（自动）| Esri 街道图 | `底图 © Esri, HERE, Garmin, © OpenStreetMap contributors` |
+| 境外（iOS 自动）| Apple 系统底图 | MapKit 自带水印 + `map.appleBasemap` |
+
+**iOS 地图里右下角显示「高德地图」是 Apple 的法定署名**（中国区 Apple 地图由高德运营），
+不是我们的回退、也**不能去掉**（违反 Apple 条款）。用户问过一次，别再当成 bug 排查。
+
+### 如果将来要改
+申请高德世界地图权限（商务）后，可把三端境外都切到高德，署名统一、境外也有中文地名；
+代价是调用量费用与资质审核。本项目目前定位免费，**不申请**。
+
+
 ## 11. 发布（手动，禁止自动触发）
 
 `tools/release-android.ps1` 把 `dist/` 里最新的 Release APK 发到 GitHub Releases。
