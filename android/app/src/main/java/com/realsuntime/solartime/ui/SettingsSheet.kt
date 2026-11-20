@@ -51,6 +51,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.realsuntime.solartime.R
@@ -233,29 +235,37 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.height(4.dp))
-            // 常用城市：**等宽网格**（同一行各列等宽、行行对齐），列数按「最长城市名」自适应：
-            // 可用宽度下从 5 列往 3 列试，取第一个能让最长名 + 两侧内边距放得下的列数。
-            // 不用 BoxWithConstraints / SubcomposeLayout（项目硬性约束，IntrinsicSize.Max 下会崩），
-            // 屏幕宽度直接读 Configuration，再减掉卡片左右内边距（24dp × 2）。
+            // 常用城市：**内容宽 chip + 自动折行**（与 iOS 的流式布局一致）。
+            // 不用 FlowRow（SubcomposeLayout，本仓库硬性禁用）；纯函数 `packRows` 先算行，
+            // 再用 Row 手工渲染。chip 宽度**实测**（TextMeasurer 量 12sp 城市名）+ 左右各 10dp。
             val screenWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
             val contentWidthDp = (screenWidthDp - 2 * 24f).coerceAtLeast(0f)
-            val longestNameWidthDp = Place.PRESETS.maxOf { preset ->
-                PresetGrid.estimateTextWidthDp(TimeText.placeLabel(context, preset))
+            val chipStyle = MaterialTheme.typography.labelMedium.copy(fontSize = PresetGrid.TEXT_SIZE_SP.sp)
+            val textMeasurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val chipWidthsDp = Place.PRESETS.map { preset ->
+                val measured = textMeasurer.measure(
+                    text = TimeText.placeLabel(context, preset),
+                    style = chipStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                ).size.width
+                with(density) { measured.toDp().value } + 2f * PresetGrid.CHIP_PADDING_DP
             }
-            val columns = PresetGrid.columnCount(contentWidthDp, longestNameWidthDp)
+            val rows = PresetGrid.packRows(chipWidthsDp, contentWidthDp, PresetGrid.GAP_DP)
             Column(verticalArrangement = Arrangement.spacedBy(PresetGrid.ROW_GAP_DP.dp)) {
-                Place.PRESETS.chunked(columns).forEach { row ->
+                rows.forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(PresetGrid.GAP_DP.dp)) {
-                        row.forEach { preset ->
-                            // 自绘 chip：内边距收到 10dp、高度 34dp，外形/点击涟漪与 AssistChip 一致
-                            // （AssistChip 没法单独调水平内边距，做不到「文字占比更高」）。
+                        row.forEach { index ->
+                            val preset = Place.PRESETS[index]
+                            val widthDp = chipWidthsDp[index].coerceAtMost(contentWidthDp)
                             Surface(
                                 onClick = {
                                     onSelectPreset(preset)
                                     onDismiss()
                                 },
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .width(widthDp.dp)
                                     .height(PresetGrid.CHIP_HEIGHT_DP.dp),
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surface,
@@ -269,8 +279,7 @@ fun SettingsSheet(
                                 ) {
                                     Text(
                                         text = TimeText.placeLabel(context, preset),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontSize = PresetGrid.TEXT_SIZE_SP.sp,
+                                        style = chipStyle,
                                         maxLines = 1,
                                         softWrap = false,
                                         overflow = TextOverflow.Ellipsis,
@@ -279,12 +288,9 @@ fun SettingsSheet(
                                 }
                             }
                         }
-                        // 最后一行不满时补空位，保证与上面各列对齐。
-                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
-
             Spacer(Modifier.height(18.dp))
             Text(
                 text = stringResource(R.string.section_map),

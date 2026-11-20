@@ -1484,7 +1484,7 @@ object WidgetUpdater {
             "clockSafetyFactor" to clockSafetyFactor(context, metrics).toString(),
             "boldWidthFactor" to boldWidthFactor(context).toString(),
             "竖向自适应生效" to if (verticalFitEnabled(context)) "是（显示密度高于出厂）" else "否",
-            "地区对齐方式" to if (cityAlignmentIsCentered(city.tier)) "居中（档 1）" else "贴边（档 0/2/3）",
+            "地区对齐方式" to "档 1 居中 / 档 0/2/3 贴边（两套 TextView 切换）",
         )
     }.getOrElse { listOf("读取失败" to DiagStore.describe(it)) }
 

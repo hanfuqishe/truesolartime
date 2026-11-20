@@ -24,6 +24,42 @@ object PresetGrid {
     /** 城市名文字字号（sp）：估算宽度与渲染必须用同一个值。 */
     const val TEXT_SIZE_SP = 12f
 
+    /**
+     * 贪心分行（纯函数）：依次把每个 chip 塞进当前行，放不下就换行。
+     *
+     * * 单个 chip 比整行还宽时**独占一行**（渲染端再用 `maxLines=1 + ellipsis` 截断）；
+     * * 行内间距 [gapDp] 计入判断（放下第 i 个时，需 `当前行宽 + gap + 该 chip 宽 ≤ 行宽`）。
+     *
+     * @return 每行包含的下标列表
+     */
+    fun packRows(
+        itemWidthsDp: List<Float>,
+        rowWidthDp: Float,
+        gapDp: Float = GAP_DP,
+    ): List<List<Int>> {
+        if (itemWidthsDp.isEmpty()) return emptyList()
+        val rows = mutableListOf<MutableList<Int>>()
+        var current = mutableListOf<Int>()
+        var used = 0f
+        for (index in itemWidthsDp.indices) {
+            val width = itemWidthsDp[index].coerceAtLeast(0f)
+            if (current.isEmpty()) {
+                current.add(index)
+                used = width
+                continue
+            }
+            if (used + gapDp + width <= rowWidthDp + 0.001f) {
+                current.add(index)
+                used += gapDp + width
+            } else {
+                rows.add(current)
+                current = mutableListOf(index)
+                used = width
+            }
+        }
+        if (current.isNotEmpty()) rows.add(current)
+        return rows
+    }
     /** 最少 / 最多列数。 */
     const val MIN_COLUMNS = 3
     const val MAX_COLUMNS = 5
