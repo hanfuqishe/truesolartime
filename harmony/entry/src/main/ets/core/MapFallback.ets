@@ -1,13 +1,14 @@
 /**
- * 地图底图兜底：空白瓦片判定 + 回退/降级状态机（纯逻辑，不碰网络与 UI）。
+ * 地图底图兜底：空白瓦片判定 + 级别降级状态机（纯逻辑，不碰网络与 UI）。
  *
- * 与 Android 的 `TileBlank` / `MapFallback` 同一套数值：
- *   - 首选是「境内高德、境外 ESRI」（ESRI 不可用再依次回退 OSM、高德）；
- *   - 只有**自动**模式才回退：OSM 连续失败 3 次 → 改用高德；任意一块 OSM 成功即清零；
- *   - 手动选择底图不回退、不探测、不降级；
- *   - 高德对境外常回 200 的空白瓦片（灰底 + 水印），按失败处理；
- *   - 降级链 z12 → z11 → z10 → z3（全球底图），z3 仍空白 → 界面显示「底图不可用」；
- *   - 回退后每 5 分钟探测一次 OSM（z3 小瓦片 + PNG/JPEG 魔数），成功即切回并清零。
+ * 与 Android 的 `TileBlank` / `MapFallback` 同一套契约：
+ *   - 首选是「境内高德、境外 ESRI」；**源永不因失败改变**；
+ *   - 失败只作用于「级别」：同一级别网络失败 3 次 / 空白 1 次 → 判该级别没瓦片；
+ *   - 降级链由 `zoomPlan` 逐级下降：z12 → z11 → z10 → z3，z3 仍不可用 → 「底图不可用」；
+ *   - 探测结果只把「选中级别之上没内容」种进当前源，不换源；
+ *   - 恢复只走「安静 30 秒 + 冷却 5 分钟」，外网源单块出图不再清空降级链；
+ *   - 程序化改视口后的残响窗口对所有源生效；
+ *   - `fellBack` / `fallbackFailures` 仅为旧字段兼容，恒 false / 0，不参与选源。
  *
  * 采样约定：调用方把 256×256 的瓦片按步长 8 抽成 32×32 个 0xRRGGBB 样本再交给
  * [MapTileAnalysis.analyze]；本文件只吃颜色数组。
@@ -341,12 +342,7 @@ export class MapFallbackState {
     return next;
   }
 
-  /** 网络恢复：清掉失败计数、回退标记与所有「没瓦片」记忆。 */
-  recovered(nowMillis: number): MapFallbackState {
-    const next: MapFallbackState = new MapFallbackState();
-    next.switchedAtMillis = nowMillis;
-    return next;
-  }
+  /** 网络恢复不再整源重置；只走 30s 静默 + 5min 冷却的级别恢复。 */
 
   /** 标记某源某级别可用 / 不可用；可用时连空白记忆一起清掉。 */
   markZoom(style: MapStyle, zoom: number, available: boolean): MapFallbackState {
@@ -411,8 +407,7 @@ export class MapFallback {
     next.viewportSettleUntilMillis = nowMillis + MapFallback.VIEWPORT_SETTLE_MILLIS;
     return next;
   }
-  /** 全球底图探测用的 z3 瓦片（任何地区都在，体积小）。 */
-  static readonly PROBE_URL: string = 'https://tile.openstreetmap.org/3/4/3.png';
+  // 源永不回退；旧的「回退后探测 OSM」路径已删除。
 
   /** 首屏探测：4 块并行总超时 4 秒；已知高德有内容时 2 秒提前收工。 */
   static readonly PROBE_TOTAL_TIMEOUT_MILLIS: number = 4000;
@@ -430,16 +425,12 @@ export class MapFallback {
     return SolarTimeMath.isInChina(latitude, longitude, countryCode) ? MapStyle.AMAP_VECTOR : MapStyle.ESRI;
   }
 
-  /** 一次底图选择：自动模式且已回退 → 实际用高德；手动模式不动。 */
+  /** 一次底图选择：自动模式下源永远是地区首选，失败只影响级别，绝不换源。 */
   static plan(style: MapStyle, latitude: number, longitude: number, countryCode: string,
       state: MapFallbackState): MapTilePlan {
     const preferred: MapStyle = MapFallback.preferredStyle(style, latitude, longitude, countryCode);
-    if (style !== MapStyle.AUTO) {
-      return new MapTilePlan(style, preferred, preferred, false, 0, -1);
-    }
-    const fellBack: boolean = preferred === MapStyle.OSM && state.fellBack;
-    return new MapTilePlan(style, preferred, fellBack ? MapStyle.AMAP_VECTOR : preferred, fellBack,
-      fellBack ? state.fallbackFailures : 0, fellBack ? state.probeAtMillis : -1);
+    // 失败不换源；fellBack 仅保留字段兼容，恒 false。
+    return new MapTilePlan(style, preferred, preferred, false, 0, -1);
   }
 
   /** 缩放级别：自动模式按「该级别有没有瓦片」逐级下探，最后落到 z3；手动模式不降级。 */
@@ -458,32 +449,26 @@ export class MapFallback {
       MapFallback.MIN_ZOOM !== requested, state.zoomUnavailable(plan.effective, MapFallback.MIN_ZOOM));
   }
 
-  /** 一块瓦片加载成功：清该级别「没瓦片」标记；OSM 成功即视为恢复；z3 出图清掉非空白记忆。 */
+  /** 一块瓦片加载成功：只清计数；源与级别记忆都不因一次成功而回弹。 */
   static onTileLoaded(style: MapStyle, latitude: number, longitude: number, countryCode: string,
       zoom: number, state: MapFallbackState, nowMillis: number): MapFallbackState {
     if (style !== MapStyle.AUTO) {
       return state;
     }
     const plan: MapTilePlan = MapFallback.plan(style, latitude, longitude, countryCode, state);
-    let next: MapFallbackState = state.markZoom(plan.effective, zoom, true).copy();
+    let next: MapFallbackState = state.copy();
     next.lastFailedZoom = -1;
     next.zoomFailures = 0;
-    if (zoom <= MapFallback.MIN_ZOOM) {
-      // 回弹要有静默窗口 + 冷却：否则 z3 一出图就清上级记忆 → 立刻弹回 z12 → 再失败 → 无限升降。
-      if (state.canRecoverChain(nowMillis)) {
-        // 保留「空白瓦片」的结构性记忆，只清网络问题学来的。
-        if (plan.effective === MapStyle.OSM) {
-          next.osmUnavailableMask = next.osmUnavailableMask & next.osmBlankMask;
-        } else if (plan.effective === MapStyle.ESRI) {
-          next.esriUnavailableMask = next.esriUnavailableMask & next.esriBlankMask;
-        } else {
-          next.amapUnavailableMask = next.amapUnavailableMask & next.amapBlankMask;
-        }
-        next.lastReboundMillis = nowMillis;
+    if (zoom <= MapFallback.MIN_ZOOM && state.canRecoverChain(nowMillis)) {
+      // 恢复只走「安静 30s + 冷却 5min」；且保留空白瓦片的结构性记忆。
+      if (plan.effective === MapStyle.OSM) {
+        next.osmUnavailableMask = next.osmUnavailableMask & next.osmBlankMask;
+      } else if (plan.effective === MapStyle.ESRI) {
+        next.esriUnavailableMask = next.esriUnavailableMask & next.esriBlankMask;
+      } else {
+        next.amapUnavailableMask = next.amapUnavailableMask & next.amapBlankMask;
       }
-    }
-    if (plan.effective === MapStyle.OSM) {
-      next = next.recovered(nowMillis);
+      next.lastReboundMillis = nowMillis;
     }
     return next;
   }
@@ -514,59 +499,26 @@ export class MapFallback {
     return MapFallback.registerFailure(style, latitude, longitude, countryCode, zoom, counted, nowMillis, true);
   }
 
-  /** 探测是否到期（只回退后 / 自动模式）。 */
-  static probeDue(state: MapFallbackState, nowMillis: number): boolean {
-    if (!state.fellBack || state.probeAtMillis < 0) {
-      return false;
-    }
-    return nowMillis >= state.probeAtMillis;
-  }
-
-  /** 探测结果：成功 → 恢复；失败 → 下次探测再推 5 分钟。 */
-  static onProbeResult(state: MapFallbackState, reachable: boolean, nowMillis: number): MapFallbackState {
-    if (reachable) {
-      return state.recovered(nowMillis);
-    }
-    const next: MapFallbackState = state.copy();
-    next.probeAtMillis = nowMillis + MapFallback.PROBE_INTERVAL_MILLIS;
-    return next;
-  }
+  // 源永不回退；旧的「探测到期 / 探测成功切源」已删除。
 
   private static registerFailure(style: MapStyle, latitude: number, longitude: number, countryCode: string,
       zoom: number, state: MapFallbackState, nowMillis: number, blank: boolean): MapFallbackState {
     const plan: MapTilePlan = MapFallback.plan(style, latitude, longitude, countryCode, state);
-    if (plan.effective !== MapStyle.OSM) {
-      const streak: number = state.lastFailedZoom === zoom ? state.zoomFailures + 1 : 1;
-      let next: MapFallbackState = state.copy();
-      next.lastFailureMillis = nowMillis;
-      next.lastFailedZoom = zoom;
-      next.zoomFailures = streak;
-      if (streak >= MapFallback.FAILURE_THRESHOLD) {
-        next = next.markZoom(plan.effective, zoom, false);
-        next.lastFailedZoom = -1;
-        next.zoomFailures = 0;
-        if (blank) {
-          next = next.markBlankZoom(plan.effective, zoom);
-        }
-      }
-      return next;
-    }
-    const failures: number = state.osmFailures + 1;
-    if (failures < MapFallback.FAILURE_THRESHOLD) {
-      const next: MapFallbackState = state.copy();
-      next.osmFailures = failures;
-      next.lastFailureMillis = nowMillis;
-      return next;
-    }
-    const next: MapFallbackState = state.copy();
-    next.osmFailures = failures;
-    next.fellBack = true;
-    next.fallbackFailures = failures;
-    next.probeAtMillis = nowMillis + MapFallback.PROBE_INTERVAL_MILLIS;
-    next.lastFailedZoom = -1;
-    next.zoomFailures = 0;
-    next.switchedAtMillis = nowMillis;
+    const streak: number = state.lastFailedZoom === zoom ? state.zoomFailures + 1 : 1;
+    let next: MapFallbackState = state.copy();
     next.lastFailureMillis = nowMillis;
+    next.lastFailedZoom = zoom;
+    next.zoomFailures = streak;
+    // 空白是确定性判据：1 次即判该级别没内容；网络失败仍要 3 次。源始终不变。
+    const threshold: number = blank ? 1 : MapFallback.FAILURE_THRESHOLD;
+    if (streak >= threshold) {
+      next = next.markZoom(plan.effective, zoom, false);
+      next.lastFailedZoom = -1;
+      next.zoomFailures = 0;
+      if (blank) {
+        next = next.markBlankZoom(plan.effective, zoom);
+      }
+    }
     return next;
   }
 }
@@ -721,37 +673,23 @@ export function tileOf(source: MapStyle, latitude: number, longitude: number, zo
   return MapTilesLogic.tileUrl(layer, zoom, Math.floor(point[0]), Math.floor(point[1]));
 }
 
-/** 把探测决定落到状态上：一步定级，并把选中级别之上的级别标「无内容」。 */
+/** 把探测决定落到状态上：只种当前源的级别记忆，**绝不换源**。 */
 export function applyDecision(state: MapFallbackState, decision: ProbeDecision,
-    nowMillis: number): MapFallbackState {
+    nowMillis: number, preferred: MapStyle = MapStyle.ESRI): MapFallbackState {
   if (decision.unavailable) {
     let next: MapFallbackState = state.copy();
     for (const level of [12, 11, 10, 3]) {
-      next = next.markZoom(MapStyle.AMAP_VECTOR, level, false);
+      next = next.markZoom(preferred, level, false);
     }
     next.lastReboundMillis = nowMillis;
     return next;
   }
-  if (decision.source === MapStyle.OSM) {
-    return state.recovered(nowMillis);
-  }
-  if (decision.source === MapStyle.ESRI) {
-    const esriNext: MapFallbackState = state.copy();
-    esriNext.lastReboundMillis = nowMillis;
-    // ESRI 本身可用：清掉旧的「OSM 回退到高德」标记，否则 plan 会继续用高德并误报降级。
-    esriNext.fellBack = false;
-    esriNext.fallbackFailures = 0;
-    esriNext.probeAtMillis = -1;
-    return esriNext;
-  }
+  // 探测只提供「级别有没有内容」；源固定为地区首选。
   let next: MapFallbackState = state.copy();
   for (const level of zoomsAbove(decision.zoom)) {
-    next = next.markZoom(MapStyle.AMAP_VECTOR, level, false);
+    next = next.markZoom(preferred, level, false);
   }
-  next = next.markZoom(MapStyle.AMAP_VECTOR, decision.zoom, true);
-  next.fellBack = true;
-  next.fallbackFailures = MapFallback.FAILURE_THRESHOLD;
-  next.probeAtMillis = nowMillis + MapFallback.PROBE_INTERVAL_MILLIS;
+  next = next.markZoom(preferred, decision.zoom, true);
   next.lastReboundMillis = nowMillis;
   return next;
 }

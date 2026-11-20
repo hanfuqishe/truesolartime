@@ -1314,22 +1314,28 @@ for (const item of equationCases) {
   const fallbackPlan = MapFallback.plan(MapStyle.AUTO, london[0], london[1], 'gb', state);
   check('overseas auto still plans esri before degrading',
     !fallbackPlan.fellBack && fallbackPlan.effective === MapStyle.ESRI);
-  // 探测相关用例用一份「已回退」状态：ESRI 成为境外偏好后，OSM 失败不再触发回退。
-  const fbState = new MapFallbackState();
-  fbState.fellBack = true;
-  fbState.fallbackFailures = 3;
-  fbState.probeAtMillis = now + MapFallback.PROBE_INTERVAL_MILLIS;
-  const partial = MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12,
-    MapFallback.onTileFailed(MapStyle.AUTO, london[0], london[1], 'gb', 12, new MapFallbackState(), now), now + 1);
-  const recovered = MapFallback.onTileLoaded(MapStyle.AUTO, london[0], london[1], 'gb', 12, partial, now + 100);
-  check('any osm success resets the failure counter', !recovered.fellBack && recovered.osmFailures === 0);
+  // 旧「OSM 失败 → 回退高德」标记即使还在，也不得影响实际源。
+  const forced = new MapFallbackState();
+  forced.fellBack = true;
+  forced.fallbackFailures = 3;
+  const forcedPlan = MapFallback.plan(MapStyle.AUTO, london[0], london[1], 'gb', forced);
+  check('a stale fallback flag cannot change the source',
+    !forcedPlan.fellBack && forcedPlan.effective === MapStyle.ESRI);
 
-  // 手动选择底图：不回退、不探测。
+  // 空白 1 次即判该级别没内容；成功一块不会清掉这条级别记忆。
+  const blankOnce = MapFallback.onTileBlank(MapStyle.AUTO, london[0], london[1], 'gb', 12,
+    new MapFallbackState(), now, 3);
+  check('one blank tile marks the level unavailable in the current source',
+    blankOnce.zoomUnavailable(MapStyle.ESRI, 12) && !blankOnce.zoomUnavailable(MapStyle.AMAP_VECTOR, 12));
+  const afterLoaded = MapFallback.onTileLoaded(MapStyle.AUTO, london[0], london[1], 'gb', 12, state, now + 200);
+  check('a successful tile does not clear the level memory', afterLoaded.zoomUnavailable(MapStyle.ESRI, 12));
+
+  // 手动选择底图：不降级、不改源。
   let manual = new MapFallbackState();
   for (let index = 0; index < 5; index++) {
     manual = MapFallback.onTileFailed(MapStyle.OSM, london[0], london[1], 'gb', 12, manual, now + index);
   }
-  check('manual style never falls back', !manual.fellBack && manual.osmFailures === 0);
+  check('manual style never degrades or switches', !manual.fellBack && manual.osmFailures === 0);
 
   // 降级链：z12 → z11 → z10 → z3，z3 仍空白 → 底图不可用。
   let degrade = new MapFallbackState();
@@ -1364,16 +1370,7 @@ for (const item of equationCases) {
   check('blank tile is counted for diagnostics',
     blanked.blankTileCount === 1 && blanked.lastBlankZoom === 12 && blanked.lastBlankColorKinds === 3);
 
-  // 5 分钟探测：到点才探；失败顺延 5 分钟，成功切回并清零（用合成回退状态）。
-  check('probe is not due before five minutes',
-    !MapFallback.probeDue(fbState, fbState.probeAtMillis - 1));
-  check('probe is due at five minutes', MapFallback.probeDue(fbState, fbState.probeAtMillis));
-  const probeFailed = MapFallback.onProbeResult(fbState, false, fbState.probeAtMillis);
-  check('failed probe pushes the next probe five minutes out',
-    probeFailed.fellBack &&
-      probeFailed.probeAtMillis === fbState.probeAtMillis + MapFallback.PROBE_INTERVAL_MILLIS);
-  const probeOk = MapFallback.onProbeResult(fbState, true, fbState.probeAtMillis);
-  check('successful probe switches back to osm', !probeOk.fellBack && probeOk.osmFailures === 0);
+  // 5 分钟 OSM 回退探测已删除。
 
   // 采样：256×256 按步长 8 抽 32×32 个点（最近邻）。
   const rgba: number[] = new Array(256 * 256 * 4).fill(0);
@@ -1615,17 +1612,18 @@ for (const item of equationCases) {
     tileOf(MapStyle.AMAP_VECTOR, 51.5074, -0.1278, 12).indexOf('&z=12') > 0);
 
   const z10Applied = applyDecision(new MapFallbackState(),
-    new ProbeDecision(MapStyle.AMAP_VECTOR, 10, false), now);
-  check('decision marks higher zooms unavailable',
-    z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12) &&
-      z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 11) &&
-      !z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 10));
-  check('decision sets the five minute rebound cooldown', z10Applied.lastReboundMillis === now);
+    new ProbeDecision(MapStyle.AMAP_VECTOR, 10, false), now, MapStyle.ESRI);
+  check('decision seeds the current source, not amap',
+    z10Applied.zoomUnavailable(MapStyle.ESRI, 12) &&
+      z10Applied.zoomUnavailable(MapStyle.ESRI, 11) &&
+      !z10Applied.zoomUnavailable(MapStyle.ESRI, 10) &&
+      !z10Applied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12));
+  check('decision keeps the five minute rebound cooldown', z10Applied.lastReboundMillis === now);
   const unavailableApplied = applyDecision(new MapFallbackState(),
-    new ProbeDecision(MapStyle.AMAP_VECTOR, 12, true), now);
-  check('unavailable decision marks every probed zoom',
-    unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 12) &&
-      unavailableApplied.zoomUnavailable(MapStyle.AMAP_VECTOR, 3));
+    new ProbeDecision(MapStyle.AMAP_VECTOR, 12, true), now, MapStyle.ESRI);
+  check('unavailable decision marks the current source',
+    unavailableApplied.zoomUnavailable(MapStyle.ESRI, 12) &&
+      unavailableApplied.zoomUnavailable(MapStyle.ESRI, 3));
 }
 
 // ---- 定位不可用（未知态）：占位符 / 系统时区 / 逐时六格 / 未知态地图 ----

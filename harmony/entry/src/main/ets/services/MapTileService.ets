@@ -238,16 +238,17 @@ export class MapTileService {
     let firstDecision: ProbeDecision | null = null;
     const consider = (source: MapStyle, zoom: number, hasContent: boolean): void => {
       const now: number = Date.now();
-      if (!session.consider(source, zoom, hasContent, now)) {
+      // 源永不因探测改变：所有证据只用于当前首选源的级别链。
+      if (!session.consider(preferred, zoom, hasContent, now)) {
         return;
       }
       const decision: ProbeDecision = session.unavailable(now)
-        ? new ProbeDecision(source, zoom, true)
-        : new ProbeDecision(source, zoom, false);
+        ? new ProbeDecision(preferred, zoom, true)
+        : new ProbeDecision(preferred, zoom, false);
       if (firstDecision === null) {
         firstDecision = decision;
       }
-      MapTileService.state = applyDecision(MapTileService.state, decision, now);
+      MapTileService.state = applyDecision(MapTileService.state, decision, now, preferred);
       MapTileService.probeCache.key = key;
       MapTileService.probeCache.millis = now;
       MapTileService.probeCache.decision = decision;
@@ -506,32 +507,15 @@ export class MapTileService {
     return png || jpeg;
   }
 
-  /** 回退后每 5 分钟探测一次 z3 OSM 瓦片；成功即切回。 */
+  /** 失败只降级不换源，旧的「回退后探测 OSM」已删除。 */
   private static async probeIfDue(): Promise<void> {
-    if (MapTileService.probing || !MapFallback.probeDue(MapTileService.state, Date.now())) {
-      return;
-    }
-    MapTileService.probing = true;
-    try {
-      const bytes: Uint8Array | null = await HttpUtil.getBytes(MapFallback.PROBE_URL,
-        { 'User-Agent': MapTileService.USER_AGENT }, 4000);
-      const reachable: boolean = bytes !== null && MapTileService.looksLikeImage(bytes);
-      MapTileService.state = MapFallback.onProbeResult(MapTileService.state, reachable, Date.now());
-    } finally {
-      MapTileService.probing = false;
-    }
+    return;
   }
 
-  /** 署名：跟随实际瓦片源；回退时追加原因。 */
+  /** 署名：只跟随实际瓦片源（源永不因失败改变）。 */
   private static attributionFor(plan: MapTilePlan): string {
     const layer: MapLayer = MapTilesLogic.layerForStyle(plan.effective, MapTileService.lastLatitude,
       MapTileService.lastLongitude, MapTileService.lastCountry);
-    if (plan.requested !== MapStyle.AUTO) {
-      return layer.attribution;
-    }
-    if (plan.fellBack) {
-      return `${layer.attribution} · OSM 不可达，已回退高德`;
-    }
     return layer.attribution;
   }
 
@@ -542,7 +526,7 @@ export class MapTileService {
     return MapTileService.attributionFor(plan);
   }
 
-  /** 设置页诊断：实际源（含原因）/ 样式 / 首选 / 缩放与降级 / 瓦片状态 / 失败次数 / 空白判定 / 下次探测。 */
+  /** 设置页诊断：实际源 / 样式 / 首选 / 缩放与降级 / 瓦片状态 / 失败次数 / 空白判定 / 恢复闸。 */
   static diagnostics(): string[] {
     const style: MapStyle = MapTilesLogic.styleFromKey(MapTileService.lastStyleKey);
     const plan: MapTilePlan = MapFallback.plan(style, MapTileService.lastLatitude,
@@ -550,11 +534,9 @@ export class MapTileService {
     const zoomPlan: MapZoomPlan = MapFallback.zoomPlan(plan, MapTileService.lastRequestedZoom,
       MapTileService.state);
     const source: string = plan.requested !== MapStyle.AUTO
-      ? `${MapTileService.styleName(plan.effective)}（手动选择，不回退）`
-      : (plan.fellBack
-        ? `高德（OSM 失败 ${plan.fallbackFailures} 次后回退）`
-        : `${MapTileService.styleName(plan.effective)}（自动：${
-          plan.effective === MapStyle.OSM || plan.effective === MapStyle.ESRI ? '境外' : '境内'}）`);
+      ? `${MapTileService.styleName(plan.effective)}（手动选择）`
+      : `${MapTileService.styleName(plan.effective)}（自动：${
+        plan.effective === MapStyle.OSM || plan.effective === MapStyle.ESRI ? '境外' : '境内'}，失败只降级不换源）`;
     const zoomLine: string = `地图缩放 = ${zoomPlan.zoom}` +
       (zoomPlan.degraded ? `（已降级：请求 ${zoomPlan.requested}）` : '');
     const statusLine: string = '瓦片状态 = ' + (MapTileService.lastUnavailable
@@ -562,19 +544,12 @@ export class MapTileService {
     const blankLine: string = MapTileService.state.blankTileCount > 0
       ? `空白瓦片判定 = 已触发 ${MapTileService.state.blankTileCount} 次（最近：z${
         MapTileService.state.lastBlankZoom} 颜色种类 ${MapTileService.state.lastBlankColorKinds}）`
-      : '空白瓦片判定 = 未触发（只检测高德瓦片）';
-    const failures: string = `OSM 失败次数 = ${
-      style === MapStyle.AUTO ? MapTileService.state.osmFailures : 0}`;
-    const probeAt: number = MapTileService.state.probeAtMillis;
-    let probeLine: string;
-    if (style !== MapStyle.AUTO) {
-      probeLine = '下次探测 OSM = 不探测（手动选择底图）';
-    } else if (!MapTileService.state.fellBack || probeAt < 0) {
-      probeLine = '下次探测 OSM = 无（未回退）';
-    } else {
-      const wait: number = Math.max(0, probeAt - Date.now());
-      probeLine = `下次探测 OSM = ${Math.ceil(wait / 1000)} 秒后`;
-    }
+      : '空白瓦片判定 = 未触发';
+    const failures: string = `当前级别连续失败 = ${
+      style === MapStyle.AUTO ? MapTileService.state.zoomFailures : 0}`;
+    const probeLine: string = style === MapStyle.AUTO
+      ? '级别恢复 = 30 秒静默 + 5 分钟冷却'
+      : '级别恢复 = 手动选择底图不降级';
     return [
       `地图底图 = ${source}`,
       `地图底图样式 = ${MapTileService.styleName(style)}`,
