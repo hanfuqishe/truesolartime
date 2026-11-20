@@ -185,13 +185,3 @@ python design/render_icon.py preview   # 生成 design/drafts/ 下的草稿便�
 天气数据来自 [Open-Meteo](https://open-meteo.com/)（© Open-Meteo.com，CC BY 4.0），无需 API Key；
 主源请求失败时降级到备用源 [7Timer!](https://www.7timer.info/)（`product=civil`，3 小时粒度，https 实测可用），
 界面上（首页页脚、设置页「关于」、桌面卡片底部署名）会跟着数据源显示对应出处。
-
-## 支持这个项目
-
-这个应用**免费、无广告、无内购**，三端源码都在这个仓库里。如果它让你对时间和太阳多了一点兴趣，
-欢迎[自愿赞助](https://hanfuqishe.github.io/truesolartime/sponsor.html)（微信扫码，金额随意）。
-
-赞助**不换取任何功能或内容**，纯粹是对开发者的赠与；不赞助也能用全部功能。
-
-不花钱的支持同样有价值：[点个 Star](https://github.com/hanfuqishe/truesolartime) ·
-提 Issue 报告问题 · 推荐给对节气、日晷、时间感兴趣的朋友。

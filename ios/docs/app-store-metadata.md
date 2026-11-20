@@ -262,10 +262,8 @@ Location is used only on-device to compute true solar time and sunrise/sunset. C
 - 隐私政策 URL：**https://hanfuqishe.github.io/truesolartime/privacy.html**
 - 支持网址：**https://hanfuqishe.github.io/truesolartime/**
 - 营销网址（可选）：同上
-- **赞助入口不进商店元数据**：Apple 3.1.1 覆盖「Apps and their metadata」，
-  描述/推广文本/关键词里出现打赏链接或「赞助」引导，与 App 内放支付入口同属风险。
-  赞助页（`.../sponsor.html`）只放在仓库 FUNDING 与 README，**不要写进任何商店字段**；
-  用户从「支持网址」进官网后自然能看到，属于网站内容而非应用元数据。
+- 本应用**无打赏/赞助入口**：App 内没有，仓库里也没有。
+  （Apple 3.1.1 覆盖「Apps and their metadata」，若将来要加，商店描述与 App 内都属同一条约束。）
 - 截图：6.9"/6.7" 竖屏各 3 张起（用真机或模拟器出图），三种语言各一套（至少英文一套 + 中文一套）
 - 中国大陆区上架需要工信部 **App 备案号**；没有的话只能上架非中国区
 - 版本号由 CI 统一 bump（本文件不含版本号）
