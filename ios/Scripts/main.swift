@@ -2893,8 +2893,8 @@ expect(
 )
 // 常用城市补到 24 个（4 列 × 6 行整），新增开罗 / 里约热内卢。
 expect(
-    "预设城市总数 = 24（4 列 × 6 行整，无孤儿行）",
-    Place.presets.count == 24,
+    "预设城市总数 = 55（28+8+5+6+4+3+1）",
+    Place.presets.count == 55,
     "actual=\(Place.presets.count)"
 )
 let cairoPreset = Place.presets.first { $0.presetKey == "city.cairo" }
@@ -2920,14 +2920,14 @@ expect(
     !cairoPreset!.isInChina && !rioPreset!.isInChina
 )
 expect(
-    "预设顺序对齐 Android / 鸿蒙：末尾 9 项依次为 dubai → newdelhi → tokyo → singapore → sydney → murmansk → kunlun → cairo → rio",
-    Place.presets.suffix(9).map { $0.presetKey ?? "" } == [
-        "city.dubai", "city.newdelhi", "city.tokyo", "city.singapore",
-        "city.sydney", "city.murmansk", "city.kunlun", "city.cairo", "city.rio",
-    ],
-    "actual=\(Place.presets.suffix(9).map { $0.presetKey ?? "-" })"
+    "预设顺序：按大洲分组（asia 28 → europe 8 → africa 5 → northAmerica 6 → southAmerica 4 → oceania 3 → antarctica 1）",
+    Place.presets.prefix(6).map { $0.presetKey ?? "" } == ["city.beijing", "city.shanghai", "city.guangzhou", "city.shenzhen", "city.chengdu", "city.xian"]
+        && Place.presets[13].presetKey == "city.taipei" && Place.presets[14].presetKey == "city.kaohsiung" && Place.presets[15].presetKey == "city.sansha" && Place.presets[16].presetKey == "city.diaoyu" && Place.presets[19].presetKey == "city.pyongyang" && Place.presets[23].presetKey == "city.vientiane" && Place.presets[27].presetKey == "city.istanbul"
+        && Place.presets[28].presetKey == "city.moscow"
+        && Place.presets[36].presetKey == "city.cairo" && Place.presets[37].presetKey == "city.capetown" && Place.presets[39].presetKey == "city.kigali"
+        && Place.presets[54].presetKey == "city.kunlun",
+    "actual=\(Place.presets.map { $0.presetKey ?? "-" })"
 )
-// 昼长扫描：0.05h → 8h（步长 0.05h），三标签矩形必须两两不相交、都在画布内。
 var scanFailures: [(Double, String)] = []
 var shortScan: [Double] = []
 var hour = 0.05
@@ -2961,14 +2961,13 @@ expect(
 )
 // 昆仑站（-80.4169 / 77.1161，cn）：原地替换中山站，预设仍 24 个、下标 21。
 expect(
-    "预设下标 21 = city.kunlun（昆仑站），坐标 -80.4169 / 77.1161、cn、UTC+480",
-    Place.presets.count == 24
-        && Place.presets[21].presetKey == "city.kunlun"
-        && abs(Place.presets[21].latitude + 80.4169) < 1e-9
-        && abs(Place.presets[21].longitude - 77.1161) < 1e-9
-        && Place.presets[21].countryCode == "cn"
-        && Place.presets[21].standardOffsetSeconds == 480 * 60,
-    "key=\(Place.presets[21].presetKey ?? "-") offset=\(Place.presets[21].standardOffsetSeconds)"
+    "昆仑站（预设最后一项）：坐标 -80.4169 / 77.1161、cn、UTC+480",
+    Place.presets.last?.presetKey == "city.kunlun"
+        && abs((Place.presets.last?.latitude ?? 0) + 80.4169) < 1e-9
+        && abs((Place.presets.last?.longitude ?? 0) - 77.1161) < 1e-9
+        && Place.presets.last?.countryCode == "cn"
+        && Place.presets.last?.standardOffsetSeconds == 480 * 60,
+    "key=\(Place.presets.last?.presetKey ?? "-") offset=\(Place.presets.last?.standardOffsetSeconds ?? 0)",
 )
 expect(
     "城市表里不再有 zhongshan 残留",
@@ -3032,6 +3031,70 @@ expect(
     "紧凑布局红线（2.6–4.2h）：y−horizon ≤30pt、离弧 ≥6pt、距交点 ≤70pt、不相交",
     compactFailures.isEmpty,
     "failures=\(compactFailures.prefix(6))"
+)
+// 大洲分组：每洲数量 + region 一致 + 时区抽查。
+let regionCounts = Dictionary(grouping: Place.presets, by: { $0.region }).mapValues { $0.count }
+expect(
+    "每洲数量：亚洲 28 / 欧洲 8 / 非洲 5 / 北美洲 6 / 南美洲 4 / 大洋洲 3 / 南极洲 1",
+    regionCounts[.asia] == 28 && regionCounts[.europe] == 8 && regionCounts[.africa] == 5
+        && regionCounts[.northAmerica] == 6 && regionCounts[.southAmerica] == 4
+        && regionCounts[.oceania] == 3 && regionCounts[.antarctica] == 1,
+    "actual=\(regionCounts)"
+)
+expect(
+    "region 与分组顺序一致（分组后不再交叉出现）",
+    Place.presets.map { $0.region } ==
+        Array(repeating: CityRegion.asia, count: 28) + Array(repeating: .europe, count: 8)
+        + Array(repeating: .africa, count: 5) + Array(repeating: .northAmerica, count: 6)
+        + Array(repeating: .southAmerica, count: 4) + Array(repeating: .oceania, count: 3)
+        + [.antarctica]
+)
+func presetOffset(_ key: String) -> Int? {
+    Place.presets.first { $0.presetKey == key }?.standardOffsetSeconds
+}
+expect(
+    "新增城市时区抽查：莫斯科 +180 / 首尔 +540 / 平壤 +540 / 万象 +420 / 基加利 +120 / 海参崴 +600 / 三沙 +480 / 奥克兰 +720 / 利马 −300 / 墨西哥城 −360 / 雷克雅未克 0",
+    presetOffset("city.moscow") == 180 * 60
+        && presetOffset("city.seoul") == 540 * 60
+        && presetOffset("city.auckland") == 720 * 60
+        && presetOffset("city.lima") == -300 * 60
+        && presetOffset("city.mexicocity") == -360 * 60
+        && presetOffset("city.reykjavik") == 0
+        && presetOffset("city.pyongyang") == 540 * 60
+        && presetOffset("city.vientiane") == 420 * 60
+        && presetOffset("city.kigali") == 120 * 60
+        && presetOffset("city.vladivostok") == 600 * 60
+        && presetOffset("city.sansha") == 480 * 60
+        && presetOffset("city.fuyuan") == 480 * 60
+        && presetOffset("city.diaoyu") == 480 * 60
+        && presetOffset("city.taipei") == 480 * 60
+        && presetOffset("city.kaohsiung") == 480 * 60,
+    "moscow=\(String(describing: presetOffset("city.moscow"))) lima=\(String(describing: presetOffset("city.lima")))"
+)
+expect(
+    "7 个洲名三语齐全且非空",
+    CityRegion.allCases.allSatisfy {
+        !L10n.t($0.titleKey, language: .simplified).isEmpty
+            && !L10n.t($0.titleKey, language: .traditional).isEmpty
+            && !L10n.t($0.titleKey, language: .english).isEmpty
+    }
+        && L10n.t("city.region.asia", language: .english) == "Asia"
+)
+// 喀什经度修正：75.99°E 相对东经 120° 的时差 ≈ (75.9898 − 120) × 4 = −176.04 分钟。
+let kashgar = Place.presets.first { $0.presetKey == "city.kashgar" }
+let kashgarLongitudeMinutes = (kashgar!.longitude - 120.0) * 4.0
+expect(
+    "喀什经度修正 ≈ −176 分钟（并确认是 cn、+480）",
+    abs(kashgarLongitudeMinutes + 176.04) < 0.1
+        && kashgar?.countryCode == "cn"
+        && kashgar?.standardOffsetSeconds == 480 * 60,
+    "actual=\(kashgarLongitudeMinutes) minutes"
+)
+expect(
+    "三沙 / 漠河 / 喀什 / 海参崴 都在预设里且时区正确",
+    Place.presets.first { $0.presetKey == "city.sansha" }?.standardOffsetSeconds == 480 * 60
+        && Place.presets.first { $0.presetKey == "city.mohe" }?.standardOffsetSeconds == 480 * 60
+        && Place.presets.first { $0.presetKey == "city.vladivostok" }?.standardOffsetSeconds == 600 * 60
 )
 print("== 十二时辰 ==")
 let shichenCases: [(Double, Int)] = [(23 * 3600, 0), (30 * 60, 0), (3600, 1), (11 * 3600, 6), (13 * 3600, 7), (22.99 * 3600, 11)]
@@ -3809,8 +3872,8 @@ for (presetKey, expected) in expectedPresets {
     )
 }
     expect(
-        "内置城市数量 = 24（20 + 极圈内 2 座 + 开罗/里约）",
-        Place.presets.count == 24,
+        "内置城市数量 = 55（7 个大洲分组）",
+        Place.presets.count == 55,
         "实际 \(Place.presets.count)"
     )
 print("== 极圈内两座城市：坐标 / 时区 / 极昼极夜文案（验证太阳圆盘用）==")

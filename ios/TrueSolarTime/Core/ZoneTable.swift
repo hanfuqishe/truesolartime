@@ -87,8 +87,9 @@ enum ZoneTable {
         case "mx":
             return longitude < -105 ? -420 : -360
         case "br":
-            if longitude < -60 { return -300 }
-            if longitude < -45 { return -240 }
+            // 巴西：绝大多数人口（圣保罗 -46.6 / 里约 -43.2）都在 UTC−3；西部 −4、极西 −5。
+            if longitude < -58 { return -300 }
+            if longitude < -48 { return -240 }
             return -180
         case "ru":
             if longitude < 40 { return 180 }

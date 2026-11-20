@@ -286,3 +286,49 @@
 
 "sun.dueSouth" = "正南";
 "sun.dueNorth" = "正北";
+
+"city.moscow" = "莫斯科";
+"city.berlin" = "柏林";
+"city.rome" = "羅馬";
+"city.madrid" = "馬德里";
+"city.istanbul" = "伊斯坦堡";
+"city.capetown" = "開普敦";
+"city.nairobi" = "奈洛比";
+"city.lagos" = "拉哥斯";
+"city.seoul" = "首爾";
+"city.bangkok" = "曼谷";
+"city.jakarta" = "雅加達";
+"city.perth" = "伯斯";
+"city.auckland" = "奧克蘭";
+"city.reykjavik" = "雷克雅維克";
+"city.chicago" = "芝加哥";
+"city.mexicocity" = "墨西哥城";
+"city.saopaulo" = "聖保羅";
+"city.buenosaires" = "布宜諾斯艾利斯";
+"city.lima" = "利馬";
+"city.vancouver" = "溫哥華";
+
+"city.region.asia" = "亞洲";
+"city.region.europe" = "歐洲";
+"city.region.africa" = "非洲";
+"city.region.northAmerica" = "北美洲";
+"city.region.southAmerica" = "南美洲";
+"city.region.oceania" = "大洋洲";
+"city.region.antarctica" = "南極洲";
+
+
+
+
+
+"city.kigali" = "基加利";
+"city.mohe" = "漠河";
+"city.kashgar" = "喀什";
+"city.vladivostok" = "海參崴";
+
+"city.sansha" = "三沙";
+
+"city.fuyuan" = "撫遠";
+"city.diaoyu" = "釣魚島";
+
+"city.taipei" = "臺北";
+"city.kaohsiung" = "高雄";

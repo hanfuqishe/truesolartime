@@ -285,3 +285,49 @@
 
 "sun.dueSouth" = "S";
 "sun.dueNorth" = "N";
+
+"city.moscow" = "Moscow";
+"city.berlin" = "Berlin";
+"city.rome" = "Rome";
+"city.madrid" = "Madrid";
+"city.istanbul" = "Istanbul";
+"city.capetown" = "Cape Town";
+"city.nairobi" = "Nairobi";
+"city.lagos" = "Lagos";
+"city.seoul" = "Seoul";
+"city.bangkok" = "Bangkok";
+"city.jakarta" = "Jakarta";
+"city.perth" = "Perth";
+"city.auckland" = "Auckland";
+"city.reykjavik" = "Reykjavík";
+"city.chicago" = "Chicago";
+"city.mexicocity" = "Mexico City";
+"city.saopaulo" = "São Paulo";
+"city.buenosaires" = "Buenos Aires";
+"city.lima" = "Lima";
+"city.vancouver" = "Vancouver";
+
+"city.region.asia" = "Asia";
+"city.region.europe" = "Europe";
+"city.region.africa" = "Africa";
+"city.region.northAmerica" = "North America";
+"city.region.southAmerica" = "South America";
+"city.region.oceania" = "Oceania";
+"city.region.antarctica" = "Antarctica";
+
+
+
+
+
+"city.kigali" = "Kigali";
+"city.mohe" = "Mohe";
+"city.kashgar" = "Kashgar";
+"city.vladivostok" = "Vladivostok";
+
+"city.sansha" = "Sansha";
+
+"city.fuyuan" = "Fuyuan";
+"city.diaoyu" = "Diaoyu Islands";
+
+"city.taipei" = "Taipei";
+"city.kaohsiung" = "Kaohsiung";

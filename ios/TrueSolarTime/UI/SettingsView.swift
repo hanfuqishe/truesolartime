@@ -53,15 +53,31 @@ struct SettingsView: View {
                         Button(L("settings.applyCoordinates")) { applyManual() }
                             .buttonStyle(ThemedPrimaryButtonStyle())
 
-                        FlowLayout(spacing: 8, lineSpacing: 8) {
-                            ForEach(Place.presets, id: \.presetKey) { preset in
-                                Button(preset.displayLabel) {
-                                    model.usePreset(preset)
-                                    dismiss()
+                        // 常用城市按**大洲分组**（与 Android / 鸿蒙一致）：组标题 11pt、
+                        // 组间上间距 10、标题与 chips 间距 4；组内仍是内容宽 chip + 自动换行。
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(CityRegion.allCases) { region in
+                                let cities = Place.presets.filter { $0.region == region }
+                                if !cities.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(region.title)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(palette.onSurfaceVariant)
+                                        FlowLayout(spacing: 8, lineSpacing: 8) {
+                                            ForEach(cities, id: \.presetKey) { preset in
+                                                Button(preset.displayLabel) {
+                                                    model.usePreset(preset)
+                                                    dismiss()
+                                                }
+                                                .buttonStyle(ThemedChipButtonStyle())
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, region == CityRegion.allCases.first ? 0 : 10)
                                 }
-                                .buttonStyle(ThemedChipButtonStyle())
                             }
                         }
+                        .padding(.top, 4)
                         .padding(.top, 4)
                     }
 
