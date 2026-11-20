@@ -162,10 +162,25 @@
                         android:layout_marginEnd="8dp"
                         android:layout_weight="1"
                         android:ellipsize="end"
-                        android:gravity="end"
+                        android:gravity="center"
                         android:maxLines="1"
                         android:textColor="#CCFFFFFF"
                         android:textSize="11dp"
+                        tools:text="上海市黄浦区" />
+<TextView
+                        android:fontFamily="@font/card_sans_widget"
+                        android:id="@+id/widget_city_start"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:gravity="start"
+                        android:maxLines="1"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="11dp"
+                        android:visibility="gone"
                         tools:text="上海市黄浦区" />
 
                     <TextView

@@ -156,6 +156,12 @@ object WidgetUpdater {
      * 就会紧贴着线（实测只剩 1px）。所以地区右侧再让出 6dp —— 与布局里 `widget_city_default`
      * 的 `layout_marginEnd="6dp"`、首页 `HeroCard` 档 0 的 `padding(end = 6.dp)` 三处一致。
      */
+    /**
+     * 档位 → 地名是否居中（纯函数，单测直接盯）。
+     *
+     * 档 1 居中；档 0 贴右（在左半格里）、档 2/3 贴左。
+     */
+    internal fun cityAlignmentIsCentered(tier: Int): Boolean = tier == 1
     private const val CITY_END_INSET_DP = 6f
 
     /**
@@ -168,7 +174,8 @@ object WidgetUpdater {
      * 但文本、可见性与对齐都统一按这两个数组下发，避免哪一套漏更新留下旧文字。
      */
     private val TOP_ROW_UTC_IDS = intArrayOf(R.id.widget_top_utc_default, R.id.widget_top_utc)
-    private val TOP_ROW_CITY_IDS = intArrayOf(R.id.widget_city_default, R.id.widget_city)
+    private val TOP_ROW_CITY_IDS =
+        intArrayOf(R.id.widget_city_default, R.id.widget_city, R.id.widget_city_start)
     private val TOP_ROW_SOLAR_IDS = intArrayOf(R.id.widget_top_solar_default, R.id.widget_top_solar)
     private val TOP_ROW_SHICHEN_IDS = intArrayOf(R.id.widget_top_shichen_default, R.id.widget_top_shichen)
 
@@ -630,7 +637,8 @@ object WidgetUpdater {
             // （RemoteViews 改不了 layout_weight / 宽度，只能准备两份）：
             //   * 档 0 → widget_top_row_default：整行分左右两半，左半 `UTC` 贴左 + 地区贴右
             //     （右端落在 50% 分界上），右半「真太阳时」贴左 + 时辰贴最右 —— 与首页 HeroCard 档 0 同一几何；
-            //   * 档 1-3 → widget_top_row：合并成一条，地区对齐由 setGravity 按档位下发。
+            //   * 档 1-3 → widget_top_row：合并成一条；地区在档 1 居中、档 2/3 贴左 ——
+//     由布局里两套同款 TextView（widget_city / widget_city_start）用**可见性**切换实现。
             // 两个容器互斥，文本 / 可见性 / 对齐对两套控件一起下发（同一布局里 id 不能重名）。
             // 竖分隔线同理有两份（见下面 dividerReachesLabelRow 那一段）。
             // 顶行留给地名的宽度要按**这次真要写的**时辰文案算：中文「亥时」两个汉字，
@@ -673,21 +681,15 @@ object WidgetUpdater {
             }
             // 对齐跟着档位走（与首页一致）：0 档贴右（贴着分界）→ 1 档居中 → 2/3 档贴左；
             // 档 3 的省略号由布局里的 ellipsize="end" + maxLines="1" 保证。
-            // TextView#setGravity 带 @RemotableViewMethod，可以交给宿主进程执行。
-            // 只下发 setGravity，不碰 transformationMethod 之类非 RemoteViews 属性。
-            for (utcId in TOP_ROW_UTC_IDS) setTextViewText(utcId, utcLabel)
-            for (cityId in TOP_ROW_CITY_IDS) {
-                setTextViewText(cityId, cityText)
-                // ⚠️ TextView#setGravity 的 @RemotableViewMethod 是后来才加上的：
-                // Android 10（P30 / ELE-AL00 实测）上 RemoteViews 调它会抛
-                //   "view: android.widget.TextView can't use method with RemoteViews: setGravity(int)"
-                // 而且是**在桌面进程里**抛，我们这边 catch 不到 —— 整个小组件直接变成
-                // 「加载窗口小工具时出现问题」的空白块。只在验证过的新系统上下发，
-                // 老系统用布局里声明的默认对齐（档 1 的地区名靠左而不是居中，可接受）。
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    setInt(cityId, "setGravity", gravityFor(city.align))
-                }
-            }
+                        for (utcId in TOP_ROW_UTC_IDS) setTextViewText(utcId, utcLabel)
+            for (cityId in TOP_ROW_CITY_IDS) setTextViewText(cityId, cityText)
+            // 地区对齐：**两套同款 TextView 用可见性切换**，不再调 setGravity。
+            // Android 10 上 RemoteViews 调 TextView#setGravity 会在桌面进程抛
+            // "can't use method with RemoteViews"，整张卡片直接白掉（P30 实测）。
+            // 档 1 → widget_city（gravity=center）；档 2/3 → widget_city_start（gravity=start）。
+            val centered = cityAlignmentIsCentered(city.tier)
+            setViewVisibility(R.id.widget_city, if (centered) View.VISIBLE else View.GONE)
+            setViewVisibility(R.id.widget_city_start, if (centered) View.GONE else View.VISIBLE)
             // 档 1 起收起「真太阳时」，档 2 起连 UTC 一起收起：把位置让给长地名。
             for (utcId in TOP_ROW_UTC_IDS) {
                 setViewVisibility(utcId, if (city.showUtc) View.VISIBLE else View.GONE)
@@ -1482,7 +1484,7 @@ object WidgetUpdater {
             "clockSafetyFactor" to clockSafetyFactor(context, metrics).toString(),
             "boldWidthFactor" to boldWidthFactor(context).toString(),
             "竖向自适应生效" to if (verticalFitEnabled(context)) "是（显示密度高于出厂）" else "否",
-            "API<31 跳过 setGravity" to if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) "是" else "否",
+            "地区对齐方式" to if (cityAlignmentIsCentered(city.tier)) "居中（档 1）" else "贴边（档 0/2/3）",
         )
     }.getOrElse { listOf("读取失败" to DiagStore.describe(it)) }
 
