@@ -144,6 +144,17 @@ if ($tables.Count -eq $languages.Count) {
             [void]$used.Add($m.Groups[1].Value)
         }
     }
+    # 预设城市的显示名是**运行时查表**的：`L(place.presetKey)`，源码里没有 `L("city.xxx")` 字面量，
+    # 所以上面那轮扫不到。这里单独把 Place.swift 的 presetKey 收进来。
+    # （曾经漏过「平壤 / 万象」两个 key，界面上直接显示出 `city.pyongyang` 这种原始 key。）
+    $placeFile = Join-Path $iosRoot 'TrueSolarTime/Core/Place.swift'
+    if (Test-Path $placeFile) {
+        $placeText = [System.IO.File]::ReadAllText($placeFile)
+        foreach ($m in [regex]::Matches($placeText, 'presetKey:\s*"([^"]+)"')) {
+            [void]$used.Add($m.Groups[1].Value)
+        }
+    }
+
     $undefined = @($used | Where-Object { -not $union.Contains($_) } | Sort-Object)
     if ($undefined.Count -gt 0) {
         [void]$problems.Add("源码里用了未定义的 key —— $($undefined -join ', ')")
