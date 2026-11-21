@@ -80,7 +80,7 @@
     <string name="calibration_off">关闭</string>
     <string name="calibration_height">高度</string>
     <string name="calibration_width">宽度</string>
-    <string name="widget_calibration_hint">切到桌面读出最大完整刻度，填到对应输入框；填错了点「恢复自动」。</string>
+    <string name="widget_calibration_hint">如果桌面卡片布局显示异常，可手工校准卡片大小。</string>
     <string name="widget_width_override">宽度</string>
     <string name="widget_reset_auto">恢复自动</string>
     <string name="section_widget_height">桌面卡片高度</string>
@@ -232,4 +232,5 @@
         <item>亥</item>
     </string-array>
 
+    <string name="widget_calib_go_desktop">现在退至桌面查看卡片宽高，并在此处填入。</string>
 </resources>

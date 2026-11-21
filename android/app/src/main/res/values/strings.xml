@@ -80,7 +80,7 @@
     <string name="calibration_off">Off</string>
     <string name="calibration_height">Height</string>
     <string name="calibration_width">Width</string>
-    <string name="widget_calibration_hint">Switch to the home screen, read the largest full tick, then enter it below. Use "Restore auto" if unsure.</string>
+    <string name="widget_calibration_hint">If the widget layout looks wrong, you can calibrate its size manually.</string>
     <string name="widget_width_override">Width</string>
     <string name="widget_reset_auto">Restore auto</string>
     <string name="section_widget_height">Widget height</string>
@@ -233,4 +233,5 @@
         <item>Hai</item>
     </string-array>
 
+    <string name="widget_calib_go_desktop">Go to the home screen now to read the card width and height, then fill them in below.</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.realsuntime.solartime.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Surface
@@ -494,9 +495,15 @@ fun SettingsSheet(
             var widthText by remember {
                 mutableStateOf(WidgetUpdater.widthOverrideDp(context).takeIf { it > 0 }?.toString().orEmpty())
             }
-            // 回填控件**始终可见**：刻度开关只决定卡片是否显示尺子，
-            // 输入框与按钮常驻，方便随时查看/修改已保存的值（保存后不必再进刻度模式）。
-            run {
+            // 回填控件只在「刻度」打开时出现；保存后随刻度模式一起收起（用户要求）。
+            if (target != 0) {
+                Spacer(Modifier.height(8.dp))
+                // 说明「现在该做什么」：读数是靠用户去桌面看尺子得到的。
+                Text(
+                    text = stringResource(R.string.widget_calib_go_desktop),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
                 Spacer(Modifier.height(8.dp))
                 // 宽、高并排一行（先宽后高），省得上下滚动。
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -539,6 +546,9 @@ fun SettingsSheet(
                             WidgetUpdater.setCalibrationTarget(context, 0)
                             target = 0
                             WidgetUpdater.refreshAll(context, forceChronometer = true)
+                            // 保存即完成一次校准动作：收起面板并直接回桌面，省得用户再手动退出。
+                            onDismiss()
+                            goHome(context)
                         },
                     ) { Text(stringResource(R.string.widget_apply_calibration)) }
                     TextButton(
@@ -551,23 +561,22 @@ fun SettingsSheet(
                         },
                     ) { Text(stringResource(R.string.widget_reset_auto)) }
                 }
-                // 状态行按**当前生效值**显示，而不是固定一句「已保存」——
-                // 从没填过时也说自己已保存，会让人误以为校准已生效。
-                val savedWidth = widthText.toIntOrNull() ?: 0
-                val savedHeight = heightText.toIntOrNull() ?: 0
-                val statusText = when {
-                    savedWidth > 0 && savedHeight > 0 ->
-                        stringResource(R.string.widget_calib_state_both, savedWidth, savedHeight)
-                    savedWidth > 0 -> stringResource(R.string.widget_calib_state_width, savedWidth)
-                    savedHeight > 0 -> stringResource(R.string.widget_calib_state_height, savedHeight)
-                    else -> stringResource(R.string.widget_calib_state_auto)
-                }
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
+            // 状态行**常驻**：即使收起输入框，也要能看到当前生效的是自动还是校准值。
+            val savedWidth = widthText.toIntOrNull() ?: 0
+            val savedHeight = heightText.toIntOrNull() ?: 0
+            val statusText = when {
+                savedWidth > 0 && savedHeight > 0 ->
+                    stringResource(R.string.widget_calib_state_both, savedWidth, savedHeight)
+                savedWidth > 0 -> stringResource(R.string.widget_calib_state_width, savedWidth)
+                savedHeight > 0 -> stringResource(R.string.widget_calib_state_height, savedHeight)
+                else -> stringResource(R.string.widget_calib_state_auto)
+            }
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
@@ -656,3 +665,20 @@ private fun themeLabel(context: Context, mode: ThemeMode): String = context.getS
         ThemeMode.DARK -> R.string.theme_dark
     },
 )
+
+/**
+ * 保存校准后直接回桌面：用户下一步就是看卡片，多一步手动退出没有意义。
+ *
+ * 用 `ACTION_MAIN + CATEGORY_HOME` 而不是 `moveTaskToBack`：后者在从桌面卡片点进来的场景下
+ * 不一定回到桌面（可能落到上一个 App）；HOME 意图则稳定回到启动器。
+ */
+private fun goHome(context: Context) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            },
+        )
+    }
+}
