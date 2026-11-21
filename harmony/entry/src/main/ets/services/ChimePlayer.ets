@@ -19,6 +19,15 @@ export class ChimePlayer {
       await ChimePlayer.stop();
       const player: media.AVPlayer = await media.createAVPlayer();
       ChimePlayer.player = player;
+      // **必须显式设成「并发」焦点**：不设时 AVPlayer 默认按「暂停其他应用」处理，
+      // 我们这种几百毫秒的提示音会把后台音乐掐断，而且短音结束后音乐不会自动恢复
+      // （华为应用市场审核的同类驳回意见正是这条）。SHARE_MODE 让提示音与后台音频并发，
+      // 系统据此走「并发播放」策略，音乐不中断。
+      try {
+        player.audioInterruptMode = audio.InterruptMode.SHARE_MODE;
+      } catch (error) {
+        console.warn(`chime audioInterruptMode failed: ${(error as BusinessError).code}`);
+      }
       player.on('stateChange', (state: media.AVPlayerState) => {
         if (state === 'initialized') {
           // 走「通知」音频通道，与安卓的 USAGE_NOTIFICATION_EVENT 对齐：
