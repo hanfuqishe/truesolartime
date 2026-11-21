@@ -34,6 +34,28 @@ class WidgetRulerTest {
         assertEquals(1, WidgetRuler.clampWidthPx(-50))
     }
 
+    /** 横向刻度：0 在左、400dp 在右，1dp = 1px（density=1）语义。 */
+    @Test
+    fun horizontalTickXMatchesTheDpScale() {
+        assertEquals(0f, WidgetRuler.tickX(0, 400, 400), 0.01f)
+        assertEquals(10f, WidgetRuler.tickX(10, 400, 400), 0.01f)
+        assertEquals(50f, WidgetRuler.tickX(50, 400, 400), 0.01f)
+        assertEquals(400f, WidgetRuler.tickX(400, 400, 400), 0.01f)
+        assertEquals(200f, WidgetRuler.tickX(200, 400, 400), 0.01f)
+    }
+
+    /**
+     * 400dp × density 超过 1024px 时，按固定 1024/400 px per dp 画；
+     * 读数仍是 dp（数字标签按 dp 标），不随缩放改变。
+     */
+    @Test
+    fun horizontalScaleIsCappedWithoutChangingTheDpReading() {
+        assertEquals(2f, WidgetRuler.horizontalPxPerDp(2f), 0.001f)
+        val capped = WidgetRuler.horizontalPxPerDp(3f) // 1200px > 1024
+        assertEquals(1024f / 400f, capped, 0.001f)
+        // 用该比例画出来的总宽正好是 1024px。
+        assertEquals(1024f, capped * 400f, 0.5f)
+    }
     @Test
     fun overrideHeightIsClampedToTheSupportedRange() {
         assertEquals(0, WidgetRuler.clampOverrideDp(0))

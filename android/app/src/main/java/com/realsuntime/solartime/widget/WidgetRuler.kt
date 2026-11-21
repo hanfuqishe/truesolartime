@@ -60,6 +60,56 @@ internal object WidgetRuler {
     fun tickDps(maxDp: Int = MAX_OVERRIDE_DP): List<Int> =
         (0..maxDp step MINOR_TICK_DP).toList()
 
+    /** 横向刻度 x 坐标（px）：与竖直方向同一套 dp→px 映射。 */
+    fun tickX(dp: Int, maxDp: Int, widthPx: Int): Float =
+        if (maxDp <= 0) 0f else dp.toFloat() / maxDp * widthPx
+
+    /**
+     * 横向尺的像素比例：正常 1dp = density px；若 `400dp × density > 1024px`，
+     * 则按 **1024/400 px per dp** 固定比例画（**不许再被 View 拉伸**，否则读数失真）。
+     */
+    fun horizontalPxPerDp(density: Float, maxDp: Int = MAX_OVERRIDE_DP): Float {
+        val full = density.coerceAtLeast(0.1f)
+        val width = maxDp * full
+        return if (width > MAX_WIDTH_PX) MAX_WIDTH_PX.toFloat() / maxDp else full
+    }
+
+    /**
+     * 画横向尺：0 在左端，每 10dp 短刻度、每 50dp 长刻度并标数字（数字在刻度线下方）。
+     * 宽度固定 400dp（`fitXY` 时与位图 1:1，不会被拉伸）。
+     */
+    fun renderHorizontal(context: Context, heightPx: Int, maxDp: Int = MAX_OVERRIDE_DP): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val pxPerDp = horizontalPxPerDp(density, maxDp)
+        val width = (maxDp * pxPerDp).roundToInt().coerceIn(1, MAX_WIDTH_PX)
+        val height = heightPx.coerceIn(1, 400)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(0xF2, 0xF2, 0xF2))
+        val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0x33, 0x33, 0x33)
+            strokeWidth = 2f
+        }
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0x22, 0x22, 0x22)
+            textSize = 10f * density
+            typeface = runCatching {
+                ResourcesCompat.getFont(context, R.font.card_sans_medium)
+            }.getOrNull() ?: Typeface.DEFAULT
+        }
+        val shortTick = 8f * density
+        val longTick = 20f * density
+        val baseline = height - 4f * density
+        for (dp in 0..maxDp step MINOR_TICK_DP) {
+            val x = tickX(dp, maxDp, width).coerceIn(1f, width - 1f)
+            val isLabel = dp % LABEL_EVERY_DP == 0
+            canvas.drawLine(x, 0f, x, if (isLabel) longTick else shortTick, tickPaint)
+            if (isLabel) {
+                canvas.drawText(dp.toString(), x + 3f * density, baseline, labelPaint)
+            }
+        }
+        return bitmap
+    }
     /**
      * 画尺：浅灰底、深色刻度与数字，任何主题下都能读。
      *

@@ -676,5 +676,14 @@
         android:scaleType="fitXY"
         android:contentDescription="@null"
         android:visibility="gone" />
+    <!-- 横向校准尺：固定 400dp 宽，右侧被卡片裁掉，裁掉的位置就是真实宽度。 -->
+    <ImageView
+        android:id="@+id/widget_ruler_h"
+        android:layout_width="400dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|start"
+        android:scaleType="fitXY"
+        android:contentDescription="@null"
+        android:visibility="gone" />
 </FrameLayout>
 

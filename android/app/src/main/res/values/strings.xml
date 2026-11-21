@@ -73,6 +73,14 @@
     <string name="city_sydney">Sydney</string>
     <string name="city_murmansk">Murmansk</string>
     <string name="city_kunlun">Kunlun Station</string>
+    <string name="section_widget_calibration">Widget calibration</string>
+    <string name="calibration_target">Calibration target</string>
+    <string name="calibration_off">Off</string>
+    <string name="calibration_height">Height</string>
+    <string name="calibration_width">Width</string>
+    <string name="widget_calibration_hint">Switch to the home screen, read the largest full tick, then enter it below. Use "Restore auto" if unsure.</string>
+    <string name="widget_width_override">Measured width (dp)</string>
+    <string name="widget_reset_auto">Restore auto</string>
     <string name="section_widget_height">Widget height</string>
     <string name="widget_height_calibrate">Height calibration mode</string>
     <string name="widget_height_calibrate_hint">Switch to the home screen, read the largest full tick, then enter it below</string>

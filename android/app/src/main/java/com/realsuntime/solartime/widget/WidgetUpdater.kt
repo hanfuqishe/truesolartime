@@ -336,17 +336,45 @@ object WidgetUpdater {
     // ---- 卡片高度校准（Android 读不到 RemoteViews 真实高度，只能让用户量）----
     private const val HEIGHT_PREFS = "widget_height"
     private const val KEY_CALIBRATION = "calibration"
+    private const val KEY_TARGET = "calibration_target" // 0=OFF 1=HEIGHT 2=WIDTH
     private const val KEY_OVERRIDE_DP = "override_dp"
+    private const val KEY_WIDTH_OVERRIDE_DP = "width_override_dp"
 
     private fun heightPrefs(context: Context) =
         context.applicationContext.getSharedPreferences(HEIGHT_PREFS, Context.MODE_PRIVATE)
 
-    /** 校准模式：卡片只显示刻度尺，用户读出最大完整刻度。 */
-    fun calibrationMode(context: Context): Boolean =
-        runCatching { heightPrefs(context).getBoolean(KEY_CALIBRATION, false) }.getOrDefault(false)
+    /** 校准目标：0 = 关闭，1 = 高度，2 = 宽度（一次只校一个轴）。 */
+    fun calibrationTarget(context: Context): Int =
+        runCatching { heightPrefs(context).getInt(KEY_TARGET, 0) }.getOrDefault(0)
 
-    fun setCalibrationMode(context: Context, enabled: Boolean) {
-        runCatching { heightPrefs(context).edit().putBoolean(KEY_CALIBRATION, enabled).apply() }
+    fun setCalibrationTarget(context: Context, target: Int) {
+        runCatching { heightPrefs(context).edit().putInt(KEY_TARGET, target.coerceIn(0, 2)).apply() }
+    }
+
+    /** 兼容旧调用：是否处于校准（任一轴）。 */
+    fun calibrationMode(context: Context): Boolean = calibrationTarget(context) != 0
+
+    /** 实测宽度（dp）；0 = 自动（沿用桌面上报值）。 */
+    fun widthOverrideDp(context: Context): Int =
+        WidgetRuler.clampOverrideDp(
+            runCatching { heightPrefs(context).getInt(KEY_WIDTH_OVERRIDE_DP, 0) }.getOrDefault(0),
+        )
+
+    fun setWidthOverrideDp(context: Context, dp: Int) {
+        runCatching {
+            heightPrefs(context).edit().putInt(KEY_WIDTH_OVERRIDE_DP, WidgetRuler.clampOverrideDp(dp)).apply()
+        }
+    }
+
+    /** 恢复自动：两个 override 清零、校准目标关闭。 */
+    fun resetCalibration(context: Context) {
+        runCatching {
+            heightPrefs(context).edit()
+                .putInt(KEY_OVERRIDE_DP, 0)
+                .putInt(KEY_WIDTH_OVERRIDE_DP, 0)
+                .putInt(KEY_TARGET, 0)
+                .apply()
+        }
     }
 
     /** 用户实测高度（dp）；0 = 未校准（沿用自动估算）。越界会被夹到 100–400。 */
@@ -487,15 +515,27 @@ object WidgetUpdater {
         diag: MutableList<Pair<String, String>>? = null,
     ): RemoteViews {
         val place = location.place
+        // 宽度校准值优先于桌面上报宽度（0 = 自动）。
+        val widthOverride = widthOverrideDp(context)
+        val layoutWidthDp = if (widthOverride > 0) widthOverride else widthDp
 
-        // 校准模式：只显示刻度尺（隐藏整块内容），让用户直接读出卡片真实高度。
-        if (calibrationMode(context)) {
+        // 校准模式（一次只显示一把尺）：1 = 高度（竖尺），2 = 宽度（横尺）。
+        val calibrationTarget = calibrationTarget(context)
+        if (calibrationTarget != 0) {
             val metrics = renderMetrics(context)
             val views = RemoteViews(context.packageName, R.layout.widget_solar_time)
             views.setViewVisibility(R.id.widget_content, View.GONE)
-            val widthPx = (cellWidthDp(metrics, widthDp) * metrics.density).toInt()
-            views.setImageViewBitmap(R.id.widget_ruler, WidgetRuler.render(context, widthPx))
-            views.setViewVisibility(R.id.widget_ruler, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_ruler, View.GONE)
+            views.setViewVisibility(R.id.widget_ruler_h, View.GONE)
+            if (calibrationTarget == 1) {
+                val widthPx = (cellWidthDp(metrics, widthDp) * metrics.density).toInt()
+                views.setImageViewBitmap(R.id.widget_ruler, WidgetRuler.render(context, widthPx))
+                views.setViewVisibility(R.id.widget_ruler, View.VISIBLE)
+            } else {
+                val hPx = (40 * metrics.density).toInt()
+                views.setImageViewBitmap(R.id.widget_ruler_h, WidgetRuler.renderHorizontal(context, hPx))
+                views.setViewVisibility(R.id.widget_ruler_h, View.VISIBLE)
+            }
             return views
         }
 
@@ -550,7 +590,7 @@ object WidgetUpdater {
         // 只有还不够时才让主时钟缩一点。常规 450 档实测不紧（内容 199dp ≤ 可用 207dp），
         // 一个字节都不动。
         val fitMetrics = renderMetrics(context)
-        val cellDp = cellWidthDp(fitMetrics, widthDp)
+        val cellDp = cellWidthDp(fitMetrics, layoutWidthDp)
         val columnPx = ((cellDp * fitMetrics.density -
             (if (compact) COMPACT_COLUMN_CHROME_DP else COLUMN_CHROME_DP) * fitMetrics.density) / 2f)
             .coerceAtLeast(1f)
@@ -583,7 +623,7 @@ object WidgetUpdater {
         // 高度富余 → 加一行日出/正午/日落；再富余一截 → 加第二排逐时天气（后 6 小时）。
         val tallContent = effectiveHeightDp >= TALL_CONTENT_DP
         val roomForMoreWeather = effectiveHeightDp >= TALL_WEATHER_DP &&
-            widthDp >= MIN_WIDTH_FOR_SECOND_HOUR_ROW_DP
+            layoutWidthDp >= MIN_WIDTH_FOR_SECOND_HOUR_ROW_DP
         val showSunRow = large && tallContent && !singleRow
         val showSecondHourRow = large && showHourly && roomForMoreWeather
         val layout = if (compact) R.layout.widget_solar_time_compact else R.layout.widget_solar_time
@@ -609,7 +649,7 @@ object WidgetUpdater {
             // 主时间字号按栏宽换算（桌面回报的宽度与实际一致），保证填满栏宽又不被裁切。
             val mainPx = applyClockSizing(
                 context = context,
-                widthDp = widthDp,
+                widthDp = layoutWidthDp,
                 date = date,
                 coordinates = TimeText.coordinates(context, place.latitude, place.longitude),
                 compact = compact,
@@ -658,6 +698,7 @@ object WidgetUpdater {
                     "（内容 %.1fdp）".format(Locale.US, contentDp))
             }
             setViewVisibility(R.id.widget_ruler, View.GONE)
+            setViewVisibility(R.id.widget_ruler_h, View.GONE)
             // 校准模式关掉后要把内容显示回来（否则卡片会一直空白）。
             setViewVisibility(R.id.widget_content, View.VISIBLE)
             if (compressPadding) {
@@ -675,7 +716,7 @@ object WidgetUpdater {
                 diag?.add("竖向富余/侧(dp)" to "%.1f".format(Locale.US, extraPaddingDp))
             }
             if (showAxis) {
-                bindAxis(context, widthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
+                bindAxis(context, layoutWidthDp, compact, now, location.hasFix, solarOffset, keyTime, isDay, this)
             } else {
                 // 一行卡片放不下时间轴：整条连位图一起收掉，别让它在底部露出半截。
                 setViewVisibility(R.id.widget_axis, View.GONE)
@@ -697,7 +738,7 @@ object WidgetUpdater {
             // 顶行留给地名的宽度要按**这次真要写的**时辰文案算：中文「亥时」两个汉字，
             // 英文 "Hai hour" 更宽。去掉「初/正」后时辰短了，档位判定自动变宽松。
             val shichenForWidth = cityTextEm(shichenText(context, solarSecondsOfDay))
-            val city = cityLabel(context, place, widthDp, compact, shichenForWidth)
+            val city = cityLabel(context, place, layoutWidthDp, compact, shichenForWidth)
             val topRowDefault = city.tier == 0
             setViewVisibility(
                 R.id.widget_top_row_default,
