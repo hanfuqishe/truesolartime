@@ -247,6 +247,12 @@ object WidgetUpdater {
     private const val CONTENT_FIXED_DP = 143.3f
     /** 时间轴行（13dp + 3dp 上边距）。内容放不下时最先收掉它。 */
     private const val AXIS_ROW_DP = 16f
+
+    /** 溢出超过这个量才值得收掉时间轴（小于它属于估算误差，见收轴判断处）。 */
+    private const val AXIS_HIDE_MIN_OVERFLOW_DP = 8f
+
+    /** 竖向预算的上界比例（相对卡片宽度）：防止某些桌面把「最大高度」当「最小高度」上报。 */
+    private const val CELL_HEIGHT_RATIO_MAX = 0.72f
     /** 收紧时上下内边距 10dp → 4dp 省下的高度（dp）。 */
     private const val PADDING_SAVE_DP = 12f
     /** 内容列左右内边距（与布局 XML 对齐；收紧时用于 setViewPadding）。 */
@@ -593,7 +599,19 @@ object WidgetUpdater {
         val clockRowDp = CLOCK_LINE_BOX_EM * columnPx * CLOCK_EM_PER_COLUMN / fitMetrics.density
         // 有实测高度就用它（留 4dp 余量），否则沿用「宽度 × 0.54」的估算。
         val heightOverrideDp = heightOverrideDp(context)
-        val autoAvailableDp = cellDp * CELL_HEIGHT_RATIO
+        // 竖向预算（未校准时）：
+        // * 桌面上报的**高度**才是真实约束，`有效高度 = 上报高度 × HEIGHT_SCALE` 是实测校准过的换算；
+        // * 但部分桌面会把上限当 min 上报，所以再按「宽度 × CELL_HEIGHT_RATIO_MAX」封一个上界；
+        // * 上报高度缺失（0）时才退回旧的「宽度 × 0.54」经验比例。
+        //
+        // 为什么必须这么改：华为系（P30 实测 density 3.375、init_dpi 480；nova 6 同理）会被
+        // `densityOverridden` 判成「显示被放大」，而旧的宽度预算只有 0.54 × 宽度 ≈ 167dp，
+        // 比真实高度（约 230dp）少 60dp —— 于是明明放得下也把时间轴整行收掉。
+        val autoAvailableDp = if (effectiveHeightDp > 0f) {
+            minOf(effectiveHeightDp, cellDp * CELL_HEIGHT_RATIO_MAX)
+        } else {
+            cellDp * CELL_HEIGHT_RATIO
+        }
         val availableDp = WidgetRuler.availableDp(heightOverrideDp, autoAvailableDp)
         // 注意比的是**本进程原始密度**：fitMetrics.density 已经夹到出厂密度了，跟出厂比较永远相等。
         val densityOverridden = verticalFitEnabled(context)
@@ -603,7 +621,9 @@ object WidgetUpdater {
         var clockRowBudgetDp = 0f
         val denseLayout = compact
         val cellWidthDpValue = cellDp
-        if (densityOverridden && !singleRow && showAxis && contentDp > availableDp) {
+        // 只有「溢出到值得收掉一行」时才收时间轴：差 1–8dp 属于估算误差，
+        // 收掉 16dp 的功能行反而更糟（用户就是这个观感）。
+        if (densityOverridden && !singleRow && showAxis && contentDp - availableDp > AXIS_HIDE_MIN_OVERFLOW_DP) {
             Log.d(TAG, "vertical tight: content=${contentDp}dp avail=${availableDp}dp -> hide axis + tighter padding")
             showAxis = false
             compressPadding = true
