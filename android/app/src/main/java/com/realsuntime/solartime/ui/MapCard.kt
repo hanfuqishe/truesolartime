@@ -93,6 +93,27 @@ private const val LOADING_SKELETON_TIMEOUT_MILLIS = 6_000L
  * 字号缩放由调用方锁死（`MainScreen` 里用 `LockedCardDensity` 包住，fontScale 恒为 1）；
  * 这里的字重也一律显式写出，避免被系统「粗体字」的字重调整带偏。
  */
+/**
+ * 「地图视口被重建了几次」——诊断页会显示。
+ *
+ * 代码里只有一处 `setCenter/invalidate`（视口应用），每次都会丢弃在飞的瓦片请求重发；
+ * 之前用 `place` 当 key，GPS 每 60 秒刷一次坐标就重建一次视口，表现是「地图每分钟重新加载、加载期间空白」。
+ * 现在坐标量化到 3 位小数（约 110 米）后才重建 —— 这个计数器用来证明它确实安静下来了。
+ */
+internal object MapViewportDiag {
+    @Volatile
+    var count: Int = 0
+        private set
+
+    @Volatile
+    var lastTarget: String = "无"
+
+    fun record(latitude: Double, longitude: Double, zoom: Int, source: Any?) {
+        count += 1
+        lastTarget = "%.3f, %.3f z%d %s".format(latitude, longitude, zoom, source.toString())
+    }
+}
+
 @Composable
 fun MapCard(
     place: Place,
@@ -238,14 +259,20 @@ fun MapCard(
     // * 以前用 `animateTo`（带动画）+ 另一个 `LaunchedEffect` 里 `setZoom`，两个效果会互相打断 ——
     //   `setZoom` 会 `forceFinished` 掉平移动画，地图就停在中途，真机上就是「标记不在中心」；
     // * 居中放在缩放之后再做一次，是因为缩放会按当前滚动中心重算，先居中再缩放偶尔会差几个像素。
-    LaunchedEffect(place, ui.source, ui.zoom, mapView, locationUnknown) {
+    // 视口目标坐标**量化到 3 位小数（约 110 米）**再作为 key：
+    // GPS 每 60 秒刷新一次，坐标抖动常常只有几米，若直接拿 `place` 当 key，
+    // 每次定位都会重启这个效果 → `setCenter` + `invalidate` → osmdroid 丢弃在飞的瓦片请求重发，
+    // 表现就是「地图每分钟重新加载一次、加载期间一片空白」。量化后只有真的移动了才重建视口。
+    val viewportTarget = if (locationUnknown) {
+        MapUiState.UNKNOWN_LATITUDE to MapUiState.UNKNOWN_LONGITUDE
+    } else {
+        markerPointOf(place, ui.source)
+    }
+    val viewportLat = Math.round(viewportTarget.first * 1000.0) / 1000.0
+    val viewportLon = Math.round(viewportTarget.second * 1000.0) / 1000.0
+    LaunchedEffect(viewportLat, viewportLon, ui.source, ui.zoom, mapView) {
         val view = mapView ?: return@LaunchedEffect
-        // 未知态没有观测点：视口落在 (0, 0)（境外口径的全球底图中心），不标任何位置。
-        val (latitude, longitude) = if (locationUnknown) {
-            MapUiState.UNKNOWN_LATITUDE to MapUiState.UNKNOWN_LONGITUDE
-        } else {
-            markerPointOf(place, ui.source)
-        }
+        val (latitude, longitude) = viewportLat to viewportLon
         val target = GeoPoint(latitude, longitude)
         view.controller.setCenter(target)
         if (view.zoomLevelDouble.roundToInt() != ui.zoom) {
@@ -259,6 +286,7 @@ fun MapCard(
         view.invalidate()
         // 告诉状态机「视口刚被程序化改过」：这之后 2 秒内回来的瓦片失败是被取消的旧请求，不计入降级。
         onViewportApplied(ui.zoom)
+        MapViewportDiag.record(viewportLat, viewportLon, ui.zoom, ui.source)
     }
 
     // 连最低级别都没瓦片：定期重画，网络一恢复就自己出图（静默，不打扰用户）。
