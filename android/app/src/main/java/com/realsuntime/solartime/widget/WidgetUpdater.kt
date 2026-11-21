@@ -251,6 +251,18 @@ object WidgetUpdater {
     /** 溢出超过这个量才值得收掉时间轴（小于它属于估算误差，见收轴判断处）。 */
     private const val AXIS_HIDE_MIN_OVERFLOW_DP = 8f
 
+    /** 最近一次构建有没有把时间轴高度钉成像素（诊断用）。 */
+    @Volatile
+    private var lastAxisHeightPinned: Boolean = false
+
+    /** 华为（含 HarmonyOS 兼容层）自家 RemoteViews 在 SDK 31 上会处理坏 `setViewLayoutHeight`。 */
+    private fun isHuaweiDevice(): Boolean {
+        val brand = Build.BRAND.orEmpty().lowercase()
+        val manufacturer = Build.MANUFACTURER.orEmpty().lowercase()
+        return brand.contains("huawei") || brand.contains("honor") ||
+            manufacturer.contains("huawei") || manufacturer.contains("honor")
+    }
+
     /** 竖向预算的上界比例（相对卡片宽度）：防止某些桌面把「最大高度」当「最小高度」上报。 */
     private const val CELL_HEIGHT_RATIO_MAX = 0.72f
     /** 收紧时上下内边距 10dp → 4dp 省下的高度（dp）。 */
@@ -710,6 +722,7 @@ object WidgetUpdater {
                     else -> "自动"
                 })
                 add("采用高度" to "%.1fdp".format(Locale.US, availableDp))
+                add("轴高度钉死" to if (lastAxisHeightPinned) "是" else "否（华为跳过）")
                 add("收轴判定" to (if (showAxis) "否" else "是") +
                     "（内容 %.1fdp）".format(Locale.US, contentDp))
             }
@@ -940,9 +953,16 @@ object WidgetUpdater {
             // 不钉的话，布局写的是 `13dp`，由**宿主**按它自己的密度换算：真机 P40 Pro 上
             // 系统的显示大小被改成 450dpi、物理 530dpi，宿主换算出的 13dp 比我们算的位图高，
             // 竖直方向被放大，圆点就变成竖椭圆（同一份代码在模拟器上是正圆）。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // 钉高度是为了防「宿主用另一套密度换算 13dp」导致圆点被拉成竖椭圆（P40 Pro 实测）。
+            // 但**华为自家 RemoteViews 在 SDK 31 上会把这个调用处理坏**：nova 6（JEF-TN20，
+            // HarmonyOS 3.0 / Android 12 / SDK_INT=31）实测「时间轴显示 = true」却一根线都看不到，
+            // 而 P30（SDK 29，跳过这段）与红米（SDK 36，AOSP 实现）都正常 —— 唯一差异就是这段。
+            // 因此华为设备跳过钉高度，退回布局里的 13dp（最多让圆点略扁，远好过整条轴消失）。
+            val axisHeightPinned = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isHuaweiDevice()
+            if (axisHeightPinned) {
                 views.setViewLayoutHeight(R.id.widget_axis, heightPx.toFloat(), TypedValue.COMPLEX_UNIT_PX)
             }
+            lastAxisHeightPinned = axisHeightPinned
         }
     }
 
