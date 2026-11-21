@@ -466,9 +466,6 @@ fun SettingsSheet(
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
-            Spacer(Modifier.height(20.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(14.dp))
             // 桌面卡片校准：高度 / 宽度二选一，卡片刻度尺让用户直接读数。
             Text(stringResource(R.string.section_widget_calibration), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
@@ -479,23 +476,18 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(6.dp))
             var target by remember { mutableStateOf(WidgetUpdater.calibrationTarget(context)) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    R.string.calibration_off to 0,
-                    R.string.calibration_height to 1,
-                    R.string.calibration_width to 2,
-                ).forEach { (res, value) ->
-                    FilterChip(
-                        selected = target == value,
-                        onClick = {
-                            target = value
-                            WidgetUpdater.setCalibrationTarget(context, value)
-                            WidgetUpdater.refreshAll(context, forceChronometer = true)
-                        },
-                        label = { Text(stringResource(res)) },
-                    )
-                }
-            }
+            // 只保留一个「刻度」入口：点一下卡片变刻度尺；点「保存并刷新」或「恢复自动」即退出。
+            FilterChip(
+                selected = target != 0,
+                onClick = {
+                    // 再点一次可以退出刻度模式（保存/恢复自动也会退出）。
+                    val next = if (target != 0) 0 else 1
+                    target = next
+                    WidgetUpdater.setCalibrationTarget(context, next)
+                    WidgetUpdater.refreshAll(context, forceChronometer = true)
+                },
+                label = { Text(stringResource(R.string.calibration_ruler)) },
+            )
             Spacer(Modifier.height(8.dp))
             var heightText by remember {
                 mutableStateOf(WidgetUpdater.heightOverrideDp(context).takeIf { it > 0 }?.toString().orEmpty())
@@ -560,6 +552,9 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(20.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(14.dp))
             Text(stringResource(R.string.section_diagnostics), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
             Text(

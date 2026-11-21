@@ -73,6 +73,7 @@
     <string name="city_sydney">雪梨</string>
     <string name="city_murmansk">莫曼斯克</string>
     <string name="city_kunlun">崑崙站</string>
+    <string name="calibration_ruler">刻度</string>
     <string name="widget_apply_calibration">儲存並重新整理</string>
     <string name="section_widget_calibration">桌面卡片校準</string>
     <string name="calibration_target">校準目標</string>
