@@ -233,5 +233,5 @@
         <item>Hai</item>
     </string-array>
 
-    <string name="widget_calib_go_desktop">Go to the home screen now to read the card width and height, then fill them in below.</string>
+    <string name="widget_calib_go_desktop">Read the ruler on the home screen, then fill in below. Height decides how many rows fit (the timeline and the hourly row); width only corrects the clock size and does not change the card width. Usually only height is needed.</string>
 </resources>

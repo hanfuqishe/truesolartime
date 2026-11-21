@@ -232,5 +232,5 @@
         <item>亥</item>
     </string-array>
 
-    <string name="widget_calib_go_desktop">現在退至桌面查看卡片寬高，並在此處填入。</string>
+    <string name="widget_calib_go_desktop">退至桌面讀刻度後填寫：高度決定能放下幾行（影響時間軸與逐時資料列）；寬度只用於修正時鐘字級，不改變卡片實際寬度。一般只需填高度。</string>
 </resources>
