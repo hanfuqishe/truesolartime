@@ -488,70 +488,86 @@ fun SettingsSheet(
                 },
                 label = { Text(stringResource(R.string.calibration_ruler)) },
             )
-            Spacer(Modifier.height(8.dp))
             var heightText by remember {
                 mutableStateOf(WidgetUpdater.heightOverrideDp(context).takeIf { it > 0 }?.toString().orEmpty())
             }
             var widthText by remember {
                 mutableStateOf(WidgetUpdater.widthOverrideDp(context).takeIf { it > 0 }?.toString().orEmpty())
             }
-            OutlinedTextField(
-                value = heightText,
-                onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }.take(3)
-                    heightText = digits
-                    WidgetUpdater.setHeightOverrideDp(context, digits.toIntOrNull() ?: 0)
-                    WidgetUpdater.refreshAll(context)
-                },
-                label = { Text(stringResource(R.string.widget_height_override)) },
-                suffix = { Text(stringResource(R.string.widget_height_unit)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = widthText,
-                onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }.take(3)
-                    widthText = digits
-                    WidgetUpdater.setWidthOverrideDp(context, digits.toIntOrNull() ?: 0)
-                    WidgetUpdater.refreshAll(context)
-                },
-                label = { Text(stringResource(R.string.widget_width_override)) },
-                suffix = { Text(stringResource(R.string.widget_height_unit)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 输入是即改即存的；这个按钮只是给一个明确的「确认」落点，并强制刷新卡片。
-                Button(
-                    onClick = {
-                        WidgetUpdater.setHeightOverrideDp(context, heightText.toIntOrNull() ?: 0)
-                        WidgetUpdater.setWidthOverrideDp(context, widthText.toIntOrNull() ?: 0)
-                        // 保存后自动退出校准模式，卡片立刻恢复正常排版。
-                        WidgetUpdater.setCalibrationTarget(context, 0)
-                        target = 0
-                        WidgetUpdater.refreshAll(context, forceChronometer = true)
-                    },
-                ) { Text(stringResource(R.string.widget_apply_calibration)) }
-                TextButton(
-                    onClick = {
-                        WidgetUpdater.resetCalibration(context)
-                        target = 0
-                        heightText = ""
-                        widthText = ""
-                        WidgetUpdater.refreshAll(context, forceChronometer = true)
-                    },
-                ) { Text(stringResource(R.string.widget_reset_auto)) }
+            // 回填控件**始终可见**：刻度开关只决定卡片是否显示尺子，
+            // 输入框与按钮常驻，方便随时查看/修改已保存的值（保存后不必再进刻度模式）。
+            run {
+                Spacer(Modifier.height(8.dp))
+                // 宽、高并排一行（先宽后高），省得上下滚动。
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = widthText,
+                        onValueChange = { raw ->
+                            val digits = raw.filter { it.isDigit() }.take(3)
+                            widthText = digits
+                            WidgetUpdater.setWidthOverrideDp(context, digits.toIntOrNull() ?: 0)
+                            WidgetUpdater.refreshAll(context)
+                        },
+                        label = { Text(stringResource(R.string.widget_width_override)) },
+                        suffix = { Text(stringResource(R.string.widget_height_unit)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = heightText,
+                        onValueChange = { raw ->
+                            val digits = raw.filter { it.isDigit() }.take(3)
+                            heightText = digits
+                            WidgetUpdater.setHeightOverrideDp(context, digits.toIntOrNull() ?: 0)
+                            WidgetUpdater.refreshAll(context)
+                        },
+                        label = { Text(stringResource(R.string.widget_height_override)) },
+                        suffix = { Text(stringResource(R.string.widget_height_unit)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            WidgetUpdater.setHeightOverrideDp(context, heightText.toIntOrNull() ?: 0)
+                            WidgetUpdater.setWidthOverrideDp(context, widthText.toIntOrNull() ?: 0)
+                            // 保存后自动退出校准模式，卡片立刻恢复正常排版。
+                            WidgetUpdater.setCalibrationTarget(context, 0)
+                            target = 0
+                            WidgetUpdater.refreshAll(context, forceChronometer = true)
+                        },
+                    ) { Text(stringResource(R.string.widget_apply_calibration)) }
+                    TextButton(
+                        onClick = {
+                            WidgetUpdater.resetCalibration(context)
+                            target = 0
+                            heightText = ""
+                            widthText = ""
+                            WidgetUpdater.refreshAll(context, forceChronometer = true)
+                        },
+                    ) { Text(stringResource(R.string.widget_reset_auto)) }
+                }
+                // 状态行按**当前生效值**显示，而不是固定一句「已保存」——
+                // 从没填过时也说自己已保存，会让人误以为校准已生效。
+                val savedWidth = widthText.toIntOrNull() ?: 0
+                val savedHeight = heightText.toIntOrNull() ?: 0
+                val statusText = when {
+                    savedWidth > 0 && savedHeight > 0 ->
+                        stringResource(R.string.widget_calib_state_both, savedWidth, savedHeight)
+                    savedWidth > 0 -> stringResource(R.string.widget_calib_state_width, savedWidth)
+                    savedHeight > 0 -> stringResource(R.string.widget_calib_state_height, savedHeight)
+                    else -> stringResource(R.string.widget_calib_state_auto)
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                text = stringResource(R.string.widget_height_saved),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(Modifier.height(14.dp))
