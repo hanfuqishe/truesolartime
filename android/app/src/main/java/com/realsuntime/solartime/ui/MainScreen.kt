@@ -432,6 +432,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                                         onLocationUnavailableClick = openLocationSettings,
                                         extras = heroExtras,
                                         isDay = uiIsDay,
+                                        hourlyRows = 2,
                                         modifier = Modifier.fillMaxHeight(),
                                     )
                                 }
@@ -662,6 +663,8 @@ private fun HeroCard(
     extras: HeroExtras,
     /** 卡片该用白天的暖橙底还是夜里的深蓝底：由主题设置 + 太阳高度角共同决定（见 `ThemeMode`）。 */
     isDay: Boolean,
+    /** 逐时天气预报画几排（每排 6 格）。手机 1 排；平板宽屏 2 排，填掉卡片被拉高后的空白。 */
+    hourlyRows: Int = 1,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -1082,7 +1085,7 @@ private fun HeroCard(
             // 逐时行：未知态也照画（六格时间 + `-°` 占位、无图标），行高与正常态一致。
             if (extras.hourly.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
-                HeroHourly(extras.hourly)
+                HeroHourly(extras.hourly, rows = hourlyRows)
             }
         }
     }
@@ -1197,7 +1200,23 @@ private fun HeroAxis(
  * （`iconRes == null` 时补一个同尺寸的空位），所以卡片高度与正常态逐像素一致，不会突然变矮。
  */
 @Composable
-private fun HeroHourly(cells: List<HourCell>) {
+private fun HeroHourly(cells: List<HourCell>, rows: Int = 1) {
+    // 平板宽屏：大卡片被拉到与太阳卡片等高，一排逐时只占一半高度，留出大片空白 ——
+    // 那里画两排（每排 6 格）。手机永远 1 排，渲染与改动前逐像素一致。
+    val rowsToShow = cells.chunked(HOUR_CELLS).take(rows.coerceAtLeast(1))
+    Column(modifier = Modifier.fillMaxWidth()) {
+        rowsToShow.forEachIndexed { index, rowCells ->
+            if (index > 0) {
+                Spacer(Modifier.height(10.dp))
+            }
+            HeroHourlyRow(rowCells)
+        }
+    }
+}
+
+/** 一排逐时格子（6 格等宽）。 */
+@Composable
+private fun HeroHourlyRow(cells: List<HourCell>) {
     Row(modifier = Modifier.fillMaxWidth()) {
         cells.forEach { cell ->
             Column(

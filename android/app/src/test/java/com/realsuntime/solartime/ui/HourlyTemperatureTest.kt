@@ -168,6 +168,42 @@ class HourlyTemperatureTest {
         assertEquals(listOf("16°", "17°", "18°", "19°", "20°", "21°"), labels(temperatures))
     }
 
+    // ---------------------------------------------------------------- 两排（平板宽屏）
+
+    /**
+     * 平板宽屏要画两排（12 格）：**温度列表必须与格子等长**。
+     *
+     * 回归的是 1.4.251 的崩溃：大卡片取 12 格，而 `hourTemperatures` 仍用默认 6，
+     * 于是 `temperatures[6]` 抛 `IndexOutOfBoundsException: Index: 6, Size: 6`，
+     * 平板上一开首页就闪退。
+     */
+    @Test
+    fun twoRowsKeepTemperatureListAsLongAsSlotList() {
+        val from = utc(1)
+        val points = points(from, (1..14).map { 10 + it }, stepHours = 1)
+        val now = from + 3600L // 本地 9 点整
+        val oneRow = hourTemperatures(
+            points = points,
+            nowEpochSeconds = now,
+            zoneOffsetSeconds = zoneOffsetSeconds,
+            stepHours = 1,
+            currentTemperatureC = 99,
+        )
+        val twoRows = hourTemperatures(
+            points = points,
+            nowEpochSeconds = now,
+            zoneOffsetSeconds = zoneOffsetSeconds,
+            stepHours = 1,
+            currentTemperatureC = 99,
+            count = HOUR_CELLS * 2,
+        )
+        assertEquals("一排是 6 格", HOUR_CELLS, oneRow.size)
+        assertEquals("两排是 12 格", HOUR_CELLS * 2, twoRows.size)
+        assertTrue("两排的前 6 格应与一排完全一致", twoRows.take(HOUR_CELLS) == oneRow)
+        // 第 7 格 = 从「现在」起第 7 个整点：点位从 hour1 起每格 +1h，故取到 10 + 8。
+        assertEquals("第 7 格必须有值（不能越界）", 18, twoRows[HOUR_CELLS])
+    }
+
     // ---------------------------------------------------------------- 格式化本身
 
     @Test

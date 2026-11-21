@@ -37,14 +37,20 @@ internal data class HeroExtras(
     val temperature: TakeTemperature?,
 )
 
-/** 逐时预报的格数：**永远是 6 格**，格与格之间的步长跟随数据源（1 小时或 3 小时）。 */
-private const val HOUR_CELLS = 6
+/**
+ * 一排逐时预报的格数：**6 格**，格与格之间的步长跟随数据源（1 小时或 3 小时）。
+ *
+ * 平板宽屏上大卡片会被拉高到与太阳卡片等高，一排只占一半高度 —— 那里会画两排（见 [HeroHourly]），
+ * 所以数据侧统一备 **两排** 的格子（[HOUR_CELLS] × 2），由渲染侧决定用几排。
+ */
+internal const val HOUR_CELLS = 6
 
 internal fun loadHeroExtras(
     context: Context,
     place: Place,
     now: Instant,
     zoneOffsetSeconds: Int,
+    hourCellCount: Int = HOUR_CELLS * 2,
 ): HeroExtras {
     val zone = LocalZone.zoneOffset(zoneOffsetSeconds)
     val civil = now.atZone(zone)
@@ -70,7 +76,7 @@ internal fun loadHeroExtras(
         dateText = TimeText.dateShortWithWeekday(context, date),
         weatherText = weatherText,
         rangeText = rangeText,
-        hourly = hourCells(context, hourly, now, cached?.code, cached?.temperatureC, zone),
+        hourly = hourCells(context, hourly, now, cached?.code, cached?.temperatureC, zone, hourCellCount),
         bands = schedule?.bands.orEmpty(),
         temperature = schedule?.temperature,
     )
@@ -89,6 +95,7 @@ internal fun unknownHeroExtras(
     zoneOffsetSeconds: Int,
     weatherPlaceholder: String,
     temperaturePlaceholder: String,
+    hourCellCount: Int = HOUR_CELLS * 2,
 ): HeroExtras {
     val zone = LocalZone.zoneOffset(zoneOffsetSeconds)
     val civil = now.atZone(zone)
@@ -101,6 +108,7 @@ internal fun unknownHeroExtras(
             nowLabel = context.getString(R.string.weather_now),
             hourLabel = { hour -> context.getString(R.string.weather_hour, hour) },
             temperature = temperaturePlaceholder,
+            count = hourCellCount,
         ),
         bands = emptyList(),
         temperature = null,
@@ -147,13 +155,14 @@ private fun hourCells(
     currentCode: Int?,
     currentTemperature: Int?,
     zone: ZoneOffset,
+    count: Int = HOUR_CELLS,
 ): List<HourCell> {
     val points = hourly.points.associateBy { it.epochSeconds }
     val slots = WeatherRepository.visibleSlots(
         points = hourly.points,
         nowEpochSeconds = now.epochSecond,
         zoneOffsetSeconds = zone.totalSeconds,
-        count = HOUR_CELLS,
+        count = count,
         stepHours = hourly.stepHours,
     )
     val temperatures = hourTemperatures(
@@ -162,6 +171,8 @@ private fun hourCells(
         zoneOffsetSeconds = zone.totalSeconds,
         stepHours = hourly.stepHours,
         currentTemperatureC = currentTemperature,
+        // 必须与 slots 同长：之前这里用的是默认 6，宽屏取 12 格时 temperatures[6] 直接崩。
+        count = count,
     )
     val unknown = context.getString(R.string.weather_unknown)
     val degrees: (Int) -> String = { context.getString(R.string.weather_temp, it) }
