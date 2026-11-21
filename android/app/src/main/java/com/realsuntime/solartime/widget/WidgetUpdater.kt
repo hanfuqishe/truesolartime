@@ -948,6 +948,10 @@ object WidgetUpdater {
             dotXCompensation = dotXCompensation(context),
         )
         if (bitmap != null) {
+            // **必须显式设回 VISIBLE**：`widget_axis` 默认可见，但只要有任意一次刷新走了
+            // 「放不下 → GONE」那条分支，之后所有 showAxis=true 的刷新都只贴位图、不恢复可见性，
+            // 卡片就永远没有时间轴（nova 6 实测：诊断「时间轴显示 = true」却一根线都没有）。
+            views.setViewVisibility(R.id.widget_axis, View.VISIBLE)
             views.setImageViewBitmap(R.id.widget_axis, bitmap)
             // 把视图高度钉成位图的像素高度，纵向缩放就永远是 1:1。
             // 不钉的话，布局写的是 `13dp`，由**宿主**按它自己的密度换算：真机 P40 Pro 上
