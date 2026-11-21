@@ -27,6 +27,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -133,6 +136,18 @@ fun DiagnosticsDialog(onDismiss: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(10.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                        // 卡片尺寸校准收在这里：只给「布局明显不对」的用户用，
+                        // 普通用户在主设置里看不到它。
+                        var showCalibration by remember { mutableStateOf(false) }
+                        TextButton(onClick = { showCalibration = !showCalibration }) {
+                            Text(if (showCalibration) "收起卡片校准" else "卡片布局不对？校准卡片尺寸")
+                        }
+                        if (showCalibration) {
+                            CardCalibrationSection(onDismissAll = onDismiss)
+                            Spacer(Modifier.height(8.dp))
+                        }
                         HorizontalDivider()
                         Spacer(Modifier.height(8.dp))
                         // ③ 正文：weight(1f) 只会缩，不会把上面的控件顶出去；滚动只在这一层。
