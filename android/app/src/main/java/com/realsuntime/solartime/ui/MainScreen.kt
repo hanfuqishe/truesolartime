@@ -82,6 +82,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -364,15 +365,25 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(snackbarHostState) },
         ) { padding ->
+            // 视口高度：滚动容器的实测高度。宽屏「地图铺满」要用它算剩余空间。
+            var viewportPx by remember { mutableIntStateOf(0) }
+            // 地图上方内容（标题 + 两卡）与页脚（版本号）的实测高度：
+            // 两者都与地图高度无关，因此不会形成测量环。
+            var aboveMapPx by remember { mutableIntStateOf(0) }
+            var footerPx by remember { mutableIntStateOf(0) }
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .onSizeChanged { viewportPx = it.height }
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp),
             ) {
                 // 平板/宽屏：大卡片与太阳卡片并排（1:1、等高），卡片内容整体缩放到手机上那个比例。
-                val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
+                // 先取出来：后面的 `with(density) { ... }` 里 maxWidth 的隐式接收者会变成 Density，
+                // 直接用会报「cannot be called with an implicit receiver」。
+                val contentWidthDp = maxWidth
+                val wide = contentWidthDp >= WIDE_LAYOUT_MIN_WIDTH
                 // 自适应缩放：让「卡片的逻辑宽度」恒等于手机卡的 334dp，于是无论平板多宽，
                 // 卡片里的版式都和手机一模一样，只是整体按比例放大/缩小。
                 // （写死 1.35 会在 640dp 的小平板上出问题：分栏后每张卡只有 294dp，内容会被截断。）
@@ -380,6 +391,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 val cardScale = (cardWidth / PHONE_CARD_WIDTH).coerceIn(MIN_CARD_SCALE, MAX_CARD_SCALE)
 
                 Column {
+                    Column(Modifier.onSizeChanged { aboveMapPx = it.height }) {
                     Header(
                         // 只有跟随 GPS 才显示「GPS」徽标；预设城市 / 手动坐标什么都不显示
                         // （地名在下面大卡片里，标题行不占位）。未知态没有定位，同样不显示。
@@ -459,6 +471,22 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             SunCard(snapshot = snapshot, locationUnknown = locationUnknown)
                         }
                     }
+                    }
+
+                    // 宽屏铺满：卡片总高 = 视口 − 上方内容 − 页脚（都实测）。
+                    // 取 max(比例高度, 剩余高度)：屏幕不够高时退回 16:9，不压扁地图。
+                    val density = LocalDensity.current
+                    val cardAspectHeight = with(density) {
+                        ((contentWidthDp - 40.dp) / WIDE_MAP_ASPECT_RATIO).coerceAtLeast(120.dp)
+                    }
+                    val fillMapHeight: Dp? = if (!wide) {
+                        null
+                    } else {
+                        val freePx = viewportPx - aboveMapPx - footerPx
+                        val freeDp = with(density) { freePx.toDp() }
+                        maxOf(freeDp, cardAspectHeight)
+                    }
+
                     Spacer(Modifier.height(14.dp))
 
                     // 地图卡片同样锁字号：卡上有标题、经纬度、版权三处文本，
@@ -475,10 +503,12 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                             onViewportApplied = viewModel::onMapZoomApplied,
                             onUserMapGesture = viewModel::onMapUserGesture,
                             mapAspectRatio = if (wide) WIDE_MAP_ASPECT_RATIO else PHONE_MAP_ASPECT_RATIO,
+                            fillHeight = fillMapHeight,
                         )
                     }
                     Spacer(Modifier.height(14.dp))
 
+                    Column(Modifier.onSizeChanged { footerPx = it.height }) {
                     // 页脚与顶部标题不锁：它们不是「版式即内容」的卡片，
                     // 跟随系统字号更符合可读性预期（设置页同理）。
                     // 天气来源随数据源切换（Open-Meteo CC BY 4.0 / 7Timer!），降级后不能还署主源的名。
@@ -491,6 +521,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(28.dp))
+                    }
                 }
             }
         }

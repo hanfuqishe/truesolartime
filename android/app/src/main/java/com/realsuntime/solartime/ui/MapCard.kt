@@ -38,6 +38,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.realsuntime.solartime.data.MapConfig
@@ -112,6 +114,12 @@ fun MapCard(
     onUserMapGesture: () -> Unit,
     modifier: Modifier = Modifier,
     mapAspectRatio: Float = 4f / 3f,
+    /**
+     * 宽屏「铺满」用的卡片总高（dp）。给了就固定卡片高度、地图用 `weight(1f)` 吃掉剩余空间，
+     * 于是标题行/署名/内边距都自动扣掉，不需要在这里写死 chrome 高度。
+     * 为 null（手机）时仍按 [mapAspectRatio] 走老路径。
+     */
+    fillHeight: Dp? = null,
 ) {
     val context = LocalContext.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
@@ -139,12 +147,18 @@ fun MapCard(
     val blankWatcher = remember { TileBlankWatcher { latestStyle.value } }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (fillHeight != null) Modifier.height(fillHeight) else Modifier),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(
+            Modifier
+                .padding(20.dp)
+                .then(if (fillHeight != null) Modifier.fillMaxHeight() else Modifier),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.location_map_title),
@@ -167,7 +181,14 @@ fun MapCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(mapAspectRatio)
+                    .then(
+                        if (fillHeight != null) {
+                            // 宽屏铺满：卡片高度已固定，地图吃掉标题行与署名之外的全部空间。
+                            Modifier.weight(1f)
+                        } else {
+                            Modifier.aspectRatio(mapAspectRatio)
+                        },
+                    )
                     .clip(RoundedCornerShape(16.dp)),
             ) {
                 if (ready) {
