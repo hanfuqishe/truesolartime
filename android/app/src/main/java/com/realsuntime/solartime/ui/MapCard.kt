@@ -77,6 +77,21 @@ private const val BLANK_SCAN_RADIUS = 1
 private const val BLANK_RESCAN_MILLIS = 2_000L
 
 /** 加载态最长盖住地图的时间：超过就收起，绝不能一直挡着（真出不来还有别的兜底）。 */
+
+/** 两点间大圆距离（米）。不用 osmdroid 的 distanceTo：它不是公开 API，升版就编不过。 */
+private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6_371_000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    return 2 * r * Math.asin(Math.min(1.0, Math.sqrt(a)))
+}
+
+
+private const val FOLLOW_PAN_MIN_METERS = 3.0
+
 private const val LOADING_SKELETON_TIMEOUT_MILLIS = 6_000L
 
 /**
@@ -101,16 +116,27 @@ private const val LOADING_SKELETON_TIMEOUT_MILLIS = 6_000L
  * 现在坐标量化到 3 位小数（约 110 米）后才重建 —— 这个计数器用来证明它确实安静下来了。
  */
 internal object MapViewportDiag {
+    /** 重建视口的次数：切源或改级别（这两件事会丢弃在飞的瓦片请求）。 */
     @Volatile
-    var count: Int = 0
+    var rebuildCount: Int = 0
+        private set
+
+    /** 跟随平移的次数：只 `setCenter`，已有瓦片保留、只补新区域 —— 移动中就该走这条。 */
+    @Volatile
+    var panCount: Int = 0
         private set
 
     @Volatile
     var lastTarget: String = "无"
 
-    fun record(latitude: Double, longitude: Double, zoom: Int, source: Any?) {
-        count += 1
+    fun recordRebuild(latitude: Double, longitude: Double, zoom: Int, source: Any?) {
+        rebuildCount += 1
         lastTarget = "%.3f, %.3f z%d %s".format(latitude, longitude, zoom, source.toString())
+    }
+
+    fun recordPan(latitude: Double, longitude: Double, movedMeters: Double) {
+        panCount += 1
+        lastTarget = "%.3f, %.3f 平移 %.0fm".format(latitude, longitude, movedMeters)
     }
 }
 
@@ -259,34 +285,51 @@ fun MapCard(
     // * 以前用 `animateTo`（带动画）+ 另一个 `LaunchedEffect` 里 `setZoom`，两个效果会互相打断 ——
     //   `setZoom` 会 `forceFinished` 掉平移动画，地图就停在中途，真机上就是「标记不在中心」；
     // * 居中放在缩放之后再做一次，是因为缩放会按当前滚动中心重算，先居中再缩放偶尔会差几个像素。
-    // 视口目标坐标**量化到 3 位小数（约 110 米）**再作为 key：
-    // GPS 每 60 秒刷新一次，坐标抖动常常只有几米，若直接拿 `place` 当 key，
-    // 每次定位都会重启这个效果 → `setCenter` + `invalidate` → osmdroid 丢弃在飞的瓦片请求重发，
-    // 表现就是「地图每分钟重新加载一次、加载期间一片空白」。量化后只有真的移动了才重建视口。
-    val viewportTarget = if (locationUnknown) {
+    // 视口分两件事，别混在一起：
+    //
+    //   ① 缩放 / 切源 —— 会丢弃在飞的瓦片请求（setZoom / setTileSource），**只在真的变了时**才做；
+    //   ② 跟随坐标 —— 只 `setCenter`，osmdroid 会保留已缓存的瓦片、只请求新露出的区域，
+    //      所以「人在移动」时是增量加载，不该整块重建。
+    //
+    // 以前把两者都挂在 `LaunchedEffect(place, ..., ui.zoom)` 上：GPS 每 60 秒换一次 place，
+    // 整个视口（含 setZoom + invalidate）就被重放一遍 → 地图每分钟重建一次、期间空白。
+    val (targetLatitude, targetLongitude) = if (locationUnknown) {
         MapUiState.UNKNOWN_LATITUDE to MapUiState.UNKNOWN_LONGITUDE
     } else {
         markerPointOf(place, ui.source)
     }
-    val viewportLat = Math.round(viewportTarget.first * 1000.0) / 1000.0
-    val viewportLon = Math.round(viewportTarget.second * 1000.0) / 1000.0
-    LaunchedEffect(viewportLat, viewportLon, ui.source, ui.zoom, mapView) {
+
+    LaunchedEffect(ui.source, ui.zoom, mapView) {
         val view = mapView ?: return@LaunchedEffect
-        val (latitude, longitude) = viewportLat to viewportLon
-        val target = GeoPoint(latitude, longitude)
-        view.controller.setCenter(target)
-        if (view.zoomLevelDouble.roundToInt() != ui.zoom) {
+        val zoomChanged = view.zoomLevelDouble.roundToInt() != ui.zoom
+        val target = GeoPoint(targetLatitude, targetLongitude)
+        if (zoomChanged) {
+            // 缩放会按当前滚动中心重算，先居中再缩放、再确认居中（顺序沿用原实现）。
+            view.controller.setCenter(target)
             view.controller.setZoom(ui.zoom.toDouble())
+            view.controller.setCenter(target)
+            view.invalidate()
         }
-        view.controller.setCenter(target)
-        // **必须重绘一次**：切源（OSM→高德）和改级别都会把在飞的请求取消掉，
-        // osmdroid 只有在下一次 draw 时才会按新的 tile 队列重新发请求 ——
-        // 不主动 invalidate 的话，真机上会出现「探测已经定好级别、地图却一直不请求瓦片」
-        // （实测：不重绘就一直停在骨架，手指轻扫一下地图瓦片立刻全出来）。
-        view.invalidate()
         // 告诉状态机「视口刚被程序化改过」：这之后 2 秒内回来的瓦片失败是被取消的旧请求，不计入降级。
         onViewportApplied(ui.zoom)
-        MapViewportDiag.record(viewportLat, viewportLon, ui.zoom, ui.source)
+        MapViewportDiag.recordRebuild(targetLatitude, targetLongitude, ui.zoom, ui.source)
+    }
+
+    // 跟随：坐标一变就平移（不缩放、不切源、不 invalidate）。
+    // 只在真的位移超过 3 米时才动手，避免 GPS 原地抖动把地图推来推去。
+    LaunchedEffect(targetLatitude, targetLongitude, mapView) {
+        val view = mapView ?: return@LaunchedEffect
+        val target = GeoPoint(targetLatitude, targetLongitude)
+        val moved = distanceMeters(
+            view.mapCenter.latitude,
+            view.mapCenter.longitude,
+            targetLatitude,
+            targetLongitude,
+        )
+        if (moved > FOLLOW_PAN_MIN_METERS) {
+            view.controller.setCenter(target)
+            MapViewportDiag.recordPan(targetLatitude, targetLongitude, moved)
+        }
     }
 
     // 连最低级别都没瓦片：定期重画，网络一恢复就自己出图（静默，不打扰用户）。

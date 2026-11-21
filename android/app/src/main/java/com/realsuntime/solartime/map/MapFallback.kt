@@ -858,8 +858,11 @@ internal object MapFallbackDiagnostics {
         "空白瓦片判定 = ${blankLine(state)}",
         "OSM 失败次数 = ${if (plan.requested == MapStyle.AUTO) state.osmFailures else 0}",
         "下次探测 OSM = ${probeLine(plan, state, nowMillis)}",
-        // 视口重建次数：一分钟内涨好几次说明「定位抖动 → 重建视口 → 瓦片重发」又回来了。
-        "视口重建次数 = ${com.realsuntime.solartime.ui.MapViewportDiag.count} 次（最近：${com.realsuntime.solartime.ui.MapViewportDiag.lastTarget}）",
+        // 重建 = 切源/改级别（会丢弃在飞瓦片）；平移 = 跟随移动（只补新瓦片）。
+        // 跟随 GPS 移动时应该只有「平移」在涨；「重建」一分钟涨好几次就说明又退化成整块重建了。
+        "视口重建次数 = ${com.realsuntime.solartime.ui.MapViewportDiag.rebuildCount} 次" +
+            "；跟随平移 = ${com.realsuntime.solartime.ui.MapViewportDiag.panCount} 次" +
+            "（最近：${com.realsuntime.solartime.ui.MapViewportDiag.lastTarget}）",
     )
 
     /**
