@@ -73,6 +73,7 @@
     <string name="city_sydney">悉尼</string>
     <string name="city_murmansk">摩尔曼斯克</string>
     <string name="city_kunlun">昆仑站</string>
+    <string name="widget_apply_calibration">保存并刷新</string>
     <string name="section_widget_calibration">桌面卡片校准</string>
     <string name="calibration_target">校准目标</string>
     <string name="calibration_off">关闭</string>

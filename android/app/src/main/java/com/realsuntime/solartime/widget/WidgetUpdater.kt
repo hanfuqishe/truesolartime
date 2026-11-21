@@ -519,23 +519,19 @@ object WidgetUpdater {
         val widthOverride = widthOverrideDp(context)
         val layoutWidthDp = if (widthOverride > 0) widthOverride else widthDp
 
-        // 校准模式（一次只显示一把尺）：1 = 高度（竖尺），2 = 宽度（横尺）。
+        // 校准模式：**同时显示横竖两把尺**（0 点重叠无所谓，读数看远端）。
+        // 目标值只用于 UI 高亮，实际两把尺一起画，省得来回切目标。
         val calibrationTarget = calibrationTarget(context)
         if (calibrationTarget != 0) {
             val metrics = renderMetrics(context)
             val views = RemoteViews(context.packageName, R.layout.widget_solar_time)
             views.setViewVisibility(R.id.widget_content, View.GONE)
-            views.setViewVisibility(R.id.widget_ruler, View.GONE)
-            views.setViewVisibility(R.id.widget_ruler_h, View.GONE)
-            if (calibrationTarget == 1) {
-                val widthPx = (cellWidthDp(metrics, widthDp) * metrics.density).toInt()
-                views.setImageViewBitmap(R.id.widget_ruler, WidgetRuler.render(context, widthPx))
-                views.setViewVisibility(R.id.widget_ruler, View.VISIBLE)
-            } else {
-                val hPx = (40 * metrics.density).toInt()
-                views.setImageViewBitmap(R.id.widget_ruler_h, WidgetRuler.renderHorizontal(context, hPx))
-                views.setViewVisibility(R.id.widget_ruler_h, View.VISIBLE)
-            }
+            val widthPx = (cellWidthDp(metrics, widthDp) * metrics.density).toInt()
+            views.setImageViewBitmap(R.id.widget_ruler, WidgetRuler.render(context, widthPx))
+            views.setViewVisibility(R.id.widget_ruler, View.VISIBLE)
+            val hPx = (40 * metrics.density).toInt()
+            views.setImageViewBitmap(R.id.widget_ruler_h, WidgetRuler.renderHorizontal(context, hPx))
+            views.setViewVisibility(R.id.widget_ruler_h, View.VISIBLE)
             return views
         }
 

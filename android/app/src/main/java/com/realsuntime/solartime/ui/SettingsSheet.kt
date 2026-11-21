@@ -533,15 +533,33 @@ fun SettingsSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(6.dp))
-            TextButton(
-                onClick = {
-                    WidgetUpdater.resetCalibration(context)
-                    target = 0
-                    heightText = ""
-                    widthText = ""
-                    WidgetUpdater.refreshAll(context, forceChronometer = true)
-                },
-            ) { Text(stringResource(R.string.widget_reset_auto)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 输入是即改即存的；这个按钮只是给一个明确的「确认」落点，并强制刷新卡片。
+                Button(
+                    onClick = {
+                        WidgetUpdater.setHeightOverrideDp(context, heightText.toIntOrNull() ?: 0)
+                        WidgetUpdater.setWidthOverrideDp(context, widthText.toIntOrNull() ?: 0)
+                        // 保存后自动退出校准模式，卡片立刻恢复正常排版。
+                        WidgetUpdater.setCalibrationTarget(context, 0)
+                        target = 0
+                        WidgetUpdater.refreshAll(context, forceChronometer = true)
+                    },
+                ) { Text(stringResource(R.string.widget_apply_calibration)) }
+                TextButton(
+                    onClick = {
+                        WidgetUpdater.resetCalibration(context)
+                        target = 0
+                        heightText = ""
+                        widthText = ""
+                        WidgetUpdater.refreshAll(context, forceChronometer = true)
+                    },
+                ) { Text(stringResource(R.string.widget_reset_auto)) }
+            }
+            Text(
+                text = stringResource(R.string.widget_height_saved),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(stringResource(R.string.section_diagnostics), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
             Text(

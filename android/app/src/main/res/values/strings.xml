@@ -73,6 +73,7 @@
     <string name="city_sydney">Sydney</string>
     <string name="city_murmansk">Murmansk</string>
     <string name="city_kunlun">Kunlun Station</string>
+    <string name="widget_apply_calibration">Save &amp; refresh</string>
     <string name="section_widget_calibration">Widget calibration</string>
     <string name="calibration_target">Calibration target</string>
     <string name="calibration_off">Off</string>
