@@ -19,6 +19,7 @@ import { DialLabels } from './core/DialLabels';
 import { DistrictLookupPolicy } from './core/DistrictLookup';
 import { PlaceNamePolicy } from './core/PlaceNamePolicy';
 import { packRows } from './core/PresetLayout';
+import { fitMapHeight } from './core/MapLayout';
 import { ChimeLogic } from './core/Chime';
 import { Place, PlaceRegion, PlaceSource } from './core/Place';
 import { PlaceBadgeLogic } from './core/PlaceBadge';
@@ -2521,6 +2522,16 @@ for (const item of equationCases) {
     }
   }
   check('320vp rows never exceed the content width', narrowFits);
+}
+
+// ---- 宽屏地图铺满高度 ----
+{
+  equal('fill wins when the viewport is taller', 620, fitMapHeight(540, 620));
+  equal('aspect is the floor when the viewport is short', 540, fitMapHeight(540, 420));
+  equal('negative fill falls back to aspect', 540, fitMapHeight(540, -20));
+  equal('NaN fill falls back to aspect', 540, fitMapHeight(540, Number.NaN));
+  equal('infinite fill falls back to aspect', 540, fitMapHeight(540, Number.POSITIVE_INFINITY));
+  equal('zero aspect stays zero', 0, fitMapHeight(0, -1));
 }
 
 console.log(`\n${passed} checks passed, ${failures.length} failed`);

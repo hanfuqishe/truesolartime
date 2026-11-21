@@ -5,6 +5,7 @@ import { DistrictNames } from '../core/DistrictName';
 import { DEFAULT_ZOOM, MapLayer, MapStyle, MapTile, MapTilesLogic, TILE_PX } from '../core/MapTiles';
 import { MapTileService, MapLoadResult } from '../services/MapTileService';
 import { MapUiState, ProbeDecision, sameUiState } from '../core/MapFallback';
+import { fitMapHeight } from '../core/MapLayout';
 import { Place, PlaceSource } from '../core/Place';
 import { LocationPlaceholders, UnknownLocationLogic } from '../core/LocationUnknown';
 import { PlaceBadgeLogic } from '../core/PlaceBadge';
@@ -157,6 +158,10 @@ struct Index {
    * 免得一张卡横跨 600vp 被拉得很稀。手机（约 366vp）保持上下排列。
    */
   @State contentWidth: number = 0;
+  /** 首页 Scroll 视口高度（vp）；宽屏地图铺满时用。 */
+  @State scrollViewportH: number = 0;
+  /** 地图上方内容（宽屏 hero+sun / 手机两张卡）的实测高度（vp）。 */
+  @State aboveMapH: number = 0;
   /** 大卡片里时钟那一栏的实测宽度（vp）；时间字号按它反推，做到撑满栏宽。 */
   @State clockColumnWidth: number = 0;
   /** 日期/天气那一行的可用宽度（vp）；空间不够时用来决定是否隐藏经纬度。 */
@@ -1579,7 +1584,7 @@ struct Index {
         }
       }
       .width('100%')
-      .aspectRatio(this.mapAspectRatio())
+      .height(this.mapStackHeight())
       .clip(true)
       .borderRadius(12)
       .backgroundColor(this.palette.chip)
@@ -1867,6 +1872,25 @@ struct Index {
   }
 
   /**
+   * 地图 Stack 的高度（vp）：
+   * - 手机：严格按比例，行为不变；
+   * - 宽屏：取「比例高度」与「视口扣掉上方内容/间距/页脚/卡片装饰后的剩余高度」的较大值；
+   *   数值异常时自动退回比例高度。
+   */
+  private mapStackHeight(): number {
+    // contentWidth 是外层内容宽（含页面 32vp + 卡片 32vp 的内边距），地图实际宽再减 64。
+    const mapWidth: number = Math.max(0, this.contentWidth - 64);
+    const aspectH: number = mapWidth > 0 ? mapWidth / this.mapAspectRatio() : 0;
+    if (!this.isWideLayout()) {
+      return aspectH;
+    }
+    // 12 = 地图卡片与上方内容的间距；24 = 版本号行 + 上下留白；
+    // 80 = 地图卡片自身的标题行、页脚署名与 padding。
+    const fillH: number = this.scrollViewportH - this.aboveMapH - 12 - 24 - 80;
+    return fitMapHeight(aspectH, fillH);
+  }
+
+  /**
    * 大卡片内容的缩放系数。
    *
    * 手机宽约 366vp、卡片约 334vp；平板并排后每张卡有 458vp。字号原本是固定 vp，
@@ -1977,24 +2001,33 @@ struct Index {
         Column({ space: 12 }) {
           // 平板/宽屏：大卡片与太阳卡片按 1:1 并排、底边对齐（靠两卡同一个 minHeight）；
           // 手机仍上下排列。阈值 560vp：手机约 366vp、MatePad Pro 13 竖屏约 600vp、横屏更宽。
-          if (this.contentWidth >= WIDE_LAYOUT_BREAKPOINT) {
-            Row({ space: 12 }) {
-              Column() {
-                this.heroCard()
-              }
-              .layoutWeight(1)
+          Column({ space: 12 }) {
+            if (this.contentWidth >= WIDE_LAYOUT_BREAKPOINT) {
+              Row({ space: 12 }) {
+                Column() {
+                  this.heroCard()
+                }
+                .layoutWeight(1)
 
-              Column() {
-                this.sunCard()
+                Column() {
+                  this.sunCard()
+                }
+                .layoutWeight(1)
               }
-              .layoutWeight(1)
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+            } else {
+              this.heroCard()
+              this.sunCard()
             }
-            .width('100%')
-            .alignItems(VerticalAlign.Top)
-          } else {
-            this.heroCard()
-            this.sunCard()
           }
+          .width('100%')
+          .onAreaChange((oldValue: Area, newValue: Area) => {
+            const height: number = Number(newValue.height);
+            if (!Number.isNaN(height) && Math.abs(height - this.aboveMapH) > 1) {
+              this.aboveMapH = height;
+            }
+          })
           this.mapCard()
           // 首页只在页脚留版本号；天气数据来源署名放在设置页「关于」里（许可要求，不在这里重复）。
           Text(`v${AppInfo.versionName()}`)
@@ -2015,6 +2048,12 @@ struct Index {
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .align(Alignment.Top)
+      .onAreaChange((oldValue: Area, newValue: Area) => {
+        const height: number = Number(newValue.height);
+        if (!Number.isNaN(height) && Math.abs(height - this.scrollViewportH) > 1) {
+          this.scrollViewportH = height;
+        }
+      })
     }
     .width('100%')
     .height('100%')
