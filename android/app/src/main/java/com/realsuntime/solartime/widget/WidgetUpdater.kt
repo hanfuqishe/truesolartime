@@ -70,7 +70,6 @@ object WidgetUpdater {
     private const val REQUEST_CALENDAR = 7305
     private const val KEY_KNOWN_IDS = "known_widget_ids"
     private const val KNOWN_IDS_PREFS = "widget_ids"
-    private const val KEY_LAST_TICK_PLAN = "last_tick_plan_millis"
     private const val MINUTE_MILLIS = 60_000L
 
     /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
@@ -466,26 +465,6 @@ object WidgetUpdater {
         }
         refreshDiag += "地区名" to (DistrictResolver.cachedName(context) ?: "（无缓存）")
         refreshDiag += "小组件数量" to "系统 ${systemIds.size} 个 / 记录 ${rememberWidgetIds(context).size} 个"
-        // 闹钟是否准时：这是「卡片比 App 慢几分钟」的直接指标。
-        // 计划时刻由 scheduleNextTick 落盘，每次刷新读出来算差值（正数 = 迟到）。
-        val planned = runCatching {
-            context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
-                .getLong(KEY_LAST_TICK_PLAN, 0L)
-        }.getOrDefault(0L)
-        if (planned > 0L) {
-            val lateMillis = System.currentTimeMillis() - planned
-            refreshDiag += "上次唤醒延迟" to (if (lateMillis >= 0) "${lateMillis / 1000} 秒" else "提前 ${-lateMillis / 1000} 秒")
-        } else {
-            refreshDiag += "上次唤醒延迟" to "（首次刷新，无计划时刻）"
-        }
-        refreshDiag += "精确闹钟" to runCatching {
-            val am = context.getSystemService(android.app.AlarmManager::class.java)
-            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S || am?.canScheduleExactAlarms() == true) {
-                "可用"
-            } else {
-                "不可用（系统未授予「闹钟和提醒」权限，只能走非精确闹钟，Doze 下会被推迟）"
-            }
-        }.getOrDefault("读取失败")
         val place = location.place
         // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
         // 否则定位变化后首页会一直显示启动时那个默认位置的地名。
@@ -576,20 +555,6 @@ object WidgetUpdater {
      * [solarSeconds] 允许为 null（真太阳时算不出来）：这时写 `--:--` 占位，**绝不能写 00:00** ——
      * 用户会把「00:00」当成「真太阳时是零点」，从而认为整个 App 坏了（旧版最小版面就报过这个）。
      */
-
-    /**
-     * 把真太阳时的两个自走时钟配好：时区用 `GMT±HH:MM`（真太阳时不是整小时偏移），
-     * 格式固定 24/12 小时两种都为 `HH:mm` / `ss`，避免跟随系统设置变成带 AM/PM 的串。
-     */
-    private fun applySelfTickingSolarClock(views: RemoteViews, zoneLabel: String) {
-        views.setString(R.id.widget_solar_time, "setTimeZone", zoneLabel)
-        views.setString(R.id.widget_solar_sec, "setTimeZone", zoneLabel)
-        views.setCharSequence(R.id.widget_solar_time, "setFormat24Hour", "HH:mm")
-        views.setCharSequence(R.id.widget_solar_time, "setFormat12Hour", "HH:mm")
-        views.setCharSequence(R.id.widget_solar_sec, "setFormat24Hour", "ss")
-        views.setCharSequence(R.id.widget_solar_sec, "setFormat12Hour", "ss")
-    }
-
     private fun minimalViews(context: Context, solarSeconds: Long?): RemoteViews =
         RemoteViews(context.packageName, R.layout.widget_solar_time_minimal).apply {
             setTextViewText(
@@ -898,10 +863,21 @@ object WidgetUpdater {
             }
             setTextViewText(R.id.widget_civil_date, date)
             if (location.hasFix) {
-                // 真太阳时交给 TextClock 自走（与标准时间同一套）：时区用一个 GMT±HH:MM 标签，
-                // 因为真太阳时的偏移不是整小时。这样即使每分钟的闹钟被 ROM 掐掉，卡片也照常走字。
-                val solarZoneLabel = LocalZone.gmtLabel((solarOffset / 1000L).toInt())
-                applySelfTickingSolarClock(this, solarZoneLabel)
+                setTextViewText(R.id.widget_solar_time, clockText(solarSeconds))
+                // base 取「当前真太阳时整分的时刻」，且与上面同一套取样：
+                // Chronometer 每秒按 base 重算到下一整秒的延时，永远落在整秒边界上。
+                // 但只在必要时下发：Chronometer 内部用 Math.round 换算秒数，若在某一秒的
+                // 后半段重发 base，它会把下一秒提前显示出来，那一秒就只有 0.6 秒、下一秒
+                // 却占 1.4 秒 —— 看上去就是「秒忽大忽小」。
+                val minuteStartElapsed = elapsedNowMillis - Math.floorMod(solarDayMillis, MINUTE_MILLIS)
+                val layoutChanged = lastChronometerLayout[widgetId] != layout
+                val reset = layoutChanged ||
+                    shouldResetChronometer(minuteStartElapsed, lastChronometerBase[widgetId], forceChronometer)
+                if (reset) {
+                    lastChronometerBase[widgetId] = minuteStartElapsed
+                    lastChronometerLayout[widgetId] = layout
+                    setChronometer(R.id.widget_solar_sec, minuteStartElapsed, null, true)
+                }
                 setViewVisibility(R.id.widget_solar_colon, View.VISIBLE)
                 setViewVisibility(R.id.widget_solar_sec, View.VISIBLE)
                 // 处在关键时间段里时，时:分、冒号与秒一起换成关键时间的配色。
@@ -914,9 +890,7 @@ object WidgetUpdater {
                 )
             } else {
                 // 跟随 GPS 但还没有有效定位：真太阳时无从计算，显示占位而不是拿旧位置冒充。
-                // 没有定位：把格式写成**字面量**，TextClock 便不再显示任何时间（也不会自己走）。
-                setCharSequence(R.id.widget_solar_time, "setFormat24Hour", SOLAR_PLACEHOLDER)
-                setCharSequence(R.id.widget_solar_time, "setFormat12Hour", SOLAR_PLACEHOLDER)
+                setTextViewText(R.id.widget_solar_time, SOLAR_PLACEHOLDER)
                 setViewVisibility(R.id.widget_solar_colon, View.GONE)
                 setViewVisibility(R.id.widget_solar_sec, View.GONE)
                 applySolarColor(defaultSolarColor(isDay), this)
@@ -1840,10 +1814,6 @@ object WidgetUpdater {
         // 必须是唤醒型、并且在会冻结/吞闹钟的 ROM 上走「闹钟」语义（见 [ChimeAlarm]）：
         // 普通闹钟在息屏后会被吞掉，分钟从此停在旧值。
         ChimeAlarm.schedule(context, fireAt, pendingIntent)
-        runCatching {
-            context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
-                .edit().putLong(KEY_LAST_TICK_PLAN, fireAt).apply()
-        }
         // 每分钟都会重排一次，这里顺带把兜底闹钟刷成最新（覆盖安装后闹钟会被系统清空）。
         manager.setInexactRepeating(
             AlarmManager.RTC,
