@@ -36,6 +36,9 @@ import { KeepAwake } from '../services/KeepAwake';
 import { WeatherService } from '../services/WeatherService';
 import { AppPalette, paletteFor } from '../common/Theme';
 
+/** 报时去重窗口：2.5 秒内只响一次（关键时间与时辰交接可能只差零点几秒）。 */
+const CHIME_DEDUPE_MILLIS: number = 2500;
+
 const HERO_COLOR: string = '#F5D68A';
 /** 白天橙底上的真太阳时：淡金，比纯白暖一档，又不至于和底色糊在一起。 */
 const DAY_ACCENT: string = '#FFE6B4';
@@ -225,6 +228,8 @@ struct Index {
   private lastGpsMillis: number = 0;
   private previousSolarSecond: number = -1;
   private previousShichenIndex: number = -1;
+  /** 上一次真正发声的墙钟时刻（毫秒），用于 2.5 秒去重窗口。 */
+  private lastChimeMillis: number = 0;
   private lastDerivedMillis: number = 0;
   /** 上次看到的天气／区划名版本号；一变就立刻重算，不用等 30 秒的节流。 */
   private weatherRevision: number = -1;
@@ -441,23 +446,34 @@ struct Index {
     }
   }
 
-  /** 应用在前台时由自己发声（与 Android 端一致：只响铃、不发通知）。 */
+  /**
+   * 应用在前台时由自己发声（与 Android 端一致：只响铃、不发通知）。
+   *
+   * 去重：2.5 秒内只响一次。关键时间与时辰交接可能只差零点几秒（时辰整点常正好是关键时间起点），
+   * 而跨点判定按秒进行，两道判定各响一次就成「响两声」。Android 端同样有这道窗口。
+   */
   private checkChime(solarSecond: number, shichenIndex: number): void {
     const context: common.UIAbilityContext | null = this.context;
     const previousIndex: number = this.previousShichenIndex;
     if (context === null) {
       return;
     }
+    const nowMillis: number = Date.now();
+    if (this.lastChimeMillis > 0 && nowMillis - this.lastChimeMillis < CHIME_DEDUPE_MILLIS) {
+      return;
+    }
     const schedule: TakeTimeSchedule | null = KeyTimeService.schedule();
     if (this.keyTimeChime && schedule !== null) {
       for (const band of schedule.bands) {
         if (crossed(this.previousSolarSecond, solarSecond, band.startMinute * 60)) {
+          this.lastChimeMillis = nowMillis;
           ChimePlayer.play(context, 'chime500.wav');
           return;
         }
       }
     }
     if (this.shichenReminders && previousIndex >= 0 && shichenIndex !== previousIndex) {
+      this.lastChimeMillis = nowMillis;
       ChimePlayer.play(context, 'chime250.wav');
     }
   }

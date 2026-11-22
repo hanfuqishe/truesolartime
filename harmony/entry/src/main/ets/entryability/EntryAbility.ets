@@ -28,6 +28,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    // 前台改由 App 自己发声：撤掉系统代理提醒，免得同一时刻响两声。
+    ReminderService.setAppForeground(true);
     this.refreshNow();
     if (this.refreshTimer < 0) {
       this.refreshTimer = setInterval(() => {
@@ -37,6 +39,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
+    ReminderService.setAppForeground(false);
     if (this.refreshTimer >= 0) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = -1;

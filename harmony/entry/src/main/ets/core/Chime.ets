@@ -114,7 +114,9 @@ export class ChimeLogic {
       if (delta < 0) {
         break;
       }
-      cursor = cursor + Math.round(delta * 1000);
+      // **向上取整**：Math.round 有近一半概率把触发点排到真太阳时边界之前，
+      // 代理提醒就会在边界前零点几秒响（与 Android 端「响两声」同源）。
+      cursor = cursor + Math.ceil(delta * 1000);
       if (cursor >= horizon) {
         break;
       }

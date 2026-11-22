@@ -53,6 +53,19 @@ function textsFor(language: string): ReminderTexts {
 }
 
 export class ReminderService {
+  /**
+   * App 是否在前台。
+   *
+   * 前台时**不发布代理提醒**：应用自己会按秒检测并播放蜂鸣（`Index.checkChime`），
+   * 系统代理提醒也由系统在到点播放 —— 两者同时存在就会「响两声」，而且相隔 1~2 秒
+   * （代理提醒按整秒排、App 内按真太阳时跨点判定）。这与 Android 端修掉的那个 bug 同类。
+   */
+  private static appForeground: boolean = false;
+
+  static setAppForeground(value: boolean): void {
+    ReminderService.appForeground = value;
+  }
+
   /** 取消本应用此前发布的全部提醒。 */
   static async cancelAll(): Promise<void> {
     const ids: number[] = AppStore.reminderIds();
@@ -74,7 +87,11 @@ export class ReminderService {
     bands: TakeBand[],
     language: string
   ): Promise<void> {
+    // 前台：只保留「App 内播放」这一条路径，先把系统提醒撤干净，避免一声变两声。
     await ReminderService.cancelAll();
+    if (ReminderService.appForeground) {
+      return;
+    }
     if (!shichenEnabled && !keyTimeEnabled) {
       return;
     }
