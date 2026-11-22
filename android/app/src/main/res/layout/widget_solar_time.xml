@@ -273,10 +273,15 @@
                             android:layout_height="wrap_content"
                             android:orientation="horizontal">
 
-                            <TextView
-                                android:fontFamily="@font/card_sans_widget"
+                            <!-- 真太阳时也交给 TextClock 自走：宿主按整分/整秒自己刷新，
+                                 不再依赖本 App 每分钟的闹钟。荣耀（MagicOS 11）实测「只有秒在走、分不走」，
+                                 正是闹钟被系统掐掉后的表现；改成自走后就不受影响。
+                                 时区由 WidgetUpdater 用 GMT±HH:MM 标签设置（真太阳时不是整小时偏移）。 -->
+                            <TextClock
                                 android:id="@+id/widget_solar_time"
                                 style="@style/WidgetClockMain"
+                                android:format12Hour="HH:mm"
+                                android:format24Hour="HH:mm"
                                 android:text="--:--"
                                 android:textColor="#FFFFC65C"
                                 tools:ignore="HardcodedText" />
@@ -299,9 +304,12 @@
                               不会像翻页器那样越走越慢；宽度由 setMaxWidth 限成两位数字、右对齐，
                               于是只露出「0:SS」里的后两位。
                             -->
-                            <Chronometer
+                            <TextClock
                                 android:id="@+id/widget_solar_sec"
                                 style="@style/WidgetClockSecondChrono"
+                                android:format12Hour="ss"
+                                android:format24Hour="ss"
+                                android:text="00"
                                 android:visibility="invisible"
                                 tools:ignore="HardcodedText" />
                         </LinearLayout>
