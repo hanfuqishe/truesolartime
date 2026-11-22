@@ -41,7 +41,7 @@
     <string name="reminder_desc">进入下一个时辰时蜂鸣一声</string>
     <string name="chime_title">进入关键时间报时</string>
     <string name="chime_desc">进入关键时间时蜂鸣一声（按真太阳时）</string>
-    <string name="chime_background_hint">报时没响？点此允许本应用后台运行</string>
+    <string name="chime_background_hint">报时或桌面卡片可能变慢，点此允许本应用后台运行</string>
     <string name="keep_screen_on_title">屏幕常亮</string>
     <string name="theme_title">主题</string>
     <string name="theme_desc">「自动」按日出日落切换：白天亮色、夜晚暗色；「亮色 / 暗色」强制，首页与桌面小组件一起跟随。</string>
@@ -49,7 +49,7 @@
     <string name="theme_light">亮色</string>
     <string name="theme_dark">暗色</string>
     <string name="keep_screen_on_desc">应用打开期间不自动熄屏（会更耗电）</string>
-    <string name="chime_exact_alarm_hint">报时可能晚几分钟，点此允许「闹钟和提醒」</string>
+    <string name="chime_exact_alarm_hint">报时或桌面卡片可能变慢，点此允许「闹钟和提醒」</string>
     <string name="about_body">真太阳时按太阳的真实位置计时：先由当地经度相对东经 120° 的偏差修正时差（每 1° 相差 4 分钟），再叠加因地球轨道偏心率与黄赤交角产生的均时差。十二时辰按真太阳时划分，子时自 23:00 起，每两小时一个时辰。</string>
     <string name="city_beijing">北京</string>
     <string name="city_shanghai">上海</string>

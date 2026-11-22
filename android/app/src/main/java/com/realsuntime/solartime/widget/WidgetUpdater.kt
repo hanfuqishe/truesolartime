@@ -1997,9 +1997,17 @@ object WidgetUpdater {
         context.applicationContext.getSharedPreferences(PIN_PREFS, Context.MODE_PRIVATE)
 
     /** 当前已固定到桌面的实例数，供「添加到桌面」判断是否成功。 */
+    /**
+     * 桌面上有几张卡片。
+     *
+     * 取「系统回报」与「曾记住的 id」的较大者：荣耀（MagicOS 11）实测会出现
+     * `getAppWidgetIds` 返回 0、桌面上却仍有卡片的情况 —— 只信系统返回值，
+     * 设置页的「精确闹钟」提示就不会出现，用户也就无从知道该去开权限。
+     */
     fun pinnedCount(context: Context): Int = runCatching {
         val manager = context.getSystemService(AppWidgetManager::class.java) ?: return 0
-        manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
+        val system = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java)).size
+        maxOf(system, rememberWidgetIds(context).size)
     }.getOrDefault(0)
 
     /**
