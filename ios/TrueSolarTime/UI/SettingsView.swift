@@ -24,13 +24,10 @@ struct SettingsView: View {
                             dismiss()
                             model.startGpsTracking()
                         } label: {
-                            HStack {
-                                if model.trackingGps {
-                                    ProgressView()
-                                }
-                                Text(model.trackingGps ? L("settings.gpsRestart") : L("settings.gpsStart"))
-                                    .frame(maxWidth: .infinity)
-                            }
+                            // 不放 ProgressView：那是「当前处于跟随模式」的状态标记，不是加载进度，
+                            // 一直转会让人误以为在定位。三端统一去掉，靠点击行为表达。
+                            Text(model.trackingGps ? L("settings.gpsRestart") : L("settings.gpsStart"))
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(ThemedPrimaryButtonStyle())
                         .padding(.top, 4)

@@ -25,7 +25,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -75,7 +74,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 @Composable
 fun SettingsSheet(
     place: Place,
-    trackingGps: Boolean,
     /** 定位不可用（未知态）：「当前位置」那一行不能写上一个地点的名字与经纬度。 */
     locationUnknown: Boolean = false,
     remindersEnabled: Boolean,
@@ -159,19 +157,14 @@ fun SettingsSheet(
             )
             Spacer(Modifier.height(12.dp))
             // 与下方「应用坐标」**同款主按钮**：同一个 Material3 `Button` + 同一套颜色/高度/圆角，
-            // 不抄颜色值（主色改了这里自动跟着变）。选中态（跟随中）用主色底 + 白色进度环表达。
+            // 不抄颜色值（主色改了这里自动跟着变）。
+            //
+            // 这里**不放进度环**：那个环是「当前处于跟随模式」的状态标记，不是加载进度，
+            // 却会一直转，用户普遍读成「定位中…」（反馈过多次）。三端统一去掉，靠按钮点击行为表达。
             Button(
                 onClick = onRequestGps,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (trackingGps) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
                 // 文案与鸿蒙版一致：跟随中也是「实时跟随GPS」，不改成「重新开始…」（点它本来就是重取一次定位）。
                 Text(stringResource(R.string.action_use_gps))
             }

@@ -530,7 +530,6 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         if (showSettings) {
             SettingsSheet(
                 place = place,
-                trackingGps = trackingGps,
                 locationUnknown = locationUnknown,
                 remindersEnabled = remindersEnabled,
                 keyTimeChimeEnabled = keyTimeChimeEnabled,
