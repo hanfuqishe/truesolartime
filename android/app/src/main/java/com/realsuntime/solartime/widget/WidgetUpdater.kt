@@ -70,6 +70,7 @@ object WidgetUpdater {
     private const val REQUEST_CALENDAR = 7305
     private const val KEY_KNOWN_IDS = "known_widget_ids"
     private const val KNOWN_IDS_PREFS = "widget_ids"
+    private const val KEY_LAST_TICK_PLAN = "last_tick_plan_millis"
     private const val MINUTE_MILLIS = 60_000L
 
     /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
@@ -465,6 +466,24 @@ object WidgetUpdater {
         }
         refreshDiag += "地区名" to (DistrictResolver.cachedName(context) ?: "（无缓存）")
         refreshDiag += "小组件数量" to "系统 ${systemIds.size} 个 / 记录 ${rememberWidgetIds(context).size} 个"
+        // 闹钟是否准时：这是「卡片比 App 慢几分钟」的直接指标。
+        // 计划时刻由 scheduleNextTick 落盘，每次刷新读出来算差值（正数 = 迟到）。
+        val planned = runCatching {
+            context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
+                .getLong(KEY_LAST_TICK_PLAN, 0L)
+        }.getOrDefault(0L)
+        refreshDiag += "上次唤醒延迟" to if (planned > 0L) {
+            val lateMillis = System.currentTimeMillis() - planned
+            if (lateMillis >= 0) "${lateMillis / 1000} 秒" else "提前 ${-lateMillis / 1000} 秒"
+        } else {
+            "（首次刷新，无计划时刻）"
+        }
+        refreshDiag += "精确闹钟" to runCatching {
+            val am = context.getSystemService(android.app.AlarmManager::class.java)
+            val allowed = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+                am?.canScheduleExactAlarms() == true
+            if (allowed) "可用" else "不可用（未授予「闹钟和提醒」权限，Doze 下会被推迟）"
+        }.getOrDefault("读取失败")
         val place = location.place
         // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
         // 否则定位变化后首页会一直显示启动时那个默认位置的地名。
@@ -1814,6 +1833,10 @@ object WidgetUpdater {
         // 必须是唤醒型、并且在会冻结/吞闹钟的 ROM 上走「闹钟」语义（见 [ChimeAlarm]）：
         // 普通闹钟在息屏后会被吞掉，分钟从此停在旧值。
         ChimeAlarm.schedule(context, fireAt, pendingIntent)
+        runCatching {
+            context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(KEY_LAST_TICK_PLAN, fireAt).apply()
+        }
         // 每分钟都会重排一次，这里顺带把兜底闹钟刷成最新（覆盖安装后闹钟会被系统清空）。
         manager.setInexactRepeating(
             AlarmManager.RTC,
