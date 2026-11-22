@@ -68,6 +68,8 @@ object WidgetUpdater {
     private const val REQUEST_ALARM = 7303
     private const val REQUEST_WEATHER = 7304
     private const val REQUEST_CALENDAR = 7305
+    private const val KEY_KNOWN_IDS = "known_widget_ids"
+    private const val KNOWN_IDS_PREFS = "widget_ids"
     private const val MINUTE_MILLIS = 60_000L
 
     /** 写入落在这个整分边界之后多少毫秒：小到肉眼看来就是「秒数跳到 00 的同一刻」。 */
@@ -406,9 +408,48 @@ object WidgetUpdater {
             heightPrefs(context).edit().putInt(KEY_OVERRIDE_DP, WidgetRuler.clampOverrideDp(dp)).apply()
         }
     }
+
+    /** 记录过哪些卡片 id（用于系统返回 0 时兜底更新）。 */
+    private fun rememberWidgetIds(context: Context): List<Int> =
+        runCatching {
+            context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
+                .getStringSet(KEY_KNOWN_IDS, emptySet())
+                ?.mapNotNull { it.toIntOrNull() }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+
+    /** provider 的 onUpdate / onOptionsChanged 里调用：把见到的 id 记下来。 */
+    fun rememberWidgetIds(context: Context, ids: IntArray) {
+        if (ids.isEmpty()) return
+        runCatching {
+            val prefs = context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
+            val merged = (prefs.getStringSet(KEY_KNOWN_IDS, emptySet()).orEmpty() +
+                ids.map { it.toString() }).toSet()
+            prefs.edit().putStringSet(KEY_KNOWN_IDS, merged).apply()
+        }
+    }
+
+    /** onDeleted：用户真的删掉了卡片，别再把 id 留在记录里。 */
+    fun forgetWidgetIds(context: Context, ids: IntArray) {
+        if (ids.isEmpty()) return
+        runCatching {
+            val prefs = context.getSharedPreferences(KNOWN_IDS_PREFS, Context.MODE_PRIVATE)
+            val remain = prefs.getStringSet(KEY_KNOWN_IDS, emptySet()).orEmpty()
+                .filterNot { it in ids.map { id -> id.toString() } }
+                .toSet()
+            prefs.edit().putStringSet(KEY_KNOWN_IDS, remain).apply()
+        }
+    }
+
     fun refreshAll(context: Context, forceChronometer: Boolean = false) {
         val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, SolarWidgetProvider::class.java))
+        val component = ComponentName(context, SolarWidgetProvider::class.java)
+        val systemIds = manager.getAppWidgetIds(component)
+        // **曾经见过的卡片 id 也一起更新**：荣耀（MagicOS 11 / Android 17）实测出现过
+        // `getAppWidgetIds` 返回 0、而桌面上卡片仍在的情形 —— 那时只信系统返回值就等于
+        // 再也不刷新它，卡片会停在最后一帧（用户看到「卡片比 App 慢几分钟」）。
+        // 对已解绑的 id 调 updateAppWidget 是无害的（系统直接忽略）。
+        val ids = (systemIds.toList() + rememberWidgetIds(context)).distinct().toIntArray()
         // 定位/设置读取本身就可能抛（偏好文件损坏、Place 字段非法……）。它挂在所有渲染之前，
         // 一旦抛出去整轮刷新就没了 —— 桌面只剩 initialLayout（标准时间自走、真太阳时停在占位的
         // 00:00、其余全空），这是用户报过的「卡片全空」最可能的成因。这里一律兜住并退回默认地点。
@@ -423,7 +464,7 @@ object WidgetUpdater {
             refreshDiag += "定位" to ("成功，hasFix=" + location.hasFix)
         }
         refreshDiag += "地区名" to (DistrictResolver.cachedName(context) ?: "（无缓存）")
-        refreshDiag += "小组件数量" to ids.size.toString()
+        refreshDiag += "小组件数量" to "系统 ${systemIds.size} 个 / 记录 ${rememberWidgetIds(context).size} 个"
         val place = location.place
         // 地名与天气即使桌面上一个小组件都没有也要更新：首页也在用这两份缓存，
         // 否则定位变化后首页会一直显示启动时那个默认位置的地名。

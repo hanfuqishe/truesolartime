@@ -12,6 +12,7 @@ class SolarWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         // 桌面刚绑定视图，秒数的基准必须重新下发一次。
+        WidgetUpdater.rememberWidgetIds(context, appWidgetIds)
         safeRefresh(context, "onUpdate")
     }
 
@@ -22,6 +23,7 @@ class SolarWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: Bundle,
     ) {
+        WidgetUpdater.rememberWidgetIds(context, intArrayOf(appWidgetId))
         safeRefresh(context, "onOptionsChanged")
     }
 
@@ -49,6 +51,10 @@ class SolarWidgetProvider : AppWidgetProvider() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         appWidgetIds.forEach(WidgetUpdater::forgetWidget)
+        // **故意不清「记录过的 id」**：对一个已解绑的 id 调 updateAppWidget 是无害的（系统直接忽略），
+        // 但如果桌面留了幽灵卡片（荣耀实测：删掉 3 张里的 2 张后，系统 `getAppWidgetIds` 返回 0，
+        // 屏幕上却还留着一张不再更新的卡片），保留 id 才能让它继续走字。
+        // 真正需要清的是每张卡片的缓存（上一行的 forgetWidget）。
     }
 
     override fun onReceive(context: Context, intent: Intent) {
