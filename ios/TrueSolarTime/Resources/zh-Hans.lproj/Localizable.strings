@@ -63,9 +63,9 @@
 "settings.mapHint" = "自动：用 Apple 地图（系统底图）";
 "settings.sectionReminders" = "提醒";
 "settings.shichenTitle" = "时辰交接提醒";
-"settings.shichenDesc" = "每个时辰交接时准时提醒（250 ms 蜂鸣）";
+"settings.shichenDesc" = "每个时辰交接时准时提醒";
 "settings.keyTimeTitle" = "进入关键时间报时";
-"settings.keyTimeDesc" = "每到一段关键时间的起点提醒（500 ms 蜂鸣）";
+"settings.keyTimeDesc" = "每到一段关键时间的起点提醒";
 "settings.sectionScreen" = "屏幕";
 "settings.keepScreenOn" = "屏幕常亮";
 "settings.keepScreenOnDesc" = "应用打开期间不自动熄屏（会更耗电）";
@@ -78,6 +78,7 @@
 "settings.diagWeather" = "天气";
 "settings.diagDistrict" = "区划名";
 "settings.diagKeyTime" = "关键时间";
+"settings.diagChime" = "报时";
 "settings.diagSource" = "天气源";
 "settings.diagAge" = "数据";
 "settings.diagLastFailure" = "最近失败";

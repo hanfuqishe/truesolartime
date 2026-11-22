@@ -63,9 +63,9 @@
 "settings.mapHint" = "Auto: Apple Maps (system basemap)";
 "settings.sectionReminders" = "Reminders";
 "settings.shichenTitle" = "Shichen change alert";
-"settings.shichenDesc" = "Beep right when the next shichen begins (250 ms)";
+"settings.shichenDesc" = "Beep right when the next shichen begins";
 "settings.keyTimeTitle" = "Key time chime";
-"settings.keyTimeDesc" = "Beep at the start of each key time period (500 ms)";
+"settings.keyTimeDesc" = "Beep at the start of each key time period";
 "settings.sectionScreen" = "Screen";
 "settings.keepScreenOn" = "Keep screen on";
 "settings.keepScreenOnDesc" = "Stop the screen from sleeping while the app is open (uses more battery)";
@@ -78,6 +78,7 @@
 "settings.diagWeather" = "Weather";
 "settings.diagDistrict" = "District";
 "settings.diagKeyTime" = "Key time";
+"settings.diagChime" = "Chime";
 "settings.diagSource" = "Source";
 "settings.diagAge" = "Data";
 "settings.diagLastFailure" = "Last failure";

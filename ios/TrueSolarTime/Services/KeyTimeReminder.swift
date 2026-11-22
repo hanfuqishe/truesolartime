@@ -25,7 +25,42 @@ final class KeyTimeReminder {
     /// 系统上限 64，留 4 条余量：将来加别的通知也不至于被挤掉。
     private static let maxPending = 60
 
+    /// 诊断摘要（同步读）：授权状态 + 待发条数 + 最近一条的触发时间与标题。
+    /// 排查「报时没声音」时先看这一行 —— 没有待发通知 = 根本没排上，与声音无关。
+    private(set) static var diagnosticsSummary = "尚未排程"
+
     private init() {}
+
+    /// 读取系统里我们自己的待发通知，刷新 [diagnosticsSummary]。
+    func refreshDiagnosticsSummary() {
+        let center = self.center
+        Task {
+            let status = await center.notificationSettings().authorizationStatus
+            let pending = await center.pendingNotificationRequests()
+            let ours = pending
+                .filter { $0.identifier.hasPrefix(Self.keyTimePrefix) || $0.identifier.hasPrefix(Self.shichenPrefix) }
+            let next = ours
+                .compactMap { request -> (Date, String)? in
+                    guard let date = (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() else { return nil }
+                    return (date, request.content.title)
+                }
+                .sorted { $0.0 < $1.0 }
+                .prefix(3)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MM-dd HH:mm"
+            let nextText = next.isEmpty
+                ? "无"
+                : next.map { "\(formatter.string(from: $0.0)) \($0.1)" }.joined(separator: " / ")
+            let statusText: String
+            switch status {
+            case .authorized, .provisional, .ephemeral: statusText = "authorized"
+            case .denied: statusText = "denied（系统里关掉了通知）"
+            case .notDetermined: statusText = "notDetermined（还没请求过）"
+            @unknown default: statusText = "unknown"
+            }
+            Self.diagnosticsSummary = "授权 \(statusText)；待发 \(ours.count) 条；最近 \(nextText)"
+        }
+    }
 
     func requestAuthorization() async -> Bool {
         do {
@@ -112,6 +147,8 @@ final class KeyTimeReminder {
                 }
             }
         }
+        // 排完立刻回读一次系统里的实际队列，供诊断页显示（`add` 是异步的，这里读到的可能是上一轮）。
+        refreshDiagnosticsSummary()
     }
 
     // MARK: - 关键时间

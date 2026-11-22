@@ -186,6 +186,12 @@ struct SettingsView: View {
                                 diagnosticLine(title: L("settings.diagAttribution"), value: WeatherAttributionStore.shared.diagnosticsSummary())
                                 diagnosticLine(title: L("settings.diagDistrict"), value: districtSummary)
                                 diagnosticLine(title: L("settings.diagKeyTime"), value: keyTimeSummary)
+                                // 报时是否真的排进了系统队列：授权状态 + 待发条数 + 最近一条的时刻。
+                                // 「没声音」十次有九次是这里没有待发通知（没排上 / 权限被关）。
+                                diagnosticLine(
+                                    title: L("settings.diagChime"),
+                                    value: KeyTimeReminder.diagnosticsSummary
+                                )
                                 // 地图底图：实际源（含「OSM 失败 3 次后回退」）、状态、缩放降级、
                                 // 首选源、OSM 失败次数、空白瓦片判定次数、下次探测时间。
                                 diagnosticLine(
