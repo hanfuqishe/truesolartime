@@ -39,8 +39,12 @@ object Chime {
      *
      * 15:00 这类时刻既是关键时间的起点、又正好是时辰交接，两个闹钟只差几十毫秒到达，
      * 若各自播放就会叠成一声更响、带相位干涉的怪音。窗口内只让先到的响。
+     *
+     * 2026-11 从 800 ms 放宽到 2500 ms：闹钟偶尔比边界早到零点几秒，重排后会再响一次，
+     * 表现为「第一声准点、隔 1~2 秒又响一声」。真正相邻的两个提醒至少相隔数分钟，
+     * 放宽窗口不会吞掉合法提醒。
      */
-    private const val DEDUPE_WINDOW_MILLIS = 800L
+    private const val DEDUPE_WINDOW_MILLIS = 2_500L
 
     /** 上一次真正播放的时刻（[SystemClock.elapsedRealtime]），由 [beep] 主线程写入。 */
     private var lastPlayedAt = 0L

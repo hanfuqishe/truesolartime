@@ -50,11 +50,26 @@ class ChimeTest {
     @Test
     fun mergesTwoRemindersThatFireTogether() {
         // 15:00 既是关键时间起点、又是时辰交接：两个闹钟只差几十毫秒
-        assertTrue(Chime.shouldPlay(nowMillis = 1_000, lastPlayedMillis = 0))       // 从未响过
-        assertTrue(Chime.shouldPlay(nowMillis = 1_000, lastPlayedMillis = 100))     // 900 ms 前
-        assertFalse(Chime.shouldPlay(nowMillis = 1_000, lastPlayedMillis = 960))    // 40 ms 前 → 跳过
-        assertFalse(Chime.shouldPlay(nowMillis = 1_000, lastPlayedMillis = 400))    // 600 ms 前 → 仍在窗口内
-        assertTrue(Chime.shouldPlay(nowMillis = 1_000, lastPlayedMillis = 200))     // 800 ms 前 → 可以再响
+        assertTrue(Chime.shouldPlay(nowMillis = 10_000, lastPlayedMillis = 0))       // 从未响过
+        assertFalse(Chime.shouldPlay(nowMillis = 10_000, lastPlayedMillis = 9_960))  // 40 ms 前 → 跳过
+        assertFalse(Chime.shouldPlay(nowMillis = 10_000, lastPlayedMillis = 9_000))  // 1 s 前 → 仍跳过
+        assertFalse(Chime.shouldPlay(nowMillis = 10_000, lastPlayedMillis = 8_000))  // 2 s 前 → 仍跳过
+        assertTrue(Chime.shouldPlay(nowMillis = 10_000, lastPlayedMillis = 7_400))   // 2.6 s 前 → 可以再响
+    }
+
+    /**
+     * 回归「报时会响两声」：第一声准点，隔 1~2 秒又响一声。
+     *
+     * 成因：关键时间按真太阳时算，边界不是整秒；闹钟比边界早到零点几秒时，
+     * 响完就地重排会把同一段边界算回来，于是又排出一个一秒后的闹钟。
+     * 现在三道防线：触发点向上取整、重排参考时刻后推 SETTLE_SECONDS、2.5 秒内重复播放一律丢弃。
+     */
+    @Test
+    fun secondBeepWithinSettleWindowIsDropped() {
+        val first = 10_000L                       // 第一声播放于 t=10s（0 是「从未响过」的哨兵值，不能当基准）
+        assertFalse(Chime.shouldPlay(nowMillis = first + 1_200, lastPlayedMillis = first))
+        assertFalse(Chime.shouldPlay(nowMillis = first + 2_000, lastPlayedMillis = first))
+        assertTrue(Chime.shouldPlay(nowMillis = first + 3_000, lastPlayedMillis = first))
     }
 
     @Test

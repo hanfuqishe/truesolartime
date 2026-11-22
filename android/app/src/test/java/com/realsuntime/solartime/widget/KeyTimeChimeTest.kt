@@ -46,4 +46,22 @@ class KeyTimeChimeTest {
     fun returnsNullWithoutKeyTimes() {
         assertNull(KeyTimeChime.secondsToNextStart(11 * 3600.0, emptyList()))
     }
+
+    /**
+     * 回归「报时会响两声」：触发时刻必须**不早于**边界。
+     *
+     * 真太阳时的边界不是整秒：距离起点还有 0.2 秒时，四舍五入会排到「立刻」，
+     * 响完重排又把同一段算回来 → 再响一声；向上取整排到 +200 ms，一定落在边界之后。
+     */
+    @Test
+    fun triggerNeverLandsBeforeTheBoundary() {
+        val now = 1_700_000_000_000L
+        assertEquals(now + 200, KeyTimeChime.triggerFrom(now, 0.2))
+        assertEquals(now + 1_500, KeyTimeChime.triggerFrom(now, 1.5))
+        assertEquals(now + 60_000, KeyTimeChime.triggerFrom(now, 60.0))
+        listOf(0.001, 0.2, 0.499, 0.5, 0.501, 3.333).forEach { delta ->
+            val fired = KeyTimeChime.triggerFrom(now, delta)
+            assertTrue("delta=$delta", fired - now >= (delta * 1000).toLong())
+        }
+    }
 }

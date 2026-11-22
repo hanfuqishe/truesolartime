@@ -33,6 +33,15 @@ object KeyTimeChime {
     private const val SECONDS_PER_DAY = 86_400.0
 
     /**
+     * 响过之后重排时先跨过的秒数。
+     *
+     * 关键时间按真太阳时算，边界不是整秒；闹钟若比边界早到一点点，
+     * 触发后就地重排会算回「同一段还差 0.3 秒」，于是隔一秒又响一声（用户反馈的「响两声」）。
+     * 重排时把参考时刻往后推 [SETTLE_SECONDS]，这一声就必定算作已响过。
+     */
+    private const val SETTLE_SECONDS = 2L
+
+    /**
      * 距离下一个关键时间起点还有多少秒（按真太阳时计）。
      *
      * 没有关键时间（页面没抓到过或已超过 7 天）时返回 null —— 此时不报时。
@@ -47,8 +56,23 @@ object KeyTimeChime {
         }
     }
 
-    /** 重排下一次报时；关闭时顺带取消已有闹钟。 */
-    fun schedule(context: Context) {
+    /**
+     * 由「距离下一段起点还有多少秒」算出触发时刻（毫秒）。
+     *
+     * **向上取整**：`roundToLong` 有一半概率把触发点排到边界之前，闹钟就会在边界前
+     * 零点几秒响，响完重排又把同一段算回来 —— 这就是「响两声」的来源。
+     * 提取成纯函数是为了能被单测盯住。
+     */
+    internal fun triggerFrom(nowMillis: Long, deltaSeconds: Double): Long =
+        nowMillis + kotlin.math.ceil(deltaSeconds * 1000.0).toLong()
+
+    /**
+     * 重排下一次报时；关闭时顺带取消已有闹钟。
+     *
+     * @param firedAtMillis 刚刚响过的那次计划时刻（接收器传入）。给了它就把参考时刻往后推
+     *   [SETTLE_SECONDS]，避免「同一段边界再响一次」—— 这是「报时会响两声」的根因。
+     */
+    fun schedule(context: Context, firedAtMillis: Long = 0L) {
         cancelLegacy(context)
         val settings = AppSettings(context)
         if (!settings.keyTimeChimeEnabled) {
@@ -57,7 +81,11 @@ object KeyTimeChime {
         }
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val place = settings.place
-        val now = Instant.now()
+        val now = if (firedAtMillis > 0L) {
+            Instant.ofEpochMilli(firedAtMillis).plusSeconds(SETTLE_SECONDS)
+        } else {
+            Instant.now()
+        }
         val deltaSeconds = secondsToNextStart(
             solarSecondsOfDay = SolarTimeMath.trueSolarSecondsOfDay(now, place.longitude),
             bands = TakeTimeRepository.schedule(context)?.bands.orEmpty(),
@@ -66,7 +94,7 @@ object KeyTimeChime {
             cancel(context)
             return
         }
-        val trigger = now.toEpochMilli() + (deltaSeconds * 1000).roundToLong()
+        val trigger = triggerFrom(now.toEpochMilli(), deltaSeconds)
         ChimeAlarm.schedule(context, trigger, alarmIntent(context, trigger))
     }
 
@@ -126,8 +154,11 @@ class KeyTimeChimeReceiver : BroadcastReceiver() {
         KeyTimeChime.beep {
             pending.finish()
         }
-        // 排下一次；关键时间数据没变时这里只是重算，不会重复响。
-        KeyTimeChime.schedule(context)
+        // 排下一次；把自己这次的计划时刻传回去，重排时会跨过这条边界（否则可能再响一声）。
+        KeyTimeChime.schedule(
+            context,
+            firedAtMillis = intent.getLongExtra(EXTRA_START_MILLIS, 0L),
+        )
     }
 
     companion object {
