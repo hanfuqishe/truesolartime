@@ -269,3 +269,167 @@ AppGallery Connect → 我的应用 → 上架 → 应用信息里填 **APP 备�
 
 备案里填的「网站域名」就是这台主机上跑的那个域名；
 **App 备案**里填的「App 关联域名」用同一个即可（隐私政策页也在这个域名下）。
+
+---
+
+## 10. 三端签名证书信息（已实测填写成功 · 2026-11-22）
+
+**这份是备案表单直接可粘的值。** 三个平台一次备案，包名/Bundle ID 完全相同。
+
+### 10.1 汇总
+
+| 平台 | 包名 / Bundle ID | 指纹类型 | 指纹值 |
+|---|---|---|---|
+| **Android** | `com.realsuntime.solartime` | MD5 | `c277440bcbb87c40ed265d74e079ce12` |
+| **鸿蒙** | `com.realsuntime.solartime` | MD5 | `81299D91B2562A4F920D94303E30BDE7` |
+| **iOS** | `com.realsuntime.solartime` | **SHA-1** | `F85921F195BBABA4FDAF986B7614EA8D1CBD7814` |
+
+> **指纹类型不一样**：安卓/鸿蒙要 MD5，iOS 要 SHA-1。填错类型会报「格式错误」，
+> 但如果**带了冒号**（`81:29:9D:…`）则一定报错 —— 表单要的是 32/40 位**连续十六进制**。
+
+### 10.2 Android
+
+```
+包名    com.realsuntime.solartime
+MD5     c277440bcbb87c40ed265d74e079ce12
+SHA-1   0A7E8B55BB69601A692095FE25B3B26648DF22A0
+SHA-256 4399B84C5597B67784F9D664F83FEA5595CEF2CD9C7A31C36AC4AC93085C8954
+```
+
+公钥（RSA 2048，hex 为 DER SubjectPublicKeyInfo）：
+
+```
+30820122300d06092a864886f70d01010105000382010f003082010a02820101009709d5fe868b9997a6278f61cd2c7b24478027757d3d7d1ecda9ffc0ba5a8a52cebbb9b123964c2fe3bbbd3513f9576cf2b12cb3f5dcd9f46cbad4958bea3afd607abfeff26347240d07fd2da5950bb207a56d7dd6a8d0a473b36d37f5195c8df0b90fa4779117dcfbc8672b9b5416456e0d0ecf449a7f3ffa245827b1296fc5b4f1e0ab03caed835c969b4ed4cb4611817fc96aa9e3247ed8126d0fec4a333f75d4aeb2d372afc8bc4d4c6d6334774d2bf46eb2adac673c43bc5a01e5ff72ddc31a30e4f7293cc573fa38b9c48de1891ba1c2d4fd17cd5c27708d4f5f1cd24e242b18415a2dfadd854635ab52746c455b3c1c6bb79f96ff826b810787136c650203010001
+```
+
+公钥（base64，同一把 key 的另一种编码）：
+
+```
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlwnV/oaLmZemJ49hzSx7JEeAJ3V9PX0ezan/wLpailLOu7mxI5ZML+O7vTUT+Vds8rEss/Xc2fRsutSVi+o6/WB6v+/yY0ckDQf9LaWVC7IHpW191qjQpHOzbTf1GVyN8LkPpHeRF9z7yGcrm1QWRW4NDs9Emn8/+iRYJ7Epb8W08eCrA8rtg1yWm07Uy0YRgX/JaqnjJH7YEm0P7EozP3XUrrLTcq/IvE1MbWM0d00r9G6yraxnPEO8WgHl/3Ldwxow5PcpPMVz+ji5xI3hiRuhwtT9F81cJ3CNT18c0k4kKxhBWi363YVGNatSdGxFWzwca7eflv+Ca4EHhxNsZQIDAQAB
+```
+
+证书身份：`CN=True Solar Time, OU=Personal, O=realsuntime, L=Shanghai, ST=Shanghai, C=CN`，
+自签名，有效期 2026-11-03 ~ **2054-03-21**（安卓自签名可长期使用，不需要每年换）。
+
+**取法**（两处独立来源，值必须一致，否则说明包与 keystore 不匹配）：
+
+```powershell
+# ① 直接读上架 APK 的签名证书（最权威）
+apksigner verify --print-certs dist/真太阳时-安卓-x.y.z.apk
+
+# ② 读 keystore（需要 android/keystore.properties 里的密码）
+keytool -exportcert -alias solartime -keystore android/release.jks -storepass <密码> -file cert.cer
+openssl x509 -inform DER -in cert.cer -noout -fingerprint -md5
+openssl x509 -inform DER -in cert.cer -pubkey -noout |
+  openssl pkey -pubin -outform DER -out pub.der   # 再对 pub.der 做 base64/hex
+```
+
+### 10.3 鸿蒙
+
+```
+包名    com.realsuntime.solartime
+MD5     81299D91B2562A4F920D94303E30BDE7
+```
+
+公钥（**EC 原始点**，130 位 hex，`04` 开头，与 AGC 证书详情页显示的一致）：
+
+```
+0453864b0c5ea9ebdf1a721b932a0cb38ae3eacc444dfd3c7ce82c350c3c1b9d1fe6368d46898c707aed5726214bfd675419d96e4f5c88c97ae731bf353cb1a9d6
+```
+
+公钥（base64 的 DER SubjectPublicKeyInfo）：
+
+```
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEU4ZLDF6p698achuTKgyziuPqzERN/Tx86Cw1DDwbnR/mNo1GiYxweu1XJiFL/WdUGdluT1yIyXrnMb81PLGp1g==
+```
+
+证书身份：`CN=李实(2082780383715276225),Release`（AGC 里的发布证书「真太阳时」）。
+
+**取法**：用 `tools/harmony-cert-info.ps1`（默认取链尾那张，即应用证书）：
+
+```powershell
+# 先看链里有几张（AGC 导出的 .cer 通常是 根 → 中间 → 应用证书）
+powershell -File tools\harmony-cert-info.ps1 -CertPath 认证.cer -List
+
+# 再取 MD5 + 公钥
+powershell -File tools\harmony-cert-info.ps1 -CertPath 认证.cer
+```
+
+> **两个坑**：
+> 1. `.cer` 是**证书链**时，`keytool -printcert` 会给**根证书**的指纹（`7D:0C:4B:…`），是错的，
+>    必须取链尾那张；
+> 2. 脚本必须存成 **UTF-8 with BOM**，否则 PowerShell 5.1 按 GB2312 解码中文注释会直接语法报错。
+
+### 10.4 iOS
+
+```
+Bundle ID  com.realsuntime.solartime
+SHA-1      F85921F195BBABA4FDAF986B7614EA8D1CBD7814
+```
+
+公钥（RSA 2048，base64 的 DER SubjectPublicKeyInfo）：
+
+```
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo/WXtRWPdV75+vGiaqcKEga6CPfF8SmWHitJ3WWqI19QE5H6Bm00ed/HvVfrTSztLmMxA4Z2bn4R9O98JSEfvv6xnaVpcwhai/MrJqzYdgdzpZwGH/rD9QGK1puYSO5cOnfq2zCkVs8Be8NCojwrtTBDgBCmASqQYLhp6b7hX7TS1i74hraBZymWuB98OSilofMOuCoKJH/URR0/rxwGnkjH2VOsmfP1lfQ3rPhN8rTcqH3n7ugdbvjE3W31E8WK/iVgjYBlMzY/Z9bbt9gZ/LVhbvhwIOOdKsrArrFEZT2tKbJhTOvo4z2075v1yNRHFshJARYS6eEgxyA/viJQewIDAQAB
+```
+
+公钥（hex，与上面同一把 key）：
+
+```
+30820122300d06092a864886f70d01010105000382010f003082010a0282010100a3f597b5158f755ef9faf1a26aa70a1206ba08f7c5f129961e2b49dd65aa235f501391fa066d3479dfc7bd57eb4d2ced2e63310386766e7e11f4ef7c25211fbefeb19da56973085a8bf32b26acd8760773a59c061ffac3f5018ad69b9848ee5c3a77eadb30a456cf017bc342a23c2bb530438010a6012a9060b869e9bee15fb4d2d62ef886b681672996b81f7c3928a5a1f30eb82a0a247fd4451d3faf1c069e48c7d953ac99f3f595f437acf84df2b4dca87de7eee81d6ef8c4dd6df513c58afe25608d806533363f67d6dbb7d819fcb5616ef87020e39d2acac0aeb144653dad29b2614cebe8e33db4ef9bf5c8d44716c849011612e9e120c7203fbe22507b0203010001
+```
+
+证书身份：`CN=Apple Distribution: shi li (747U98AXHA)`，Team `747U98AXHA`，
+有效期 2026-11-22 ~ **2027-11-22**（苹果分发证书一年一换，**到期前要重新备案**）。
+
+**取法**（Windows 上没有苹果证书，从签名包里反解——拿到的一定是上架签名用的那张）：
+
+```powershell
+# ① 从 TestFlight / App Store 的分发 ipa 里取描述文件
+#    解压 ipa → Payload/TrueSolarTime.app/embedded.mobileprovision
+# ② 解开 CMS 签名包
+openssl smime -inform DER -verify -noverify -in embedded.mobileprovision -out prov.plist
+# ③ 取 DeveloperCertificates（plist 里的 base64 数组）→ DER → 证书
+# ④ 算指纹与公钥
+openssl x509 -in dev.pem -noout -fingerprint -sha1
+openssl x509 -in dev.pem -pubkey -noout | openssl pkey -pubin -outform DER -out pub.der
+```
+
+> 描述文件里另有 3 张**苹果自己的**证书（Profile Signing CA / Root CA 等），
+> 它们的指纹不是我们要的 —— 要的是 plist 里 `DeveloperCertificates` 那一条。
+
+### 10.5 「App 全部后台服务域名」填不进去的 .org
+
+备案系统会按**工信部支持的后缀**校验，`.org` 直接报「不支持备案」。我们实际访问的三个 `.org` 都填不进去：
+
+| 域名 | 用途 | 处理 |
+|---|---|---|
+| `tile.openstreetmap.org` | OSM 瓦片兜底 | 删掉不填 |
+| `nominatim.openstreetmap.org` | 境外地名反查 | 删掉不填 |
+| `www.openstreetmap.org` | 署名链接（不请求数据）| 删掉不填 |
+
+**能填的清单**（这套提交成功）：
+
+```
+api.open-meteo.com          天气主源
+7timer.info                 天气备用
+is.autonavi.com             高德瓦片（境内）
+server.arcgisonline.com     Esri 底图（境外）
+duosuccess.com              关键时间数据
+amap.com                    高德 SDK 自有服务端（覆盖 *.amap.com）
+```
+
+不要填 `weatherkit.apple.com` —— 它只是 Apple 天气的**署名链接**，WeatherKit 数据走 Apple 内部通道，不经过该域名。
+
+### 10.6 三端必填字段对照（照抄即可）
+
+| 字段 | Android | 鸿蒙 | iOS |
+|---|---|---|---|
+| 平台 | 安卓 | 鸿蒙 | iOS |
+| 包名 | `com.realsuntime.solartime` | `com.realsuntime.solartime` | `com.realsuntime.solartime` |
+| 公钥 | RSA hex（10.2）| EC 原始点 hex（10.3）| RSA hex 或 base64（10.4）|
+| 指纹 | **MD5**（32 位无冒号）| **MD5**（32 位无冒号）| **SHA-1**（40 位无冒号）|
+| 是否提供 SDK 服务 | 否 | 否 | 否 |
+
+> 鸿蒙版**没有任何第三方 SDK**（`oh-package.json5` 的 `dependencies` 为空），只引用华为系统 Kit；
+> 安卓版用了**高德地图 SDK**（`DistrictResolver` 的反地理编码），备案里如需列 SDK 服务商，只有这一项。
