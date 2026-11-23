@@ -17,6 +17,9 @@
 > search 3840x2560: text x=6.0%..32.1%W  card x0=63.5%W..101.0%W  gap 1206px  PASS
 > ```
 > 居中版式**只保留给标题图**（那张会被 hero 居中裁切）。
+>
+> **三套语言**：繁体（无后缀，`asc-6.1-final/01.png`）、英文（`-en`，`1.1/en/IMG_0064.PNG`）、
+> 简体（`-zh-hans`，`1.1/cn/IMG_0061.PNG`）。三套**共用同一组版式参数**，只换截图与文案。
 
 > **v3：超宽标题图改为「首页大卡片为主体」（2026-11-22）。**
 > 2.33:1 那张原先是从卡片上沿**一直裁到屏幕底部**、卡片只占 21.5% 宽，
@@ -51,6 +54,10 @@
 | [`search-5244x2950-en.png`](search-5244x2950-en.png) | 5244×2950 | 「搜索结果」图·英文（16:9，左文右图） | `1.1/en/IMG_0064.PNG` | `make_marketing.py` |
 | [`search-3840x2560-en.png`](search-3840x2560-en.png) | 3840×2560 | 「搜索结果」图·英文（3:2） | `1.1/en/IMG_0064.PNG` | `make_marketing.py` |
 | [`search-1920x1280-en.png`](search-1920x1280-en.png) | 1920×1280 | 「搜索结果」图·英文（3:2 小尺寸） | `1.1/en/IMG_0064.PNG` | `make_marketing.py` |
+| [`title-3840x1646-zh-hans.png`](title-3840x1646-zh-hans.png) | 3840×1646 | 「标题」图·**简体**（卡片为主体） | `1.1/cn/IMG_0061.PNG` | `make_marketing.py` |
+| [`search-5244x2950-zh-hans.png`](search-5244x2950-zh-hans.png) | 5244×2950 | 「搜索结果」图·简体（16:9，左文右图） | `1.1/cn/IMG_0061.PNG` | `make_marketing.py` |
+| [`search-3840x2560-zh-hans.png`](search-3840x2560-zh-hans.png) | 3840×2560 | 「搜索结果」图·简体（3:2） | `1.1/cn/IMG_0061.PNG` | `make_marketing.py` |
+| [`search-1920x1280-zh-hans.png`](search-1920x1280-zh-hans.png) | 1920×1280 | 「搜索结果」图·简体（3:2 小尺寸） | `1.1/cn/IMG_0061.PNG` | `make_marketing.py` |
 | [`search-5244x2950.png`](search-5244x2950.png) | 5244×2950 | 「搜索结果」图（16:9，**左文右图**） | `asc-6.1-final/01.png` | `make_marketing.py` |
 | [`search-3840x2560.png`](search-3840x2560.png) | 3840×2560 | 「搜索结果」图（3:2，**左文右图**） | `asc-6.1-final/01.png` | `make_marketing.py` |
 | [`search-1920x1280.png`](search-1920x1280.png) | 1920×1280 | 「搜索结果」图（3:2 小尺寸，**左文右图**） | `asc-6.1-final/01.png` | `make_marketing.py` |
@@ -61,7 +68,18 @@
 原生素材链：`Desktop\iOS Snapshoot\1\*.png`（828×1792）→ `docs/store-shots/asc-6.1-final/01..05.png`（1179×2556）
 → 本目录的营销图。所有 PNG 均为 RGB、`optimize=True / compress_level=9`，单文件均 **< 2 MB**（限值 8 MB；左文右图版含地图截图，PNG 压不到 1 MB 以内）。
 
-## 2. 主截图：`asc-6.1-final/01.png`（香港 · 夜间主题 · 繁体界面）
+## 2. 三套语言的主截图
+
+| 语言 | 文件 | 地点 / 主题 | 读数（标准 → 真太阳时）|
+|---|---|---|---|
+| 繁体（默认）| `asc-6.1-final/01.png`（1179×2556）| 香港 · 夜间 | 19:26 → 19:18（差 8 分）|
+| 英文（`-en`）| `1.1/en/IMG_0064.PNG`（828×1792）| 纽约 · 夜间 | 23:05 → 23:23（差 18 分）|
+| 简体（`-zh-hans`）| `1.1/cn/IMG_0061.PNG`（828×1792）| 纽约 · 夜间 | 23:03 → 23:21（差 18 分）|
+
+> 简体素材选夜景那张（`IMG_0061`）而不是白天的 `IMG_0057`（上海 · 橙色卡片 · 差 19 分），
+> 是为了与另外两套的深色背景协调；想换成白天那张只改脚本顶部 `SHOT_FILE_HANS` 一行。
+
+## 2.1 主截图：`asc-6.1-final/01.png`（香港 · 夜间主题 · 繁体界面）
 
 - **地址干净**：`香港特別行政區油尖旺區`，比 04（迪拜）混排阿拉伯文的地区名清爽；
 - **时差更有说服力**：真太陽時 19:18 vs 標準時間 19:26（**差 8 分钟**），04 只有 4 分钟；
@@ -187,6 +205,8 @@ preview-crop-simulation.png      2677x1035   2677x1035     0.35  PASS
 8/8 passed (pixel-exact size, <= 8 MB)
 ```
 
-技术细节：截图缩放一律 `Image.LANCZOS`；圆角先做 4× 超采样蒙版再缩回（边缘抗锯齿）；
+技术细节：`_save()` 先写 `*.png.tmp` 再 `os.replace` 原子替换（Windows 上连续重写同一批 PNG 时，
+杀软/缩略图索引会短暂占用刚写完的文件，`save()` 偶发 `OSError: [Errno 22]`，已加 5 次重试）；
+截图缩放一律 `Image.LANCZOS`；圆角先做 4× 超采样蒙版再缩回（边缘抗锯齿）；
 阴影用 `ImageFilter.GaussianBlur`；字体用 `C:\Windows\Fonts\msyh.ttc`（常规）与 `msyhbd.ttc`（粗体），
 繁体字形覆盖已逐字校验无豆腐块。

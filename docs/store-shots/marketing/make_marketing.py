@@ -21,7 +21,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -68,6 +70,14 @@ SHOT_DIR_EN = BASE.parent / "1.1" / "en"
 SHOT_FILE_EN = "IMG_0064.PNG"          # 纽约 · 夜间主题 · UTC-5，标准 23:05 vs 真太阳时 23:23
 TXT_TITLE_EN = "True Solar Clock"
 TXT_TAGLINE_EN = "Real solar time at your location"
+
+# 简体版（docs/store-shots/1.1/cn，828x1792，夜间主题 · 纽约：标准 23:03 / 真太阳时 23:21）
+SHOT_DIR_HANS = BASE.parent / "1.1" / "cn"
+SHOT_FILE_HANS = "IMG_0061.PNG"
+TXT_TITLE_HANS = "真太阳时时钟"
+TXT_TAGLINE_HANS = "实时定位显示当前真太阳时"
+TXT_SEARCH_NAME_HANS = "真太阳时时钟"
+TXT_SEARCH_LINE_HANS = "真太阳时 · 随身时钟"
 
 TXT_TITLE = "真太陽時時鐘"
 TXT_TAGLINE = "即時定位顯示目前真太陽時"
@@ -791,8 +801,25 @@ SEARCH_EN_SPECS = {
                  name=TXT_SEARCH_NAME_EN, line=TXT_SEARCH_LINE_EN)
     for (W, H) in SEARCH_SPECS
 }
+TITLE_HANS_SPECS = {
+    (3840, 1646): dict(TITLE_SPECS[(3840, 1646)], out="title-3840x1646-zh-hans.png",
+                       shot_path=SHOT_DIR_HANS / SHOT_FILE_HANS,
+                       title=TXT_TITLE_HANS, tagline=TXT_TAGLINE_HANS),
+}
+
+# 简体搜索结果图：与中文（繁）/ 英文同一套左文右图参数，只换图与文案。
+SEARCH_HANS_SPECS = {
+    (W, H): dict(SEARCH_SPECS[(W, H)], out=f"search-{W}x{H}-zh-hans.png",
+                 shot_path=SHOT_DIR_HANS / SHOT_FILE_HANS,
+                 name=TXT_SEARCH_NAME_HANS, line=TXT_SEARCH_LINE_HANS)
+    for (W, H) in SEARCH_SPECS
+}
+
 for (W, H) in SEARCH_EN_SPECS:
     EXPECTED[f"search-{W}x{H}-en.png"] = (W, H)
+for (W, H) in SEARCH_HANS_SPECS:
+    EXPECTED[f"search-{W}x{H}-zh-hans.png"] = (W, H)
+EXPECTED["title-3840x1646-zh-hans.png"] = (3840, 1646)
 
 EXPECTED["title-3840x1646-en.png"] = (3840, 1646)
 EXPECTED["preview-crop-simulation.png"] = _preview_dims()
@@ -805,14 +832,15 @@ def build_all(only: str | None = None) -> None:
             continue
         builder = build_title_card if spec.get("layout") == "card" else build_title
         _save(builder(W, H, spec), name)
-    for (W, H), spec in TITLE_EN_SPECS.items():
-        name = spec["out"]
-        if only and only != name:
-            continue
-        _save(build_title_card(W, H, spec,
-                               shot_path=spec["shot_path"],
-                               title=spec["title"],
-                               tagline=spec["tagline"]), name)
+    for specs in (TITLE_EN_SPECS, TITLE_HANS_SPECS):
+        for (W, H), spec in specs.items():
+            name = spec["out"]
+            if only and only != name:
+                continue
+            _save(build_title_card(W, H, spec,
+                                   shot_path=spec["shot_path"],
+                                   title=spec["title"],
+                                   tagline=spec["tagline"]), name)
     if only and only.startswith("title-"):
         return
     for (W, H), spec in SEARCH_SPECS.items():
@@ -820,13 +848,14 @@ def build_all(only: str | None = None) -> None:
         if only and only != name:
             continue
         _save(build_search(W, H, spec), name)
-    for (W, H), spec in SEARCH_EN_SPECS.items():
-        if only and only != spec["out"]:
-            continue
-        _save(build_search(W, H, spec,
-                           shot_path=spec["shot_path"],
-                           name=spec["name"],
-                           line=spec["line"]), spec["out"])
+    for specs in (SEARCH_EN_SPECS, SEARCH_HANS_SPECS):
+        for (W, H), spec in specs.items():
+            if only and only != spec["out"]:
+                continue
+            _save(build_search(W, H, spec,
+                               shot_path=spec["shot_path"],
+                               name=spec["name"],
+                               line=spec["line"]), spec["out"])
     for name in ("screenshot-2556x1179.png", "screenshot-2622x1206.png"):
         W, H = EXPECTED[name]
         _save(build_screen(W, H), name)
@@ -834,8 +863,25 @@ def build_all(only: str | None = None) -> None:
 
 
 def _save(img: Image.Image, name: str) -> None:
+    """先写临时文件再原子替换。
+
+    Windows 上连续重写同一批 PNG 时，杀软/缩略图索引会短暂占用刚写完的文件，
+    直接 `save()` 偶发 `OSError: [Errno 22] Invalid argument`；写临时文件 + `os.replace`
+    可以避开这个窗口，另外再带 5 次重试。
+    """
     path = BASE / name
-    img.convert("RGB").save(path, "PNG", optimize=True, compress_level=9)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    rgb = img.convert("RGB")
+    for attempt in range(5):
+        try:
+            rgb.save(tmp, "PNG", optimize=True, compress_level=9)
+            os.replace(tmp, path)
+            break
+        except OSError as error:
+            if attempt == 4:
+                raise
+            print(f"  retry {name} ({error})")
+            time.sleep(0.4)
     print(f"  saved {name}  {img.width}x{img.height}")
 
 
