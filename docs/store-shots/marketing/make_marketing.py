@@ -287,33 +287,37 @@ def detect_card_top(shot: Image.Image, start_frac: float = 0.05,
 _CROP_CACHE: dict = {}
 
 
-def crop_top_px() -> int:
-    """裁切起点（截图像素），带缓存：主卡上沿 - CROP_PAD。"""
-    if CROP_TOP_OVERRIDE is not None:
+def crop_top_px(shot_path: Path | None = None) -> int:
+    """裁切起点（截图像素），带缓存：主卡上沿 - CROP_PAD。可传入另一张截图（英文版）。"""
+    path = shot_path or (SHOT_DIR / SHOT_FILE)
+    key = f"top::{path}"
+    if CROP_TOP_OVERRIDE is not None and shot_path is None:
         return int(CROP_TOP_OVERRIDE)
-    if "top" not in _CROP_CACHE:
-        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+    if key not in _CROP_CACHE:
+        with Image.open(path) as im:
             shot = im.convert("RGB")
         top = detect_card_top(shot)
-        _CROP_CACHE["top"] = max(0, top - CROP_PAD)
-        _CROP_CACHE["h"] = shot.height
-        _CROP_CACHE["edge"] = top
-    return _CROP_CACHE["top"]
+        _CROP_CACHE[key] = max(0, top - CROP_PAD)
+        _CROP_CACHE[f"h::{path}"] = shot.height
+        _CROP_CACHE[f"edge::{path}"] = top
+    return _CROP_CACHE[key]
 
 
 def crop_frac() -> float:
     """裁切起点占截图高度的比例。"""
-    crop_top_px()
-    return _CROP_CACHE["top"] / _CROP_CACHE["h"]
+    path = SHOT_DIR / SHOT_FILE
+    return crop_top_px() / _CROP_CACHE[f"h::{path}"]
 
 
-def card_shot() -> Image.Image:
-    """主截图裁到主卡片上沿（含 4px 留白），供居中卡片使用。"""
-    if "shot" not in _CROP_CACHE:
-        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+def card_shot(shot_path: Path | None = None) -> Image.Image:
+    """主截图裁到主卡片上沿（含 4px 留白），供居中卡片使用。可传入另一张截图（英文版）。"""
+    path = shot_path or (SHOT_DIR / SHOT_FILE)
+    key = f"shot::{path}"
+    if key not in _CROP_CACHE:
+        with Image.open(path) as im:
             shot = im.convert("RGB")
-        _CROP_CACHE["shot"] = shot.crop((0, crop_top_px(), shot.width, shot.height))
-    return _CROP_CACHE["shot"]
+        _CROP_CACHE[key] = shot.crop((0, crop_top_px(shot_path), shot.width, shot.height))
+    return _CROP_CACHE[key]
 
 
 def detect_card_box(shot: Image.Image) -> tuple:
@@ -537,12 +541,15 @@ def build_title_card(W: int, H: int, spec: dict,
     return canvas
 
 
-def build_search(W: int, H: int, spec: dict) -> Image.Image:
+def build_search(W: int, H: int, spec: dict,
+                 shot_path: Path | None = None,
+                 name: str = TXT_SEARCH_NAME,
+                 line: str = TXT_SEARCH_LINE) -> Image.Image:
     """搜索结果图：同样居中对称，但只留「名称 + 一句话」+ 手机卡片。"""
     canvas = gradient((W, H), SEARCH_TOP, SEARCH_BOT)
     add_glow(canvas, (int(W * 0.87), int(H * 0.05)), W * 0.40, GOLD, spec["glow"])
 
-    shot = card_shot()
+    shot = card_shot(shot_path)
     card_w = int(round(W * spec["card_w"]))
     canvas, box = paste_card(
         canvas, shot, card_w,
@@ -553,14 +560,14 @@ def build_search(W: int, H: int, spec: dict) -> Image.Image:
     cx = W / 2
     d = ImageDraw.Draw(canvas)
     zone = W * spec["safe"] * 0.94
-    name_size = fit_size(TXT_SEARCH_NAME, True, zone, int(H * spec["name_h"]))
-    line_size = fit_size(TXT_SEARCH_LINE, False, zone, int(H * spec["line_h"]))
+    name_size = fit_size(name, True, zone, int(H * spec["name_h"]))
+    line_size = fit_size(line, False, zone, int(H * spec["line_h"]))
 
     text_box = [W, 0]
     for rect in (
         center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"], H * spec["bar_h"], GOLD),
-        center_runs(d, cx, H * spec["name_cy"], [(TXT_SEARCH_NAME, BODY, True, name_size)]),
-        center_runs(d, cx, H * spec["line_cy"], [(TXT_SEARCH_LINE, DIM, False, line_size)]),
+        center_runs(d, cx, H * spec["name_cy"], [(name, BODY, True, name_size)]),
+        center_runs(d, cx, H * spec["line_cy"], [(line, DIM, False, line_size)]),
     ):
         text_box[0] = min(text_box[0], rect[0])
         text_box[1] = max(text_box[1], rect[1])
@@ -714,6 +721,19 @@ SEARCH_SPECS = {
                        glow=0.08, bloom=0.06),
 }
 
+TXT_SEARCH_NAME_EN = "True Solar Clock"
+TXT_SEARCH_LINE_EN = "True solar time at a glance"
+
+# 英文搜索结果图：三个尺寸，版式沿用中文版（同一套 name_h / line_h / card_w / safe），只换图与文案。
+SEARCH_EN_SPECS = {
+    (W, H): dict(SEARCH_SPECS[(W, H)], out=f"search-{W}x{H}-en.png",
+                 shot_path=SHOT_DIR_EN / SHOT_FILE_EN,
+                 name=TXT_SEARCH_NAME_EN, line=TXT_SEARCH_LINE_EN)
+    for (W, H) in SEARCH_SPECS
+}
+for (W, H) in SEARCH_EN_SPECS:
+    EXPECTED[f"search-{W}x{H}-en.png"] = (W, H)
+
 EXPECTED["title-3840x1646-en.png"] = (3840, 1646)
 EXPECTED["preview-crop-simulation.png"] = _preview_dims()
 
@@ -733,11 +753,20 @@ def build_all(only: str | None = None) -> None:
                                shot_path=spec["shot_path"],
                                title=spec["title"],
                                tagline=spec["tagline"]), name)
-    if only:
+    if only and only.startswith("title-"):
         return
     for (W, H), spec in SEARCH_SPECS.items():
-        img = build_search(W, H, spec)
-        _save(img, f"search-{W}x{H}.png")
+        name = f"search-{W}x{H}.png"
+        if only and only != name:
+            continue
+        _save(build_search(W, H, spec), name)
+    for (W, H), spec in SEARCH_EN_SPECS.items():
+        if only and only != spec["out"]:
+            continue
+        _save(build_search(W, H, spec,
+                           shot_path=spec["shot_path"],
+                           name=spec["name"],
+                           line=spec["line"]), spec["out"])
     for name in ("screenshot-2556x1179.png", "screenshot-2622x1206.png"):
         W, H = EXPECTED[name]
         _save(build_screen(W, H), name)
@@ -783,8 +812,9 @@ def main() -> int:
             return 2
         print(f"source screenshot: {SHOT_FILE} (true solar {NUM_TRUE} / standard {NUM_STD})")
         cf = crop_frac()
-        print(f"card top edge: y={_CROP_CACHE['edge']} -> crop from y={_CROP_CACHE['top']} "
-              f"({cf:.2%} of shot height)")
+        shot_path = SHOT_DIR / SHOT_FILE
+        print(f"card top edge: y={_CROP_CACHE[f'edge::{shot_path}']} -> "
+              f"crop from y={crop_top_px()} ({cf:.2%} of shot height)")
         box = card_box()
         print(f"hero card box: x {box[0]}..{box[2] - 1}  y {box[1]}..{box[3] - 1}  "
               f"({box[2] - box[0]}x{box[3] - box[1]})")
