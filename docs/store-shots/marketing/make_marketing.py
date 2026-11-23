@@ -63,6 +63,12 @@ CARD_BOX_OVERRIDE = None
 CARD_INSET = 8
 
 # 图内文案（一律繁体中文）
+# 英文版（用 docs/store-shots/1.1/en 的原生英文截图，828x1792）
+SHOT_DIR_EN = BASE.parent / "1.1" / "en"
+SHOT_FILE_EN = "IMG_0064.PNG"          # 纽约 · 夜间主题 · UTC-5，标准 23:05 vs 真太阳时 23:23
+TXT_TITLE_EN = "True Solar Clock"
+TXT_TAGLINE_EN = "Real solar time at your location"
+
 TXT_TITLE = "真太陽時時鐘"
 TXT_TAGLINE = "即時定位顯示目前真太陽時"
 TXT_BULLETS = "日出日落 · 上中天 · 逐時天氣 · 十二時辰"
@@ -224,7 +230,13 @@ def paste_card(
     blur = max(6.0, shadow_frac * canvas.width)
     canvas = drop_shadow(canvas, (x0, y0, x0 + card_w, y0 + card_h), radius, blur, shadow_strength)
 
-    body = shot.resize((card_w, card_h), Image.LANCZOS).convert("RGBA")
+    body = shot.resize((card_w, card_h), Image.LANCZOS)
+    # 放大倍数大时（英文素材 828x1792，卡片 732px 要放到 1690px ≈ 2.3×）文字会发虚，
+    # 做一次轻度反锐化补偿；中文素材只有 1.6×，不需要（加了反而出光晕）。
+    scale = card_w / max(1, shot.width)
+    if scale > 1.8:
+        body = body.filter(ImageFilter.UnsharpMask(radius=1.4, percent=70, threshold=3))
+    body = body.convert("RGBA")
     body.putalpha(rounded_mask((card_w, card_h), radius))
 
     # 白色 8% 描边：inset 半个线宽，贴在内侧
@@ -355,26 +367,30 @@ def detect_card_box(shot: Image.Image) -> tuple:
     return (left, top, right + 1, bottom)
 
 
-def card_box() -> tuple:
-    """首页大卡片的截图像素边界（带缓存与内缩）。"""
-    if CARD_BOX_OVERRIDE is not None:
+def card_box(shot_path: Path | None = None) -> tuple:
+    """首页大卡片的截图像素边界（带缓存与内缩）。可传入另一张截图（英文版）。"""
+    path = shot_path or (SHOT_DIR / SHOT_FILE)
+    key = f"box::{path}"
+    if CARD_BOX_OVERRIDE is not None and shot_path is None:
         return CARD_BOX_OVERRIDE
-    if "box" not in _CROP_CACHE:
-        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+    if key not in _CROP_CACHE:
+        with Image.open(path) as im:
             shot = im.convert("RGB")
         x0, y0, x1, y1 = detect_card_box(shot)
-        _CROP_CACHE["raw_box"] = (x0, y0, x1, y1)
-        _CROP_CACHE["box"] = (x0 + CARD_INSET, y0 + CARD_INSET, x1 - CARD_INSET, y1 - CARD_INSET)
-    return _CROP_CACHE["box"]
+        _CROP_CACHE[f"raw::{path}"] = (x0, y0, x1, y1)
+        _CROP_CACHE[key] = (x0 + CARD_INSET, y0 + CARD_INSET, x1 - CARD_INSET, y1 - CARD_INSET)
+    return _CROP_CACHE[key]
 
 
-def hero_card() -> Image.Image:
+def hero_card(shot_path: Path | None = None) -> Image.Image:
     """只裁出首页大卡片本身（不含标题栏、太阳圆盘、地图），供「卡片为主体」的标题图使用。"""
-    if "hero" not in _CROP_CACHE:
-        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+    path = shot_path or (SHOT_DIR / SHOT_FILE)
+    key = f"hero::{path}"
+    if key not in _CROP_CACHE:
+        with Image.open(path) as im:
             shot = im.convert("RGB")
-        _CROP_CACHE["hero"] = shot.crop(card_box())
-    return _CROP_CACHE["hero"]
+        _CROP_CACHE[key] = shot.crop(card_box(shot_path))
+    return _CROP_CACHE[key]
 
 
 # ---------------------------------------------------------------- 居中排版
@@ -475,7 +491,10 @@ def _num_width(size: int) -> float:
             + text_width(NUM_STD, size, True))
 
 
-def build_title_card(W: int, H: int, spec: dict) -> Image.Image:
+def build_title_card(W: int, H: int, spec: dict,
+                     shot_path: Path | None = None,
+                     title: str = TXT_TITLE,
+                     tagline: str = TXT_TAGLINE) -> Image.Image:
     """标题图（超宽 2.33:1）：**首页大卡片为主体**。
 
     与 `build_title()` 的区别：
@@ -487,7 +506,7 @@ def build_title_card(W: int, H: int, spec: dict) -> Image.Image:
     canvas = gradient((W, H), BG_TOP, BG_BOT)
     add_glow(canvas, (int(W * 0.87), int(H * 0.05)), W * 0.42, GOLD, spec["glow"])
 
-    card = hero_card()
+    card = hero_card(shot_path)
     card_w = int(round(W * spec["card_w"]))
     canvas, box = paste_card(
         canvas, card, card_w,
@@ -498,13 +517,13 @@ def build_title_card(W: int, H: int, spec: dict) -> Image.Image:
     cx = W / 2
     d = ImageDraw.Draw(canvas)
     zone = W * spec["safe"] * 0.94
-    t_size = fit_size(TXT_TITLE, True, zone, int(H * spec["title_h"]))
-    cap_size = fit_size(TXT_TAGLINE, False, zone, int(H * spec["cap_h"]))
+    t_size = fit_size(title, True, zone, int(H * spec["title_h"]))
+    cap_size = fit_size(tagline, False, zone, int(H * spec["cap_h"]))
 
     text_box = [W, 0]
     rects = [
-        center_runs(d, cx, H * spec["title_cy"], [(TXT_TITLE, BODY, True, t_size)]),
-        center_runs(d, cx, H * spec["cap_cy"], [(TXT_TAGLINE, DIM, False, cap_size)]),
+        center_runs(d, cx, H * spec["title_cy"], [(title, BODY, True, t_size)]),
+        center_runs(d, cx, H * spec["cap_cy"], [(tagline, DIM, False, cap_size)]),
     ]
     if spec.get("bar", True):
         rects.insert(0, center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"],
@@ -669,6 +688,14 @@ TITLE_SPECS = {
                        glow=0.12, bloom=0.09),
 }
 
+# 英文版标题图：版式与中文版完全一致（同一套比例），只换截图与文案。
+# 输出文件名带 -en 后缀；尺寸与中文版同规格，都进 EXPECTED 做像素校验。
+TITLE_EN_SPECS = {
+    (3840, 1646): dict(TITLE_SPECS[(3840, 1646)], out="title-3840x1646-en.png",
+                       shot_path=SHOT_DIR_EN / SHOT_FILE_EN,
+                       title=TXT_TITLE_EN, tagline=TXT_TAGLINE_EN),
+}
+
 SEARCH_SPECS = {
     (5244, 2950): dict(card_w=0.260, card_top=0.470, safe=0.60,
                        bar_cy=0.190, bar_w=0.040, bar_h=0.006,
@@ -687,15 +714,25 @@ SEARCH_SPECS = {
                        glow=0.08, bloom=0.06),
 }
 
+EXPECTED["title-3840x1646-en.png"] = (3840, 1646)
 EXPECTED["preview-crop-simulation.png"] = _preview_dims()
 
 
 def build_all(only: str | None = None) -> None:
     for (W, H), spec in TITLE_SPECS.items():
-        if only and only != f"title-{W}x{H}.png":
+        name = f"title-{W}x{H}.png"
+        if only and only != name:
             continue
         builder = build_title_card if spec.get("layout") == "card" else build_title
-        _save(builder(W, H, spec), f"title-{W}x{H}.png")
+        _save(builder(W, H, spec), name)
+    for (W, H), spec in TITLE_EN_SPECS.items():
+        name = spec["out"]
+        if only and only != name:
+            continue
+        _save(build_title_card(W, H, spec,
+                               shot_path=spec["shot_path"],
+                               title=spec["title"],
+                               tagline=spec["tagline"]), name)
     if only:
         return
     for (W, H), spec in SEARCH_SPECS.items():
