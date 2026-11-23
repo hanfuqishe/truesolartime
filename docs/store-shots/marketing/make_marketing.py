@@ -209,8 +209,10 @@ def paste_card(
     canvas: Image.Image,
     shot: Image.Image,
     card_w: int,
-    center_x: int,
-    y_top: int,
+    center_x: int | None = None,
+    y_top: int = 0,
+    *,
+    right_x: int | None = None,
     radius_frac: float = 0.04,
     stroke_alpha: float = 0.08,
     shadow_frac: float = 0.010,
@@ -224,7 +226,8 @@ def paste_card(
     card_w = int(card_w)
     card_h = int(round(card_w * shot.height / shot.width))
     radius = max(8, int(round(radius_frac * card_w)))
-    x0 = int(center_x) - card_w // 2
+    # 两种定位：默认按中心线居中（标题图），left-right 版式按「右边缘」贴齐（可出血出右边界）
+    x0 = int(right_x) - card_w if right_x is not None else int(center_x) - card_w // 2
     y0 = int(y_top)
 
     blur = max(6.0, shadow_frac * canvas.width)
@@ -307,6 +310,16 @@ def crop_frac() -> float:
     """裁切起点占截图高度的比例。"""
     path = SHOT_DIR / SHOT_FILE
     return crop_top_px() / _CROP_CACHE[f"h::{path}"]
+
+
+def full_shot(shot_path: Path | None = None) -> Image.Image:
+    """整张截图（不裁），左文右图版式用：让手机界面从顶部出血、下部裁掉。"""
+    path = shot_path or (SHOT_DIR / SHOT_FILE)
+    key = f"full::{path}"
+    if key not in _CROP_CACHE:
+        with Image.open(path) as im:
+            _CROP_CACHE[key] = im.convert("RGB")
+    return _CROP_CACHE[key]
 
 
 def card_shot(shot_path: Path | None = None) -> Image.Image:
@@ -398,6 +411,43 @@ def hero_card(shot_path: Path | None = None) -> Image.Image:
 
 
 # ---------------------------------------------------------------- 居中排版
+
+
+def draw_runs(draw: ImageDraw.ImageDraw, x: float, baseline: float, runs) -> float:
+    """按 run 依次画同一行的多段文字（不同颜色 / 字重 / 字号），返回行尾横坐标。"""
+    for text, color, bold, size in runs:
+        f = font(size, bold)
+        draw.text((x, baseline), text, font=f, fill=color, anchor="ls")
+        x += f.getlength(text)
+    return x
+
+
+def draw_block(draw: ImageDraw.ImageDraw, x: float, center_y: float, lines) -> tuple:
+    """竖向排一条文字块（每行可含多 run），返回块的外接框 (l, t, r, b)。
+
+    line: {"runs": [(text, color, bold, size)], "gap": 行后间距}
+    或    {"bar": (w, h, color), "gap": 行后间距}
+    """
+    heights = []
+    for ln in lines:
+        if "bar" in ln:
+            heights.append(ln["bar"][1])
+        else:
+            heights.append(max(metrics(r[3], r[2])[0] + metrics(r[3], r[2])[1] for r in ln["runs"]))
+    total = sum(heights) + sum(ln.get("gap", 0) for ln in lines[:-1])
+    y = center_y - total / 2
+    top = y
+    right = x
+    for i, ln in enumerate(lines):
+        if "bar" in ln:
+            w, h, color = ln["bar"]
+            draw.rectangle([x, y + h * 0.25, x + w, y + h * 0.25 + max(3, h * 0.3)], fill=color)
+            right = max(right, x + w)
+        else:
+            asc = max(metrics(r[3], r[2])[0] for r in ln["runs"])
+            right = max(right, draw_runs(draw, x, y + asc, ln["runs"]))
+        y += heights[i] + (ln.get("gap", 0) if i < len(lines) - 1 else 0)
+    return (x, top, right, y)
 
 
 def center_runs(draw: ImageDraw.ImageDraw, cx: float, cy: float, runs) -> tuple:
@@ -545,36 +595,56 @@ def build_search(W: int, H: int, spec: dict,
                  shot_path: Path | None = None,
                  name: str = TXT_SEARCH_NAME,
                  line: str = TXT_SEARCH_LINE) -> Image.Image:
-    """搜索结果图：同样居中对称，但只留「名称 + 一句话」+ 手机卡片。"""
-    canvas = gradient((W, H), SEARCH_TOP, SEARCH_BOT)
-    add_glow(canvas, (int(W * 0.87), int(H * 0.05)), W * 0.40, GOLD, spec["glow"])
+    """搜索结果图：**左文右图**（不是标题图的居中版式）。
 
-    shot = card_shot(shot_path)
+    搜索结果图在产品页里不会被居中横裁，所以用横向布局更充分利用画布：
+        · 右侧：整张手机截图放进圆角卡片，右边缘略微出血（`right_x = 1.010 W`），
+          顶部把状态栏/标题栏抬出画布，让首页大卡片直接顶到上边缘；下部自然裁掉；
+        · 左侧：金色短横 + 名称 + 一句话，左边距 6% W、可用宽度 33% W − 边距，垂直居中。
+    """
+    canvas = gradient((W, H), SEARCH_TOP, SEARCH_BOT)
+    add_glow(canvas, (int(W * 0.88), int(H * 0.06)), W * 0.50, GOLD, spec["glow"])
+
+    shot = full_shot(shot_path)
     card_w = int(round(W * spec["card_w"]))
+    aspect = shot.height / shot.width
+    # 把标题栏抬出画布：crop_top 占截图高度的比例 × 卡片高度
+    crop_px = crop_top_px(shot_path)
+    y_top = -int(round(crop_px / shot.height * card_w * aspect))
     canvas, box = paste_card(
         canvas, shot, card_w,
-        center_x=W // 2, y_top=int(round(H * spec["card_top"])),
+        right_x=int(round(W * 1.010)), y_top=y_top,
         shadow_frac=0.008,
     )
 
-    cx = W / 2
-    d = ImageDraw.Draw(canvas)
-    zone = W * spec["safe"] * 0.94
+    m = int(round(W * 0.060))
+    zone = W * 0.33 - m
     name_size = fit_size(name, True, zone, int(H * spec["name_h"]))
     line_size = fit_size(line, False, zone, int(H * spec["line_h"]))
 
-    text_box = [W, 0]
-    for rect in (
-        center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"], H * spec["bar_h"], GOLD),
-        center_runs(d, cx, H * spec["name_cy"], [(name, BODY, True, name_size)]),
-        center_runs(d, cx, H * spec["line_cy"], [(line, DIM, False, line_size)]),
-    ):
-        text_box[0] = min(text_box[0], rect[0])
-        text_box[1] = max(text_box[1], rect[1])
+    lines = [
+        {"bar": (int(W * 0.040), int(H * 0.006), GOLD), "gap": int(H * 0.028)},
+        {"runs": [(name, BODY, True, name_size)], "gap": int(H * 0.022)},
+        {"runs": [(line, DIM, False, line_size)], "gap": 0},
+    ]
+    bbox = draw_block(ImageDraw.Draw(canvas), m, H * 0.5, lines)
+    _report_split(f"search {W}x{H}", bbox, box, m, W, H)
 
     canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, spec["bloom"])
-    _report_safe(f"search {W}x{H}", text_box, (box[0], box[0] + box[2]), W, spec["safe"])
     return canvas
+
+
+def _report_split(tag: str, bbox, box, margin: int, W: int, H: int) -> None:
+    """打印并校验左文右图版式：左边距 ≥5%W、文案不与卡片重叠、卡片右侧/下方出血。"""
+    l, _t, r, _b = bbox
+    x0, y0, cw, ch = box
+    print(f"  {tag}: text x={l / W:.1%}..{r / W:.1%}W (left margin {l / W:.1%}W)  "
+          f"card x0={x0 / W:.1%}W..{(x0 + cw) / W:.1%}W  gap {x0 - r:.0f}px  "
+          f"{'PASS' if (l >= 0.05 * W and r < x0 and x0 + cw > W) else 'WARN'}")
+    if l < 0.05 * W:
+        print(f"  WARN {tag}: 左边距不足 5%W")
+    if r >= x0:
+        print(f"  WARN {tag}: 文案压到卡片（{r:.0f} >= {x0}）")
 
 
 def draw_vertical(draw: ImageDraw.ImageDraw, cx: float, center_y: float,
@@ -704,21 +774,11 @@ TITLE_EN_SPECS = {
 }
 
 SEARCH_SPECS = {
-    (5244, 2950): dict(card_w=0.260, card_top=0.470, safe=0.60,
-                       bar_cy=0.190, bar_w=0.040, bar_h=0.006,
-                       name_cy=0.262, name_h=0.105,
-                       line_cy=0.360, line_h=0.032,
-                       glow=0.08, bloom=0.06),
-    (3840, 2560): dict(card_w=0.300, card_top=0.430, safe=0.60,
-                       bar_cy=0.180, bar_w=0.040, bar_h=0.006,
-                       name_cy=0.242, name_h=0.095,
-                       line_cy=0.335, line_h=0.032,
-                       glow=0.08, bloom=0.06),
-    (1920, 1280): dict(card_w=0.300, card_top=0.430, safe=0.60,
-                       bar_cy=0.180, bar_w=0.040, bar_h=0.006,
-                       name_cy=0.242, name_h=0.095,
-                       line_cy=0.335, line_h=0.032,
-                       glow=0.08, bloom=0.06),
+    # 左文右图：card_w 是「卡片宽度占画布宽」，name_h / line_h 是字号占画布高。
+    # 16:9 画布更宽，卡片 36%；3:2 与小尺寸更「方」，卡片 37.5% 才能让下部整体裁掉。
+    (5244, 2950): dict(card_w=0.360, name_h=0.082, line_h=0.0300, glow=0.08, bloom=0.06),
+    (3840, 2560): dict(card_w=0.375, name_h=0.070, line_h=0.0300, glow=0.08, bloom=0.06),
+    (1920, 1280): dict(card_w=0.375, name_h=0.070, line_h=0.0300, glow=0.08, bloom=0.06),
 }
 
 TXT_SEARCH_NAME_EN = "True Solar Clock"
