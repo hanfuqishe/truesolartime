@@ -54,6 +54,14 @@ SHOT_ASPECT = 2556 / 1179  # 截图 高/宽
 CROP_TOP_OVERRIDE = None
 CROP_PAD = 4
 
+# 超宽标题图（2.33:1）以**首页大卡片为主体**：把卡片整块裁出来放大，而不是
+# 从卡片上沿一直裁到屏幕底部（那样卡片只占 21% 宽，字看不清）。
+# 自动检测的边界（01.png 实测）：x 56..1121、y 353..964 → 1066x611，高宽比 0.573。
+# 需要人工指定时写 (x0, y0, x1, y1)（截图像素，右下开区间）。
+CARD_BOX_OVERRIDE = None
+# 裁进卡片内部一点，避开截图里自带的圆角与描边（否则贴到画布上会留一圈底色毛边）。
+CARD_INSET = 8
+
 # 图内文案（一律繁体中文）
 TXT_TITLE = "真太陽時時鐘"
 TXT_TAGLINE = "即時定位顯示目前真太陽時"
@@ -296,6 +304,79 @@ def card_shot() -> Image.Image:
     return _CROP_CACHE["shot"]
 
 
+def detect_card_box(shot: Image.Image) -> tuple:
+    """扫描截图，返回「首页大卡片」整块的 (x0, y0, x1, y1)（右下开区间）。
+
+    做法与 `detect_card_top()` 同源：按行/列取**中位色**（对文字与图标稳健），
+    与页面底色比较，色差 >= 8 即认定在该行/列上；行方向要求连续 8 行回到底色才算卡片结束。
+    """
+    W, H = shot.size
+    xs = list(range(int(W * 0.10), int(W * 0.90), 3))
+
+    def med(vals):
+        vals = sorted(vals)
+        return vals[len(vals) // 2]
+
+    bg = med([shot.getpixel((x, int(H * 0.095))) for x in xs])
+
+    def delta(c):
+        return max(abs(a - b) for a, b in zip(c, bg))
+
+    top = None
+    for y in range(int(H * 0.08), H):
+        if delta(med([shot.getpixel((x, y)) for x in xs])) >= 8:
+            top = y
+            break
+    if top is None:
+        raise RuntimeError("没能定位卡片上沿")
+
+    bottom = None
+    run = 0
+    for y in range(top + 10, H):
+        if delta(med([shot.getpixel((x, y)) for x in xs])) < 8:
+            run += 1
+            if run >= 8:
+                bottom = y - run
+                break
+        else:
+            run = 0
+    if bottom is None:
+        raise RuntimeError("没能定位卡片下沿")
+
+    ys = list(range(top + 20, bottom - 20, 3))
+
+    def col_delta(x):
+        return delta(med([shot.getpixel((x, y)) for y in ys]))
+
+    left = next((x for x in range(W) if col_delta(x) >= 8), None)
+    right = next((x for x in range(W - 1, -1, -1) if col_delta(x) >= 8), None)
+    if left is None or right is None:
+        raise RuntimeError("没能定位卡片左右边界")
+    return (left, top, right + 1, bottom)
+
+
+def card_box() -> tuple:
+    """首页大卡片的截图像素边界（带缓存与内缩）。"""
+    if CARD_BOX_OVERRIDE is not None:
+        return CARD_BOX_OVERRIDE
+    if "box" not in _CROP_CACHE:
+        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+            shot = im.convert("RGB")
+        x0, y0, x1, y1 = detect_card_box(shot)
+        _CROP_CACHE["raw_box"] = (x0, y0, x1, y1)
+        _CROP_CACHE["box"] = (x0 + CARD_INSET, y0 + CARD_INSET, x1 - CARD_INSET, y1 - CARD_INSET)
+    return _CROP_CACHE["box"]
+
+
+def hero_card() -> Image.Image:
+    """只裁出首页大卡片本身（不含标题栏、太阳圆盘、地图），供「卡片为主体」的标题图使用。"""
+    if "hero" not in _CROP_CACHE:
+        with Image.open(SHOT_DIR / SHOT_FILE) as im:
+            shot = im.convert("RGB")
+        _CROP_CACHE["hero"] = shot.crop(card_box())
+    return _CROP_CACHE["hero"]
+
+
 # ---------------------------------------------------------------- 居中排版
 
 
@@ -392,6 +473,49 @@ def _num_width(size: int) -> float:
     return (text_width("真太陽時 ", size) + text_width(NUM_TRUE, size, True)
             + text_width("  ·  ", size) + text_width("標準時間 ", size)
             + text_width(NUM_STD, size, True))
+
+
+def build_title_card(W: int, H: int, spec: dict) -> Image.Image:
+    """标题图（超宽 2.33:1）：**首页大卡片为主体**。
+
+    与 `build_title()` 的区别：
+        · 卡片整块裁出（不裁到屏幕底部），占比从 21% 提到 36% 宽；
+        · 文字只留「名称」在卡片上方 + 一句话在下方，读数行（19:18/19:26）不再重复
+          —— 卡片里本来就看得清了，重复反而抢视线。
+    安全区仍按中间 `safe` 宽校验：卡片与文字都不许越界。
+    """
+    canvas = gradient((W, H), BG_TOP, BG_BOT)
+    add_glow(canvas, (int(W * 0.87), int(H * 0.05)), W * 0.42, GOLD, spec["glow"])
+
+    card = hero_card()
+    card_w = int(round(W * spec["card_w"]))
+    canvas, box = paste_card(
+        canvas, card, card_w,
+        center_x=W // 2, y_top=int(round(H * spec["card_top"])),
+        shadow_frac=0.009, shadow_strength=0.66,
+    )
+
+    cx = W / 2
+    d = ImageDraw.Draw(canvas)
+    zone = W * spec["safe"] * 0.94
+    t_size = fit_size(TXT_TITLE, True, zone, int(H * spec["title_h"]))
+    cap_size = fit_size(TXT_TAGLINE, False, zone, int(H * spec["cap_h"]))
+
+    text_box = [W, 0]
+    rects = [
+        center_runs(d, cx, H * spec["title_cy"], [(TXT_TITLE, BODY, True, t_size)]),
+        center_runs(d, cx, H * spec["cap_cy"], [(TXT_TAGLINE, DIM, False, cap_size)]),
+    ]
+    if spec.get("bar", True):
+        rects.insert(0, center_bar(d, cx, H * spec["bar_cy"], W * spec["bar_w"],
+                                   H * spec["bar_h"], GOLD))
+    for rect in rects:
+        text_box[0] = min(text_box[0], rect[0])
+        text_box[1] = max(text_box[1], rect[1])
+
+    canvas = add_bloom(canvas, (int(W * 0.97), int(-H * 0.05)), W * 0.42, GOLD, spec["bloom"])
+    _report_safe(f"title-card {W}x{H}", text_box, (box[0], box[0] + box[2]), W, spec["safe"])
+    return canvas
 
 
 def build_search(W: int, H: int, spec: dict) -> Image.Image:
@@ -535,13 +659,13 @@ TITLE_SPECS = {
                        tag_cy=0.474, tag_h=0.030,
                        bul_cy=0.520, bul_h=0.024,
                        glow=0.12, bloom=0.09),
-    # 超宽 2.33:1：只占 50%，留出更多余量（文字约 35% W）
-    (3840, 1646): dict(card_w=0.215, card_top=0.660, safe=0.50,
-                       bar_cy=0.150, bar_w=0.045, bar_h=0.007,
-                       title_cy=0.300, title_h=0.135,
-                       num_cy=0.450, num_h=0.045,
-                       tag_cy=0.535, tag_h=0.038,
-                       bul_cy=0.600, bul_h=0.030,
+    # 超宽 2.33:1：**以首页大卡片为主体**（layout="card"）。
+    # 卡片按 36% 宽放大（源截图 1066px → 1382px，仅 1.3 倍，字仍锐），
+    # 上下只留「名称」与一句话；读数在卡片里本来就清楚，不再重复。
+    (3840, 1646): dict(layout="card", card_w=0.440, card_top=0.206, safe=0.50,
+                       bar=False,
+                       title_cy=0.112, title_h=0.100,
+                       cap_cy=0.878, cap_h=0.040,
                        glow=0.12, bloom=0.09),
 }
 
@@ -566,10 +690,14 @@ SEARCH_SPECS = {
 EXPECTED["preview-crop-simulation.png"] = _preview_dims()
 
 
-def build_all() -> None:
+def build_all(only: str | None = None) -> None:
     for (W, H), spec in TITLE_SPECS.items():
-        img = build_title(W, H, spec)
-        _save(img, f"title-{W}x{H}.png")
+        if only and only != f"title-{W}x{H}.png":
+            continue
+        builder = build_title_card if spec.get("layout") == "card" else build_title
+        _save(builder(W, H, spec), f"title-{W}x{H}.png")
+    if only:
+        return
     for (W, H), spec in SEARCH_SPECS.items():
         img = build_search(W, H, spec)
         _save(img, f"search-{W}x{H}.png")
@@ -609,6 +737,8 @@ def verify() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--verify", action="store_true", help="只校验已生成文件")
+    ap.add_argument("--only", default=None,
+                    help="只重新生成一张，例如 --only title-3840x1646.png（其余文件不动）")
     args = ap.parse_args()
     if not args.verify:
         if not (SHOT_DIR / SHOT_FILE).exists():
@@ -618,7 +748,10 @@ def main() -> int:
         cf = crop_frac()
         print(f"card top edge: y={_CROP_CACHE['edge']} -> crop from y={_CROP_CACHE['top']} "
               f"({cf:.2%} of shot height)")
-        build_all()
+        box = card_box()
+        print(f"hero card box: x {box[0]}..{box[2] - 1}  y {box[1]}..{box[3] - 1}  "
+              f"({box[2] - box[0]}x{box[3] - box[1]})")
+        build_all(args.only)
     return 1 if verify() else 0
 
 
